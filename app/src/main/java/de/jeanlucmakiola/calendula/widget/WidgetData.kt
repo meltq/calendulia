@@ -11,6 +11,7 @@ import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaDay
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.agendaRange
+import de.jeanlucmakiola.calendula.ui.agenda.dayCount
 import de.jeanlucmakiola.calendula.ui.agenda.groupAgendaDays
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.DateTimeUnit
@@ -28,11 +29,12 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 
 /**
- * How far either side of today the month widget pre-loads. The displayed month
- * is chosen reactively in the composition, so one wide read covers ~13 months of
- * prev/next navigation without re-querying on every arrow tap.
+ * Months either side of the displayed one the month widget loads, so a few arrow
+ * taps page without a re-query. Kept small: every load expands recurrences across
+ * the whole window, and on slow devices a wide one held the widget on "loading"
+ * (#363).
  */
-private const val MONTH_WIDGET_RANGE_DAYS = 400
+private const val MONTH_WIDGET_PAD_MONTHS = 3
 
 internal fun systemZone(): TimeZone = TimeZone.currentSystemDefault()
 
@@ -76,6 +78,8 @@ sealed interface AgendaWidgetData {
         val savedShowToday: Boolean,
         /** Saved widget size step (#103) — the fallback before Glance state is set. */
         val savedWidgetSize: WidgetSize,
+        /** Last day [days] covers; a wider range picked later needs a reload. */
+        val loadedThrough: LocalDate,
         /** Snapshot instant the data was read at, for "has this event ended?" tests. */
         val now: Instant,
     ) : AgendaWidgetData
@@ -94,14 +98,15 @@ sealed interface MonthWidgetSource {
         val today: LocalDate,
         val weekStart: DayOfWeek,
         val instances: List<EventInstance>,
+        /** Month indices (`year * 12 + monthOrdinal`) whose grids [instances] covers. */
+        val months: IntRange,
     ) : MonthWidgetSource
 }
 
 /**
- * Process-lived cache of the wide month window. Month navigation re-runs
- * `provideGlance` (via `updateAll`), and re-querying ~13 months of instances on
- * every arrow tap is what made paging feel sluggish — so we load once and reuse
- * the same snapshot for every nearby month. Invalidated by
+ * Process-lived cache of the month window. Month navigation can re-run
+ * `provideGlance`, and re-querying on every arrow tap is what made paging feel
+ * sluggish — so we load once and reuse the same snapshot for every nearby month. Invalidated by
  * [invalidateMonthWidgetCache] when calendar data changes (the freshness
  * receiver), and automatically when the day rolls over (the `today` guard).
  */
@@ -118,8 +123,11 @@ internal fun invalidateMonthWidgetCache() {
  * One-shot read of the upcoming agenda for the widget. Reuses the app's
  * [agendaRange] window and [groupAgendaDays] grouping, and the repository's
  * [first]-emitted snapshot already has hidden calendars filtered out.
+ *
+ * Loads [range] (the widget's own, or the saved pref when null) rather than the
+ * widest selectable window (#363).
  */
-internal suspend fun Context.loadAgendaWidgetData(): AgendaWidgetData {
+internal suspend fun Context.loadAgendaWidgetData(range: AgendaRange? = null): AgendaWidgetData {
     if (!hasCalendarPermission()) return AgendaWidgetData.NeedsPermission
     val zone = systemZone()
     val anchor = today(zone)
@@ -129,11 +137,11 @@ internal suspend fun Context.loadAgendaWidgetData(): AgendaWidgetData {
     val savedPastDisplay = prefs.pastEventDisplay.first()
     val showToday = prefs.agendaShowToday.first()
     val weekStart = prefs.weekStart.first().resolveFirstDay(Locale.getDefault())
-    // Load the widest selectable window once; the displayed range is sliced in
-    // the composition from Glance state, so changing the range is a plain
-    // recomposition and never depends on the widget session restarting.
-    val window = agendaRange(anchor, AgendaRange.MAX_CUSTOM_DAYS - 1, zone)
-    val windowEnd = anchor.plus(AgendaRange.MAX_CUSTOM_DAYS - 1, DateTimeUnit.DAY)
+    // The displayed range is still sliced in the composition from Glance state;
+    // a wider one picked later reloads there (see loadedThrough).
+    val dayCount = (range ?: savedRange).dayCount(anchor, weekStart)
+    val window = agendaRange(anchor, dayCount - 1, zone)
+    val windowEnd = anchor.plus(dayCount - 1, DateTimeUnit.DAY)
     val instances = ep.calendarRepository().instances(window).first()
     val is24Hour = prefs.timeFormat.first()
         .is24Hour(android.text.format.DateFormat.is24HourFormat(this))
@@ -148,22 +156,39 @@ internal suspend fun Context.loadAgendaWidgetData(): AgendaWidgetData {
         savedPastDisplay = savedPastDisplay,
         savedShowToday = showToday,
         savedWidgetSize = prefs.widgetSize.first(),
+        loadedThrough = windowEnd,
         now = Clock.System.now(),
     )
 }
 
-/** One-shot wide read backing the month widget's grid for any nearby month. */
-internal suspend fun Context.loadMonthWidgetSource(): MonthWidgetSource {
+internal fun monthIndexOf(date: LocalDate): Int = date.year * 12 + date.month.ordinal
+
+private fun firstDayOfMonthIndex(index: Int): LocalDate = LocalDate(index / 12, index % 12 + 1, 1)
+
+/** Read backing the month widget's grid for [centerIndex] and the months around it. */
+internal suspend fun Context.loadMonthWidgetSource(centerIndex: Int? = null): MonthWidgetSource {
     if (!hasCalendarPermission()) return MonthWidgetSource.NeedsPermission
     val zone = systemZone()
     val anchor = today(zone)
+    val center = centerIndex ?: monthIndexOf(anchor)
     // Reuse the cached window unless the day changed (then it's stale for "today").
-    MonthWidgetCache.data?.let { if (it.today == anchor) return it }
+    MonthWidgetCache.data?.let { if (it.today == anchor && center in it.months) return it }
     val ep = widgetEntryPoint()
     val weekStart = ep.settingsPrefs().weekStart.first().resolveFirstDay(Locale.getDefault())
-    val from = anchor.minus(MONTH_WIDGET_RANGE_DAYS, DateTimeUnit.DAY).atStartOfDayIn(zone)
-    val to = anchor.plus(MONTH_WIDGET_RANGE_DAYS, DateTimeUnit.DAY).atTime(23, 59, 59).toInstant(zone)
+    val months = (center - MONTH_WIDGET_PAD_MONTHS)..(center + MONTH_WIDGET_PAD_MONTHS)
+    // Padded by the grid's spill into the neighbouring months.
+    val from = firstDayOfMonthIndex(months.first)
+        .minus(1, DateTimeUnit.WEEK)
+        .atStartOfDayIn(zone)
+    val to = firstDayOfMonthIndex(months.last + 1)
+        .plus(2, DateTimeUnit.WEEK)
+        .atTime(23, 59, 59)
+        .toInstant(zone)
     val instances = ep.calendarRepository().instances(from..to).first()
-    return MonthWidgetSource.Ready(today = anchor, weekStart = weekStart, instances = instances)
-        .also { MonthWidgetCache.data = it }
+    return MonthWidgetSource.Ready(
+        today = anchor,
+        weekStart = weekStart,
+        instances = instances,
+        months = months,
+    ).also { MonthWidgetCache.data = it }
 }
