@@ -441,7 +441,7 @@
     <string name="settings_month_header">Maandweergave</string>
     <string name="settings_month_view_style">Stijl van maandweergave</string>
     <string name="month_style_paged">Pagina\'s</string>
-    <string name="month_style_paged_summary">Eén maand vult het scherm. Veeg naar links of rechts om van maand te wisselen.</string>
+    <string name="month_style_paged_summary">Eén maand vult het scherm. Veeg naar links of rechts om van maand te wisselen, of veeg omhoog om de agenda van deze maand te tonen.</string>
     <string name="month_style_continuous">Doorlopende maanden</string>
     <string name="month_style_continuous_summary">Elke maand staat onder een eigen kop, met wat ruimte tot de volgende maand.</string>
     <string name="month_style_dense">Naadloze weken</string>
