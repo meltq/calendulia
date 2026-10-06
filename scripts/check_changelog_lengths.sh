@@ -28,10 +28,11 @@ LIMIT=500
 STRICT=0
 [ "${1:-}" = "--strict" ] && STRICT=1
 
-VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
-[ -n "$VERSION" ] || { echo "No versionName in app/build.gradle.kts" >&2; exit 1; }
-MAJOR=${VERSION%%.*}; rest=${VERSION#*.}; MINOR=${rest%%.*}; PATCH=${rest##*.}
-VERSION_CODE=$(( ${MAJOR:-0} * 10000 + ${MINOR:-0} * 100 + ${PATCH:-0} ))
+VERSION=$(bash scripts/version_info.sh version)
+VERSION_CODE=$(bash scripts/version_info.sh version_code)
+# A beta ships no What's New, so only the older files are checked.
+BETA=0
+[ "$(bash scripts/version_info.sh channel)" = beta ] && BETA=1
 
 fail=0
 warned=0
@@ -65,7 +66,7 @@ for f in fastlane/metadata/android/*/changelogs/*.txt; do
   fi
 done
 
-if [ "$current" -eq 0 ]; then
+if [ "$current" -eq 0 ] && [ "$BETA" -eq 0 ]; then
   echo "ERROR: no changelog for version $VERSION (code $VERSION_CODE)." >&2
   echo "       Write fastlane/metadata/android/en-US/changelogs/$VERSION_CODE.txt" >&2
   echo "       before releasing — see docs/RELEASING.md step 3." >&2

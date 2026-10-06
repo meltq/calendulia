@@ -1,0 +1,57 @@
+name: Android build environment
+description: JDK 17, Android SDK + build tools, Gradle cache and jq for the release and beta pipelines.
+runs:
+  using: composite
+  steps:
+    - name: Setup Java
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'zulu'
+        java-version: '17'
+
+    - name: Setup Android SDK
+      uses: android-actions/setup-android@v3
+      with:
+        packages: ''
+
+    - name: Setup Android SDK cache
+      uses: actions/cache@v4
+      with:
+        path: /opt/android-sdk
+        key: ${{ runner.os }}-android-sdk-37-36.0.0
+
+    - name: Install Android SDK packages
+      shell: bash
+      run: |
+        yes | sdkmanager --licenses >/dev/null || true
+        sdkmanager \
+          "platform-tools" \
+          "platforms;android-37.0" \
+          "build-tools;36.0.0"
+
+    - name: Setup Gradle cache
+      uses: actions/cache@v4
+      with:
+        path: |
+          ~/.gradle/caches
+          ~/.gradle/wrapper
+        key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
+        restore-keys: |
+          ${{ runner.os }}-gradle-
+
+    - name: Install jq
+      shell: bash
+      run: |
+        set -e
+        SUDO=""
+        if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
+        if command -v apt-get >/dev/null 2>&1; then
+          $SUDO apt-get update
+          $SUDO apt-get install -y jq
+        elif command -v apk >/dev/null 2>&1; then
+          $SUDO apk add --no-cache jq
+        fi
+
+    - name: Grant execute permission for gradlew
+      shell: bash
+      run: chmod +x ./gradlew

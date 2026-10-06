@@ -26,8 +26,12 @@ android {
         // These committed values ARE the source of truth for a release: merging
         // a bumped versionName into main triggers .gitea/workflows/release.yaml,
         // which builds this version and then creates the matching vX.Y.Z tag +
-        // release itself (versionCode is pinned to MAJOR*10000 + MINOR*100 +
-        // PATCH from versionName, e.g. 2.7.2 -> 20702). See docs/RELEASING.md.
+        // release itself. A versionName of X.Y.Z-beta.N pushed to a release/*
+        // branch instead cuts a Codeberg-only pre-release (beta.yaml).
+        // versionCode is derived from versionName by scripts/version_info.sh
+        // (up to 2.22.3: 2.22.3 -> 22203; from 2.22.4: 2.23.0-beta.1 -> 2230001,
+        // 2.22.4 -> 2220499), and CI fails if the committed one doesn't match.
+        // See docs/RELEASING.md.
         versionCode = 22203
         versionName = "2.22.3"
 

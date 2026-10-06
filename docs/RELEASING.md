@@ -5,34 +5,56 @@ built, signed, and published automatically by `.gitea/workflows/release.yaml`
 when a **bumped `versionName` reaches `main`** — the pipeline then creates the
 matching `vX.Y.Z` tag and Gitea release itself.
 
+Before a stable release you can ship **betas** (`X.Y.Z-beta.N`) from the
+release branch. They go to **Codeberg only**, flagged as pre-releases; F-Droid
+and Play never see them. See [Cutting a beta](#cutting-a-beta).
+
 ## Versioning — the committed version is the source of truth
 
 A release is defined by the `versionName`/`versionCode` committed in
 `app/build.gradle.kts`:
 
-- `versionName` = `MAJOR.MINOR.PATCH` (e.g. `2.1.0`)
-- `versionCode` = `MAJOR*10000 + MINOR*100 + PATCH` (`2.1.0` → `20100`)
+- `versionName` = `MAJOR.MINOR.PATCH` (e.g. `2.22.4`), or
+  `MAJOR.MINOR.PATCH-beta.N` for a beta (e.g. `2.23.0-beta.2`)
+- `versionCode` is derived from it by `scripts/version_info.sh`:
 
-So `MINOR` and `PATCH` each have room for 0–99. The release pipeline reads
+| `versionName` | `versionCode` | Example |
+| --- | --- | --- |
+| `X.Y.Z` up to 2.22.3 (legacy) | `X*10000 + Y*100 + Z` | `2.22.3` → `22203` |
+| `X.Y.Z-beta.N` (N = 1–98) | `X*1000000 + Y*10000 + Z*100 + N` | `2.23.0-beta.2` → `2230002` |
+| `X.Y.Z` from 2.22.4 | `X*1000000 + Y*10000 + Z*100 + 99` | `2.22.4` → `2220499` |
+
+A beta's code sits below its own stable release and above everything before
+it, so a beta install updates in place to the next beta and then to the stable
+version. Every version up to 2.22.3 keeps the code it already shipped with, and
+`2.22.4` is the first on the new scheme. `MINOR` and `PATCH` each have room for
+0–99. Run `scripts/version_info.sh` to see what the committed version resolves
+to; CI fails a PR whose committed `versionCode` doesn't match, because the
+official F-Droid repo builds the tag exactly as committed.
+
+The release pipeline reads
 `versionName`, pins `versionCode` to the derived value, builds, and — once the
 APK is published — creates the tag `v<versionName>` at that commit. The tag is
 an **output** of a successful release, not its trigger, so a tag always marks a
 fully-shipped version (and a failure before publish leaves no tag, so re-running
 the workflow safely retries).
 
-Published version codes so far: `v0.1.0`→100 … `v1.0.0`→10000 … `v2.0.0`→20000.
+Published version codes so far: `v0.1.0`→100 … `v2.0.0`→20000 …
+`v2.22.3`→22203, then `v2.22.4`→2220499.
 
 ## Cutting a release
 
 1. **Assemble the release branch.** Create `release/vX.Y.Z` and merge the
    feature/fix branches that make up this release into it. This branch is the
    release candidate — everything below happens on it, before it reaches `main`.
+   To ship betas first, follow [Cutting a beta](#cutting-a-beta) from here and
+   come back to step 2 when going stable.
 2. Move the `## [Unreleased]` section of `CHANGELOG.md` under a new
    `## [X.Y.Z] — <date>` heading (Keep a Changelog format). The text between
    that heading and the next `## [` becomes both the Gitea release notes and
    the F-Droid per-version changelog.
-3. Bump the committed `versionName` (and `versionCode`) in
-   `app/build.gradle.kts` to the new version. **This bump is what triggers the
+3. Bump the committed `versionName` (and `versionCode`, which
+   `scripts/version_info.sh` prints) in `app/build.gradle.kts` to the new version. **This bump is what triggers the
    release** when the branch merges to `main`. Then write the per-version
    "What's New" by hand to
    `fastlane/metadata/android/en-US/changelogs/<versionCode>.txt` and commit it.
@@ -89,6 +111,48 @@ Published version codes so far: `v0.1.0`→100 … `v1.0.0`→10000 … `v2.0.0`
 > The `releaseTest` build type exists only for step 4 — it is never published.
 > The pipeline always builds and signs the real `release` variant.
 
+## Cutting a beta
+
+A beta is a test build of the next version, published as a **pre-release on
+Codeberg** and nowhere else. It is signed with the real app key, so testers
+install it over their stable install and it updates in place to later betas
+and to the stable release.
+
+1. **On `release/vX.Y.Z`**, with the features merged in, set
+   `versionName = "X.Y.Z-beta.1"` and the matching `versionCode`
+   (`scripts/version_info.sh` prints it; `2.23.0-beta.1` → `2230001`).
+   No What's New file — betas don't ship to the stores. Notes come from a
+   `## [X.Y.Z-beta.N]` section of `CHANGELOG.md` if you write one, otherwise
+   from `## [Unreleased]`. So keep the entries under `## [Unreleased]` while
+   betas are going out and only move them to `## [X.Y.Z]` when going stable:
+   once they're moved, a beta's notes come out empty.
+2. **Optionally verify it on a device** with `scripts/verify-release.sh`, as for
+   a stable release.
+3. **Push the branch to Codeberg.** When it reaches Gitea, `beta.yaml` sees a
+   beta whose Codeberg pre-release doesn't carry its APK yet, runs the unit
+   tests, builds and signs the APK, creates the `vX.Y.Z-beta.1` tag + a Gitea
+   pre-release (with the R8 mapping) and publishes the **Codeberg
+   pre-release** with the APK + `.sha256`. If that publish fails part-way, the
+   next push of the branch redoes it.
+4. **Next round:** bump to `-beta.2` (and its `versionCode`) and push again.
+5. **Going stable:** set `versionName = "X.Y.Z"` and its `versionCode`
+   (`2.23.0` → `2230099`), then continue from step 2 of
+   [Cutting a release](#cutting-a-release).
+
+Who gets a beta:
+
+- **Obtainium** users only with *Include prereleases* switched on for the app.
+  That is how a tester opts in; everyone else stays on stable.
+- **F-Droid** (self-hosted and official) never: `beta.yaml` doesn't touch the
+  self-hosted repo, and the official recipe's `UpdateCheckMode: Tags ^v[0-9.]+$`
+  ignores `-beta` tags. Keep that pattern if the recipe ever changes.
+- **Play** never.
+
+Guards: a beta version can't reach `main` (CI fails the PR, and `release.yaml`'s
+`detect` refuses one as a backstop), `beta.yaml` refuses a beta that isn't
+newer than the latest stable release, and betas start at 2.22.4 (the legacy
+codes have no room below them).
+
 ## What the pipeline does
 
 CI and release are split so a change is built once on its PR and only does
@@ -108,6 +172,10 @@ release work when a merge actually cuts a release:
   mirror the release to **Codeberg** with the signed APK + a SHA-256 checksum
   (both best-effort). Ordinary merges with no version bump fall through `detect`
   and do nothing.
+- **`beta.yaml`** (on push to `release/**`) — when the committed `versionName`
+  is a beta with no tag yet: unit tests, build & sign with the app key, Gitea
+  pre-release with the R8 mapping, Codeberg pre-release with the APK +
+  `.sha256`. Nothing else; see [Cutting a beta](#cutting-a-beta).
 - **`play` job** (same workflow, after `release`) — uploads the App Bundle to
   Google Play. Runs last and separately so a Play rejection can't endanger a
   release that already shipped; skips cleanly until Play is configured.

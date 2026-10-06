@@ -136,7 +136,8 @@ For automatic updates from Codeberg, use
 [add Calendula in one tap](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://codeberg.org/jlmakiola/calendula),
 or add it by hand: *Add App*, paste `https://codeberg.org/jlmakiola/calendula`,
 then *Add*. Obtainium then watches the releases and tells you when a new one
-is out.
+is out. Betas of upcoming versions are published there too, as pre-releases; to
+test them, switch on *Include prereleases* for Calendula in Obtainium.
 
 ### Google Play
 

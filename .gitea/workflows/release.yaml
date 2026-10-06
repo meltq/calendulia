@@ -7,7 +7,9 @@ name: Release — F-Droid repo + Gitea/Codeberg release + Play
 # that release to Codeberg with the signed APK + a SHA-256 checksum as a
 # direct-download channel — the tag is an output of the pipeline, not its
 # trigger. Ordinary merges (no version bump) fall through `detect` and do
-# nothing.
+# nothing. Betas (X.Y.Z-beta.N) never come through here: beta.yaml cuts them
+# from release/* branches as Codeberg-only pre-releases, and `detect` refuses
+# one that reaches main.
 #
 # A trailing `play` job then uploads the App Bundle to Google Play. It is last
 # and separate because Play is the only channel that can reject a good build for
@@ -54,56 +56,28 @@ jobs:
 
       - name: Resolve version and whether it is a new release
         id: v
-        env:
-          # Tags are read from Codeberg, which is canonical — deliberately NOT
-          # from the Gitea API this workflow runs on. The Codeberg -> Gitea sync
-          # is a push mirror, i.e. `git push --mirror`, which deletes refs the
-          # source does not have. A tag minted here on Gitea is therefore wiped
-          # by the next sync (Codeberg does not have it yet) and only reappears
-          # once the tag push at the end of this workflow propagates back.
-          # Asking Gitea inside that window would report "no tag" for a release
-          # that already shipped, and cut it a second time.
-          # Public repo, so this read needs no token.
-          TAG_API: https://codeberg.org/api/v1/repos/jlmakiola/calendula
         run: |
           set -e
-          VERSION=$(grep -oP 'versionName\s*=\s*"\K[^"]+' app/build.gradle.kts)
-          if [ -z "$VERSION" ]; then echo "No versionName in app/build.gradle.kts" >&2; exit 1; fi
-          MAJOR=$(echo "$VERSION" | cut -d. -f1); MINOR=$(echo "$VERSION" | cut -d. -f2); PATCH=$(echo "$VERSION" | cut -d. -f3)
-          MAJOR=${MAJOR:-0}; MINOR=${MINOR:-0}; PATCH=${PATCH:-0}
-          VERSION_CODE=$(( MAJOR * 10000 + MINOR * 100 + PATCH ))
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "version_code=$VERSION_CODE" >> "$GITHUB_OUTPUT"
-          echo "Resolved version $VERSION (code $VERSION_CODE)"
+          INFO=$(bash scripts/version_info.sh)
+          echo "$INFO"
+          echo "$INFO" >> "$GITHUB_OUTPUT"
+          VERSION=$(echo "$INFO" | sed -n 's/^version=//p')
+          CHANNEL=$(echo "$INFO" | sed -n 's/^channel=//p')
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "Manual dispatch — re-sign path, not a release."
             echo "is_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-          # A tag for this version already existing means the release shipped on
-          # an earlier push; do nothing. Absent => this merge cuts the release.
-          #
-          # Anything other than a clean 200/404 is treated as fatal rather than
-          # as "no tag". A Codeberg outage or a network blip would otherwise
-          # read as absent and re-cut a release that has already shipped —
-          # republishing to F-Droid and Play. Failing here is recoverable; a
-          # duplicate release is not.
-          STATUS=$(curl -s -o /dev/null -w '%{http_code}' "$TAG_API/git/refs/tags/v$VERSION" || echo 000)
-          case "$STATUS" in
-            200)
-              echo "Tag v$VERSION already exists on Codeberg — nothing to release."
-              echo "is_release=false" >> "$GITHUB_OUTPUT"
-              ;;
-            404)
-              echo "No tag for v$VERSION on Codeberg yet — cutting the release."
-              echo "is_release=true" >> "$GITHUB_OUTPUT"
-              ;;
-            *)
-              echo "Codeberg tag lookup for v$VERSION returned HTTP $STATUS." >&2
-              echo "Refusing to guess: treating this as 'no tag' could re-cut a shipped release." >&2
-              exit 1
-              ;;
-          esac
+          # Backstop for CI's guard: betas ship from release/* via beta.yaml.
+          if [ "$CHANNEL" != "stable" ]; then
+            echo "versionName $VERSION on main is a beta. Set the stable version before merging to main." >&2
+            exit 1
+          fi
+          # Tags are read from Codeberg, the canonical forge: a tag minted here is
+          # wiped by the next mirror sync until Codeberg has it. A lookup error is
+          # fatal, since guessing "no tag" would re-cut a shipped release.
+          GATE=$(bash scripts/release_gate.sh)
+          echo "is_release=${GATE#cut=}" >> "$GITHUB_OUTPUT"
 
   # Releases: build + sign + publish, then mint the tag and Gitea release.
   # Also runs on manual dispatch, where it skips the build and just re-signs and
@@ -124,65 +98,13 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Setup Java
-        uses: actions/setup-java@v4
-        with:
-          distribution: 'zulu'
-          java-version: '17'
+      - name: Android build environment
+        uses: ./.gitea/actions/android-env
 
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v3
-        with:
-          packages: ''
-
-      - name: Setup Android SDK cache
-        uses: actions/cache@v4
-        with:
-          path: /opt/android-sdk
-          key: ${{ runner.os }}-android-sdk-37-36.0.0
-
-      - name: Install Android SDK packages
-        run: |
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager \
-            "platform-tools" \
-            "platforms;android-37.0" \
-            "build-tools;36.0.0"
-
-      - name: Setup Gradle cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/.gradle/caches
-            ~/.gradle/wrapper
-          key: ${{ runner.os }}-gradle-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties', 'gradle/libs.versions.toml') }}
-          restore-keys: |
-            ${{ runner.os }}-gradle-
-
-      - name: Install jq
-        run: |
-          set -e
-          SUDO=""
-          if command -v sudo >/dev/null 2>&1; then SUDO="sudo"; fi
-          if command -v apt-get >/dev/null 2>&1; then
-            $SUDO apt-get update
-            $SUDO apt-get install -y jq
-          elif command -v apk >/dev/null 2>&1; then
-            $SUDO apk add --no-cache jq
-          fi
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x ./gradlew
-
-      # The committed versionName is the source of truth. Pin versionCode to the
-      # value derived from it so the published APK's code is always
-      # MAJOR*10000 + MINOR*100 + PATCH even if the committed code was forgotten.
+      # The committed versionName is the source of truth; pin the derived code.
       - name: Pin versionCode to versionName
         if: env.IS_RELEASE == 'true'
-        run: |
-          set -e
-          sed -i "s/versionCode = .*/versionCode = $VERSION_CODE/" app/build.gradle.kts
-          grep -E 'versionName|versionCode' app/build.gradle.kts
+        run: bash scripts/version_info.sh --pin
 
       # Test the exact commit being shipped (only on a real release).
       - name: Unit tests
@@ -195,15 +117,7 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
-        run: |
-          mkdir -p app
-          echo "$KEYSTORE_BASE64" | base64 --decode > app/upload-keystore.jks
-          cat > key.properties <<EOF
-          storePassword=$KEY_PASSWORD
-          keyPassword=$KEY_PASSWORD
-          keyAlias=$KEY_ALIAS
-          storeFile=upload-keystore.jks
-          EOF
+        run: bash scripts/write_keystore.sh
 
       - name: Build release APK
         if: env.IS_RELEASE == 'true'
@@ -312,6 +226,7 @@ jobs:
       # Creating it with target_commitish makes Gitea create the vX.Y.Z tag at
       # this commit, so the tag only ever marks a fully-shipped release (and a
       # failure before here leaves no tag, so re-running the workflow retries).
+      # Also attaches the R8 mapping, best-effort.
       - name: Create tag + Gitea release
         if: env.IS_RELEASE == 'true'
         env:
@@ -320,74 +235,10 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -e
-          TAG="v$VERSION"
-          # Notes = this version's CHANGELOG section.
-          awk -v ver="$VERSION" '
-            $0 ~ "^## \\[" ver "\\]" { flag = 1; next }
-            /^## \[/ { flag = 0 }
-            flag' CHANGELOG.md > release-notes.md
-          sed -i -e '/./,$!d' release-notes.md
-          if [ ! -s release-notes.md ]; then
-            echo "_No changelog entry for ${VERSION} — see CHANGELOG.md._" > release-notes.md
-          fi
-          python3 - "$TAG" "$SHA" <<'PY' > payload.json
-          import json, sys
-          print(json.dumps({
-              "tag_name": sys.argv[1],
-              "target_commitish": sys.argv[2],
-              "name": sys.argv[1],
-              "body": open("release-notes.md").read(),
-              "draft": False,
-              "prerelease": False,
-          }))
-          PY
-          # Upsert (re-run safe): PATCH if a release for the tag already exists,
-          # else POST a new one (which also creates the tag at target_commitish).
-          curl -s -H "Authorization: token $TOKEN" "$API/releases/tags/$TAG" > existing.json
-          ID=$(jq -r '.id // empty' existing.json 2>/dev/null || true)
-          if [ -n "$ID" ]; then
-            CODE=$(curl -s -o response.json -w '%{http_code}' -X PATCH \
-              -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
-              -d @payload.json "$API/releases/$ID")
-            OK=200
-          else
-            CODE=$(curl -s -o response.json -w '%{http_code}' -X POST \
-              -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
-              -d @payload.json "$API/releases")
-            OK=201
-          fi
-          cat response.json
-          if [ "$CODE" != "$OK" ]; then
-            echo "Release upsert failed with HTTP $CODE (expected $OK)" >&2
-            exit 1
-          fi
-          echo "Created/updated release $TAG at $SHA"
-
-      # Archive the R8 mapping so user crash stacktraces stay deobfuscatable.
-      # Attached to the release (it's not an APK, so it fits the no-binaries
-      # rule). Best-effort: never fail a release over it.
-      - name: Attach R8 mapping to Gitea release
-        if: env.IS_RELEASE == 'true'
-        continue-on-error: true
-        env:
-          TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          API: ${{ github.server_url }}/api/v1/repos/${{ github.repository }}
-        run: |
-          set -e
-          MAP="app/build/outputs/mapping/release/mapping.txt"
-          if [ ! -f "$MAP" ]; then echo "No mapping.txt (R8 off?) — skipping."; exit 0; fi
-          TAG="v$VERSION"
-          ASSET="mapping-${VERSION}.txt.gz"
-          gzip -c "$MAP" > "/tmp/$ASSET"
-          ID=$(curl -s -H "Authorization: token $TOKEN" "$API/releases/tags/$TAG" | jq -r '.id // empty')
-          if [ -z "$ID" ]; then echo "Could not resolve release id — skipping."; exit 0; fi
-          # Replace any prior asset of the same name (re-run safe).
-          OLD=$(curl -s -H "Authorization: token $TOKEN" "$API/releases/$ID/assets" \
-            | jq -r --arg n "$ASSET" '.[] | select(.name==$n) | .id')
-          [ -n "$OLD" ] && curl -s -X DELETE -H "Authorization: token $TOKEN" "$API/releases/$ID/assets/$OLD" >/dev/null || true
-          curl -s -X POST -H "Authorization: token $TOKEN" \
-            -F "attachment=@/tmp/$ASSET" \
-            "$API/releases/$ID/assets?name=$ASSET" -o /dev/null -w "asset upload HTTP %{http_code}\n"
+          bash scripts/release_notes.sh "$VERSION" > release-notes.md
+          TAG="v$VERSION" PRERELEASE=false NOTES_FILE=release-notes.md \
+            MAPPING=app/build/outputs/mapping/release/mapping.txt \
+            bash scripts/publish_gitea_release.sh
 
       # Mirror the release to the Codeberg mirror as a direct-download channel
       # for users who don't want F-Droid. Gitea already push-mirrors branches +
@@ -406,84 +257,10 @@ jobs:
           SHA: ${{ github.sha }}
         run: |
           set -e
-          if [ -z "${TOKEN:-}" ]; then
-            echo "CODEBERG_RELEASE_TOKEN not set — skipping Codeberg publish."
-            exit 0
-          fi
-          TAG="v$VERSION"
-          APK="app/build/outputs/apk/release/app-release.apk"
-          if [ ! -f "$APK" ]; then echo "No release APK found — skipping." >&2; exit 1; fi
-          ASSET_APK="calendula_v${VERSION}.apk"
-          ASSET_SUM="${ASSET_APK}.sha256"
-          cp "$APK" "/tmp/$ASSET_APK"
-          ( cd /tmp && sha256sum "$ASSET_APK" > "$ASSET_SUM" )
-
-          # Release notes: reuse the section extracted for the Gitea release,
-          # fall back to the CHANGELOG entry if that step's file is gone.
-          if [ ! -s release-notes.md ]; then
-            awk -v ver="$VERSION" '
-              $0 ~ "^## \\[" ver "\\]" { flag = 1; next }
-              /^## \[/ { flag = 0 }
-              flag' CHANGELOG.md > release-notes.md
-            sed -i -e '/./,$!d' release-notes.md
-          fi
-          [ -s release-notes.md ] || echo "_See CHANGELOG.md for ${VERSION}._" > release-notes.md
-          # The pipeline creates the tag via the Gitea API, which the push mirror
-          # (sync_on_commit only fires on real git pushes) doesn't propagate
-          # promptly — so a release POST that carries a target_commitish can
-          # outrun the mirror and 500 on a commit/tag Codeberg hasn't received.
-          # Push the tag straight to Codeberg so it's guaranteed present, then
-          # attach the release to that existing tag with NO target_commitish
-          # (which is what triggered the 500).
-          git tag -f "$TAG" "$SHA"
-          git push -f "https://jlmakiola:${TOKEN}@codeberg.org/jlmakiola/calendula.git" \
-            "refs/tags/$TAG"
-          python3 - "$TAG" <<'PY' > cb-payload.json
-          import json, sys
-          print(json.dumps({
-              "tag_name": sys.argv[1],
-              "name": sys.argv[1],
-              "body": open("release-notes.md").read(),
-              "draft": False,
-              "prerelease": False,
-          }))
-          PY
-          # Create (or update) the release. Codeberg 500s on a POST/GET against a
-          # tag it has only just received — the release request outruns the
-          # indexing of the ref we pushed a moment ago — so a single attempt kept
-          # failing and skipping the mirror even though the very same call
-          # succeeds seconds later. Retry with backoff, and PATCH in place if a
-          # release already exists (re-run safe). A 5xx body still exits curl 0,
-          # so the loop, not `set -e`, controls the flow.
-          ID=""
-          for attempt in 1 2 3 4 5 6; do
-            EXIST=$(curl -s -H "Authorization: token $TOKEN" "$API/releases/tags/$TAG" | jq -r '.id // empty' 2>/dev/null || true)
-            if [ -n "$EXIST" ]; then
-              curl -s -o /dev/null -w "release PATCH HTTP %{http_code}\n" -X PATCH \
-                -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
-                -d @cb-payload.json "$API/releases/$EXIST"
-              ID="$EXIST"; break
-            fi
-            CODE=$(curl -s -o cb-response.json -w "%{http_code}" -X POST \
-              -H "Authorization: token $TOKEN" -H "Content-Type: application/json" \
-              -d @cb-payload.json "$API/releases")
-            echo "release POST attempt $attempt HTTP $CODE"
-            ID=$(jq -r '.id // empty' cb-response.json 2>/dev/null || true)
-            [ -n "$ID" ] && break
-            sleep $((attempt * 10))
-          done
-          if [ -z "$ID" ]; then echo "Could not resolve Codeberg release id after retries." >&2; exit 1; fi
-
-          # Attach APK + checksum, replacing any prior asset of the same name.
-          for A in "$ASSET_APK" "$ASSET_SUM"; do
-            OLD=$(curl -s -H "Authorization: token $TOKEN" "$API/releases/$ID/assets" \
-              | jq -r --arg n "$A" '.[] | select(.name==$n) | .id')
-            [ -n "$OLD" ] && curl -s -X DELETE -H "Authorization: token $TOKEN" "$API/releases/$ID/assets/$OLD" >/dev/null || true
-            curl -s -X POST -H "Authorization: token $TOKEN" \
-              -F "attachment=@/tmp/$A" \
-              "$API/releases/$ID/assets?name=$A" -o /dev/null -w "asset $A HTTP %{http_code}\n"
-          done
-          echo "Published $TAG to Codeberg."
+          [ -s release-notes.md ] || bash scripts/release_notes.sh "$VERSION" > release-notes.md
+          TAG="v$VERSION" PRERELEASE=false NOTES_FILE=release-notes.md \
+            APK=app/build/outputs/apk/release/app-release.apk \
+            bash scripts/publish_codeberg_release.sh
 
       # Play takes an App Bundle, not the APK, so it is a second artifact from
       # the same source and the same signing config — not a repackage of the
