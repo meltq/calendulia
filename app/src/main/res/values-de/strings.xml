@@ -715,4 +715,16 @@
         <item quantity="one">%d Termin konnte nicht hinzugefügt werden.</item>
         <item quantity="other">%d Termine konnten nicht hinzugefügt werden.</item>
     </plurals>
+    <string name="app_name_calendar_alias">Kalender</string>
+    <string name="timeline_earlier_events">Frühere Termine</string>
+    <string name="timeline_later_events">Spätere Termine</string>
+    <string name="link_open_failed">Keine App kann diesen Link öffnen</string>
+    <string name="reminder_day_today">Heute</string>
+    <plurals name="view_multi_day">
+        <item quantity="one">%d Tag</item>
+        <item quantity="other">%d Tage</item>
+    </plurals>
+    <string name="settings_visible_hours">Sichtbare Stunden</string>
+    <string name="settings_visible_hours_start">Von</string>
+    <string name="settings_visible_hours_end">Bis</string>
 </resources>
