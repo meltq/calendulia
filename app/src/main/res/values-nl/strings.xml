@@ -377,7 +377,7 @@
     <string name="settings_today_toolbar">Knop Vandaag in werkbalk</string>
     <string name="settings_today_toolbar_summary">Een knop om naar vandaag te gaan tonen in de werkbalk, in plaats van een zwevende knop</string>
     <string name="settings_app_name">Appnaam</string>
-    <string name="settings_app_name_summary">Calendula als “Calendar” tonen in je launcher. Alleen de naam in de launcher verandert; het pictogram kan na het wisselen op een andere plek komen te staan.</string>
+    <string name="settings_app_name_summary">Calendula als “Agenda” tonen in je launcher. Alleen de naam in de launcher verandert; het pictogram kan na het wisselen op een andere plek komen te staan.</string>
     <string name="settings_time_format">Tijdnotatie</string>
     <string name="settings_time_format_auto">Automatisch</string>
     <string name="settings_time_format_12h">12-uursnotatie (2:00 PM)</string>
@@ -694,4 +694,26 @@
     <string name="special_dates_default_title_birthday">Verjaardag van {name} ({year})</string>
     <string name="special_dates_default_title_anniversary">Jubileum van {name} ({year})</string>
     <string name="special_dates_default_title_custom">{name}</string>
+    <string name="app_name_calendar_alias">Agenda</string>
+    <string name="month_open_week">Week %1$d openen</string>
+    <string name="month_split_clear_filter">Agenda van de hele maand tonen</string>
+    <string name="timeline_earlier_events">Eerdere gebeurtenissen</string>
+    <string name="timeline_later_events">Latere gebeurtenissen</string>
+    <string name="event_detail_open_in_maps">Op kaart tonen</string>
+    <string name="link_open_failed">Er is geen app die deze link kan openen</string>
+    <string name="reminder_day_today">Vandaag</string>
+    <plurals name="view_multi_day">
+        <item quantity="one">%d dag</item>
+        <item quantity="other">%d dagen</item>
+    </plurals>
+    <string name="settings_multi_day_count">Meerdaagse weergave</string>
+    <string name="settings_multi_day_count_hint">Hoeveel dagen de meerdaagse weergave naast elkaar toont. Vandaag staat in de eerste kolom.</string>
+    <string name="settings_timeline_scale_by_visible_hours">Ingesteld via Zichtbare uren</string>
+    <string name="settings_visible_hours">Zichtbare uren</string>
+    <string name="settings_visible_hours_summary">Een reeks uren passend op het scherm tonen bij het openen van de week-, meerdaagse of dagweergave</string>
+    <string name="settings_visible_hours_on_summary">%1$s – %2$s vult het scherm bij het openen van een weergave</string>
+    <string name="settings_visible_hours_start">Van</string>
+    <string name="settings_visible_hours_end">Tot</string>
+    <string name="settings_visible_hours_start_hint">Het uur bovenaan het scherm bij het openen van de week-, meerdaagse of dagweergave. Eerdere uren blijven bereikbaar door te scrollen.</string>
+    <string name="settings_visible_hours_end_hint">Het uur onderaan het scherm bij het openen van een weergave. Latere uren blijven bereikbaar door te scrollen, en in- of uitzoomen met twee vingers geldt totdat de weergave opnieuw wordt geopend.</string>
 </resources>
