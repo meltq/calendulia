@@ -12,8 +12,10 @@ the package list (recurring writes, save conflicts, reminder delivery).
    straight back to it. Sync is DAVx5's / Google's / the system's job.
 2. **Observer-driven UI.** A `ContentObserver` on the provider triggers
    re-queries; every screen recomposes from fresh provider state. After a
-   write, nothing is patched by hand — the provider notifies, the views
-   refresh. This also covers external changes (sync) for free.
+   write, nothing is patched by hand — the views refresh from the provider.
+   This also covers external changes (sync) for free. Some providers don't
+   reliably notify (#364), so the repository also re-queries after each of
+   its own writes, and `MainActivity` does on every return to the foreground.
 3. **JVM-first testing.** Everything between the UI and the
    `ContentResolver` is shaped so it runs as a plain JUnit 5 test: pure
    domain logic, cursor-free mappers, a `FakeCalendarDataSource` for

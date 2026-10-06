@@ -96,6 +96,45 @@ class CalendarRepositoryImplTest {
     }
 
     @Test
+    fun `instances re-emit after a write the provider never notified about`(@TempDir tempDir: Path) = runTest {
+        var current = listOf(makeEvent(10L))
+        val fake = FakeCalendarDataSource().apply { instancesResult = { _, _ -> current } }
+        val repo = CalendarRepositoryImpl(fake, newPrefs(tempDir), newSettings(tempDir), UnconfinedTestDispatcher(testScheduler))
+
+        val range = Instant.fromEpochMilliseconds(0)..Instant.fromEpochMilliseconds(10_000L)
+        repo.instances(range).test {
+            assertThat(awaitItem().map { it.eventId }).containsExactly(10L)
+
+            current = emptyList()
+            repo.deleteEvent(10L)
+
+            assertThat(awaitItem()).isEmpty()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
+    fun `instances re-emit after a write that failed`(@TempDir tempDir: Path) = runTest {
+        var current = listOf(makeEvent(10L))
+        val fake = FakeCalendarDataSource().apply {
+            instancesResult = { _, _ -> current }
+            writeError = WriteFailedException("boom")
+        }
+        val repo = CalendarRepositoryImpl(fake, newPrefs(tempDir), newSettings(tempDir), UnconfinedTestDispatcher(testScheduler))
+
+        val range = Instant.fromEpochMilliseconds(0)..Instant.fromEpochMilliseconds(10_000L)
+        repo.instances(range).test {
+            awaitItem()
+
+            current = emptyList()
+            assertThrows<WriteFailedException> { repo.deleteOccurrence(10L, 1_000L) }
+
+            assertThat(awaitItem()).isEmpty()
+            cancelAndIgnoreRemainingEvents()
+        }
+    }
+
+    @Test
     fun `instances forwards epoch-millis bounds to data source`(@TempDir tempDir: Path) = runTest {
         var observedBegin: Long? = null
         var observedEnd: Long? = null
