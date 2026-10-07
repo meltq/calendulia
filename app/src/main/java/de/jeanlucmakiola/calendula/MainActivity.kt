@@ -26,6 +26,7 @@ import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dagger.hilt.android.AndroidEntryPoint
+import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.domain.EventForm
@@ -56,12 +57,15 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Instant
+import javax.inject.Inject
 
 /** A prefilled create form from an external launch, with the source it came from. */
 private data class InsertRequest(val form: EventForm, val source: ImportSource)
 
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
+
+    @Inject lateinit var calendarRepository: CalendarRepository
 
     // Which of light/dark the system bars are drawn for. The styles installed
     // in onCreate read this field live, so androidx's config-change replay
@@ -243,6 +247,12 @@ class MainActivity : AppCompatActivity() {
             statusBarStyle = SystemBarStyle.auto(transparent, transparent) { systemBarsDark },
             navigationBarStyle = SystemBarStyle.auto(transparent, transparent) { systemBarsDark },
         )
+    }
+
+    override fun onStart() {
+        super.onStart()
+        // Changes made while we were away may never have notified us (#364).
+        calendarRepository.refresh()
     }
 
     override fun onResume() {

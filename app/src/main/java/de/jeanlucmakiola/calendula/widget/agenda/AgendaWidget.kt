@@ -5,8 +5,14 @@ import de.jeanlucmakiola.calendula.widget.glanceDeclinedDecoration
 import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.glance.ColorFilter
@@ -28,6 +34,7 @@ import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
 import androidx.glance.currentState
+import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -125,7 +132,8 @@ class AgendaWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Single
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val data = context.loadAgendaWidgetData()
+        val stored = getAppWidgetState<Preferences>(context, id)[AGENDA_RANGE_KEY]
+        val data = context.loadAgendaWidgetData(stored?.let { parseAgendaRange(it, AgendaRange.Month) })
         val dark = (context.resources.configuration.uiMode and
             Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         provideContent {
@@ -190,71 +198,95 @@ private fun AgendaWidgetBody(data: AgendaWidgetData, dark: Boolean) {
             AgendaWidgetData.NeedsPermission -> WidgetMessage(R.string.widget_needs_permission, metrics)
             is AgendaWidgetData.Ready -> {
                 // Range read reactively from per-instance Glance state (falls back
-                // to the saved pref for a freshly placed widget), then the wide
-                // pre-loaded window is sliced to it — pure recomposition.
+                // to the saved pref for a freshly placed widget), then the loaded
+                // window is sliced to it — pure recomposition.
                 val range = parseAgendaRange(currentState(AGENDA_RANGE_KEY), data.savedRange)
-                val pastDisplay =
-                    parsePastEventDisplay(currentState(AGENDA_PAST_DISPLAY_KEY), data.savedPastDisplay)
-                val showToday = currentState(AGENDA_SHOW_TODAY_STATE_KEY) ?: data.savedShowToday
-                val rangeEnd = data.today.plus(
-                    range.dayCount(data.today, data.weekStart) - 1,
-                    DateTimeUnit.DAY,
-                )
-                // Slice to the chosen range, then drop finished events (and any day
-                // they leave empty) when the mode is Hide — so "Upcoming" really is.
-                // Finally re-anchor today (as an empty placeholder day) when the
-                // "always show today" pref is on and today has no events left (#35).
-                val visibleDays = anchorTodayIfMissing(
-                    days = data.days
-                        .filter { it.date <= rangeEnd }
-                        .let { days ->
-                            if (pastDisplay == PastEventDisplay.HIDE) {
-                                days.mapNotNull { day ->
-                                    val remaining = day.events.filterNot { it.hasEnded(data.now) }
-                                    if (remaining.isEmpty()) null else day.copy(events = remaining)
-                                }
-                            } else {
-                                days
-                            }
-                        },
-                    today = data.today,
-                    enabled = showToday,
-                )
-                if (visibleDays.isEmpty()) {
-                    WidgetMessage(R.string.agenda_empty_title, metrics)
+                val context = androidx.glance.LocalContext.current
+                var loaded by remember(data) { mutableStateOf<AgendaWidgetData.Ready>(data) }
+                // A range wider than what was loaded reloads in a live session,
+                // where provideGlance doesn't run again (#363).
+                LaunchedEffect(range) {
+                    val end = loaded.today.plus(
+                        range.dayCount(loaded.today, loaded.weekStart) - 1,
+                        DateTimeUnit.DAY,
+                    )
+                    if (end > loaded.loadedThrough) {
+                        (context.loadAgendaWidgetData(range) as? AgendaWidgetData.Ready)
+                            ?.let { loaded = it }
+                    }
+                }
+                AgendaRows(data = loaded, range = range, dark = dark, metrics = metrics)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AgendaRows(
+    data: AgendaWidgetData.Ready,
+    range: AgendaRange,
+    dark: Boolean,
+    metrics: AgendaMetrics,
+) {
+    val pastDisplay =
+        parsePastEventDisplay(currentState(AGENDA_PAST_DISPLAY_KEY), data.savedPastDisplay)
+    val showToday = currentState(AGENDA_SHOW_TODAY_STATE_KEY) ?: data.savedShowToday
+    val rangeEnd = data.today.plus(
+        range.dayCount(data.today, data.weekStart) - 1,
+        DateTimeUnit.DAY,
+    )
+    // Slice to the chosen range, then drop finished events (and any day
+    // they leave empty) when the mode is Hide — so "Upcoming" really is.
+    // Finally re-anchor today (as an empty placeholder day) when the
+    // "always show today" pref is on and today has no events left (#35).
+    val visibleDays = anchorTodayIfMissing(
+        days = data.days
+            .filter { it.date <= rangeEnd }
+            .let { days ->
+                if (pastDisplay == PastEventDisplay.HIDE) {
+                    days.mapNotNull { day ->
+                        val remaining = day.events.filterNot { it.hasEnded(data.now) }
+                        if (remaining.isEmpty()) null else day.copy(events = remaining)
+                    }
                 } else {
-                    val rows = buildList {
-                        visibleDays.forEach { day ->
-                            add(AgendaRow.Header(day.date, data.today))
-                            if (day.events.isEmpty()) {
-                                add(AgendaRow.Placeholder(day.date))
-                            } else {
-                                day.events.forEach { add(AgendaRow.Event(day.date, it)) }
-                            }
-                        }
-                    }
-                        // Bound the payload, then drop a day header the cut left
-                        // stranded with nothing under it.
-                        .take(MAX_AGENDA_ROWS)
-                        .dropLastWhile { it is AgendaRow.Header }
-                    LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
-                        items(rows.size) { index ->
-                            when (val row = rows[index]) {
-                                is AgendaRow.Header -> DayHeaderRow(row.date, row.today, metrics)
-                                is AgendaRow.Placeholder -> PlaceholderRow(row.date, metrics)
-                                is AgendaRow.Event -> EventRow(
-                                    event = row.event,
-                                    day = row.date,
-                                    dark = dark,
-                                    soften = data.soften,
-                                    is24Hour = data.is24Hour,
-                                    dimmed = pastDisplay == PastEventDisplay.DIM &&
-                                        row.event.hasEnded(data.now),
-                                    metrics = metrics,
-                                )
-                            }
-                        }
-                    }
+                    days
+                }
+            },
+        today = data.today,
+        enabled = showToday,
+    )
+    if (visibleDays.isEmpty()) {
+        WidgetMessage(R.string.agenda_empty_title, metrics)
+    } else {
+        val rows = buildList {
+            visibleDays.forEach { day ->
+                add(AgendaRow.Header(day.date, data.today))
+                if (day.events.isEmpty()) {
+                    add(AgendaRow.Placeholder(day.date))
+                } else {
+                    day.events.forEach { add(AgendaRow.Event(day.date, it)) }
+                }
+            }
+        }
+            // Bound the payload, then drop a day header the cut left
+            // stranded with nothing under it.
+            .take(MAX_AGENDA_ROWS)
+            .dropLastWhile { it is AgendaRow.Header }
+        LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
+            items(rows.size) { index ->
+                when (val row = rows[index]) {
+                    is AgendaRow.Header -> DayHeaderRow(row.date, row.today, metrics)
+                    is AgendaRow.Placeholder -> PlaceholderRow(row.date, metrics)
+                    is AgendaRow.Event -> EventRow(
+                        event = row.event,
+                        day = row.date,
+                        dark = dark,
+                        soften = data.soften,
+                        is24Hour = data.is24Hour,
+                        dimmed = pastDisplay == PastEventDisplay.DIM &&
+                            row.event.hasEnded(data.now),
+                        metrics = metrics,
+                    )
                 }
             }
         }

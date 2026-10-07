@@ -5,8 +5,14 @@ import de.jeanlucmakiola.calendula.widget.glanceDeclinedDecoration
 import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
@@ -26,6 +32,7 @@ import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
 import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
+import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
 import androidx.glance.background
 import androidx.glance.currentState
@@ -59,6 +66,7 @@ import de.jeanlucmakiola.calendula.ui.common.eventInk
 import de.jeanlucmakiola.calendula.widget.CalendulaGlanceTheme
 import de.jeanlucmakiola.calendula.widget.MonthWidgetSource
 import de.jeanlucmakiola.calendula.widget.loadMonthWidgetSource
+import de.jeanlucmakiola.calendula.widget.monthIndexOf
 import de.jeanlucmakiola.calendula.widget.systemZone
 import de.jeanlucmakiola.calendula.widget.today
 import de.jeanlucmakiola.calendula.widget.widgetEntryPoint
@@ -81,10 +89,7 @@ private val LANE_HEIGHT = 14.dp
 private val DAY_NUMBER_HEIGHT = 18.dp
 private val GRID_HPADDING = 8.dp
 
-private fun currentMonthIndex(zone: TimeZone): Int {
-    val t = today(zone)
-    return t.year * 12 + t.month.ordinal
-}
+private fun currentMonthIndex(zone: TimeZone): Int = monthIndexOf(today(zone))
 
 private fun yearMonthOf(index: Int): YearMonth =
     YearMonth(index / 12, Month(index % 12 + 1))
@@ -123,7 +128,8 @@ class MonthWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val source = context.loadMonthWidgetSource()
+        val shown = getAppWidgetState<Preferences>(context, id)[MONTH_INDEX_KEY]
+        val source = context.loadMonthWidgetSource(shown)
         val dark = (context.resources.configuration.uiMode and
             Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         // Read fresh (not through the cached source) so toggling the softener
@@ -198,18 +204,28 @@ private fun MonthWidgetBody(source: MonthWidgetSource, dark: Boolean, soften: Bo
                 val zone = systemZone()
                 val index = currentState(MONTH_INDEX_KEY) ?: currentMonthIndex(zone)
                 val ym = yearMonthOf(index)
+                // Paging past the loaded months reloads around the new one in a
+                // live session, where provideGlance doesn't run again.
+                val context = LocalContext.current
+                var loaded by remember(source) { mutableStateOf<MonthWidgetSource.Ready>(source) }
+                LaunchedEffect(index) {
+                    if (index !in loaded.months) {
+                        (context.loadMonthWidgetSource(index) as? MonthWidgetSource.Ready)
+                            ?.let { loaded = it }
+                    }
+                }
                 // Column width from the live widget size, minus our H padding.
                 val colW = (LocalSize.current.width - GRID_HPADDING * 2) / 7
-                val weeks = layoutMonthWeeks(ym, source.weekStart, source.instances, zone)
+                val weeks = layoutMonthWeeks(ym, loaded.weekStart, loaded.instances, zone)
 
-                MonthHeader(label = monthLabel(ym, source.today.year))
+                MonthHeader(label = monthLabel(ym, loaded.today.year))
                 Spacer(GlanceModifier.height(2.dp))
-                WeekdayHeader(weekStart = source.weekStart, colW = colW)
+                WeekdayHeader(weekStart = loaded.weekStart, colW = colW)
                 weeks.forEach { week ->
                     WeekRow(
                         week = week,
                         currentMonth = ym.month,
-                        today = source.today,
+                        today = loaded.today,
                         dark = dark,
                         soften = soften,
                         colW = colW,

@@ -15,6 +15,9 @@ import kotlin.time.Instant
 interface CalendarRepository {
     fun calendars(): Flow<List<CalendarSource>>
     fun instances(range: ClosedRange<Instant>): Flow<List<EventInstance>>
+
+    /** Re-query every open [calendars] / [instances] flow. */
+    fun refresh()
     suspend fun eventDetail(eventId: Long): EventDetail
 
     /**

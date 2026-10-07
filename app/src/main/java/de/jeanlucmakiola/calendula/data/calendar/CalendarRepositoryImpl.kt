@@ -14,6 +14,7 @@ import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.combine
@@ -51,21 +52,37 @@ class CalendarRepositoryImpl @Inject constructor(
     private suspend fun allDayReminderTimeMinutes(): Int =
         settingsPrefs.allDayReminderTimeMinutes.first()
 
+    // DROP_OLDEST: tryEmit never fails, so a tick that lands while a subscriber
+    // still holds the previous one is never lost (#364).
     private val ticks = MutableSharedFlow<Unit>(
         replay = 0,
         extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
     /**
-     * Bumped on every provider notification, so one tick's calendar read can be
+     * Bumped on every [refresh], so one tick's calendar read can be
      * shared by everything that needs it (see [calendarsSnapshot]).
      */
     private val generation = AtomicLong(0L)
 
     init {
-        dataSource.registerChangeListener {
-            generation.incrementAndGet()
-            ticks.tryEmit(Unit)
+        dataSource.registerChangeListener(::refresh)
+    }
+
+    // Writes re-query on their own too: some providers never notify the
+    // observer, which left every view stale until a restart (#364).
+    override fun refresh() {
+        generation.incrementAndGet()
+        ticks.tryEmit(Unit)
+    }
+
+    /** Run a provider write on [io], then re-query whether or not it threw. */
+    private suspend fun <T> write(block: suspend () -> T): T = withContext(io) {
+        try {
+            block()
+        } finally {
+            refresh()
         }
     }
 
@@ -181,7 +198,7 @@ class CalendarRepositoryImpl @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-    ): Long = withContext(io) {
+    ): Long = write {
         dataSource.createLocalCalendar(displayName, color, description)
     }
 
@@ -190,13 +207,13 @@ class CalendarRepositoryImpl @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-    ) = withContext(io) { dataSource.updateCalendar(id, displayName, color, description) }
+    ) = write { dataSource.updateCalendar(id, displayName, color, description) }
 
     override suspend fun deleteCalendar(id: Long) =
-        withContext(io) { dataSource.deleteCalendar(id) }
+        write { dataSource.deleteCalendar(id) }
 
     override suspend fun setCalendarsVisible(ids: Collection<Long>, visible: Boolean) =
-        withContext(io) {
+        write {
             if (dataSource.canWriteCalendars()) {
                 ids.forEach { dataSource.setCalendarVisible(it, visible) }
                 // Nothing of ours is left waiting for the provider once the
@@ -217,7 +234,7 @@ class CalendarRepositoryImpl @Inject constructor(
     override suspend fun importEvents(
         targetCalendarId: Long,
         events: List<ParsedIcsEvent>,
-    ): IcsImportSummary = withContext(io) {
+    ): IcsImportSummary = write {
         val existing = dataSource.existingUids(targetCalendarId)
         // Both are per-calendar, not per-event: looking them up once keeps a
         // thousand-event restore to two extra queries. The palette is the
@@ -268,7 +285,7 @@ class CalendarRepositoryImpl @Inject constructor(
         )
     }
 
-    override suspend fun createEvent(form: EventForm): Long = withContext(io) {
+    override suspend fun createEvent(form: EventForm): Long = write {
         dataSource.insertEvent(form, allDayReminderTimeMinutes())
     }
 
@@ -276,11 +293,11 @@ class CalendarRepositoryImpl @Inject constructor(
         eventId: Long,
         original: EventForm,
         updated: EventForm,
-    ) = withContext(io) {
+    ) = write {
         dataSource.updateEvent(eventId, original, updated, allDayReminderTimeMinutes())
     }
 
-    override suspend fun deleteEvent(eventId: Long) = withContext(io) {
+    override suspend fun deleteEvent(eventId: Long) = write {
         dataSource.deleteEvent(eventId)
     }
 
@@ -289,7 +306,7 @@ class CalendarRepositoryImpl @Inject constructor(
         targetCalendarId: Long,
         original: EventForm,
         updated: EventForm,
-    ): Long = withContext(io) {
+    ): Long = write {
         dataSource.moveEvent(
             eventId, targetCalendarId, original, updated, allDayReminderTimeMinutes(),
         )
@@ -300,7 +317,7 @@ class CalendarRepositoryImpl @Inject constructor(
         beginMillis: Long,
         original: EventForm,
         form: EventForm,
-    ): Long = withContext(io) {
+    ): Long = write {
         dataSource.updateOccurrence(
             eventId, beginMillis, original, form, allDayReminderTimeMinutes(),
         )
@@ -311,20 +328,20 @@ class CalendarRepositoryImpl @Inject constructor(
         beginMillis: Long,
         original: EventForm,
         updated: EventForm,
-    ): Long = withContext(io) {
+    ): Long = write {
         dataSource.updateEventFromOccurrence(
             eventId, beginMillis, original, updated, allDayReminderTimeMinutes(),
         )
     }
 
-    override suspend fun deleteOccurrence(eventId: Long, beginMillis: Long) = withContext(io) {
+    override suspend fun deleteOccurrence(eventId: Long, beginMillis: Long) = write {
         dataSource.deleteOccurrence(eventId, beginMillis)
     }
 
     override suspend fun deleteEventFromOccurrence(
         eventId: Long,
         beginMillis: Long,
-    ) = withContext(io) {
+    ) = write {
         dataSource.deleteEventFromOccurrence(eventId, beginMillis)
     }
 

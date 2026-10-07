@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.4] — 2026-10-07
+
+### Fixed
+- **Edits and deletions show up straight away on every phone.** On some phones, Samsung among them, an edited, moved or deleted event stayed where it was until the app was restarted, so a second edit could act on an event that had already changed. Calendula now refreshes its views itself after every change, and again when you come back to the app ([#364]).
+- **The home-screen widgets do less work per update.** The month widget loads the months around the one it shows instead of more than two years of events, and the agenda widget only its chosen range. This should help widgets that stayed on "loading" on slower phones ([#363]).
+
 ## [2.22.3] — 2026-10-02
 
 ### Fixed
@@ -1835,3 +1841,5 @@ automatically, with zero telemetry and no internet permission.
 [#357]: https://codeberg.org/jlmakiola/calendula/issues/357
 [#359]: https://codeberg.org/jlmakiola/calendula/issues/359
 [#361]: https://codeberg.org/jlmakiola/calendula/issues/361
+[#363]: https://codeberg.org/jlmakiola/calendula/issues/363
+[#364]: https://codeberg.org/jlmakiola/calendula/issues/364

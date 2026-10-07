@@ -610,8 +610,11 @@ class AndroidCalendarDataSource @Inject constructor(
             // cancelled exception for the one instance (#47). A NULL status is a
             // normal, un-cancelled event, so it must survive the filter — a bare
             // `!= CANCELED` would drop it (NULL != 2 is NULL, not true).
-            "${CalendarContract.Instances.STATUS} IS NULL OR " +
-                "${CalendarContract.Instances.STATUS} != ${CalendarContract.Events.STATUS_CANCELED}",
+            // DELETED = 0: a provider that soft-deletes may keep the row's
+            // instances until a purge (#364).
+            "(${CalendarContract.Instances.STATUS} IS NULL OR " +
+                "${CalendarContract.Instances.STATUS} != ${CalendarContract.Events.STATUS_CANCELED}) AND " +
+                "${CalendarContract.Events.DELETED} = 0",
             null,
             CalendarContract.Instances.BEGIN + " ASC",
         )?.use { c -> c.mapAllNotNull { CursorColumnReader(c).toEventInstance() } } ?: emptyList()
