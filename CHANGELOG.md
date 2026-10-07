@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.22.5] — 2026-10-07
+
+### Fixed
+- **Reopening the app the next morning shows the right day.** The month view used to mark yesterday as today and keep the day you picked the evening before selected, so you had to tap today to see its events. Every view now moves on to the new day at midnight and when you come back to the app. A view you browsed to another date stays where it is ([#373]).
+
 ## [2.22.4] — 2026-10-07
 
 ### Fixed
@@ -1843,3 +1848,4 @@ automatically, with zero telemetry and no internet permission.
 [#361]: https://codeberg.org/jlmakiola/calendula/issues/361
 [#363]: https://codeberg.org/jlmakiola/calendula/issues/363
 [#364]: https://codeberg.org/jlmakiola/calendula/issues/364
+[#373]: https://codeberg.org/jlmakiola/calendula/issues/373

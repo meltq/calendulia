@@ -4,12 +4,15 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.data.time.TodaySource
+import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.datetime.LocalDate
 import javax.inject.Inject
 
 /**
@@ -21,7 +24,15 @@ import javax.inject.Inject
 @HiltViewModel
 class CalendarHostViewModel @Inject constructor(
     prefs: SettingsPrefs,
+    todaySource: TodaySource,
 ) : ViewModel() {
+
+    /** Today, kept current across midnight so the shared focus can follow it (#373). */
+    val today: StateFlow<LocalDate> = todaySource.today.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5_000L),
+        initialValue = currentDate(),
+    )
 
     val defaultView: StateFlow<CalendarView?> = prefs.defaultView.stateIn(
         scope = viewModelScope,

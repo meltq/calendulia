@@ -150,6 +150,15 @@ fun CalendarHost(
     // The date every view opens on and carries along (#184); tapping a day
     // anywhere focuses it and opens the day view there.
     val focus = rememberSaveable(saver = ViewFocusSaver) { ViewFocus(localToday()) }
+    // A focus still on yesterday follows the date over, so the next view opened
+    // doesn't land on the old day (#373); one moved elsewhere stays put.
+    val today = viewModel.today.collectAsStateWithLifecycle().value
+    var focusToday by rememberSaveable { mutableStateOf(today.toString()) }
+    LaunchedEffect(today) {
+        val old = LocalDate.parse(focusToday)
+        if (old != today && focus.date == old) focus.date = today
+        focusToday = today.toString()
+    }
 
     val switchScope = rememberCoroutineScope()
     val switchTo: ((List<CalendarView>) -> List<CalendarView>) -> Unit = { move ->

@@ -7,6 +7,8 @@ import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.firstDayOfWeek
+import de.jeanlucmakiola.calendula.data.time.TodaySource
+import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.FailureReason
@@ -45,7 +47,6 @@ import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
 import kotlin.time.Instant
 import javax.inject.Inject
 
@@ -57,6 +58,7 @@ private const val MONTH_CACHE_SPAN = 2
 class MonthViewModel @Inject constructor(
     private val repository: CalendarRepository,
     settingsPrefs: SettingsPrefs,
+    todaySource: TodaySource,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -90,7 +92,18 @@ class MonthViewModel @Inject constructor(
         )
 
     private val todayDate: LocalDate
-        get() = Clock.System.now().toLocalDateTime(zone).date
+        get() = currentDate()
+
+    private var lastToday = todayDate
+
+    /** Today, kept current across midnight so a grid left open doesn't mark yesterday (#373). */
+    val today: StateFlow<LocalDate> = todaySource.today
+        .onEach { date ->
+            val old = lastToday
+            lastToday = date
+            if (old != date) followToday(old, date)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), todayDate)
 
     private val _month = MutableStateFlow(YearMonth(todayDate.year, todayDate.month))
     val month: StateFlow<YearMonth> = _month
@@ -139,8 +152,9 @@ class MonthViewModel @Inject constructor(
         combine(
             repository.calendars(),
             repository.instances(monthGridRange(ym, ws, zone)),
-        ) { calendars, instances ->
-            buildState(ym, ws, calendars, instances)
+            today,
+        ) { calendars, instances, today ->
+            buildState(ym, ws, calendars, instances, today)
         }
             .catch { emit(MonthUiState.Failure(FailureReason.ProviderUnavailable)) }
             .flowOn(io)
@@ -211,8 +225,9 @@ class MonthViewModel @Inject constructor(
                 combine(
                     repository.calendars(),
                     repository.instances(range),
-                ) { calendars, instances ->
-                    buildContinuousState(window, ws, style, calendars, instances)
+                    today,
+                ) { calendars, instances, today ->
+                    buildContinuousState(window, ws, style, calendars, instances, today)
                 }
             }
             // A load landing is the cue to reach further out. Widening from here
@@ -257,6 +272,7 @@ class MonthViewModel @Inject constructor(
         style: MonthViewStyle,
         calendars: List<CalendarSource>,
         instances: List<EventInstance>,
+        today: LocalDate,
     ): ContinuousMonthUiState {
         calendarListFailure(calendars)?.let { return ContinuousMonthUiState.Failure(it) }
         // Bucketed once for the whole window: a row then takes the handful of
@@ -283,7 +299,7 @@ class MonthViewModel @Inject constructor(
             emptyMap()
         }
         return ContinuousMonthUiState.Success(
-            today = todayDate,
+            today = today,
             monthsByIndex = months,
             weeksByIndex = weeks,
             weekStart = weekStart,
@@ -334,6 +350,18 @@ class MonthViewModel @Inject constructor(
     }
 
     /**
+     * The date rolled over from [old] to [new]. A paged grid still on [old]'s
+     * month moves on to [new]'s and drops the day picked yesterday; one browsed
+     * elsewhere stays put. The scrolling styles only repaint the today marker.
+     */
+    private fun followToday(old: LocalDate, new: LocalDate) {
+        if (viewStyle.value.isScrolling) return
+        if (_month.value != YearMonth(old.year, old.month)) return
+        _month.value = YearMonth(new.year, new.month)
+        _selectedDate.value = null
+    }
+
+    /**
      * Track [_month] to the month a scrolling style is showing. Those styles
      * navigate by scroll position and never set [_month] themselves, so it would
      * otherwise sit wherever paged navigation last left it (today's month, on a
@@ -358,12 +386,13 @@ class MonthViewModel @Inject constructor(
         weekStart: DayOfWeek,
         calendars: List<CalendarSource>,
         instances: List<EventInstance>,
+        today: LocalDate,
     ): MonthUiState {
         calendarListFailure(calendars)?.let { return MonthUiState.Failure(it) }
         val weeks = layoutMonthWeeks(ym, weekStart, instances, zone)
         return MonthUiState.Success(
             month = ym,
-            today = todayDate,
+            today = today,
             weeks = weeks,
             instancesByDay = instancesByDay(weeks.flatMap { it.days }, instances, zone),
             zone = zone,

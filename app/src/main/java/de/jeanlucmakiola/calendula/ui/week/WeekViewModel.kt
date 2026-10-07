@@ -7,6 +7,8 @@ import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
+import de.jeanlucmakiola.calendula.data.time.TodaySource
+import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.displayPriority
@@ -27,6 +29,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
@@ -40,7 +43,6 @@ import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import java.util.Locale
-import kotlin.time.Clock
 import kotlin.time.Instant
 import javax.inject.Inject
 import kotlin.math.abs
@@ -73,6 +75,7 @@ fun positionOf(anchor: LocalDate, rule: (LocalDate) -> PageGrid): PagerPosition 
 abstract class PagedTimelineViewModel(
     private val repository: CalendarRepository,
     settingsPrefs: SettingsPrefs,
+    todaySource: TodaySource,
     private val io: CoroutineDispatcher,
     gridRule: Flow<(LocalDate) -> PageGrid>,
     initialRule: (LocalDate) -> PageGrid,
@@ -89,7 +92,7 @@ abstract class PagedTimelineViewModel(
         )
 
     private val todayDate: LocalDate
-        get() = Clock.System.now().toLocalDateTime(zone).date
+        get() = currentDate()
 
     // A day on the visible page; the page itself comes from the grid, so a
     // settings change re-frames the same days instead of jumping.
@@ -102,6 +105,17 @@ abstract class PagedTimelineViewModel(
      */
     val rule: StateFlow<(LocalDate) -> PageGrid> =
         gridRule.stateIn(viewModelScope, SharingStarted.Eagerly, initialRule)
+
+    private var lastToday = todayDate
+
+    /** Today, kept current across midnight so a page left open doesn't mark yesterday (#373). */
+    private val today: StateFlow<LocalDate> = todaySource.today
+        .onEach { date ->
+            val old = lastToday
+            lastToday = date
+            if (old != date) followToday(old, date)
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), todayDate)
 
     private val position: StateFlow<PagerPosition> =
         combine(_anchor, rule) { anchor, rule -> positionOf(anchor, rule) }
@@ -141,8 +155,9 @@ abstract class PagedTimelineViewModel(
         combine(
             repository.calendars(),
             repository.instances(spanRange(span.start, span.count, zone)),
-        ) { calendars, instances ->
-            buildState(span, calendars, instances)
+            today,
+        ) { calendars, instances, today ->
+            buildState(span, calendars, instances, today)
         }
             .catch { emit(WeekUiState.Failure(FailureReason.ProviderUnavailable)) }
             .flowOn(io)
@@ -163,12 +178,20 @@ abstract class PagedTimelineViewModel(
     }
 
     fun goToToday() = jumpTo(todayDate)
+
+    /** The date rolled over; a page still showing [old] follows on to [new], one browsed elsewhere stays. */
+    private fun followToday(old: LocalDate, new: LocalDate) {
+        val anchor = _anchor.value
+        val grid = rule.value(anchor)
+        if (grid.pageFor(anchor) == grid.pageFor(old)) _anchor.value = new
+    }
     fun goToDate(date: LocalDate) = jumpTo(date)
 
     private fun buildState(
         span: DaySpan,
         calendars: List<CalendarSource>,
         instances: List<EventInstance>,
+        today: LocalDate,
     ): WeekUiState {
         calendarListFailure(calendars)?.let { return WeekUiState.Failure(it) }
         val days = (0 until span.count).map { span.start.plus(it, DateTimeUnit.DAY) }
@@ -176,7 +199,7 @@ abstract class PagedTimelineViewModel(
         val timed = instances.filterNot { it.isAllDay }
         return WeekUiState.Success(
             weekStart = span.start,
-            today = todayDate,
+            today = today,
             days = days,
             allDaySpans = layoutAllDay(allDay, days, zone),
             timedByDay = days.associateWith { day -> layoutDay(timed, day, zone) },
@@ -189,10 +212,12 @@ abstract class PagedTimelineViewModel(
 class WeekViewModel @Inject constructor(
     repository: CalendarRepository,
     settingsPrefs: SettingsPrefs,
+    todaySource: TodaySource,
     @IoDispatcher io: CoroutineDispatcher,
 ) : PagedTimelineViewModel(
     repository = repository,
     settingsPrefs = settingsPrefs,
+    todaySource = todaySource,
     io = io,
     gridRule = settingsPrefs.weekStart.map { pref ->
         val grid = WeekGrid(pref.resolveFirstDay(Locale.getDefault()))
@@ -211,10 +236,12 @@ class WeekViewModel @Inject constructor(
 class MultiDayViewModel @Inject constructor(
     repository: CalendarRepository,
     settingsPrefs: SettingsPrefs,
+    todaySource: TodaySource,
     @IoDispatcher io: CoroutineDispatcher,
 ) : PagedTimelineViewModel(
     repository = repository,
     settingsPrefs = settingsPrefs,
+    todaySource = todaySource,
     io = io,
     gridRule = settingsPrefs.multiDayCount.map { count ->
         { anchor: LocalDate -> DaysGrid.startingAt(anchor, count) }
@@ -227,10 +254,12 @@ class MultiDayViewModel @Inject constructor(
 class DayViewModel @Inject constructor(
     repository: CalendarRepository,
     settingsPrefs: SettingsPrefs,
+    todaySource: TodaySource,
     @IoDispatcher io: CoroutineDispatcher,
 ) : PagedTimelineViewModel(
     repository = repository,
     settingsPrefs = settingsPrefs,
+    todaySource = todaySource,
     io = io,
     gridRule = flowOf { _: LocalDate -> DayGrid },
     initialRule = { DayGrid },

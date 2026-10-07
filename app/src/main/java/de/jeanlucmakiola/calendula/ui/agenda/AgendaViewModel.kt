@@ -8,6 +8,8 @@ import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.firstDayOfWeek
+import de.jeanlucmakiola.calendula.data.time.TodaySource
+import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.FailureReason
@@ -21,6 +23,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
@@ -30,8 +33,6 @@ import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.atTime
 import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
 import kotlin.time.Instant
 import javax.inject.Inject
 
@@ -40,6 +41,7 @@ import javax.inject.Inject
 class AgendaViewModel @Inject constructor(
     private val repository: CalendarRepository,
     settingsPrefs: SettingsPrefs,
+    todaySource: TodaySource,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -84,10 +86,24 @@ class AgendaViewModel @Inject constructor(
     private val zone = TimeZone.currentSystemDefault()
 
     private val todayDate: LocalDate
-        get() = Clock.System.now().toLocalDateTime(zone).date
+        get() = currentDate()
 
     private val _anchor = MutableStateFlow(todayDate)
     val anchor: StateFlow<LocalDate> = _anchor
+
+    private var lastToday = todayDate
+
+    /**
+     * Today, kept current across midnight (#373). An agenda still starting on
+     * yesterday moves on to the new day; one jumped elsewhere stays put.
+     */
+    private val today: StateFlow<LocalDate> = todaySource.today
+        .onEach { date ->
+            val old = lastToday
+            lastToday = date
+            if (old != date && _anchor.value == old) _anchor.value = date
+        }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), todayDate)
 
     // A transient, in-view override of the saved agenda range. Held in memory
     // (not persisted), so it survives view switches and rotation within the
@@ -113,8 +129,9 @@ class AgendaViewModel @Inject constructor(
             combine(
                 repository.calendars(),
                 repository.instances(window),
-            ) { calendars, instances ->
-                buildState(params, calendars, instances)
+                today,
+            ) { calendars, instances, today ->
+                buildState(params, calendars, instances, today)
             }
         }
         .catch { emit(AgendaUiState.Failure(FailureReason.ProviderUnavailable)) }
@@ -156,6 +173,7 @@ class AgendaViewModel @Inject constructor(
         params: AgendaParams,
         calendars: List<CalendarSource>,
         instances: List<EventInstance>,
+        today: LocalDate,
     ): AgendaUiState {
         calendarListFailure(calendars)?.let { return AgendaUiState.Failure(it) }
         val anchor = params.anchor
@@ -166,7 +184,7 @@ class AgendaViewModel @Inject constructor(
         val days = groupAgendaDays(anchor, rangeEnd, instances, zone)
         return AgendaUiState.Success(
             anchor = anchor,
-            today = todayDate,
+            today = today,
             days = days,
             range = params.range,
             rangeIsOverride = params.rangeIsOverride,

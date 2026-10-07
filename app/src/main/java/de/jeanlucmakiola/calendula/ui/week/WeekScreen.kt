@@ -461,6 +461,7 @@ private fun PagedTimelineScreen(
         CompositionLocalProvider(LocalDimCutoff provides dimCutoff) {
             WeekContent(
                 state = state,
+                today = today,
                 pagerState = pagerState,
                 grid = grid,
                 kind = kind,
@@ -482,6 +483,7 @@ private fun PagedTimelineScreen(
 @Composable
 private fun WeekContent(
     state: WeekUiState,
+    today: LocalDate,
     pagerState: PagerState,
     grid: PageGrid,
     kind: TimelineKind,
@@ -536,7 +538,7 @@ private fun WeekContent(
                     is WeekUiState.Success -> if (morph != null) {
                         TimelineMorphFrame(
                             morph = morph,
-                            today = s.today,
+                            today = today,
                             scrollState = scrollState,
                             dragController = dragController,
                             onEventClick = onEventClick,
@@ -549,7 +551,7 @@ private fun WeekContent(
                         grid = grid,
                         kind = kind,
                         span = span,
-                        today = s.today,
+                        today = today,
                         initialStripHeight = handoffStrip ?: s.allDayStripHeight(),
                         scrollState = scrollState,
                         dragController = dragController,
@@ -618,7 +620,10 @@ private fun WeekPager(
             }
             ViewMorphPage(active = morphPageActive(page, pagerState.settledPage)) {
                 WeekPage(
-                    state = loaded ?: empty,
+                    // A cached page may predate midnight; today comes off the clock (#373).
+                    state = remember(loaded, empty, today) {
+                        loaded?.takeIf { it.today != today }?.copy(today = today) ?: loaded ?: empty
+                    },
                     headerBias = kind.headerBias,
                     allDayHeight = allDayHeight,
                     scrollState = scrollState,

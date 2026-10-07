@@ -87,6 +87,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -197,13 +198,17 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.YearMonth
 import kotlinx.datetime.toJavaLocalDate
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Clock
 import kotlin.time.Instant
 import java.time.format.TextStyle as JavaTextStyle
 import java.util.Locale
 
 private val LocalTodayPulse = staticCompositionLocalOf { 0 }
+
+/** Live today for the pages, whose cached states may have been built before midnight (#373). */
+private val LocalMonthToday = compositionLocalOf<LocalDate?> { null }
+
+private fun MonthUiState.Success.withToday(today: LocalDate?): MonthUiState.Success =
+    if (today == null || today == this.today) this else copy(today = today)
 private val LocalOpenWeek = staticCompositionLocalOf<((LocalDate) -> Unit)?> { null }
 
 /** A brief push from today's full cell into its immediate neighbours. */
@@ -319,12 +324,7 @@ fun MonthScreen(
     }
     val dense = viewStyle == MonthViewStyle.Dense
 
-    // Today, from whichever state is driving; the clock only covers the first
-    // frame, before either has loaded.
-    val today = when {
-        scrolling -> (continuousState as? ContinuousMonthUiState.Success)?.today
-        else -> (state as? MonthUiState.Success)?.today
-    } ?: Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+    val today by viewModel.today.collectAsStateWithLifecycle()
 
     // The two scrolling styles index their items differently — Continuous by
     // month (which the week start can't move), Dense by week (which it can) — so
@@ -520,6 +520,7 @@ fun MonthScreen(
                 LocalDimCutoff provides dimCutoff,
                 LocalMonthDrag provides chipDrag,
                 LocalTodayPulse provides todayPulse,
+                LocalMonthToday provides today,
                 LocalOpenWeek provides onOpenWeek,
             ) {
                 if (scrolling) {
@@ -773,6 +774,7 @@ private fun MonthPage(
 ) {
     val ym = yearMonthForIndex(index)
     val state by remember(ym, weekStart) { monthState(ym, weekStart) }.collectAsStateWithLifecycle()
+    val today = LocalMonthToday.current
     val chipDrag = LocalMonthDrag.current
     val morph = LocalMonthMorph.current
     val viewMorph = LocalViewMorph.current
@@ -782,7 +784,7 @@ private fun MonthPage(
         LocalViewMorph provides viewMorph.takeIf { morphActive },
     ) {
         when (val s = state) {
-            is MonthUiState.Success -> page(index, s)
+            is MonthUiState.Success -> page(index, s.withToday(today))
             else -> loading()
         }
     }
@@ -1388,7 +1390,8 @@ private fun SplitMonthContent(
             val ym = yearMonthForIndex(index)
             val pageState by remember(ym, weekStart) { monthState(ym, weekStart) }
                 .collectAsStateWithLifecycle()
-            val page = pageState as? MonthUiState.Success ?: return@HorizontalPager
+            val page = (pageState as? MonthUiState.Success)?.withToday(LocalMonthToday.current)
+                ?: return@HorizontalPager
             // Only the settled page carries the drag and the morph tags: its
             // neighbours repeat some of its dates and would claim them.
             val active = index == pagerState.settledPage
