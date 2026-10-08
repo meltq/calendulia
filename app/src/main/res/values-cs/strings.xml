@@ -736,4 +736,21 @@
     <string name="color_name_purple">Purpurová</string>
     <string name="color_name_pink">Růžová</string>
     <string name="calendars_restore_unavailable">Žádný z kalendářů zatím nedokáže importované události přijmout.</string>
+    <string name="app_name_calendar_alias">Kalendář</string>
+    <string name="month_open_week">Otevřít týden %1$d</string>
+    <string name="month_split_clear_filter">Zobrazit celou měsíční agendu</string>
+    <string name="timeline_earlier_events">Dřívější události</string>
+    <string name="timeline_later_events">Pozdější události</string>
+    <string name="event_detail_open_in_maps">Otevřít na mapě</string>
+    <string name="link_open_failed">Žádná aplikace nemůže tento odkaz otevřít</string>
+    <string name="reminder_day_today">Dnes</string>
+    <plurals name="view_multi_day">
+        <item quantity="one">%d den</item>
+        <item quantity="few">%d dny</item>
+        <item quantity="many">%d dnů</item>
+        <item quantity="other">%d dnů</item>
+    </plurals>
+    <string name="settings_multi_day_count">Vícedenní zobrazení</string>
+    <string name="settings_multi_day_count_hint">Počet dní zobrazujících se ve vícedenním přehledu vedle sebe. Dnešek se otevírá v prvním sloupci.</string>
+    <string name="settings_timeline_scale_by_visible_hours">Nastaveno v části Viditelné hodiny</string>
 </resources>
