@@ -146,6 +146,9 @@ fun CalendarHost(
         mutableStateOf(listOf(defaultView))
     }
     var navigationVersion by remember { mutableIntStateOf(0) }
+    // True after backing out of a day opened from the view now shown, so the
+    // agenda returns to where it was instead of today (#367).
+    var returnedFromDay by remember { mutableStateOf(false) }
     val view = viewStack.last()
     // The date every view opens on and carries along (#184); tapping a day
     // anywhere focuses it and opens the day view there.
@@ -163,6 +166,7 @@ fun CalendarHost(
     val switchScope = rememberCoroutineScope()
     val switchTo: ((List<CalendarView>) -> List<CalendarView>) -> Unit = { move ->
         navigationVersion++
+        returnedFromDay = false
         viewStack = move(viewStack)
     }
     val onSelectView: (CalendarView) -> Unit = { target -> switchTo { it.selectView(target) } }
@@ -322,7 +326,10 @@ fun CalendarHost(
     // [requestedDetailKey]. Date/event opens root the stack in the widget's own
     // view so backing out returns there (then home), not to the default.
     LaunchedEffect(widgetNavRequest) {
-        if (widgetNavRequest != null) navigationVersion++
+        if (widgetNavRequest != null) {
+            navigationVersion++
+            returnedFromDay = false
+        }
         when (val req = widgetNavRequest) {
             is WidgetNavRequest.OpenDate -> {
                 // Drill the day view in over the widget's view: drop any overlay
@@ -424,11 +431,14 @@ fun CalendarHost(
     if (reduceMotion) {
         BackHandler(enabled = viewBackEnabled) {
             navigationVersion++
+            returnedFromDay = viewStack.last() == CalendarView.Day
             viewStack = viewStack.dropLast(1)
         }
     } else {
         PredictiveBackHandler(enabled = viewBackEnabled) { events ->
             val previous = viewStack[viewStack.size - 2]
+            // Set before the seek, which already composes the previous view.
+            returnedFromDay = viewStack.last() == CalendarView.Day
             try {
                 events.collect { viewTransition.seekTo(it.progress, targetState = previous) }
                 navigationVersion++
@@ -560,6 +570,7 @@ fun CalendarHost(
                     onEventClick = onEventClick,
                     onCreateEvent = onCreateEvent,
                     quickSwitchViews = quickSwitchViews,
+                    restorePosition = returnedFromDay,
                 )
             }
             }

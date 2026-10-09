@@ -51,6 +51,7 @@ private fun sampleAgendaState(today: LocalDate, zone: TimeZone): AgendaUiState.S
     val windowEnd = today.plus(PREVIEW_WINDOW_DAYS, DateTimeUnit.DAY)
     return AgendaUiState.Success(
         anchor = today,
+        windowStart = today,
         today = today,
         days = groupAgendaDays(today, windowEnd, sampleAgendaEvents(today, zone), zone),
         range = AgendaRange.Custom(PREVIEW_WINDOW_DAYS),

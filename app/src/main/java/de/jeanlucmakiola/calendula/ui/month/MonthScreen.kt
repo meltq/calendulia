@@ -171,6 +171,7 @@ import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
 import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.ui.common.LocalDimCutoff
+import de.jeanlucmakiola.calendula.ui.common.isPastOn
 import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.inlineTimeLabel
@@ -1940,7 +1941,7 @@ private fun SplitDots(
                 modifier = Modifier
                     .morphBounds(MonthMorphKey.Event(date, event.instanceId))
                     .size(SPLIT_DOT_SIZE)
-                    .alpha(if (dimCutoff != null && event.hasEnded(dimCutoff)) EventDimAlpha else 1f)
+                    .alpha(if (dimCutoff != null && event.isPastOn(date, dimCutoff)) EventDimAlpha else 1f)
                     .background(eventAccent(event.color, dark, soften), CircleShape),
             )
         }
@@ -1954,7 +1955,7 @@ private fun SplitDots(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .morphBounds(MonthMorphKey.Overflow(date))
-                    .alpha(if (allEnded(hidden, dimCutoff)) EventDimAlpha else 1f),
+                    .alpha(if (allEnded(hidden, date, dimCutoff)) EventDimAlpha else 1f),
             )
         }
     }
@@ -1997,7 +1998,7 @@ private fun SplitMonthAgendaPane(
                         day = day,
                         zone = state.zone,
                         position = positionOf(index, events.size),
-                        dimmed = dimCutoff != null && event.hasEnded(dimCutoff),
+                        dimmed = dimCutoff != null && event.isPastOn(day, dimCutoff),
                         modifier = animateItemMotion().morphEvent(ViewMorphKey.event(event, day)),
                         onClick = { onEventClick(event) },
                     )
@@ -2066,7 +2067,7 @@ internal fun SplitDayPane(
                             day = day,
                             zone = zone,
                             position = positionOf(index, dayEvents.size),
-                            dimmed = dimCutoff != null && event.hasEnded(dimCutoff),
+                            dimmed = dimCutoff != null && event.isPastOn(day, dimCutoff),
                             onClick = { onEventClick(event) },
                             // An event added to or removed from the day you are
                             // already looking at moves its neighbours rather
@@ -2542,6 +2543,7 @@ private fun MonthWeekRow(
                             }
                             OverflowDots(
                                 events = hiddenEvents,
+                                day = d,
                                 total = hidden,
                                 dark = dark,
                                 rowHeight = overflowRow,
@@ -2866,7 +2868,9 @@ private fun MonthBar(
 ) {
     val title = event.title.ifBlank { stringResource(R.string.event_untitled) }
     val dimCutoff = LocalDimCutoff.current
-    val dimmed = dimCutoff != null && event.hasEnded(dimCutoff)
+    // A bar is one piece, so it dims once the last day it covers has passed.
+    val dimmed = dimCutoff != null &&
+        (event.hasEnded(dimCutoff) || days?.let { event.isPastOn(it.last(), dimCutoff) } == true)
     val paint = eventPaint(event, dark)
     // The same title/secondary ink pairing the week and day blocks use, with
     // the time on the quieter half.
@@ -2919,6 +2923,7 @@ private fun MonthBar(
 @Composable
 private fun OverflowDots(
     events: List<EventInstance>,
+    day: LocalDate,
     total: Int,
     dark: Boolean,
     rowHeight: Dp,
@@ -2937,7 +2942,7 @@ private fun OverflowDots(
             Box(
                 modifier = Modifier
                     .size(OVERFLOW_DOT_SIZE)
-                    .alpha(if (allEnded(byColor.getValue(argb), dimCutoff)) EventDimAlpha else 1f)
+                    .alpha(if (allEnded(byColor.getValue(argb), day, dimCutoff)) EventDimAlpha else 1f)
                     .background(eventAccent(argb, dark, soften), CircleShape),
             )
         }
@@ -2947,15 +2952,15 @@ private fun OverflowDots(
                 text = "+$extra",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.alpha(if (allEnded(events, dimCutoff)) EventDimAlpha else 1f),
+                modifier = Modifier.alpha(if (allEnded(events, day, dimCutoff)) EventDimAlpha else 1f),
             )
         }
     }
 }
 
-/** True when dimming is on and every one of [events] is already over. */
-private fun allEnded(events: List<EventInstance>, dimCutoff: Instant?): Boolean =
-    dimCutoff != null && events.isNotEmpty() && events.all { it.hasEnded(dimCutoff) }
+/** True when dimming is on and every one of [events] is already over on [day]. */
+private fun allEnded(events: List<EventInstance>, day: LocalDate, dimCutoff: Instant?): Boolean =
+    dimCutoff != null && events.isNotEmpty() && events.all { it.isPastOn(day, dimCutoff) }
 
 @Composable
 private fun MonthGridLoading() {

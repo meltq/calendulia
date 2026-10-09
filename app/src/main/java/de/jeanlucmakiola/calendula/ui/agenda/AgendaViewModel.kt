@@ -23,6 +23,7 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.datetime.DateTimeUnit
@@ -31,6 +32,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.atTime
+import kotlinx.datetime.minus
 import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
 import kotlin.time.Instant
@@ -88,8 +90,16 @@ class AgendaViewModel @Inject constructor(
     private val todayDate: LocalDate
         get() = currentDate()
 
-    private val _anchor = MutableStateFlow(todayDate)
-    val anchor: StateFlow<LocalDate> = _anchor
+    // The anchor and how many days before it are loaded, moved together so a
+    // jump never queries a window that pairs the new anchor with the old span.
+    private val _window = MutableStateFlow(AgendaWindow(todayDate, PAST_CHUNK_DAYS))
+    val anchor: StateFlow<LocalDate> = _window
+        .map { it.anchor }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, todayDate)
+
+    /** The day last scrolled to the top, so a return to the agenda lands back on it. */
+    var lastTopDate: LocalDate? = null
+        private set
 
     private var lastToday = todayDate
 
@@ -101,7 +111,9 @@ class AgendaViewModel @Inject constructor(
         .onEach { date ->
             val old = lastToday
             lastToday = date
-            if (old != date && _anchor.value == old) _anchor.value = date
+            if (old != date && _window.value.anchor == old) {
+                _window.value = _window.value.copy(anchor = date)
+            }
         }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), todayDate)
 
@@ -111,9 +123,17 @@ class AgendaViewModel @Inject constructor(
     private val _rangeOverride = MutableStateFlow<AgendaRange?>(null)
 
     val state: StateFlow<AgendaUiState> =
-        combine(_anchor, agendaSettings, _rangeOverride, weekStart) { anchor, settings, override, weekStart ->
+        combine(
+            _window,
+            agendaSettings,
+            _rangeOverride,
+            weekStart,
+            settingsPrefs.pastEventDisplay,
+        ) { window, settings, override, weekStart, pastDisplay ->
             AgendaParams(
-                anchor = anchor,
+                anchor = window.anchor,
+                // Hidden past events leave nothing to scroll back to (#367).
+                pastDays = if (pastDisplay == PastEventDisplay.HIDE) 0 else window.pastDays,
                 range = override ?: settings.range,
                 rangeIsOverride = override != null && override != settings.range,
                 weekStart = weekStart,
@@ -122,8 +142,8 @@ class AgendaViewModel @Inject constructor(
         }
         .flatMapLatest { params ->
             val window = agendaRange(
-                params.anchor,
-                params.range.dayCount(params.anchor, params.weekStart) - 1,
+                params.windowStart,
+                params.pastDays + params.range.dayCount(params.anchor, params.weekStart) - 1,
                 zone,
             )
             combine(
@@ -143,12 +163,30 @@ class AgendaViewModel @Inject constructor(
         )
 
     fun goToToday() {
-        _anchor.value = todayDate
+        goToDate(todayDate)
     }
 
     /** Jump the agenda window to start on a specific date (drawer jump-to-date). */
     fun goToDate(date: LocalDate) {
-        _anchor.value = date
+        if (_window.value.anchor == date) return
+        _window.value = AgendaWindow(date, PAST_CHUNK_DAYS)
+        lastTopDate = null
+    }
+
+    /**
+     * Extend the window [PAST_CHUNK_DAYS] further back (#367). Ignored while the
+     * previous extension is still loading, so a scroll that keeps asking only
+     * moves one chunk at a time.
+     */
+    fun loadEarlier() {
+        val loaded = (state.value as? AgendaUiState.Success)?.windowStart ?: return
+        val window = _window.value
+        if (loaded != window.start) return
+        _window.value = window.copy(pastDays = window.pastDays + PAST_CHUNK_DAYS)
+    }
+
+    fun rememberTopDay(date: LocalDate) {
+        lastTopDate = date
     }
 
     /** Temporarily override the agenda range for this session (the bottom-left pill). */
@@ -161,13 +199,20 @@ class AgendaViewModel @Inject constructor(
         val showBar: Boolean,
     )
 
+    private data class AgendaWindow(val anchor: LocalDate, val pastDays: Int) {
+        val start: LocalDate get() = anchor.minus(pastDays, DateTimeUnit.DAY)
+    }
+
     private data class AgendaParams(
         val anchor: LocalDate,
+        val pastDays: Int,
         val range: AgendaRange,
         val rangeIsOverride: Boolean,
         val weekStart: DayOfWeek,
         val showRangeBar: Boolean,
-    )
+    ) {
+        val windowStart: LocalDate get() = anchor.minus(pastDays, DateTimeUnit.DAY)
+    }
 
     private fun buildState(
         params: AgendaParams,
@@ -181,9 +226,10 @@ class AgendaViewModel @Inject constructor(
             params.range.dayCount(anchor, params.weekStart) - 1,
             DateTimeUnit.DAY,
         )
-        val days = groupAgendaDays(anchor, rangeEnd, instances, zone)
+        val days = groupAgendaDays(params.windowStart, rangeEnd, instances, zone)
         return AgendaUiState.Success(
             anchor = anchor,
+            windowStart = params.windowStart,
             today = today,
             days = days,
             range = params.range,
@@ -194,6 +240,9 @@ class AgendaViewModel @Inject constructor(
         )
     }
 }
+
+/** How many days each scroll back into the past loads (#367). */
+internal const val PAST_CHUNK_DAYS = 30
 
 /** Inclusive instant range from the start of [anchor] through [days] days ahead. */
 internal fun agendaRange(anchor: LocalDate, days: Int, zone: TimeZone): ClosedRange<Instant> {

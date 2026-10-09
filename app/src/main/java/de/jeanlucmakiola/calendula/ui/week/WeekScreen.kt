@@ -98,7 +98,6 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
-import de.jeanlucmakiola.calendula.domain.hasEnded
 import de.jeanlucmakiola.calendula.ui.common.LocalChipGround
 import de.jeanlucmakiola.calendula.ui.common.eventPaint
 import de.jeanlucmakiola.calendula.ui.common.eventSurface
@@ -135,6 +134,7 @@ import de.jeanlucmakiola.calendula.ui.common.rememberEventDragSource
 import de.jeanlucmakiola.calendula.ui.common.rememberTimelineDragController
 import de.jeanlucmakiola.calendula.ui.common.startInstant
 import de.jeanlucmakiola.calendula.ui.common.LocalDimCutoff
+import de.jeanlucmakiola.calendula.ui.common.isPastOn
 import de.jeanlucmakiola.calendula.ui.common.EventChipShape
 import de.jeanlucmakiola.calendula.ui.common.trimmedLines
 import de.jeanlucmakiola.calendula.ui.common.NowLine
@@ -1076,6 +1076,7 @@ private fun AllDayStrip(
                     key(bar.event.eventId, bar.event.start) {
                         AllDayBar(
                             event = bar.event,
+                            lastDay = bar.toRange.endInclusive,
                             dark = dark,
                             onClick = { onEventClick(bar.event) },
                             modifier = Modifier
@@ -1111,13 +1112,15 @@ private fun AllDayStrip(
 @Composable
 private fun AllDayBar(
     event: EventInstance,
+    lastDay: LocalDate,
     dark: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val title = event.title.ifBlank { stringResource(R.string.event_untitled) }
     val dimCutoff = LocalDimCutoff.current
-    val dimmed = dimCutoff != null && event.hasEnded(dimCutoff)
+    // A bar is one piece, so it dims once the last day it covers here has passed.
+    val dimmed = dimCutoff != null && event.isPastOn(lastDay, dimCutoff)
     val paint = eventPaint(event, dark)
     Box(
         modifier = (if (dimmed) modifier.alpha(EventDimAlpha) else modifier)
@@ -1474,7 +1477,7 @@ private fun EventBlock(
         if (showTime) metrics.timeLine else 0.dp
     val timeMaxLines = if (showTime) blockTimeLines(shownTime, textWidth, spare) else 1
     val dimCutoff = LocalDimCutoff.current
-    val dimmed = dimCutoff != null && block.event.hasEnded(dimCutoff)
+    val dimmed = dimCutoff != null && block.event.isPastOn(date, dimCutoff)
     val zone = remember { TimeZone.currentSystemDefault() }
     val moveAction = eventMoveAction(block.event)
     val draggable = eventDragAllowed(block.event)
