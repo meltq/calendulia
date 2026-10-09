@@ -97,6 +97,12 @@
     <string name="event_move_occurrence_only">Moving the whole series would change which days it falls on, so only this event can move.</string>
     <!-- %1$s is the new date and time, e.g. "Fri, 7 Aug, 09:00". -->
     <string name="event_move_done">Moved to %1$s</string>
+    <string name="event_resize_done">Changed to %1$s</string>
+    <string name="event_resize_recurring_title">Change recurring event</string>
+    <string name="event_selection_actions">Event actions</string>
+    <string name="event_selection_hide">Hide event actions</string>
+    <string name="event_selection_close">Deselect event</string>
+    <string name="event_action_load_failed">Couldn\'t open the event</string>
     <string name="event_move_undo">Undo</string>
     <string name="event_move_undone">Move undone</string>
     <string name="event_move_failed">Couldn\'t move the event</string>

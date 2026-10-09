@@ -15,6 +15,7 @@ import de.jeanlucmakiola.calendula.domain.allowsEventMove
 import de.jeanlucmakiola.calendula.domain.parseSimpleRecurrence
 import de.jeanlucmakiola.calendula.domain.problems
 import de.jeanlucmakiola.calendula.domain.realignRecurrence
+import de.jeanlucmakiola.calendula.domain.resizedTo
 import de.jeanlucmakiola.calendula.domain.resolvedZone
 import de.jeanlucmakiola.calendula.domain.shiftedByDays
 import de.jeanlucmakiola.calendula.domain.shiftedTo
@@ -54,6 +55,9 @@ sealed interface MoveTarget {
      * disagree by a day over which zone the event's first day is resolved in.
      */
     data class ByDays(val days: Int) : MoveTarget
+
+    /** New start and end instants — a timeline resize, which changes the length. */
+    data class Span(val start: Instant, val end: Instant) : MoveTarget
 }
 
 /**
@@ -74,7 +78,7 @@ data class MoveRequest(
  * re-derive (`BYDAY=MO,WE`, `2TH`, …), or the shift wouldn't carry the anchor
  * across the same midnights the occurrence crossed.
  */
-data class MoveScopePrompt(val occurrenceOnly: Boolean)
+data class MoveScopePrompt(val occurrenceOnly: Boolean, val resize: Boolean = false)
 
 /** The inverse of a completed move, for the undo action. */
 data class MoveUndo(
@@ -88,12 +92,14 @@ data class MoveUndo(
 sealed interface MoveOutcome {
     /**
      * Written. [startMillis] is where the dragged occurrence now begins, for the
-     * confirmation message; [undo] is null when the write has no clean inverse.
+     * confirmation message, and [endMillis] where it ends — set only for a resize,
+     * whose message names both; [undo] is null when the write has no clean inverse.
      */
     data class Moved(
         val startMillis: Long,
         val isAllDay: Boolean,
         val undo: MoveUndo?,
+        val endMillis: Long? = null,
     ) : MoveOutcome
 
     data object Undone : MoveOutcome
@@ -226,7 +232,10 @@ class RescheduleViewModel @Inject constructor(
             } else {
                 // Still busy: the scope dialog is now the thing in flight.
                 pending = prepared
-                _scopePrompt.value = MoveScopePrompt(occurrenceOnly = !prepared.canRealign)
+                _scopePrompt.value = MoveScopePrompt(
+                    occurrenceOnly = !prepared.canRealign,
+                    resize = request.target is MoveTarget.Span,
+                )
             }
         }
         return true
@@ -313,6 +322,7 @@ class RescheduleViewModel @Inject constructor(
         val shifted = when (val target = request.target) {
             is MoveTarget.Start -> original.shiftedTo(target.instant, zone)
             is MoveTarget.ByDays -> original.shiftedByDays(target.days, zone)
+            is MoveTarget.Span -> original.resizedTo(target.start, target.end, zone)
         }
         // A zero-distance drop is not a write.
         if (shifted == original) return null
@@ -396,6 +406,7 @@ class RescheduleViewModel @Inject constructor(
                 startMillis = movedStartMillis(prepared),
                 isAllDay = prepared.updated.isAllDay,
                 undo = undoFor(prepared, scope),
+                endMillis = resizedEndMillis(prepared),
             )
         } catch (e: CancellationException) {
             throw e
@@ -479,6 +490,14 @@ class RescheduleViewModel @Inject constructor(
         } else {
             null
         }
+
+    /** Where a resized occurrence now ends; null for a move, which keeps its length. */
+    private fun resizedEndMillis(prepared: PreparedMove): Long? {
+        if (prepared.request.target !is MoveTarget.Span) return null
+        val form = prepared.updated
+        return form.end.toInstant(form.resolvedZone(TimeZone.currentSystemDefault()))
+            .toEpochMilliseconds()
+    }
 
     /**
      * Where the dragged occurrence now begins, in the same anchoring the views

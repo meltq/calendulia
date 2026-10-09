@@ -11,12 +11,11 @@ import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
-import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
-import de.jeanlucmakiola.calendula.domain.ics.toShareIcsEvent
-import de.jeanlucmakiola.calendula.domain.toEditForm
+import de.jeanlucmakiola.calendula.domain.toDuplicateForm
+import de.jeanlucmakiola.calendula.ui.common.deleteEvent
+import de.jeanlucmakiola.calendula.ui.common.stageEventShare
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
-import kotlin.time.Clock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -113,14 +112,7 @@ class EventDetailViewModel @Inject constructor(
         viewModelScope.launch {
             _deleteState.value = DeleteUiState.Deleting
             _deleteState.value = try {
-                when (scope) {
-                    RecurringWriteScope.AllEvents ->
-                        repository.deleteEvent(target.eventId)
-                    RecurringWriteScope.ThisEvent ->
-                        repository.deleteOccurrence(target.eventId, target.beginMillis)
-                    RecurringWriteScope.ThisAndFollowing ->
-                        repository.deleteEventFromOccurrence(target.eventId, target.beginMillis)
-                }
+                repository.deleteEvent(target.eventId, target.beginMillis, scope)
                 DeleteUiState.Deleted
             } catch (e: CancellationException) {
                 throw e
@@ -144,40 +136,16 @@ class EventDetailViewModel @Inject constructor(
      */
     suspend fun shareUri(): Uri? {
         val detail = (state.value as? EventDetailUiState.Success)?.detail ?: return null
-        return runCatching {
-            withContext(io) {
-                val ics = IcsWriter().writeCalendar(
-                    events = listOf(detail.toShareIcsEvent()),
-                    dtStamp = Clock.System.now(),
-                )
-                icsExporter.stageShareFile(shareFileName(detail.instance.title), ics)
-            }
-        }.getOrNull()
+        return withContext(io) { icsExporter.stageEventShare(detail) }
     }
 
     /**
-     * Build a create form seeded from the open event so the user can save a
-     * copy as a new, independent event (#52). Returns null when nothing is
-     * loaded.
-     *
-     * The recurrence is dropped — a duplicate is a single event; anyone who
-     * wants a series can re-add one in the edit form that opens. The source
-     * calendar is kept only when it's writable, otherwise the id is cleared so
-     * the create resolves to the last-used/first-writable calendar — which lets
-     * a read-only event (a WebCal subscription, a birthday) be copied into an
-     * editable calendar. The occurrence's own times carry over unchanged.
+     * A create form seeded from the open event, to save a copy as a new event
+     * (#52) — see [toDuplicateForm]. Null when nothing is loaded.
      */
     fun duplicateForm(): EventForm? {
         val loaded = state.value as? EventDetailUiState.Success ?: return null
-        val detail = loaded.detail
-        return detail.toEditForm(
-            beginMillis = detail.instance.start.toEpochMilliseconds(),
-            endMillis = detail.instance.end.toEpochMilliseconds(),
-            zone = TimeZone.currentSystemDefault(),
-        ).copy(
-            rrule = null,
-            calendarId = detail.instance.calendarId.takeIf { loaded.canModify },
-        )
+        return loaded.detail.toDuplicateForm(loaded.canModify, TimeZone.currentSystemDefault())
     }
 
     private suspend fun loadDetail(target: Target): EventDetailUiState = try {
@@ -227,14 +195,4 @@ class EventDetailViewModel @Inject constructor(
          */
         const val NO_OCCURRENCE_TIME: Long = Long.MIN_VALUE
     }
-}
-
-/** A filesystem-safe `.ics` file name from an event title (or a fallback). */
-private fun shareFileName(title: String): String {
-    val base = title.trim()
-        .replace(Regex("""[^\p{L}\p{Nd} _-]"""), "")
-        .replace(' ', '_')
-        .take(40)
-        .ifBlank { "event" }
-    return "$base.ics"
 }

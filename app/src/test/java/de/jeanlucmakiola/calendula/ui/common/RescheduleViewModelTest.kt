@@ -115,6 +115,17 @@ class RescheduleViewModelTest {
         target = MoveTarget.Start(Instant.fromEpochMilliseconds(beginMillis + 3_600_000L)),
     )
 
+    /** The end dragged an hour later, the start left where it is. */
+    private fun endOneHourLater() = MoveRequest(
+        eventId = 42L,
+        beginMillis = beginMillis,
+        endMillis = endMillis,
+        target = MoveTarget.Span(
+            Instant.fromEpochMilliseconds(beginMillis),
+            Instant.fromEpochMilliseconds(endMillis + 3_600_000L),
+        ),
+    )
+
     @Test
     fun `a one-off drop writes straight through with no scope prompt`(
         @TempDir tempDir: Path,
@@ -594,5 +605,83 @@ class RescheduleViewModelTest {
 
         assertThat(vm.outcome.value).isInstanceOf(MoveOutcome.Moved::class.java)
         assertThat(vm.abandoned.value).isEqualTo(0)
+    }
+
+    @Test
+    fun `a resize writes the new length and reports both ends`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
+        val vm = viewModel(tempDir, fake)
+
+        vm.move(endOneHourLater())
+        advanceUntilIdle()
+
+        val (_, original, updated) = fake.updatedEvents.single()
+        assertThat(updated.start).isEqualTo(original.start)
+        assertThat(updated.end).isNotEqualTo(original.end)
+        val moved = vm.outcome.value as MoveOutcome.Moved
+        assertThat(moved.startMillis).isEqualTo(beginMillis)
+        assertThat(moved.endMillis).isEqualTo(endMillis + 3_600_000L)
+        assertThat(moved.undo).isNotNull()
+    }
+
+    @Test
+    fun `a moved event reports no end, so its chip keeps the move wording`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
+        val vm = viewModel(tempDir, fake)
+
+        vm.move(oneHourLater())
+        advanceUntilIdle()
+
+        assertThat((vm.outcome.value as MoveOutcome.Moved).endMillis).isNull()
+    }
+
+    @Test
+    fun `resizing a recurring event asks for the scope, as a resize`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = { detail(rrule = "FREQ=WEEKLY;BYDAY=MO") }
+        }
+        val vm = viewModel(tempDir, fake)
+
+        vm.move(endOneHourLater())
+        advanceUntilIdle()
+
+        assertThat(vm.scopePrompt.value)
+            .isEqualTo(MoveScopePrompt(occurrenceOnly = false, resize = true))
+        vm.moveWithScope(RecurringWriteScope.AllEvents)
+        advanceUntilIdle()
+        // The start stays put, so the rule needs no realigning.
+        assertThat(fake.updatedEvents.single().third.rrule).isEqualTo("FREQ=WEEKLY;BYDAY=MO")
+    }
+
+    @Test
+    fun `pulling a recurring event's start back over midnight resizes only the occurrence`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = { detail(rrule = "FREQ=WEEKLY;BYDAY=MO") }
+        }
+        val vm = viewModel(tempDir, fake)
+        val sundayEvening = LocalDateTime(LocalDate(2026, 6, 7), LocalTime(22, 0))
+            .toInstant(TimeZone.currentSystemDefault())
+
+        vm.move(
+            MoveRequest(
+                eventId = 42L,
+                beginMillis = beginMillis,
+                endMillis = endMillis,
+                target = MoveTarget.Span(sundayEvening, Instant.fromEpochMilliseconds(endMillis)),
+            ),
+        )
+        advanceUntilIdle()
+
+        // Not a whole-day shift, so the series anchor can't follow.
+        assertThat(vm.scopePrompt.value)
+            .isEqualTo(MoveScopePrompt(occurrenceOnly = true, resize = true))
     }
 }

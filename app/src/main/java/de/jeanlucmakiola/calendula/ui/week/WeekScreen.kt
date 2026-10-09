@@ -59,11 +59,28 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.snapshotFlow
+import androidx.activity.compose.BackHandler
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.zIndex
+import androidx.compose.ui.geometry.Offset
+import de.jeanlucmakiola.calendula.ui.common.PickUp
+import de.jeanlucmakiola.calendula.ui.common.SelectionBarClearance
+import de.jeanlucmakiola.calendula.ui.common.ResizeEdge
+import de.jeanlucmakiola.calendula.ui.common.ResizeHandle
+import de.jeanlucmakiola.calendula.ui.common.ResizeHandleTarget
+import de.jeanlucmakiola.calendula.ui.common.TimelineResizeDrop
+import de.jeanlucmakiola.calendula.ui.common.eventAccent
+import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
+import de.jeanlucmakiola.calendula.ui.common.PublishSelection
+import de.jeanlucmakiola.calendula.ui.common.eventSelectAllowed
+import de.jeanlucmakiola.calendula.ui.common.selectionLift
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.BiasAlignment
 import androidx.compose.ui.Modifier
 import de.jeanlucmakiola.calendula.ui.common.LocalViewMorph
 import de.jeanlucmakiola.calendula.ui.common.StayPut
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import androidx.compose.runtime.withFrameNanos
@@ -79,6 +96,7 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.ui.input.pointer.pointerInput
@@ -511,6 +529,14 @@ private fun WeekContent(
     val move = LocalEventMove.current
     val zone = remember { TimeZone.currentSystemDefault() }
     val onDrop: (TimelineDrop) -> Unit = { drop ->
+        // A selected event stays selected where it landed (#141).
+        if (dragController.selection?.event?.instanceId == drop.event.instanceId) {
+            val start = drop.startInstant(zone)
+            dragController.select(
+                drop.event.copy(start = start, end = start + (drop.event.end - drop.event.start)),
+                moved = true,
+            )
+        }
         move?.move(
             MoveRequest(
                 eventId = drop.event.eventId,
@@ -519,6 +545,51 @@ private fun WeekContent(
                 target = MoveTarget.Start(drop.startInstant(zone)),
             ),
         )
+    }
+
+    // A resize keeps its event selected, at its new length (#141).
+    val onResize: (TimelineResizeDrop) -> Unit = { drop ->
+        dragController.select(
+            drop.event.copy(start = drop.start, end = drop.end),
+            moved = true,
+        )
+        move?.move(
+            MoveRequest(
+                eventId = drop.event.eventId,
+                beginMillis = drop.event.start.toEpochMilliseconds(),
+                endMillis = drop.event.end.toEpochMilliseconds(),
+                target = MoveTarget.Span(drop.start, drop.end),
+            ),
+        )
+    }
+
+    // Selection (#141) ends on back, a page or view change, or any tap.
+    val selection = dragController.selection
+    PublishSelection(
+        event = selection?.event,
+        busy = dragController.isDragging,
+        compact = dragController.selectionCovered,
+        onDismiss = dragController::deselect,
+    )
+    BackHandler(enabled = selection != null) { dragController.deselect() }
+    LaunchedEffect(pagerState, dragController) {
+        snapshotFlow { pagerState.currentPage }.drop(1).collect { dragController.deselect() }
+    }
+    LaunchedEffect(morph != null) { if (morph != null) dragController.deselect() }
+    LaunchedEffect(selection, dragController.settling, dragController.isDragging, dragController.selectedCandidates.size) {
+        dragController.settleMovedSelection()
+    }
+    val orphaned = selection != null && dragController.selectedCandidates.isEmpty() &&
+        !dragController.isDragging && dragController.settling == null
+    LaunchedEffect(orphaned) {
+        if (!orphaned) return@LaunchedEffect
+        // A beat for a re-read to bring the event back under a new row.
+        delay(SELECTION_ORPHAN_GRACE_MILLIS)
+        dragController.deselect()
+    }
+    val openEvent: (EventInstance) -> Unit = { event ->
+        dragController.deselect()
+        onEventClick(event)
     }
 
     Box(modifier = modifier) {
@@ -541,10 +612,11 @@ private fun WeekContent(
                             today = today,
                             scrollState = scrollState,
                             dragController = dragController,
-                            onEventClick = onEventClick,
+                            onEventClick = openEvent,
                             onOpenDay = onOpenDay,
                             onCreateAt = onCreateAt,
                             onDrop = onDrop,
+                            onResize = onResize,
                         )
                     } else WeekPager(
                         pagerState = pagerState,
@@ -555,10 +627,11 @@ private fun WeekContent(
                         initialStripHeight = handoffStrip ?: s.allDayStripHeight(),
                         scrollState = scrollState,
                         dragController = dragController,
-                        onEventClick = onEventClick,
+                        onEventClick = openEvent,
                         onOpenDay = onOpenDay,
                         onCreateAt = onCreateAt,
                         onDrop = onDrop,
+                        onResize = onResize,
                     )
                 }
             }
@@ -585,6 +658,7 @@ private fun WeekPager(
     onOpenDay: (LocalDate) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
     onDrop: (TimelineDrop) -> Unit,
+    onResize: (TimelineResizeDrop) -> Unit,
 ) {
     val stripHeights = remember { mutableStateMapOf<Int, Dp>() }
     val allDayHeight = pagedHeight(pagerState, stripHeights, initialStripHeight)
@@ -633,6 +707,7 @@ private fun WeekPager(
                     onOpenDay = onOpenDay,
                     onCreateAt = onCreateAt,
                     onDrop = onDrop,
+                    onResize = onResize,
                 )
             }
         }
@@ -667,6 +742,7 @@ private fun TimelineMorphFrame(
     onOpenDay: (LocalDate) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
     onDrop: (TimelineDrop) -> Unit,
+    onResize: (TimelineResizeDrop) -> Unit,
 ) {
     val fromState by morph.fromState.collectAsStateWithLifecycle()
     val toState by morph.toState.collectAsStateWithLifecycle()
@@ -722,6 +798,7 @@ private fun TimelineMorphFrame(
                 onOpenDay = onOpenDay,
                 onCreateAt = onCreateAt,
                 onDrop = onDrop,
+                onResize = onResize,
             )
         }
     }
@@ -815,6 +892,7 @@ internal fun WeekSuccess(
     onOpenDay: (LocalDate) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
     onDrop: (TimelineDrop) -> Unit,
+    onResize: (TimelineResizeDrop) -> Unit,
 ) {
     WeekFrame(
         weekStart = state.weekStart,
@@ -834,6 +912,7 @@ internal fun WeekSuccess(
             onOpenDay = onOpenDay,
             onCreateAt = onCreateAt,
             onDrop = onDrop,
+            onResize = onResize,
         )
     }
 }
@@ -856,6 +935,7 @@ private fun WeekPage(
     onOpenDay: (LocalDate) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
     onDrop: (TimelineDrop) -> Unit,
+    onResize: (TimelineResizeDrop) -> Unit,
 ) {
     val geometry = remember(state.weekStart, state.days.size) {
         ColumnGeometry.of(DaySpan(state.weekStart, state.days.size))
@@ -875,6 +955,7 @@ private fun WeekPage(
         onOpenDay = onOpenDay,
         onCreateAt = onCreateAt,
         onDrop = onDrop,
+        onResize = onResize,
     )
 }
 
@@ -898,6 +979,7 @@ private fun TimelinePageContent(
     onOpenDay: (LocalDate) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
     onDrop: (TimelineDrop) -> Unit,
+    onResize: (TimelineResizeDrop) -> Unit,
 ) {
     Column(modifier = Modifier.fillMaxSize()) {
         Column(
@@ -928,6 +1010,7 @@ private fun TimelinePageContent(
             onEventClick = onEventClick,
             onCreateAt = onCreateAt,
             onDrop = onDrop,
+            onResize = onResize,
         )
     }
 }
@@ -1157,6 +1240,7 @@ private fun Timeline(
     onEventClick: (EventInstance) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
     onDrop: (TimelineDrop) -> Unit,
+    onResize: (TimelineResizeDrop) -> Unit,
 ) {
     val fullViewportHeight = remember(geometry) { intArrayOf(-1) }
     val dark = isSystemInDarkTheme()
@@ -1254,6 +1338,7 @@ private fun Timeline(
                     onEventClick = onEventClick,
                     onCreateAt = onCreateAt,
                     onDrop = onDrop,
+                    onResize = onResize,
                     scrollState = scrollState,
                     modifier = Modifier.fillMaxHeight(),
                 )
@@ -1276,6 +1361,7 @@ private fun DayColumnCard(
     onEventClick: (EventInstance) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
     onDrop: (TimelineDrop) -> Unit,
+    onResize: (TimelineResizeDrop) -> Unit,
     scrollState: ScrollState,
     modifier: Modifier = Modifier,
 ) {
@@ -1324,6 +1410,10 @@ private fun DayColumnCard(
                 // blocks are consumed by their own handler first. Snaps to hour.
                 .pointerInput(date) {
                     detectTapGestures { offset ->
+                        if (dragController.selection != null) {
+                            dragController.deselect()
+                            return@detectTapGestures
+                        }
                         if (currentEdges.value.tap(offset.y)) return@detectTapGestures
                         currentOnCreateAt.value(
                             date,
@@ -1383,6 +1473,7 @@ private fun DayColumnCard(
                         dragController = dragController,
                         onClick = { onEventClick(block.event) },
                         onDrop = onDrop,
+                        onResize = onResize,
                         modifier = Modifier
                             .laneSlot(place)
                             .offset(y = place.y + topInset)
@@ -1427,6 +1518,7 @@ private fun EventBlock(
     dragController: TimelineDragController,
     onClick: () -> Unit,
     onDrop: (TimelineDrop) -> Unit,
+    onResize: (TimelineResizeDrop) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val title = block.event.title.ifBlank { stringResource(R.string.event_untitled) }
@@ -1481,67 +1573,168 @@ private fun EventBlock(
     val zone = remember { TimeZone.currentSystemDefault() }
     val moveAction = eventMoveAction(block.event)
     val draggable = eventDragAllowed(block.event)
+    val selectable = eventSelectAllowed()
+    val selected = dragController.isSelected(block)
+    val haptics = LocalHapticFeedback.current
     // The drop takes this offset back off, so a tail clipped at midnight lands
     // where the event's own start belongs (#253).
     val clipOffset = remember(block, date, zone) { block.clipOffsetMinutes(date, zone) }
     val shape = remember(cuts) { timedBlockShape(cuts.top, cuts.bottom) }
     val topInsetPx = with(density) { topInset.toPx() }
+    // Long press (#141): move to drag, let go to select; selected blocks drag at once.
     val dragModifier = rememberEventDragSource(
-        enabled = draggable,
+        enabled = selectable,
         key = block.event.instanceId,
+        immediate = selected && draggable,
         onPickUp = { pointer, blockRoot, _ ->
-            dragController.begin(
-                block = block,
-                clipOffsetMin = clipOffset,
-                titleLines = if (showTitle) titleMaxLines else 0,
-                pointerInRoot = pointer,
-                // Measured off the block's placement rather than off where the
-                // hour grid seats it: the copy is drawn from that placement and
-                // re-seated the same half-gap down (#267).
-                blockInRoot = blockRoot.copy(y = blockRoot.y - topInsetPx),
-            )
+            if (draggable) {
+                dragController.begin(
+                    block = block,
+                    clipOffsetMin = clipOffset,
+                    titleLines = if (showTitle) titleMaxLines else 0,
+                    pointerInRoot = pointer,
+                    // Measured off the block's placement rather than off where the
+                    // hour grid seats it: the copy is drawn from that placement and
+                    // re-seated the same half-gap down (#267).
+                    blockInRoot = blockRoot.copy(y = blockRoot.y - topInsetPx),
+                )
+                PickUp.Drag
+            } else {
+                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                dragController.select(block.event)
+                PickUp.Hold
+            }
         },
         onMove = dragController::move,
         onDrop = { dragController.finish()?.let(onDrop) },
         onCancel = dragController::cancel,
+        onRelease = { dragController.select(block.event, fromLift = draggable) },
     )
     val lifted = draggable && dragController.ghosts(block)
-    val ghost = ghostAlpha(lifted)
+    // Released in place, the block takes over the copy's lift without a dip.
+    val takesOverLift = selected && dragController.selection?.fromLift == true
+    val ghostFade = ghostAlpha(lifted)
+    val ghost = if (takesOverLift && !lifted) 1f else ghostFade
+    val raise = selectionLift(selected, snap = takesOverLift)
+    // Tells the action bar to fold when it would cover the bottom handle.
+    val revealExtraPx = with(density) { (ResizeHandleTarget / 2).toPx() }
+    val barClearancePx = with(density) { SelectionBarClearance.toPx() }
+    val tracksBar = selected && !cuts.bottom
+    // Not while its own write is pending: it still shows the old times.
+    LaunchedEffect(selected, block.event, lifted) {
+        if (selected && !lifted) dragController.adoptSelection(block)
+    }
+    // Kept composed while hidden: removing them would cancel their own resize.
+    DisposableEffect(selected, block.event) {
+        if (selected) dragController.noteSelectedBlock(block.event, true)
+        onDispose { if (selected) dragController.noteSelectedBlock(block.event, false) }
+    }
+    val showHandles = selected && draggable
+    val handlesShown = !lifted && !dragController.isDragging
     Box(
-        modifier = (if (dimmed) modifier.alpha(EventDimAlpha) else modifier)
+        modifier = (if (dimmed && !selected) modifier.alpha(EventDimAlpha) else modifier)
+            .zIndex(if (selected) 1f else 0f)
             // The source stays put as a ghost while its floating copy travels.
             .then(if (ghost < 1f) Modifier.alpha(ghost) else Modifier)
-            .eventSurface(paint, shape, cuts)
-            .clickable(onClick = onClick)
-            // After clickable, so it is the inner node and wins the main pass;
-            // the tap still works, since a drag consumes the up.
-            .then(dragModifier)
-            .padding(horizontal = BLOCK_TEXT_PADDING, vertical = metrics.inset)
-            .semantics {
-                contentDescription = "$title, $timeLabel"
-                if (moveAction != null) customActions = listOf(moveAction)
-            },
+            .then(if (raise > 0f) Modifier.selectionLift(raise, shape) else Modifier)
+            .then(
+                if (tracksBar) {
+                    Modifier.onGloballyPositioned {
+                        dragController.noteSelectedBottom(it, revealExtraPx, barClearancePx)
+                    }
+                } else {
+                    Modifier
+                },
+            ),
     ) {
-        Column {
-            if (showTitle) {
-                BlockTitle(
-                    title = title,
-                    maxLines = titleMaxLines,
-                    color = paint.titleInk,
-                    textDecoration = paint.decoration,
-                    fontWeight = paint.titleWeight,
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .eventSurface(paint, shape, cuts)
+                .clickable(onClick = onClick)
+                // After clickable, so it is the inner node and wins the main pass;
+                // the tap still works, since a drag consumes the up.
+                .then(dragModifier)
+                .padding(horizontal = BLOCK_TEXT_PADDING, vertical = metrics.inset)
+                .semantics {
+                    contentDescription = "$title, $timeLabel"
+                    if (moveAction != null) customActions = listOf(moveAction)
+                },
+        ) {
+            Column {
+                if (showTitle) {
+                    BlockTitle(
+                        title = title,
+                        maxLines = titleMaxLines,
+                        color = paint.titleInk,
+                        textDecoration = paint.decoration,
+                        fontWeight = paint.titleWeight,
+                    )
+                }
+                if (showTime) {
+                    BlockTimeLabel(
+                        label = shownTime,
+                        color = paint.secondaryInk,
+                        maxLines = timeMaxLines,
+                    )
+                }
+            }
+        }
+        if (showHandles) {
+            val accent = eventAccent(block.event.color, dark, LocalSoftenColors.current)
+            val handleLines = if (showTitle) titleMaxLines else 0
+            val begin = { edge: ResizeEdge ->
+                { pointer: Offset ->
+                    dragController.beginResize(block, edge, zone, handleLines, pointer)
+                }
+            }
+            val end = { dragController.finishResize(zone)?.let(onResize) }
+            val handleIn by animateFloatAsState(
+                targetValue = if (handlesShown) 1f else 0f,
+                animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+                label = "handles",
+            )
+            val handleAlpha = Modifier.graphicsLayer {
+                alpha = handleIn.coerceIn(0f, 1f)
+                scaleX = 0.5f + 0.5f * handleIn
+                scaleY = 0.5f + 0.5f * handleIn
+            }
+            if (!cuts.top) {
+                ResizeHandle(
+                    color = accent,
+                    enabled = handlesShown,
+                    onStart = begin(ResizeEdge.Top),
+                    onMove = dragController::move,
+                    onEnd = { end() },
+                    onCancel = dragController::cancel,
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .offset(x = HANDLE_INSET - ResizeHandleTarget / 2, y = -ResizeHandleTarget / 2)
+                        .then(handleAlpha),
                 )
             }
-            if (showTime) {
-                BlockTimeLabel(
-                    label = shownTime,
-                    color = paint.secondaryInk,
-                    maxLines = timeMaxLines,
+            if (!cuts.bottom) {
+                ResizeHandle(
+                    color = accent,
+                    enabled = handlesShown,
+                    onStart = begin(ResizeEdge.Bottom),
+                    onMove = dragController::move,
+                    onEnd = { end() },
+                    onCancel = dragController::cancel,
+                    modifier = Modifier
+                        .align(Alignment.BottomEnd)
+                        .offset(x = ResizeHandleTarget / 2 - HANDLE_INSET, y = ResizeHandleTarget / 2)
+                        .then(handleAlpha),
                 )
             }
         }
     }
 }
+
+private const val SELECTION_ORPHAN_GRACE_MILLIS = 500L
+
+/** How far in from the block's side a resize handle's centre sits. */
+private val HANDLE_INSET = 16.dp
 
 private val SKELETON_HEADER_HEIGHT = 36.dp
 private val SKELETON_HEADER_PADDING = 8.dp

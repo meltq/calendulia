@@ -8,6 +8,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
+- **Long press an event to select it.** In the day, 3-day and week views, a long press lifts the event and selects it. Keep your finger down and move to drag it straight away. A selected event has handles at its top and bottom: drag them to change when it starts or ends, in 15-minute steps and across midnight if you want. The bar at the top edits, duplicates, shares or deletes it, and tapping elsewhere or going back deselects it. Read-only events can be selected but not moved or resized ([#141]).
 - **Scroll back to earlier days in the agenda.** Scroll up past today to see earlier days' events, loaded a month at a time. Past days follow the past-events setting: Dim fades them, and with Hide the agenda still starts at today ([#367]).
 
 ### Fixed
@@ -1857,3 +1858,4 @@ automatically, with zero telemetry and no internet permission.
 [#364]: https://codeberg.org/jlmakiola/calendula/issues/364
 [#367]: https://codeberg.org/jlmakiola/calendula/issues/367
 [#373]: https://codeberg.org/jlmakiola/calendula/issues/373
+[#141]: https://codeberg.org/jlmakiola/calendula/issues/141

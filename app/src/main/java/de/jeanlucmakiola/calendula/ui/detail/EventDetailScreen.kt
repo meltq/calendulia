@@ -1,13 +1,9 @@
 package de.jeanlucmakiola.calendula.ui.detail
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
@@ -41,7 +37,6 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,7 +46,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -67,7 +61,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.ContextCompat
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
@@ -90,13 +83,15 @@ import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.EventStatus
-import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.Reminder
 import de.jeanlucmakiola.calendula.domain.TimeZoneOption
 import de.jeanlucmakiola.calendula.domain.timeZoneOptionOf
 import de.jeanlucmakiola.calendula.domain.zoneDescriptor
 import de.jeanlucmakiola.floret.identity.predictiveBack
 import de.jeanlucmakiola.calendula.ui.common.CalendarFailure
+import de.jeanlucmakiola.calendula.ui.common.DeleteEventDialog
+import de.jeanlucmakiola.calendula.ui.common.rememberWriteGate
+import de.jeanlucmakiola.calendula.ui.common.sendEventShare
 import de.jeanlucmakiola.calendula.ui.common.FieldCopier
 import de.jeanlucmakiola.calendula.ui.common.copyOnLongPress
 import de.jeanlucmakiola.calendula.ui.common.rememberFieldCopier
@@ -104,7 +99,6 @@ import de.jeanlucmakiola.calendula.ui.common.icuTimeZoneRegion
 import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
 import de.jeanlucmakiola.calendula.ui.common.eventFill
-import de.jeanlucmakiola.floret.components.OptionCard
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.timeOfDayFormatter
@@ -162,43 +156,15 @@ fun EventDetailScreen(
     val onShareClick = {
         scope.launch {
             val uri = viewModel.shareUri()
-            val sent = uri != null && runCatching {
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/calendar"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                context.startActivity(Intent.createChooser(send, shareChooserTitle))
-            }.isSuccess
+            val sent = uri != null && context.sendEventShare(uri, shareChooserTitle)
             if (!sent) snackbarHostState.showSnackbar(shareFailedMessage)
         }
         Unit
     }
 
     // v1.0 installs only hold READ_CALENDAR; the first write asks for the
-    // upgrade in place. Granting continues straight into the tapped action —
-    // edit, delete, or duplicate — held here until the result comes back.
-    var pendingWrite by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val writePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) pendingWrite?.invoke()
-        pendingWrite = null
-    }
-    val hasWritePermission = {
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.WRITE_CALENDAR,
-        ) == PackageManager.PERMISSION_GRANTED
-    }
-    val requireWrite: (() -> Unit) -> Unit = { action ->
-        if (hasWritePermission()) {
-            action()
-        } else {
-            pendingWrite = action
-            writePermissionLauncher.launch(Manifest.permission.WRITE_CALENDAR)
-        }
-    }
+    // upgrade in place and continues straight into the tapped action.
+    val requireWrite = rememberWriteGate()
     val onDeleteClick = { requireWrite { showDeleteDialog = true } }
     val onEditClick = { requireWrite(onEdit) }
     // Duplicate reads the loaded detail into a create form and hands it up; the
@@ -321,70 +287,6 @@ fun EventDetailScreen(
         )
     }
 }
-
-/**
- * Delete confirmation. Recurring events choose between cancelling just the
- * tapped occurrence (default), truncating the series from it onwards, and
- * removing the whole series.
- */
-@Composable
-private fun DeleteEventDialog(
-    isRecurring: Boolean,
-    onConfirm: (RecurringWriteScope) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var scope by rememberSaveable { mutableStateOf(RecurringWriteScope.ThisEvent) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(
-                    if (isRecurring) R.string.event_delete_recurring_title
-                    else R.string.event_delete_title,
-                ),
-            )
-        },
-        text = {
-            if (isRecurring) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OptionCard(
-                        label = stringResource(R.string.event_delete_option_occurrence),
-                        onClick = { scope = RecurringWriteScope.ThisEvent },
-                        selected = scope == RecurringWriteScope.ThisEvent,
-                    )
-                    OptionCard(
-                        label = stringResource(R.string.event_delete_option_following),
-                        onClick = { scope = RecurringWriteScope.ThisAndFollowing },
-                        selected = scope == RecurringWriteScope.ThisAndFollowing,
-                    )
-                    OptionCard(
-                        label = stringResource(R.string.event_delete_option_series),
-                        onClick = { scope = RecurringWriteScope.AllEvents },
-                        selected = scope == RecurringWriteScope.AllEvents,
-                    )
-                }
-            } else {
-                Text(stringResource(R.string.event_delete_body))
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(if (isRecurring) scope else RecurringWriteScope.AllEvents) },
-            ) {
-                Text(
-                    text = stringResource(R.string.event_detail_delete),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.dialog_cancel))
-            }
-        },
-    )
-}
-
 
 @Composable
 private fun EventDetailContent(

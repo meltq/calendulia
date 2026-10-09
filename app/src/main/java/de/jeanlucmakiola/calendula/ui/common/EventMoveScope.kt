@@ -132,6 +132,13 @@ fun eventDragAllowed(event: EventInstance): Boolean {
 }
 
 /**
+ * Whether a long press may select events at all (#141) — the gesture setting,
+ * whatever the event's calendar allows. A read-only event is selected but stays put.
+ */
+@Composable
+fun eventSelectAllowed(): Boolean = LocalEventMove.current?.dragEnabled == true
+
+/**
  * A TalkBack action that opens [event] in the edit form, so rescheduling isn't
  * pointer-only. Null when this event can't be moved.
  */

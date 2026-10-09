@@ -55,7 +55,11 @@ import de.jeanlucmakiola.floret.identity.fadeThrough
 import de.jeanlucmakiola.floret.identity.predictiveBackExit
 import de.jeanlucmakiola.floret.identity.rememberReduceMotion
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.EventActionsViewModel
 import de.jeanlucmakiola.calendula.ui.common.EventMoveHost
+import de.jeanlucmakiola.calendula.ui.common.EventSelectionHost
+import de.jeanlucmakiola.calendula.ui.common.eventActionFailureMessage
+import de.jeanlucmakiola.calendula.ui.common.rememberFabSelection
 import de.jeanlucmakiola.calendula.ui.common.EventMoveScope
 import de.jeanlucmakiola.calendula.ui.common.LocalEventMove
 import de.jeanlucmakiola.calendula.ui.common.LocalManageCalendars
@@ -386,6 +390,9 @@ fun CalendarHost(
     // survives view switches; the calendar surfaces read it out of LocalEventMove.
     val reschedule: RescheduleViewModel = hiltViewModel()
     val movableCalendarIds by reschedule.movableCalendarIds.collectAsStateWithLifecycle()
+    val eventActions: EventActionsViewModel = hiltViewModel()
+    val moveOutcome by reschedule.outcome.collectAsStateWithLifecycle()
+    val selectionFailure by eventActions.failure.collectAsStateWithLifecycle()
     val onEditEvent: (EventInstance) -> Unit = { event ->
         val key = longArrayOf(
             event.eventId,
@@ -527,7 +534,25 @@ fun CalendarHost(
                     showTodayButton = todayInToolbar,
                 )
             },
-            floatingActionButton = { CalendarFab(chromeHost, todayInToolbar) },
+            floatingActionButton = {
+                // While an event is selected the FAB is its action bar's toggle (#141).
+                val fabSelection = rememberFabSelection(
+                    host = chromeHost,
+                    viewModel = eventActions,
+                    onEdit = onEditEvent,
+                    onDuplicate = { form ->
+                        // A fresh event, like a duplicate from the detail screen (#52).
+                        importFormSource = ImportSource.Insert
+                        importForm = form
+                    },
+                    chipShown = moveOutcome != null || selectionFailure != null,
+                    onDismissChip = {
+                        reschedule.consumeOutcome()
+                        eventActions.consumeFailure()
+                    },
+                )
+                CalendarFab(chromeHost, todayInToolbar, fabSelection)
+            },
         ) { innerPadding ->
         SharedTransitionLayout(
             Modifier
@@ -582,7 +607,15 @@ fun CalendarHost(
 
         // Scope prompt + confirmation/undo snackbar for a dropped event, declared
         // right after the calendar views so later overlays cover it.
-        EventMoveHost(reschedule, modifier = Modifier.fillMaxSize())
+        EventMoveHost(
+            reschedule,
+            modifier = Modifier.fillMaxSize(),
+            actionFailure = eventActionFailureMessage(selectionFailure),
+            onActionFailureShown = eventActions::consumeFailure,
+        )
+
+        // The delete prompt and failure chip of a selected event's actions (#141).
+        EventSelectionHost(host = chromeHost, viewModel = eventActions)
 
         // Search overlay — below detail/edit in the Box so a tapped result's
         // detail screen draws on top, and closing it returns to the results.

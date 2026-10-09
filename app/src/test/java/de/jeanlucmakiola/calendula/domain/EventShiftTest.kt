@@ -152,4 +152,49 @@ class EventShiftTest {
         val original = form()
         assertThat(original.shiftedByDays(0, berlin)).isEqualTo(original)
     }
+
+    @Test
+    fun `resizing sets each edge on its own`() {
+        val original = form()
+        val end = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 30)).toInstant(berlin)
+
+        val resized = original.resizedTo(original.start.toInstant(berlin), end, berlin)
+
+        assertThat(resized.start).isEqualTo(original.start)
+        assertThat(resized.end).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 30)))
+    }
+
+    @Test
+    fun `a resize past midnight carries the end onto the next day`() {
+        val original = form()
+        val end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(1, 0)).toInstant(berlin)
+
+        val resized = original.resizedTo(original.start.toInstant(berlin), end, berlin)
+
+        assertThat(resized.end).isEqualTo(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(1, 0)))
+    }
+
+    @Test
+    fun `a pinned event is resized in its own zone`() {
+        val original = form(
+            start = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(9, 0)),
+            end = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(10, 0)),
+            timezone = "America/New_York",
+        )
+        // "15:30 Berlin" is 09:30 in New York.
+        val start = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(15, 30)).toInstant(berlin)
+
+        val resized = original.resizedTo(start, original.end.toInstant(newYork), berlin)
+
+        assertThat(resized.start).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(9, 30)))
+        assertThat(resized.end).isEqualTo(original.end)
+    }
+
+    @Test
+    fun `an all-day event ignores a resize`() {
+        val allDay = form(isAllDay = true)
+        val start = allDay.start.toInstant(berlin)
+
+        assertThat(allDay.resizedTo(start, start, berlin)).isEqualTo(allDay)
+    }
 }

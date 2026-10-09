@@ -58,6 +58,7 @@ internal fun WeekViewPreview(
             onOpenDay = {},
             onCreateAt = { _, _ -> },
             onDrop = {},
+            onResize = {},
         )
     }
 }

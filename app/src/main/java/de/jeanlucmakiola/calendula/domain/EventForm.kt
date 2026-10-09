@@ -265,3 +265,20 @@ fun EventForm.problems(): Set<EventFormProblem> = buildSet {
         add(EventFormProblem.RecurrenceEndsBeforeStart)
     }
 }
+
+/**
+ * A create form seeded from this occurrence, to save a copy as a new,
+ * independent event (#52). The recurrence is dropped — a duplicate is a single
+ * event. The source calendar is kept only when [canModify], otherwise the id is
+ * cleared so the create resolves to a writable calendar, which lets a read-only
+ * event be copied into an editable one. [instance]'s own times carry over.
+ */
+fun EventDetail.toDuplicateForm(canModify: Boolean, zone: TimeZone): EventForm =
+    toEditForm(
+        beginMillis = instance.start.toEpochMilliseconds(),
+        endMillis = instance.end.toEpochMilliseconds(),
+        zone = zone,
+    ).copy(
+        rrule = null,
+        calendarId = instance.calendarId.takeIf { canModify },
+    )

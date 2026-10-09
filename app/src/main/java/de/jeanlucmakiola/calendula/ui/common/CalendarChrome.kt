@@ -1,5 +1,14 @@
 package de.jeanlucmakiola.calendula.ui.common
 
+import androidx.compose.animation.AnimatedContent
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.animation.togetherWith
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
@@ -16,6 +25,9 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.Stable
@@ -24,6 +36,7 @@ import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.domain.EventInstance
 import kotlinx.datetime.LocalDate
 
 /**
@@ -53,11 +66,30 @@ class ScreenActions(
     val onCreate: () -> Unit,
 )
 
+/**
+ * An event a long press left selected (#141), which the host answers with the
+ * action bar in place of the FAB. [dismiss] clears it on the screen that owns it.
+ */
+@Stable
+class EventSelection(val event: EventInstance, val dismiss: () -> Unit)
+
 /** The screen on show's [ScreenChrome] and [ScreenActions], for the host to draw. */
 @Stable
 class ChromeHost {
     var chrome by mutableStateOf<ScreenChrome?>(null)
         private set
+
+    var selection by mutableStateOf<EventSelection?>(null)
+        internal set
+
+    /** Whether the selected event is being dragged or resized right now. */
+    var selectionBusy by mutableStateOf(false)
+        internal set
+
+    /** Whether the bar would cover the selected event, and so draws compact. */
+    var selectionCompact by mutableStateOf(false)
+        internal set
+
 
     var actions: ScreenActions? = null
         private set
@@ -80,10 +112,74 @@ fun PublishChrome(chrome: ScreenChrome, actions: ScreenActions) {
     if (slot.current) SideEffect { slot.host.publish(chrome, actions) }
 }
 
-/** The top bar every calendar screen shares. */
-@OptIn(ExperimentalMaterial3Api::class)
+/** Hands the screen's selected [event] to the host, for as long as it stays selected. */
+@Composable
+fun PublishSelection(event: EventInstance?, busy: Boolean, compact: Boolean, onDismiss: () -> Unit) {
+    val slot = LocalChromeSlot.current ?: return
+    val currentDismiss by rememberUpdatedState(onDismiss)
+    val selection = remember(event) { event?.let { EventSelection(it) { currentDismiss() } } }
+    val host = slot.host
+    val current = slot.current
+    DisposableEffect(host, selection, current) {
+        if (current) host.selection = selection
+        onDispose {
+            if (host.selection === selection) host.selection = null
+            // Left mid-drag, nothing else would clear these for the other views.
+            host.selectionBusy = false
+            host.selectionCompact = false
+        }
+    }
+    if (current) {
+        SideEffect {
+            host.selectionBusy = busy && selection != null
+            host.selectionCompact = compact && selection != null
+        }
+    }
+}
+
+/**
+ * The top bar every calendar screen shares — or, while an event is selected,
+ * the selection's own bar in its place (#141).
+ */
 @Composable
 fun CalendarTopBar(
+    host: ChromeHost,
+    selectedView: CalendarView,
+    quickSwitchViews: List<CalendarView>,
+    onCycleView: () -> Unit,
+    onOpenDrawer: () -> Unit,
+    onOpenSearch: () -> Unit,
+    showTodayButton: Boolean,
+) {
+    val effects = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
+    AnimatedContent(
+        targetState = host.selection,
+        contentKey = { it != null },
+        transitionSpec = {
+            (fadeIn(effects) + slideInVertically { -it / 4 })
+                .togetherWith(fadeOut(effects) + slideOutVertically { -it / 4 })
+        },
+        label = "top-bar",
+    ) { selection ->
+        if (selection != null) {
+            SelectionTopBar(selection)
+        } else {
+            ViewTopBar(
+                host = host,
+                selectedView = selectedView,
+                quickSwitchViews = quickSwitchViews,
+                onCycleView = onCycleView,
+                onOpenDrawer = onOpenDrawer,
+                onOpenSearch = onOpenSearch,
+                showTodayButton = showTodayButton,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun ViewTopBar(
     host: ChromeHost,
     selectedView: CalendarView,
     quickSwitchViews: List<CalendarView>,
@@ -136,16 +232,26 @@ fun CalendarTopBar(
     )
 }
 
-/** The FAB column every calendar screen shares. */
+/**
+ * The FAB column every calendar screen shares. While an event is selected the
+ * FAB is [selection]'s toggle instead, and it steps aside mid-gesture.
+ */
 @Composable
-fun CalendarFab(host: ChromeHost, todayInToolbar: Boolean) {
+fun CalendarFab(host: ChromeHost, todayInToolbar: Boolean, selection: FabSelection? = null) {
     val chrome = host.chrome ?: return
-    CalendarFabColumn(
-        todayVisible = chrome.awayFromToday && !todayInToolbar,
-        todayText = chrome.todayText,
-        onToday = { host.actions?.onToday?.invoke() },
-        onCreate = { host.actions?.onCreate?.invoke() },
-    )
+    AnimatedVisibility(
+        visible = !host.selectionBusy,
+        enter = scaleIn(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeIn(),
+        exit = scaleOut(MaterialTheme.motionScheme.fastSpatialSpec()) + fadeOut(),
+    ) {
+        CalendarFabColumn(
+            todayVisible = chrome.awayFromToday && !todayInToolbar,
+            todayText = chrome.todayText,
+            onToday = { host.actions?.onToday?.invoke() },
+            onCreate = { host.actions?.onCreate?.invoke() },
+            selection = selection,
+        )
+    }
 }
 
 /**
