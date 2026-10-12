@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.week.MINUTES_PER_DAY
 import de.jeanlucmakiola.calendula.ui.week.TimedBlock
@@ -61,6 +62,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.roundToInt
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /** Start granularity a dragged block snaps to, matching the big calendar apps. */
@@ -269,6 +271,41 @@ data class TimelineDrop(
     val clipOffsetMin: Int = 0,
 )
 
+/** The id a drafted block's stand-in event carries, which no provider row has (#153). */
+private const val DRAFT_ID = Long.MIN_VALUE
+
+/** Whether this is the stand-in for a block drafted on an empty slot, not a real event. */
+val EventInstance.isDraft: Boolean get() = instanceId == DRAFT_ID
+
+/** A drafted block's stand-in event, [minutes] long from [start]. */
+fun draftEvent(title: String, color: Int, start: Instant, minutes: Int): EventInstance = EventInstance(
+    instanceId = DRAFT_ID,
+    eventId = DRAFT_ID,
+    calendarId = DRAFT_ID,
+    title = title,
+    start = start,
+    end = start + minutes.minutes,
+    isAllDay = false,
+    color = color,
+    location = null,
+)
+
+/** Where a long press [minutes] down the column starts its draft, snapped down to the slot. */
+internal fun draftStartMin(minutes: Float): Int =
+    (minutes / DRAG_SNAP_MINUTES).toInt().times(DRAG_SNAP_MINUTES)
+        .coerceIn(0, MINUTES_PER_DAY - DRAG_SNAP_MINUTES)
+
+/** The part of [draft] on [date] as a full-width block, or null if none of it falls there. */
+internal fun draftBlock(draft: EventInstance, date: LocalDate, zone: TimeZone): TimedBlock? {
+    val start = draft.start.toLocalDateTime(zone)
+    val end = draft.end.toLocalDateTime(zone)
+    // The end is exclusive, so a draft ending at midnight belongs to the day before.
+    if (start.date > date || end.date < date || (end.date == date && end.time == LocalTime(0, 0))) return null
+    val startMin = if (start.date < date) 0 else start.time.toSecondOfDay() / 60
+    val endMin = if (end.date > date) MINUTES_PER_DAY else end.time.toSecondOfDay() / 60
+    return TimedBlock(draft, startMin, endMin, lane = 0, laneCount = 1)
+}
+
 /** Which end of an event a resize handle moves (#141). */
 enum class ResizeEdge { Top, Bottom }
 
@@ -391,6 +428,9 @@ class TimelineDragController {
      */
     private var settledOrigin: Pair<Long, Instant>? by mutableStateOf(null)
 
+    /** How long a block drafted on an empty slot starts out, in minutes (#153). */
+    var draftMinutes: Int = SettingsPrefs.DEFAULT_EVENT_DURATION
+
     /** The selected event, if any — see [TimelineSelection]. */
     var selection: TimelineSelection? by mutableStateOf(null)
         private set
@@ -401,6 +441,7 @@ class TimelineDragController {
     }
 
     fun deselect() {
+        if (selection?.event?.isDraft == true && settling?.event?.isDraft == true) release()
         selection = null
         selectionCovered = false
     }
@@ -560,6 +601,16 @@ class TimelineDragController {
         originSlot = drag?.slot
     }
 
+    /**
+     * Draft a block on an empty slot and lift it at once (#153). It is selected
+     * from the start, so it keeps its handles and bar once the finger lets go.
+     */
+    fun beginDraft(block: TimedBlock, pointerInRoot: Offset, blockInRoot: Offset) {
+        deselect()
+        select(block.event)
+        begin(block, clipOffsetMin = 0, titleLines = 1, pointerInRoot = pointerInRoot, blockInRoot = blockInRoot)
+    }
+
     fun move(pointerInRoot: Offset) {
         pointer = pointerInRoot
         if (!pointerMoved && (pointerInRoot - pickupPointer).getDistance() > slopPx) pointerMoved = true
@@ -640,6 +691,8 @@ class TimelineDragController {
         val clipOffset = clipOffsetMin
         cancel()
         if (landed == null || landed.slot == origin) return null
+        // A draft dropped on a day off screen would vanish, so it stays where it was (#153).
+        if (landed.edgeOnly && landed.event.isDraft) return null
         settlingSelected = selection?.event?.instanceId == landed.event.instanceId
         // An edge piece is a hint for the finger, not a preview of the landing
         // slot: the event belongs to a day this timeline has no column for, so
@@ -663,18 +716,12 @@ class TimelineDragController {
         titleLines: Int,
         pointerInRoot: Offset,
     ) {
-        val start = block.event.start.toLocalDateTime(zone)
-        val end = block.event.end.toLocalDateTime(zone)
+        val span = wallClockSpan(block.event, zone)
         source = block
         resizeEdge = edge
-        resizeDay = start.date
-        resizeStartMin = start.time.toSecondOfDay() / 60
-        // Wall clock at both ends, as the drop resolves them (DST-safe).
-        resizeEndMin = maxOf(
-            resizeStartMin,
-            (end.date.toEpochDays() - start.date.toEpochDays()).toInt() * MINUTES_PER_DAY +
-                end.time.toSecondOfDay() / 60,
-        )
+        resizeDay = span.day
+        resizeStartMin = span.startMin
+        resizeEndMin = span.endMin
         clipOffsetMin = 0
         this.titleLines = titleLines
         settling = null
@@ -684,7 +731,7 @@ class TimelineDragController {
         pointer = pointerInRoot
         // Measured from the edge's own column: the handle overhangs into the next.
         val edgeDay = if (edge == ResizeEdge.Top) 0 else (resizeEndMin - 1).floorDiv(MINUTES_PER_DAY).coerceAtLeast(0)
-        val edgeIndex = geometry.days.indexOf(start.date.plus(edgeDay, DateTimeUnit.DAY))
+        val edgeIndex = geometry.days.indexOf(span.day.plus(edgeDay, DateTimeUnit.DAY))
         resizeColumn = edgeIndex.takeIf { it >= 0 }
             ?.let { if (geometry.isRtl) geometry.days.lastIndex - it else it }
         resizeGrabMin = (pointerResizeMinutes() ?: 0f) -
@@ -703,16 +750,16 @@ class TimelineDragController {
         val origin = originSlot
         cancel()
         if (landed == null || landed.slot == origin) return null
-        settlingSelected = selection?.event?.instanceId == landed.event.instanceId
-        settling = if (landed.edgeOnly) landed.copy(pieces = emptyList()) else landed
-        liftedInstanceId = landed.event.instanceId
-        settledOrigin = landed.event.eventId to landed.event.start
-        settledAbandonedMark = abandonedTicks?.value ?: 0
         val drop = TimelineResizeDrop(
             event = landed.event,
             start = wallClockInstant(landed.date, landed.eventStartMin, zone),
             end = wallClockInstant(landed.date, landed.eventStartMin + landed.eventSpanMin, zone),
         )
+        settlingSelected = selection?.event?.instanceId == landed.event.instanceId
+        settling = if (landed.edgeOnly) landed.copy(pieces = emptyList()) else landed
+        liftedInstanceId = landed.event.instanceId
+        settledOrigin = landed.event.eventId to landed.event.start
+        settledAbandonedMark = abandonedTicks?.value ?: 0
         settledEnd = drop.end
         return drop
     }
@@ -957,10 +1004,27 @@ fun TimelineDrop.startInstant(zone: TimeZone): Instant =
     wallClockInstant(date, startMin - clipOffsetMin, zone)
 
 /** [minutes] past [date]'s midnight, either way past it, as wall clock in [zone] (DST-safe). */
-fun wallClockInstant(date: LocalDate, minutes: Int, zone: TimeZone): Instant {
+fun wallClockInstant(date: LocalDate, minutes: Int, zone: TimeZone): Instant =
+    wallClockTime(date, minutes).toInstant(zone)
+
+/** The wall-clock time [minutes] past [date]'s midnight, on a later day past 1440. */
+fun wallClockTime(date: LocalDate, minutes: Int): LocalDateTime {
     val day = date.plus(minutes.floorDiv(MINUTES_PER_DAY), DateTimeUnit.DAY)
     val minute = minutes.mod(MINUTES_PER_DAY)
-    return LocalDateTime(day, LocalTime(minute / 60, minute % 60)).toInstant(zone)
+    return LocalDateTime(day, LocalTime(minute / 60, minute % 60))
+}
+
+/** An event's span as wall-clock minutes from its start day's midnight. */
+data class WallClockSpan(val day: LocalDate, val startMin: Int, val endMin: Int)
+
+/** [event]'s [WallClockSpan], its end past 1440 when it ends on a later day (DST-safe). */
+fun wallClockSpan(event: EventInstance, zone: TimeZone): WallClockSpan {
+    val start = event.start.toLocalDateTime(zone)
+    val end = event.end.toLocalDateTime(zone)
+    val startMin = start.time.toSecondOfDay() / 60
+    val endMin = (end.date.toEpochDays() - start.date.toEpochDays()).toInt() * MINUTES_PER_DAY +
+        end.time.toSecondOfDay() / 60
+    return WallClockSpan(start.date, startMin, maxOf(startMin, endMin))
 }
 
 /**
@@ -1212,7 +1276,7 @@ private fun DragCopy(
                 Text(
                     text = label,
                     // As the block it lifted off sets its own time (#219).
-                    style = MaterialTheme.typography.labelSmall.asEventTime(),
+                    style = rememberPackedLines(MaterialTheme.typography.labelSmall.asEventTime()),
                     maxLines = timeMaxLines,
                     overflow = overflow.overflow,
                     softWrap = overflow.softWrap,
@@ -1233,7 +1297,8 @@ fun selectionLift(selected: Boolean, snap: Boolean = false): Float {
         val target = if (selected) 1f else 0f
         if (reduceMotion || (selected && snap)) raise.snapTo(target) else raise.animateTo(target, spec)
     }
-    return raise.value
+    // The effect runs a frame late, and that frame would show the block unlifted.
+    return if (selected && snap) 1f else raise.value
 }
 
 /**

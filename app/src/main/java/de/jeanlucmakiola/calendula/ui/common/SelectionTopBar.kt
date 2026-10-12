@@ -40,7 +40,9 @@ fun SelectionTopBar(selection: EventSelection) {
             IconButton(onClick = selection.dismiss) {
                 Icon(
                     imageVector = Icons.Default.Close,
-                    contentDescription = stringResource(R.string.event_selection_close),
+                    contentDescription = stringResource(
+                        if (selection.create != null) R.string.event_draft_discard else R.string.event_selection_close,
+                    ),
                 )
             }
         },

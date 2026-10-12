@@ -69,9 +69,15 @@ class ScreenActions(
 /**
  * An event a long press left selected (#141), which the host answers with the
  * action bar in place of the FAB. [dismiss] clears it on the screen that owns it.
+ * [create] is set for a block drafted on an empty slot (#153), which has no
+ * event yet, so the bar offers to create one.
  */
 @Stable
-class EventSelection(val event: EventInstance, val dismiss: () -> Unit)
+class EventSelection(
+    val event: EventInstance,
+    val dismiss: () -> Unit,
+    val create: (() -> Unit)? = null,
+)
 
 /** The screen on show's [ScreenChrome] and [ScreenActions], for the host to draw. */
 @Stable
@@ -114,10 +120,26 @@ fun PublishChrome(chrome: ScreenChrome, actions: ScreenActions) {
 
 /** Hands the screen's selected [event] to the host, for as long as it stays selected. */
 @Composable
-fun PublishSelection(event: EventInstance?, busy: Boolean, compact: Boolean, onDismiss: () -> Unit) {
+fun PublishSelection(
+    event: EventInstance?,
+    busy: Boolean,
+    compact: Boolean,
+    onDismiss: () -> Unit,
+    onCreate: (() -> Unit)? = null,
+) {
     val slot = LocalChromeSlot.current ?: return
     val currentDismiss by rememberUpdatedState(onDismiss)
-    val selection = remember(event) { event?.let { EventSelection(it) { currentDismiss() } } }
+    val currentCreate by rememberUpdatedState(onCreate)
+    val drafted = onCreate != null
+    val selection = remember(event, drafted) {
+        event?.let {
+            EventSelection(
+                event = it,
+                dismiss = { currentDismiss() },
+                create = if (drafted) ({ currentCreate?.invoke() }) else null,
+            )
+        }
+    }
     val host = slot.host
     val current = slot.current
     DisposableEffect(host, selection, current) {

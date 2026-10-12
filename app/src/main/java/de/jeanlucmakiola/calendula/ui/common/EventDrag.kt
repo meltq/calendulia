@@ -73,7 +73,8 @@ fun rememberEventDragSource(
  * The same pickup, for a surface that carries many draggable pieces rather than
  * being one itself — the month grid, whose chips are covered by a full-bleed tap
  * layer. [onPickUp] receives the press position local to this node and answers
- * whether anything is there; false abandons the gesture.
+ * whether anything is there; false abandons the gesture. [skipClaimedDown] leaves
+ * a press a descendant already consumed alone.
  */
 @Composable
 fun rememberDragSurface(
@@ -83,6 +84,8 @@ fun rememberDragSurface(
     onMove: (pointerInRoot: Offset) -> Unit,
     onDrop: () -> Unit,
     onCancel: () -> Unit,
+    onRelease: (() -> Unit)? = null,
+    skipClaimedDown: Boolean = false,
 ): Modifier = rememberPickUpSurface(
     enabled = enabled,
     key = key,
@@ -93,7 +96,8 @@ fun rememberDragSurface(
     onMove = onMove,
     onDrop = onDrop,
     onCancel = onCancel,
-    onRelease = null,
+    onRelease = onRelease,
+    skipClaimedDown = skipClaimedDown,
 )
 
 @Composable
@@ -106,6 +110,7 @@ private fun rememberPickUpSurface(
     onDrop: () -> Unit,
     onCancel: () -> Unit,
     onRelease: (() -> Unit)?,
+    skipClaimedDown: Boolean = false,
 ): Modifier {
     if (!enabled) return Modifier
     val holdMillis = LocalViewConfiguration.current.longPressTimeoutMillis
@@ -125,6 +130,8 @@ private fun rememberPickUpSurface(
             val slop = viewConfiguration.touchSlop
             awaitEachGesture {
                 val down = awaitFirstDown(requireUnconsumed = false)
+                // A child that took the press, such as a resize handle, keeps it.
+                if (skipClaimedDown && down.isConsumed) return@awaitEachGesture
                 val origin = down.position
                 val immediate = currentImmediate
                 // Null: held still. True: an immediate pickup past slop. False: abandoned.

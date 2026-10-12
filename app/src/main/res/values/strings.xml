@@ -102,6 +102,8 @@
     <string name="event_selection_actions">Event actions</string>
     <string name="event_selection_hide">Hide event actions</string>
     <string name="event_selection_close">Deselect event</string>
+    <string name="event_draft_create">Create event</string>
+    <string name="event_draft_discard">Discard new event</string>
     <string name="event_action_load_failed">Couldn\'t open the event</string>
     <string name="event_move_undo">Undo</string>
     <string name="event_move_undone">Move undone</string>

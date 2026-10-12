@@ -91,6 +91,14 @@ abstract class PagedTimelineViewModel(
             initialValue = false,
         )
 
+    /** How long a block drafted on an empty slot starts out (#153). */
+    val defaultEventDuration: StateFlow<Int> = settingsPrefs.defaultEventDurationMinutes
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = SettingsPrefs.DEFAULT_EVENT_DURATION,
+        )
+
     private val todayDate: LocalDate
         get() = currentDate()
 

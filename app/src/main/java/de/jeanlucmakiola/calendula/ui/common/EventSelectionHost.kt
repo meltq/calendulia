@@ -47,6 +47,23 @@ fun rememberFabSelection(
     val currentWrite by rememberUpdatedState(requireWrite)
 
     val selection = host.selection ?: return null
+    selection.create?.let { create ->
+        return remember(selection, expanded, chipShown) {
+            FabSelection(
+                expanded = expanded,
+                onToggle = {
+                    if (chipShown) currentDismissChip()
+                    chosen = !expanded
+                },
+                bar = {
+                    DraftSelectionBar(
+                        onCreate = { currentWrite { create() } },
+                        onDiscard = selection.dismiss,
+                    )
+                },
+            )
+        }
+    }
     val event = selection.event
     val calendar = calendars[event.calendarId]
     val canEdit = calendar?.canModifyContents == true

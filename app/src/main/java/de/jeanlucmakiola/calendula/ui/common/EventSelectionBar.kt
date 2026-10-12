@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
@@ -48,6 +50,26 @@ fun EventSelectionBar(
             BarAction(Icons.Default.ContentCopy, R.string.event_detail_duplicate, onDuplicate)
             BarAction(Icons.Default.Share, R.string.event_detail_share, onShare)
             if (canDelete) BarAction(Icons.Default.Delete, R.string.event_detail_delete, onDelete)
+        }
+    }
+}
+
+/** A drafted block's bar (#153): create the event, or let the draft go. */
+@Composable
+fun DraftSelectionBar(onCreate: () -> Unit, onDiscard: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.primaryContainer,
+        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+        shadowElevation = 6.dp,
+        modifier = modifier.height(FabSize),
+    ) {
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.padding(horizontal = 4.dp),
+        ) {
+            BarAction(Icons.Default.Close, R.string.event_draft_discard, onDiscard)
+            BarAction(Icons.Default.Check, R.string.event_draft_create, onCreate)
         }
     }
 }

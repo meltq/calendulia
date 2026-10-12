@@ -64,6 +64,16 @@ import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.toArgb
+import de.jeanlucmakiola.calendula.ui.common.draftBlock
+import de.jeanlucmakiola.calendula.ui.common.draftEvent
+import de.jeanlucmakiola.calendula.ui.common.draftStartMin
+import de.jeanlucmakiola.calendula.ui.common.isDraft
+import de.jeanlucmakiola.calendula.ui.common.rememberDragSurface
+import de.jeanlucmakiola.calendula.ui.common.rememberWriteGate
+import de.jeanlucmakiola.calendula.ui.common.OutOfViewEdges
+import de.jeanlucmakiola.calendula.ui.common.wallClockInstant
+import de.jeanlucmakiola.calendula.ui.common.wallClockSpan
 import de.jeanlucmakiola.calendula.ui.common.PickUp
 import de.jeanlucmakiola.calendula.ui.common.SelectionBarClearance
 import de.jeanlucmakiola.calendula.ui.common.ResizeEdge
@@ -239,6 +249,7 @@ fun TimelineScreen(
     onOpenDay: (LocalDate) -> Unit,
     onEventClick: (EventInstance) -> Unit,
     onCreateEvent: (LocalDate, Int?) -> Unit,
+    onCreateSpan: (LocalDate, Int, Int?) -> Unit,
     modifier: Modifier = Modifier,
     weekViewModel: WeekViewModel = hiltViewModel(),
     multiDayViewModel: MultiDayViewModel = hiltViewModel(),
@@ -253,6 +264,7 @@ fun TimelineScreen(
         onOpenDay = onOpenDay,
         onEventClick = onEventClick,
         onCreateEvent = onCreateEvent,
+        onCreateSpan = onCreateSpan,
         modifier = modifier,
     )
 }
@@ -310,6 +322,7 @@ private fun PagedTimelineScreen(
     onOpenDay: (LocalDate) -> Unit,
     onEventClick: (EventInstance) -> Unit,
     onCreateEvent: (LocalDate, Int?) -> Unit,
+    onCreateSpan: (LocalDate, Int, Int?) -> Unit,
     modifier: Modifier,
 ) {
     // The view on screen, which trails [view] while the columns resize into it.
@@ -342,6 +355,7 @@ private fun PagedTimelineScreen(
     val grid = position.grid
     val anchorPage = position.page
     val dimCompleted by key(viewModel) { viewModel.dimCompletedEvents.collectAsStateWithLifecycle() }
+    val draftMinutes by key(viewModel) { viewModel.defaultEventDuration.collectAsStateWithLifecycle() }
     // The instant before which an event counts as completed, or null when dimming
     // is off. derivedStateOf keeps the per-minute "now" from recomposing the
     // screen while the setting is off (it stays null regardless of the tick).
@@ -490,6 +504,8 @@ private fun PagedTimelineScreen(
                 onEventClick = onEventClick,
                 onOpenDay = onOpenDay,
                 onCreateAt = { d, minutes -> onCreateEvent(d, minutes) },
+                onCreateSpan = onCreateSpan,
+                draftMinutes = draftMinutes,
                 modifier = Modifier
                     .padding(innerPadding)
                     .fillMaxSize(),
@@ -512,6 +528,8 @@ private fun WeekContent(
     onEventClick: (EventInstance) -> Unit,
     onOpenDay: (LocalDate) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
+    onCreateSpan: (LocalDate, Int, Int?) -> Unit,
+    draftMinutes: Int,
     modifier: Modifier = Modifier,
 ) {
     val fadeSpec = rememberCalendarFadeSpec()
@@ -526,33 +544,39 @@ private fun WeekContent(
     // Above the pager: a page change mid-drag would strand the floating block
     // inside the outgoing page.
     val dragController = rememberTimelineDragController()
+    SideEffect { dragController.draftMinutes = draftMinutes }
     val move = LocalEventMove.current
     val zone = remember { TimeZone.currentSystemDefault() }
-    val onDrop: (TimelineDrop) -> Unit = { drop ->
+    val onDrop: (TimelineDrop) -> Unit = drop@{ drop ->
+        val start = drop.startInstant(zone)
+        val moved = drop.event.copy(start = start, end = start + (drop.event.end - drop.event.start))
+        // A draft has nothing to write, so it stays selected where it landed (#153).
+        if (drop.event.isDraft) {
+            dragController.select(moved)
+            return@drop
+        }
         // A selected event stays selected where it landed (#141).
         if (dragController.selection?.event?.instanceId == drop.event.instanceId) {
-            val start = drop.startInstant(zone)
-            dragController.select(
-                drop.event.copy(start = start, end = start + (drop.event.end - drop.event.start)),
-                moved = true,
-            )
+            dragController.select(moved, moved = true)
         }
         move?.move(
             MoveRequest(
                 eventId = drop.event.eventId,
                 beginMillis = drop.event.start.toEpochMilliseconds(),
                 endMillis = drop.event.end.toEpochMilliseconds(),
-                target = MoveTarget.Start(drop.startInstant(zone)),
+                target = MoveTarget.Start(start),
             ),
         )
     }
 
     // A resize keeps its event selected, at its new length (#141).
-    val onResize: (TimelineResizeDrop) -> Unit = { drop ->
-        dragController.select(
-            drop.event.copy(start = drop.start, end = drop.end),
-            moved = true,
-        )
+    val onResize: (TimelineResizeDrop) -> Unit = resize@{ drop ->
+        val resized = drop.event.copy(start = drop.start, end = drop.end)
+        if (drop.event.isDraft) {
+            dragController.select(resized)
+            return@resize
+        }
+        dragController.select(resized, moved = true)
         move?.move(
             MoveRequest(
                 eventId = drop.event.eventId,
@@ -563,6 +587,13 @@ private fun WeekContent(
         )
     }
 
+    // A drafted block (#153) opens the new-event form at the span it shows.
+    val createDraft: (EventInstance) -> Unit = { draft ->
+        dragController.deselect()
+        val span = wallClockSpan(draft, zone)
+        onCreateSpan(span.day, span.startMin, span.endMin)
+    }
+
     // Selection (#141) ends on back, a page or view change, or any tap.
     val selection = dragController.selection
     PublishSelection(
@@ -570,10 +601,15 @@ private fun WeekContent(
         busy = dragController.isDragging,
         compact = dragController.selectionCovered,
         onDismiss = dragController::deselect,
+        onCreate = selection?.event?.takeIf { it.isDraft }?.let { draft -> { createDraft(draft) } },
     )
     BackHandler(enabled = selection != null) { dragController.deselect() }
     LaunchedEffect(pagerState, dragController) {
-        snapshotFlow { pagerState.currentPage }.drop(1).collect { dragController.deselect() }
+        snapshotFlow { pagerState.currentPage }.drop(1).collect {
+            // Deselecting would delete a draft mid-drag, so it stays until it lands.
+            val draftInFlight = dragController.isDragging && dragController.selection?.event?.isDraft == true
+            if (!draftInFlight) dragController.deselect()
+        }
     }
     LaunchedEffect(morph != null) { if (morph != null) dragController.deselect() }
     LaunchedEffect(selection, dragController.settling, dragController.isDragging, dragController.selectedCandidates.size) {
@@ -587,9 +623,14 @@ private fun WeekContent(
         delay(SELECTION_ORPHAN_GRACE_MILLIS)
         dragController.deselect()
     }
+    val requireWrite = rememberWriteGate()
     val openEvent: (EventInstance) -> Unit = { event ->
-        dragController.deselect()
-        onEventClick(event)
+        if (event.isDraft) {
+            requireWrite { createDraft(event) }
+        } else {
+            dragController.deselect()
+            onEventClick(event)
+        }
     }
 
     Box(modifier = modifier) {
@@ -1370,9 +1411,15 @@ private fun DayColumnCard(
     val morphing = LocalViewMorph.current != null
     val showHourGrid = LocalShowHourGrid.current
     val zone = remember { TimeZone.currentSystemDefault() }
+    // A block drafted on an empty slot (#153), drawn over the part of it on this day.
+    val draft by remember(dragController) {
+        derivedStateOf { dragController.selection?.event?.takeIf { it.isDraft } }
+    }
+    val draftPiece = remember(draft, date, zone) { draft?.let { draftBlock(it, date, zone) } }
+    val shown = remember(blocks, draftPiece) { if (draftPiece == null) blocks else blocks + draftPiece }
     // Tells a settled drop when this column has caught up with it.
-    LaunchedEffect(blocks, dragController.settling) {
-        dragController.noteGrid(date, blocks)
+    LaunchedEffect(shown, dragController.settling) {
+        dragController.noteGrid(date, shown)
     }
     // The tap detector outlives the composition that installed it — a pinch or a
     // Settings change moves the hour height without restarting it — so it reads
@@ -1382,6 +1429,7 @@ private fun DayColumnCard(
     val currentOnCreateAt = rememberUpdatedState(onCreateAt)
     val edges = rememberOutOfViewEdges(blocks, scrollState, hourPx)
     val currentEdges = rememberUpdatedState(edges)
+    val draftSurface = rememberDraftSurface(date, edges, hourPx, dragController, onDrop)
     Card(
         // Plain rectangular columns — the soft corners come from the outer
         // rounded scroll viewport, so inner rounding would look odd at the edges.
@@ -1420,14 +1468,17 @@ private fun DayColumnCard(
                             tappedMinuteOfDay(offset.y, currentHourPx.value),
                         )
                     }
-                },
+                }
+                // Inside the tap detector, which consumes every down, so only a
+                // block or handle on top can claim the press first.
+                .then(draftSurface),
         ) {
             val minEventHeight = hourHeight * MIN_EVENT_FRACTION
             // Keyed by event, so a block that changes time or lane is the *same*
             // composable afterwards and tweens there. The ordinal disambiguates
             // a column holding two occurrences of one series.
             val ordinals = mutableMapOf<Long, Int>()
-            blocks.forEach { block ->
+            shown.forEach { block ->
                 val ordinal = ordinals.merge(block.event.eventId, 1, Int::plus)!! - 1
                 key(block.event.eventId, ordinal) {
                     val top = hourHeight * (block.startMin / 60f)
@@ -1438,6 +1489,7 @@ private fun DayColumnCard(
                         widthFraction = 1f / block.laneCount,
                         y = top,
                         height = height,
+                        landing = dragController.ghosts(block),
                     )
                     // Where this block is cut at midnight, which decides both
                     // its shape and the half-gap it gives up to the hour cells.
@@ -1572,7 +1624,8 @@ private fun EventBlock(
     val dimmed = dimCutoff != null && block.event.isPastOn(date, dimCutoff)
     val zone = remember { TimeZone.currentSystemDefault() }
     val moveAction = eventMoveAction(block.event)
-    val draggable = eventDragAllowed(block.event)
+    val draft = block.event.isDraft
+    val draggable = draft || eventDragAllowed(block.event)
     val selectable = eventSelectAllowed()
     val selected = dragController.isSelected(block)
     val haptics = LocalHapticFeedback.current
@@ -1614,7 +1667,12 @@ private fun EventBlock(
     // Released in place, the block takes over the copy's lift without a dip.
     val takesOverLift = selected && dragController.selection?.fromLift == true
     val ghostFade = ghostAlpha(lifted)
-    val ghost = if (takesOverLift && !lifted) 1f else ghostFade
+    val ghost = when {
+        takesOverLift && !lifted -> 1f
+        // A draft leaves no ghost behind, and the copy it lands under is identical.
+        draft -> if (lifted) 0f else 1f
+        else -> ghostFade
+    }
     val raise = selectionLift(selected, snap = takesOverLift)
     // Tells the action bar to fold when it would cover the bottom handle.
     val revealExtraPx = with(density) { (ResizeHandleTarget / 2).toPx() }
@@ -1689,9 +1747,10 @@ private fun EventBlock(
                 }
             }
             val end = { dragController.finishResize(zone)?.let(onResize) }
+            // No bounce: an overshoot reads as the block's ends jumping.
             val handleIn by animateFloatAsState(
                 targetValue = if (handlesShown) 1f else 0f,
-                animationSpec = MaterialTheme.motionScheme.fastSpatialSpec(),
+                animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
                 label = "handles",
             )
             val handleAlpha = Modifier.graphicsLayer {
@@ -1729,6 +1788,62 @@ private fun EventBlock(
             }
         }
     }
+}
+
+/**
+ * A long press on an empty stretch of [date]'s column (#153): drafts a block of
+ * the default length from the slot under the finger and lifts it, as a long
+ * press on an event does. Presses on a block or handle are left to them.
+ */
+@Composable
+private fun rememberDraftSurface(
+    date: LocalDate,
+    edges: OutOfViewEdges,
+    hourPx: Float,
+    dragController: TimelineDragController,
+    onDrop: (TimelineDrop) -> Unit,
+): Modifier {
+    val currentDrop by rememberUpdatedState(onDrop)
+    val title = stringResource(R.string.event_edit_new_title)
+    val color = MaterialTheme.colorScheme.primary.toArgb()
+    val zone = remember { TimeZone.currentSystemDefault() }
+    val currentEdges by rememberUpdatedState(edges)
+    // The draft this gesture lifted, selected again on release after the cancel.
+    val lifted = remember { arrayOfNulls<EventInstance>(1) }
+    val currentHourPx by rememberUpdatedState(hourPx)
+    return rememberDragSurface(
+        enabled = eventSelectAllowed(),
+        key = date,
+        skipClaimedDown = true,
+        // A press on a block or handle was consumed by it and never gets here.
+        onPickUp = { local, pointer, node, _ ->
+            val hour = currentHourPx
+            if (hour <= 0f || currentEdges.covers(local.y)) return@rememberDragSurface false
+            val startMin = draftStartMin(local.y / hour * 60f)
+            val event = draftEvent(
+                title = title,
+                color = color,
+                start = wallClockInstant(date, startMin, zone),
+                minutes = dragController.draftMinutes,
+            )
+            val block = draftBlock(event, date, zone) ?: return@rememberDragSurface false
+            lifted[0] = event
+            dragController.beginDraft(
+                block = block,
+                pointerInRoot = pointer,
+                blockInRoot = node + Offset(0f, startMin / 60f * hour),
+            )
+            true
+        },
+        onMove = dragController::move,
+        onDrop = { dragController.finish()?.let(currentDrop) },
+        // An abandoned pickup leaves no draft behind; a release selects it again below.
+        onCancel = {
+            dragController.cancel()
+            if (dragController.selection?.event?.isDraft == true) dragController.deselect()
+        },
+        onRelease = { lifted[0]?.let { dragController.select(it, fromLift = true) } },
+    )
 }
 
 private const val SELECTION_ORPHAN_GRACE_MILLIS = 500L

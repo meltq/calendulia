@@ -195,15 +195,20 @@ class OutOfViewEdges internal constructor(
         }
     }
 
+    /** Whether a press at [y] (content px) lands on an edge bar (#153). */
+    fun covers(y: Float): Boolean = edgeAt(y) != null
+
+    private fun edgeAt(y: Float) = tappedEdge(
+        events = events,
+        y = y,
+        viewportTop = scrollState.value.toFloat(),
+        viewportPx = scrollState.viewportSize,
+        reachPx = reachPx,
+    )
+
     /** Reveals the hidden event if a tap at [y] (content px) lands on a bar. */
     fun tap(y: Float): Boolean {
-        val edge = tappedEdge(
-            events = events,
-            y = y,
-            viewportTop = scrollState.value.toFloat(),
-            viewportPx = scrollState.viewportSize,
-            reachPx = reachPx,
-        ) ?: return false
+        val edge = edgeAt(y) ?: return false
         reveal(edge)
         return true
     }

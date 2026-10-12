@@ -239,12 +239,18 @@ fun CalendarHost(
     var heldCreateIso by remember { mutableStateOf<String?>(null) }
     var createStartMinutes by rememberSaveable { mutableStateOf<Int?>(null) }
     var heldCreateMinutes by remember { mutableStateOf<Int?>(null) }
-    val onCreateEvent: (LocalDate, Int?) -> Unit = { date, startMinutes ->
+    // A drafted block's end (#153), in minutes from the start day's midnight.
+    var createEndMinutes by rememberSaveable { mutableStateOf<Int?>(null) }
+    var heldCreateEndMinutes by remember { mutableStateOf<Int?>(null) }
+    val onCreateSpan: (LocalDate, Int?, Int?) -> Unit = { date, startMinutes, endMinutes ->
         heldCreateIso = date.toString()
         createDateIso = date.toString()
         heldCreateMinutes = startMinutes
         createStartMinutes = startMinutes
+        heldCreateEndMinutes = endMinutes
+        createEndMinutes = endMinutes
     }
+    val onCreateEvent: (LocalDate, Int?) -> Unit = { date, startMinutes -> onCreateSpan(date, startMinutes, null) }
 
     // Edit form (v1.3) — reuses the detail screen's occurrence key; for
     // recurring events the form itself asks for the write scope at save
@@ -380,6 +386,8 @@ fun CalendarHost(
                 createDateIso = iso
                 heldCreateMinutes = null
                 createStartMinutes = null
+                heldCreateEndMinutes = null
+                createEndMinutes = null
                 onWidgetNavConsumed()
             }
             null -> {}
@@ -583,6 +591,7 @@ fun CalendarHost(
                     onOpenDay = onOpenDay,
                     onEventClick = onEventClick,
                     onCreateEvent = onCreateEvent,
+                    onCreateSpan = onCreateSpan,
                 )
                 ViewScreen.Month -> MonthScreen(
                     onOpenDay = onOpenDay,
@@ -671,6 +680,7 @@ fun CalendarHost(
                 EventEditScreen(
                     initialDateIso = iso,
                     initialStartMinutes = createStartMinutes ?: heldCreateMinutes,
+                    initialEndMinutes = createEndMinutes ?: heldCreateEndMinutes,
                     onClose = { createDateIso = null },
                     onSaved = { createDateIso = null },
                     onManageCalendars = { showCalendars = true },

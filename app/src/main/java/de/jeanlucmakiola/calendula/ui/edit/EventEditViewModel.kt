@@ -26,6 +26,7 @@ import de.jeanlucmakiola.calendula.domain.populatedFields
 import de.jeanlucmakiola.calendula.domain.problems
 import de.jeanlucmakiola.calendula.domain.toEditSnapshot
 import de.jeanlucmakiola.calendula.ui.detail.EventDetailViewModel.Companion.NO_OCCURRENCE_TIME
+import de.jeanlucmakiola.calendula.ui.common.wallClockTime
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -324,10 +325,12 @@ class EventEditViewModel @Inject constructor(
      * in the day/week grid; without it the default is the next full hour (today)
      * or 09:00 (any other day). The event opens an hour long and is stretched to
      * the configured default by [applyDefaultDuration], like the reminders.
+     * A block drafted on the timeline (#153) passes [endMinutes] instead,
+     * counted from [date]'s midnight and past 1440 for a later day.
      * No-op when a form is already open, so user input survives configuration
      * changes; [reset] clears it when the screen closes.
      */
-    fun openNew(date: LocalDate, startMinutes: Int? = null) {
+    fun openNew(date: LocalDate, startMinutes: Int? = null, endMinutes: Int? = null) {
         if (_form.value != null) return
         val zone = TimeZone.currentSystemDefault()
         val now = Clock.System.now()
@@ -342,9 +345,12 @@ class EventEditViewModel @Inject constructor(
             }
             else -> LocalDateTime(date, LocalTime(9, 0))
         }
-        val end = (start.toInstant(zone) + SettingsPrefs.DEFAULT_EVENT_DURATION.minutes)
+        val chosenEnd = endMinutes?.takeIf { startMinutes != null && it > startMinutes }
+            ?.let { wallClockTime(date, it) }
+        val end = chosenEnd ?: (start.toInstant(zone) + SettingsPrefs.DEFAULT_EVENT_DURATION.minutes)
             .toLocalDateTime(zone)
         _form.value = EventForm(calendarId = null, start = start, end = end)
+        if (chosenEnd != null) _durationTouched.value = true
         applyDefaultReminder()
         applyDefaultDuration()
     }

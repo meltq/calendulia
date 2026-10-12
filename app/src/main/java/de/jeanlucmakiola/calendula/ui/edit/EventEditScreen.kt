@@ -201,6 +201,7 @@ fun EventEditScreen(
     onSaved: () -> Unit,
     editKey: LongArray? = null,
     initialStartMinutes: Int? = null,
+    initialEndMinutes: Int? = null,
     initialForm: EventForm? = null,
     initialFormSource: ImportSource = ImportSource.File,
     onManageCalendars: (() -> Unit)? = null,
@@ -220,7 +221,7 @@ fun EventEditScreen(
             else -> {
                 val date = initialDateIso?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
                     ?: Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-                viewModel.openNew(date, initialStartMinutes)
+                viewModel.openNew(date, initialStartMinutes, initialEndMinutes)
             }
         }
     }
