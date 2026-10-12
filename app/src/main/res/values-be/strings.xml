@@ -671,4 +671,5 @@
     <string name="state_failure_all_hidden_action">Кіраваньне календарамі</string>
     <string name="state_failure_no_import_target">Ніводны з календароў ня можа прымаць новыя падзеі.</string>
     <string name="state_failure_no_import_target_body">Календары адключаныя, у рэжыме «толькі чытаньне», знаходзяцца пад кіраваньнем іншай праграмы, або не сынхранізуюцца на гэтай прыладзе. Уключэце каляндар, які можа прымаць падзеі, або дадайце лякальны.</string>
+    <string name="app_name_calendar_alias">Каляндар</string>
 </resources>

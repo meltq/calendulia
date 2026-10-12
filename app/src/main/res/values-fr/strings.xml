@@ -672,4 +672,5 @@
         <item quantity="many">Les événements %d n\'ont pas pu être ajoutés.</item>
         <item quantity="other">Les événements %d n\'ont pas pu être ajoutés.</item>
     </plurals>
+    <string name="app_name_calendar_alias">Calendrier</string>
 </resources>
