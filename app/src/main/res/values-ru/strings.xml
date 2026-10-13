@@ -355,4 +355,8 @@
     <string name="settings_time_format_auto">Автоматически</string>
     <string name="settings_time_format_12h">12-часовой формат времени</string>
     <string name="settings_time_format_24h">24-часовой формат времени</string>
+    <string name="onboarding_calendars_benefit_sync_body">Calendula отображает учетные записи, которые уже синхронизируются. Для синхронизации серверам CalDAV требуется DAVx⁵.</string>
+    <string name="onboarding_calendars_created_title">«%1$s» готов</string>
+    <string name="onboarding_calendars_created_body">Он остаётся на данном устройстве. В него будут записываться новые события, пока не будет выбран иной календарь.</string>
+    <string name="onboarding_calendars_created_more_title">Место для других</string>
 </resources>
