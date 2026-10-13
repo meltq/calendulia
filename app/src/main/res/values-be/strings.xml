@@ -693,4 +693,6 @@
     <string name="onboarding_calendars_caldav_button">Сынхранізацыя з сэрвэрам CalDAV</string>
     <string name="onboarding_calendars_skip_button">Ня зараз</string>
     <string name="onboarding_calendars_benefit_local_title">Застаецца на гэтым тэлефоне</string>
+    <string name="onboarding_calendars_benefit_local_body">Каляндар на прыладзе ні з чым не сынхранізуецца, таму рабеце рэзэрвовыя копіі, каб захоўваць важныя падзеі.</string>
+    <string name="onboarding_calendars_benefit_sync_title">Або наладзьце сынхранізацыю з уліковым запісам</string>
 </resources>
