@@ -169,6 +169,13 @@ class EventDetailViewModel @Inject constructor(
             calendarName = calendar?.displayName,
             canModify = calendar?.canModifyContents == true,
             isManaged = calendar?.isManaged == true,
+            // Found here, off the main thread and once per load: the platform
+            // matcher loads its metadata on first use.
+            phoneLinks = findEventPhoneLinks(
+                title = corrected.instance.title,
+                location = corrected.instance.location,
+                description = corrected.description,
+            ),
         )
     } catch (e: CancellationException) {
         throw e

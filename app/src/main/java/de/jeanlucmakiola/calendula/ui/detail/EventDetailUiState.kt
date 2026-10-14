@@ -21,6 +21,8 @@ sealed interface EventDetailUiState {
          * the sync would just resurrect it. Contact dates are removed at the source.
          */
         val isManaged: Boolean = false,
+        /** Phone numbers to link in the title, location and description. */
+        val phoneLinks: EventPhoneLinks = EventPhoneLinks(),
     ) : EventDetailUiState
 }
 

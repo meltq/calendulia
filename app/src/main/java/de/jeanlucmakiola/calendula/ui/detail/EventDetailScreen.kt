@@ -311,15 +311,26 @@ private fun EventDetailContent(
         // cancelled event strikes through its title.
         Row(verticalAlignment = Alignment.Top) {
             val titleLabel = stringResource(R.string.event_detail_title)
+            val titleDecoration = if (detail.status == EventStatus.Cancelled) {
+                TextDecoration.LineThrough
+            } else {
+                null
+            }
             Text(
-                text = instance.title.ifBlank { stringResource(R.string.event_untitled) },
+                // A phone number in the title ("Call Anna 0151 …") dials too.
+                text = if (instance.title.isBlank()) {
+                    AnnotatedString(stringResource(R.string.event_untitled))
+                } else {
+                    linkify(
+                        instance.title,
+                        state.phoneLinks.title,
+                        MaterialTheme.colorScheme.primary,
+                        titleDecoration,
+                    )
+                },
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
-                textDecoration = if (detail.status == EventStatus.Cancelled) {
-                    TextDecoration.LineThrough
-                } else {
-                    null
-                },
+                textDecoration = titleDecoration,
                 modifier = Modifier
                     .weight(1f)
                     .then(
@@ -436,7 +447,8 @@ private fun EventDetailContent(
             )
         }
 
-        // Location (conditional). URLs open in the browser, the rest in maps.
+        // Location (conditional). URLs open in the browser, phone numbers in the
+        // dialer, the rest in maps.
         instance.location?.takeIf { it.isNotBlank() }?.let { location ->
             val context = LocalContext.current
             val locationLabel = stringResource(R.string.event_detail_location)
@@ -446,7 +458,7 @@ private fun EventDetailContent(
                 iconContentDescription = locationLabel,
             ) {
                 Text(
-                    text = linkifyUrls(location, MaterialTheme.colorScheme.primary),
+                    text = linkify(location, state.phoneLinks.location, MaterialTheme.colorScheme.primary),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
@@ -463,7 +475,7 @@ private fun EventDetailContent(
             }
         }
 
-        // Description (conditional). URLs are auto-linked.
+        // Description (conditional). URLs and phone numbers are auto-linked.
         detail.description?.takeIf { it.isNotBlank() }?.let { description ->
             val descriptionLabel = stringResource(R.string.event_detail_description)
             Spacer(Modifier.height(gap))
@@ -476,7 +488,7 @@ private fun EventDetailContent(
                 modifier = Modifier.copyOnLongPress(descriptionLabel, description, copyField),
             ) {
                 Text(
-                    text = linkifyUrls(description, MaterialTheme.colorScheme.primary),
+                    text = linkify(description, state.phoneLinks.description, MaterialTheme.colorScheme.primary),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -749,19 +761,37 @@ private fun foreignTimeZone(
     )
 }
 
-/** Wrap http(s) URLs in [text] as links tinted [linkColor] that open in the browser. */
+/**
+ * Wrap http(s) URLs in [text] as links that open in the browser, and its
+ * [phoneLinks] as links that open the dialer, both tinted [linkColor]. A
+ * link's underline joins [textDecoration] rather than replacing it, so a
+ * cancelled title stays struck through across its links.
+ */
 @Composable
-private fun linkifyUrls(text: String, linkColor: Color): AnnotatedString {
+private fun linkify(
+    text: String,
+    phoneLinks: List<PhoneLink>,
+    linkColor: Color,
+    textDecoration: TextDecoration? = null,
+): AnnotatedString {
     val context = LocalContext.current
-    return remember(text, linkColor, context) {
-        val styles = TextLinkStyles(
-            style = SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline),
-        )
+    return remember(text, phoneLinks, linkColor, textDecoration, context) {
+        val decoration = textDecoration
+            ?.let { TextDecoration.combine(listOf(it, TextDecoration.Underline)) }
+            ?: TextDecoration.Underline
+        val styles = TextLinkStyles(style = SpanStyle(color = linkColor, textDecoration = decoration))
         buildAnnotatedString {
             append(text)
             for (link in findWebLinks(text)) {
                 addLink(
                     LinkAnnotation.Url(link.url, styles) { openWebLink(context, link.url) },
+                    link.start,
+                    link.end,
+                )
+            }
+            for (link in phoneLinks) {
+                addLink(
+                    LinkAnnotation.Url("tel:${link.number}", styles) { dial(context, link.number) },
                     link.start,
                     link.end,
                 )
@@ -822,7 +852,15 @@ private fun Instant.toJavaLocalDateTime(zid: ZoneId): java.time.LocalDateTime =
 
 /** Open [url] in a browsable app, or say so when none can take it. */
 private fun openWebLink(context: Context, url: String) {
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+    startOrSayNoApp(context, Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+}
+
+/** Open the dialer with [number] filled in, or say so when none can take it. */
+private fun dial(context: Context, number: String) {
+    startOrSayNoApp(context, Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)))
+}
+
+private fun startOrSayNoApp(context: Context, intent: Intent) {
     if (runCatching { context.startActivity(intent) }.isFailure) {
         Toast.makeText(context, R.string.link_open_failed, Toast.LENGTH_SHORT).show()
     }
