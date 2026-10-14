@@ -5,8 +5,10 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.UtcOffset
 import kotlinx.datetime.toInstant
 import org.junit.jupiter.api.Test
+import kotlin.time.Instant
 
 class EventShiftTest {
 
@@ -22,8 +24,8 @@ class EventShiftTest {
         calendarId = 1L,
         title = "Standup",
         isAllDay = isAllDay,
-        start = start,
-        end = end,
+        start = FormTime(start),
+        end = FormTime(end),
         timezone = timezone,
     )
 
@@ -34,8 +36,8 @@ class EventShiftTest {
 
         val moved = original.shiftedTo(target, berlin)
 
-        assertThat(moved.start).isEqualTo(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(14, 30)))
-        assertThat(moved.end).isEqualTo(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(15, 30)))
+        assertThat(moved.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(14, 30)))
+        assertThat(moved.end.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(15, 30)))
     }
 
     @Test
@@ -52,8 +54,8 @@ class EventShiftTest {
         val moved = original.shiftedTo(target, berlin)
 
         assertThat(moved.timezone).isEqualTo("America/New_York")
-        assertThat(moved.start).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(9, 30)))
-        assertThat(moved.end).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(10, 30)))
+        assertThat(moved.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(9, 30)))
+        assertThat(moved.end.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(10, 30)))
     }
 
     @Test
@@ -69,10 +71,10 @@ class EventShiftTest {
 
         // Two real hours from 01:00 CET lands at 04:00 CEST: the hour in
         // between does not exist.
-        assertThat(moved.start).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(1, 0)))
-        assertThat(moved.end).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(4, 0)))
-        assertThat(moved.end.toInstant(berlin) - moved.start.toInstant(berlin))
-            .isEqualTo(original.end.toInstant(berlin) - original.start.toInstant(berlin))
+        assertThat(moved.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(1, 0)))
+        assertThat(moved.end.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(4, 0)))
+        assertThat(moved.end.dateTime.toInstant(berlin) - moved.start.dateTime.toInstant(berlin))
+            .isEqualTo(original.end.dateTime.toInstant(berlin) - original.start.dateTime.toInstant(berlin))
     }
 
     @Test
@@ -83,13 +85,15 @@ class EventShiftTest {
 
         val moved = original.shiftedTo(target, berlin)
 
-        assertThat(moved.start).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(3, 30)))
+        assertThat(moved.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(3, 30)))
     }
 
     @Test
     fun `a zero-distance drop leaves the form untouched`() {
-        val original = form()
-        assertThat(original.shiftedTo(original.start.toInstant(berlin), berlin)).isEqualTo(original)
+        // As read from the provider, offsets and all.
+        val start = form().start.dateTime.toInstant(berlin)
+        val original = form().withTimes(start, form().end.dateTime.toInstant(berlin), berlin)
+        assertThat(original.shiftedTo(start, berlin)).isEqualTo(original)
     }
 
     @Test
@@ -99,7 +103,7 @@ class EventShiftTest {
 
         val moved = original.shiftedTo(target, newYork)
 
-        assertThat(moved.start).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 0)))
+        assertThat(moved.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 0)))
     }
 
     @Test
@@ -125,8 +129,8 @@ class EventShiftTest {
 
         val moved = multiDay.shiftedByDays(-2, berlin)
 
-        assertThat(moved.start).isEqualTo(LocalDateTime(LocalDate(2026, 6, 9), LocalTime(22, 0)))
-        assertThat(moved.end).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(2, 0)))
+        assertThat(moved.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 6, 9), LocalTime(22, 0)))
+        assertThat(moved.end.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(2, 0)))
     }
 
     @Test
@@ -140,11 +144,11 @@ class EventShiftTest {
 
         val moved = overnight.shiftedByDays(7, berlin)
 
-        assertThat(moved.start).isEqualTo(LocalDateTime(LocalDate(2026, 3, 28), LocalTime(22, 0)))
-        assertThat(moved.end.toInstant(berlin) - moved.start.toInstant(berlin))
-            .isEqualTo(overnight.end.toInstant(berlin) - overnight.start.toInstant(berlin))
+        assertThat(moved.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 3, 28), LocalTime(22, 0)))
+        assertThat(moved.end.dateTime.toInstant(berlin) - moved.start.dateTime.toInstant(berlin))
+            .isEqualTo(overnight.end.dateTime.toInstant(berlin) - overnight.start.dateTime.toInstant(berlin))
         // The wall-clock end therefore lands an hour later than a naive +7 days.
-        assertThat(moved.end).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(5, 0)))
+        assertThat(moved.end.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(5, 0)))
     }
 
     @Test
@@ -158,10 +162,10 @@ class EventShiftTest {
         val original = form()
         val end = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 30)).toInstant(berlin)
 
-        val resized = original.resizedTo(original.start.toInstant(berlin), end, berlin)
+        val resized = original.resizedTo(original.start.dateTime.toInstant(berlin), end, berlin)
 
         assertThat(resized.start).isEqualTo(original.start)
-        assertThat(resized.end).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 30)))
+        assertThat(resized.end.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 30)))
     }
 
     @Test
@@ -169,9 +173,9 @@ class EventShiftTest {
         val original = form()
         val end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(1, 0)).toInstant(berlin)
 
-        val resized = original.resizedTo(original.start.toInstant(berlin), end, berlin)
+        val resized = original.resizedTo(original.start.dateTime.toInstant(berlin), end, berlin)
 
-        assertThat(resized.end).isEqualTo(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(1, 0)))
+        assertThat(resized.end.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(1, 0)))
     }
 
     @Test
@@ -184,17 +188,79 @@ class EventShiftTest {
         // "15:30 Berlin" is 09:30 in New York.
         val start = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(15, 30)).toInstant(berlin)
 
-        val resized = original.resizedTo(start, original.end.toInstant(newYork), berlin)
+        val resized = original.resizedTo(start, original.end.dateTime.toInstant(newYork), berlin)
 
-        assertThat(resized.start).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(9, 30)))
+        assertThat(resized.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(9, 30)))
         assertThat(resized.end).isEqualTo(original.end)
     }
 
     @Test
     fun `an all-day event ignores a resize`() {
         val allDay = form(isAllDay = true)
-        val start = allDay.start.toInstant(berlin)
+        val start = allDay.start.dateTime.toInstant(berlin)
 
         assertThat(allDay.resizedTo(start, start, berlin)).isEqualTo(allDay)
+    }
+
+    // 02:00 CEST to 02:00 CET on 2026-10-25: one real hour, one wall-clock value.
+    private val repeatStart = Instant.parse("2026-10-25T00:00:00Z")
+    private val repeatEnd = Instant.parse("2026-10-25T01:00:00Z")
+
+    @Test
+    fun `moving an event in the repeated fall-back hour keeps its length`() {
+        val original = form().withTimes(repeatStart, repeatEnd, berlin)
+        val moved = original.shiftedTo(Instant.parse("2026-10-25T00:30:00Z"), berlin)
+        assertThat(moved.startInstant(berlin)).isEqualTo(Instant.parse("2026-10-25T00:30:00Z"))
+        assertThat(moved.endInstant(berlin)).isEqualTo(Instant.parse("2026-10-25T01:30:00Z"))
+    }
+
+    @Test
+    fun `a move onto the second repeated hour stays there`() {
+        val target = Instant.parse("2026-10-25T01:30:00Z")
+        val moved = form().withTimes(repeatStart, repeatEnd, berlin).shiftedTo(target, berlin)
+        assertThat(moved.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 10, 25), LocalTime(2, 30)))
+        assertThat(moved.startInstant(berlin)).isEqualTo(target)
+    }
+
+    @Test
+    fun `resolveIn takes the preferred offset only where the hour repeats`() {
+        val repeated = LocalDateTime(LocalDate(2026, 10, 25), LocalTime(2, 30))
+        val cet = UtcOffset(hours = 1)
+        assertThat(repeated.resolveIn(berlin, cet)).isEqualTo(Instant.parse("2026-10-25T01:30:00Z"))
+        assertThat(repeated.resolveIn(berlin, null)).isEqualTo(Instant.parse("2026-10-25T00:30:00Z"))
+        // Not one of 14:00's offsets on a summer day: ignored.
+        val summer = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(14, 0))
+        assertThat(summer.resolveIn(berlin, cet)).isEqualTo(summer.toInstant(berlin))
+    }
+
+    @Test
+    fun `a day move onto the repeated hour doesn't depend on the source's season`() {
+        // 02:30 a week after the fall-back day (CET) and in summer (CEST), both
+        // moved onto it: the earlier pass either way, as a timeline drop.
+        val first = Instant.parse("2026-10-25T00:30:00Z")
+        val november = form().withTimes(
+            Instant.parse("2026-11-01T01:30:00Z"),
+            Instant.parse("2026-11-01T02:30:00Z"),
+            berlin,
+        )
+        assertThat(november.shiftedByDays(-7, berlin).startInstant(berlin)).isEqualTo(first)
+        val summer = form(
+            start = LocalDateTime(LocalDate(2026, 10, 18), LocalTime(2, 30)),
+            end = LocalDateTime(LocalDate(2026, 10, 18), LocalTime(3, 30)),
+        )
+        assertThat(summer.shiftedByDays(7, berlin).startInstant(berlin)).isEqualTo(first)
+    }
+
+    @Test
+    fun `a day move onto the spring-forward gap keeps its wall clock`() {
+        // Saturday 02:30 to 03:30, moved onto Sunday 29 March, when 02:30 is skipped.
+        val moved = form(
+            start = LocalDateTime(LocalDate(2026, 3, 28), LocalTime(2, 30)),
+            end = LocalDateTime(LocalDate(2026, 3, 28), LocalTime(3, 30)),
+        ).shiftedByDays(1, berlin)
+        assertThat(moved.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(2, 30)))
+        // It still means 03:30 CEST, an hour long.
+        assertThat(moved.startInstant(berlin)).isEqualTo(Instant.parse("2026-03-29T01:30:00Z"))
+        assertThat(moved.endInstant(berlin)).isEqualTo(Instant.parse("2026-03-29T02:30:00Z"))
     }
 }

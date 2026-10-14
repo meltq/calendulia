@@ -4,7 +4,6 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
@@ -46,16 +45,12 @@ fun buildInsertEventForm(
             ?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date }
             ?.let { exclusive -> maxOf(startDate, LocalDate.fromEpochDays(exclusive.toEpochDays() - 1)) }
             ?: startDate
-        LocalDateTime(startDate, LocalTime(9, 0)) to LocalDateTime(endDate, LocalTime(10, 0))
+        FormTime(LocalDateTime(startDate, LocalTime(9, 0))) to FormTime(LocalDateTime(endDate, LocalTime(10, 0)))
     } else {
-        val startTime = beginMillis
-            ?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(zone) }
-            ?: nextFullHour(now, zone)
-        val endTime = endMillis
-            ?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(zone) }
-            ?.takeIf { it >= startTime }
-            ?: (startTime.toInstant(zone) + 1.hours).toLocalDateTime(zone)
-        startTime to endTime
+        val startAt = beginMillis?.let(Instant::fromEpochMilliseconds) ?: nextFullHour(now)
+        val endAt = endMillis?.let(Instant::fromEpochMilliseconds)?.takeIf { it >= startAt }
+            ?: (startAt + 1.hours)
+        startAt.toFormTime(zone) to endAt.toFormTime(zone)
     }
     return EventForm(
         calendarId = null,
@@ -71,8 +66,8 @@ fun buildInsertEventForm(
     )
 }
 
-private fun nextFullHour(now: Instant, zone: TimeZone): LocalDateTime {
+/** The first full hour after [now]: may roll into the next day before midnight. */
+internal fun nextFullHour(now: Instant): Instant {
     val hourMillis = 3_600_000L
-    val rounded = (now.toEpochMilliseconds() / hourMillis + 1) * hourMillis
-    return Instant.fromEpochMilliseconds(rounded).toLocalDateTime(zone)
+    return Instant.fromEpochMilliseconds((now.toEpochMilliseconds() / hourMillis + 1) * hourMillis)
 }

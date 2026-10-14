@@ -8,6 +8,7 @@ import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
 import de.jeanlucmakiola.calendula.data.time.TodaySource
+import de.jeanlucmakiola.calendula.data.time.ZoneSource
 import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventInstance
@@ -34,7 +35,10 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.FixedOffsetTimeZone
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toKotlinUtcOffset
+import kotlinx.datetime.toJavaZoneId
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.atTime
 import kotlinx.datetime.daysUntil
@@ -44,6 +48,8 @@ import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import java.util.Locale
 import kotlin.time.Instant
+import kotlin.time.toKotlinDuration
+import kotlin.time.toKotlinInstant
 import javax.inject.Inject
 import kotlin.math.abs
 
@@ -76,12 +82,18 @@ abstract class PagedTimelineViewModel(
     private val repository: CalendarRepository,
     settingsPrefs: SettingsPrefs,
     todaySource: TodaySource,
+    zoneSource: ZoneSource,
     private val io: CoroutineDispatcher,
     gridRule: Flow<(LocalDate) -> PageGrid>,
     initialRule: (LocalDate) -> PageGrid,
 ) : ViewModel() {
 
-    private val zone = TimeZone.currentSystemDefault()
+    /**
+     * The zone every page is laid out in; drags and drops resolve in it too, and
+     * pages lay out again when the device moves zones (#387).
+     */
+    val zone: StateFlow<TimeZone> = zoneSource.zone
+        .stateIn(viewModelScope, SharingStarted.Eagerly, zoneSource.current())
 
     /** Whether to fade events that have already finished (display concern only). */
     val dimCompletedEvents: StateFlow<Boolean> = settingsPrefs.dimCompletedEvents
@@ -160,12 +172,14 @@ abstract class PagedTimelineViewModel(
                 abs(cached.start.daysUntil(requested.start)) <= SPAN_CACHE_DAYS
         },
     ) { span ->
-        combine(
-            repository.calendars(),
-            repository.instances(spanRange(span.start, span.count, zone)),
-            today,
-        ) { calendars, instances, today ->
-            buildState(span, calendars, instances, today)
+        zone.flatMapLatest { zone ->
+            combine(
+                repository.calendars(),
+                repository.instances(spanRange(span.start, span.count, zone)),
+                today,
+            ) { calendars, instances, today ->
+                buildState(span, calendars, instances, today, zone)
+            }
         }
             .catch { emit(WeekUiState.Failure(FailureReason.ProviderUnavailable)) }
             .flowOn(io)
@@ -200,6 +214,7 @@ abstract class PagedTimelineViewModel(
         calendars: List<CalendarSource>,
         instances: List<EventInstance>,
         today: LocalDate,
+        zone: TimeZone,
     ): WeekUiState {
         calendarListFailure(calendars)?.let { return WeekUiState.Failure(it) }
         val days = (0 until span.count).map { span.start.plus(it, DateTimeUnit.DAY) }
@@ -221,11 +236,13 @@ class WeekViewModel @Inject constructor(
     repository: CalendarRepository,
     settingsPrefs: SettingsPrefs,
     todaySource: TodaySource,
+    zoneSource: ZoneSource,
     @IoDispatcher io: CoroutineDispatcher,
 ) : PagedTimelineViewModel(
     repository = repository,
     settingsPrefs = settingsPrefs,
     todaySource = todaySource,
+    zoneSource = zoneSource,
     io = io,
     gridRule = settingsPrefs.weekStart.map { pref ->
         val grid = WeekGrid(pref.resolveFirstDay(Locale.getDefault()))
@@ -245,11 +262,13 @@ class MultiDayViewModel @Inject constructor(
     repository: CalendarRepository,
     settingsPrefs: SettingsPrefs,
     todaySource: TodaySource,
+    zoneSource: ZoneSource,
     @IoDispatcher io: CoroutineDispatcher,
 ) : PagedTimelineViewModel(
     repository = repository,
     settingsPrefs = settingsPrefs,
     todaySource = todaySource,
+    zoneSource = zoneSource,
     io = io,
     gridRule = settingsPrefs.multiDayCount.map { count ->
         { anchor: LocalDate -> DaysGrid.startingAt(anchor, count) }
@@ -263,11 +282,13 @@ class DayViewModel @Inject constructor(
     repository: CalendarRepository,
     settingsPrefs: SettingsPrefs,
     todaySource: TodaySource,
+    zoneSource: ZoneSource,
     @IoDispatcher io: CoroutineDispatcher,
 ) : PagedTimelineViewModel(
     repository = repository,
     settingsPrefs = settingsPrefs,
     todaySource = todaySource,
+    zoneSource = zoneSource,
     io = io,
     gridRule = flowOf { _: LocalDate -> DayGrid },
     initialRule = { DayGrid },
@@ -339,6 +360,64 @@ internal fun spanRange(start: LocalDate, count: Int, zone: TimeZone): ClosedRang
     return from..to
 }
 
+/**
+ * This instant's wall-clock time as minutes past [day]'s midnight in [zone] —
+ * negative before that day, past 1440 after it. Elapsed time since midnight would
+ * put everything after a DST change an hour off on that day's grid (#387).
+ */
+internal fun Instant.minutesPast(day: LocalDate, zone: TimeZone): Int {
+    val local = toLocalDateTime(zone)
+    val days = (local.date.toEpochDays() - day.toEpochDays()).toInt()
+    return days * MINUTES_PER_DAY + local.time.toSecondOfDay() / 60
+}
+
+/** [instant]'s [minutesPast] clamped to [day]. */
+internal fun wallClockMinutes(instant: Instant, day: LocalDate, zone: TimeZone): Int =
+    instant.minutesPast(day, zone).coerceIn(0, MINUTES_PER_DAY)
+
+/**
+ * Where a run from [start] to [end] that begins at [startMin] ends on [day]'s
+ * wall clock. A run that began before the fall-back hour's repeat and ends
+ * inside it is drawn to where that hour ends (03:00 in Berlin), since its own
+ * wall-clock end reads earlier than its real length (#387).
+ */
+internal fun wallClockEndMinutes(
+    startMin: Int,
+    start: Instant,
+    end: Instant,
+    day: LocalDate,
+    zone: TimeZone,
+): Int {
+    val wall = end.minutesPast(day, zone)
+    if (end <= start) return maxOf(wall, startMin)
+    val drawn = repeatedHourEndMinutes(start, end, day, zone) ?: wall
+    return if (drawn > startMin) drawn else startMin + (end - start).inWholeMinutes.toInt()
+}
+
+/**
+ * Where the fall-back hour's repeat [end] falls in ends, as minutes past [day]'s
+ * midnight: the wall clock the zone fell back from (03:00 in Berlin). Null unless
+ * [end] is in that repeat and [start] before it.
+ */
+private fun repeatedHourEndMinutes(start: Instant, end: Instant, day: LocalDate, zone: TimeZone): Int? {
+    // Just past [end], so an end on the transition itself still finds it.
+    val after = java.time.Instant.ofEpochMilli(end.toEpochMilliseconds() + 1)
+    val transition = zone.toJavaZoneId().rules.previousTransition(after)
+        ?.takeIf { it.isOverlap } ?: return null
+    val fellBack = transition.instant.toKotlinInstant()
+    if (start >= fellBack || end >= fellBack + transition.duration.abs().toKotlinDuration()) return null
+    // The moment it fell back, read on the clock it fell back from.
+    return fellBack.minutesPast(day, FixedOffsetTimeZone(transition.offsetBefore.toKotlinUtcOffset()))
+}
+
+/**
+ * The end a block's time label names on [day]: its event's own wall-clock end,
+ * which for one ending in the fall-back hour's repeat is earlier than the
+ * [TimedBlock.endMin] it is drawn to (#387).
+ */
+internal fun TimedBlock.labelEndMin(day: LocalDate, zone: TimeZone): Int =
+    minOf(endMin, wallClockMinutes(event.end, day, zone))
+
 /** True if this event overlaps the calendar [day] in [zone] (any portion). */
 internal fun EventInstance.coversDay(day: LocalDate, zone: TimeZone): Boolean {
     if (isAllDay) {
@@ -392,14 +471,14 @@ internal fun layoutDay(
             if (ev.start == ev.end) {
                 // Instant event: keep only if the point falls inside this day.
                 if (ev.start < dayStart || ev.start >= dayEnd) return@mapNotNull null
-                val m = (ev.start - dayStart).inWholeMinutes.toInt().coerceIn(0, MINUTES_PER_DAY)
+                val m = wallClockMinutes(ev.start, day, zone)
                 Raw(ev, m, m)
             } else {
                 val s = maxOf(ev.start, dayStart)
                 val e = minOf(ev.end, dayEnd)
                 if (e <= s) return@mapNotNull null
-                val startMin = (s - dayStart).inWholeMinutes.toInt().coerceIn(0, MINUTES_PER_DAY)
-                val endMin = (e - dayStart).inWholeMinutes.toInt().coerceIn(startMin, MINUTES_PER_DAY)
+                val startMin = wallClockMinutes(s, day, zone)
+                val endMin = wallClockEndMinutes(startMin, s, e, day, zone).coerceAtMost(MINUTES_PER_DAY)
                 Raw(ev, startMin, endMin)
             }
         }

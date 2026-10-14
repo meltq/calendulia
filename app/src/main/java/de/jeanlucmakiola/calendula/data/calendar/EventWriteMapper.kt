@@ -1,15 +1,19 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
+import de.jeanlucmakiola.calendula.domain.instantIn
+import kotlinx.datetime.toKotlinTimeZone
 import android.provider.CalendarContract
 import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventColorOption
 import de.jeanlucmakiola.calendula.domain.EventForm
+import de.jeanlucmakiola.calendula.domain.FormTime
 import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import de.jeanlucmakiola.calendula.domain.nearestTo
 import kotlinx.datetime.toJavaLocalDate
 import kotlinx.datetime.toJavaLocalDateTime
+import kotlinx.datetime.toJavaZoneOffset
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -48,8 +52,8 @@ internal fun EventForm.toWriteTimes(zone: ZoneId): EventWriteTimes = if (isAllDa
 } else {
     val writeZone = writeZone(zone)
     EventWriteTimes(
-        dtStartMillis = start.toJavaLocalDateTime().atZone(writeZone).toInstant().toEpochMilli(),
-        dtEndMillis = end.toJavaLocalDateTime().atZone(writeZone).toInstant().toEpochMilli(),
+        dtStartMillis = start.instantIn(writeZone.toKotlinTimeZone()).toEpochMilliseconds(),
+        dtEndMillis = end.instantIn(writeZone.toKotlinTimeZone()).toEpochMilliseconds(),
         timezone = writeZone.id,
     )
 }
@@ -75,7 +79,7 @@ private fun EventForm.writeZone(deviceZone: ZoneId): ZoneId = if (isAllDay) {
 private fun EventForm.anchorLocal(): JavaLocalDateTime = if (isAllDay) {
     start.date.toJavaLocalDate().atStartOfDay()
 } else {
-    start.toJavaLocalDateTime()
+    start.dateTime.toJavaLocalDateTime()
 }
 
 /**
@@ -181,7 +185,8 @@ internal fun buildEventUpdateValues(
 
     // A zone change counts as a time change even when the wall-clock is
     // untouched: the same 09:00 in another zone is a different instant, so
-    // DTSTART has to move with it.
+    // DTSTART has to move with it. So does a switch between the two passes of
+    // the fall-back hour, which each [FormTime] carries (#387).
     val timesChanged = updated.start != original.start ||
         updated.end != original.end ||
         updated.isAllDay != original.isAllDay ||
@@ -209,15 +214,23 @@ internal fun buildEventUpdateValues(
         // is a different offset from the series anchor's whenever a DST boundary
         // sits between them, or whenever the zone itself changed. Working in wall
         // clock keeps "09:00" meaning 09:00 at both ends.
-        val seriesLocal = Instant.ofEpochMilli(seriesDtStartMillis)
-            .atZone(original.writeZone(zone)).toLocalDateTime()
+        val seriesZoned = Instant.ofEpochMilli(seriesDtStartMillis).atZone(original.writeZone(zone))
+        val seriesLocal = seriesZoned.toLocalDateTime()
         val wallClockShift = Duration.between(original.anchorLocal(), updated.anchorLocal())
         val shifted = seriesLocal.plus(wallClockShift)
         // An all-day series anchor must sit on a UTC midnight. A pure day move
         // already lands there (both ends are midnights), but *switching* a
         // recurring event to all-day shifts by a time-of-day too, so snap.
         val newSeriesLocal = if (updated.isAllDay) shifted.toLocalDate().atStartOfDay() else shifted
-        val newSeriesStart = newSeriesLocal.atZone(updated.writeZone(zone))
+        // A wall clock the fall-back hour repeats keeps the anchor's own pass, or,
+        // when the anchor is the edited occurrence itself, the pass the form now
+        // holds: a bare wall clock would always take the earlier one (#387).
+        val pass = if (seriesLocal == original.anchorLocal()) {
+            updated.start.offset?.toJavaZoneOffset()
+        } else {
+            seriesZoned.offset
+        }
+        val newSeriesStart = ZonedDateTime.ofLocal(newSeriesLocal, updated.writeZone(zone), pass)
         put(CalendarContract.Events.DTSTART, newSeriesStart.toInstant().toEpochMilli())
         put(CalendarContract.Events.DTEND, null)
         put(CalendarContract.Events.RRULE, updated.rrule)

@@ -52,6 +52,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.key
@@ -73,7 +74,6 @@ import de.jeanlucmakiola.calendula.ui.common.rememberDragSurface
 import de.jeanlucmakiola.calendula.ui.common.rememberWriteGate
 import de.jeanlucmakiola.calendula.ui.common.OutOfViewEdges
 import de.jeanlucmakiola.calendula.ui.common.wallClockInstant
-import de.jeanlucmakiola.calendula.ui.common.wallClockSpan
 import de.jeanlucmakiola.calendula.ui.common.PickUp
 import de.jeanlucmakiola.calendula.ui.common.SelectionBarClearance
 import de.jeanlucmakiola.calendula.ui.common.ResizeEdge
@@ -100,6 +100,7 @@ import androidx.compose.runtime.SideEffect
 import de.jeanlucmakiola.calendula.ui.common.laneSlot
 import de.jeanlucmakiola.calendula.ui.common.LaneColumn
 import kotlin.math.roundToInt
+import kotlin.time.Instant
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.draw.alpha
@@ -249,7 +250,7 @@ fun TimelineScreen(
     onOpenDay: (LocalDate) -> Unit,
     onEventClick: (EventInstance) -> Unit,
     onCreateEvent: (LocalDate, Int?) -> Unit,
-    onCreateSpan: (LocalDate, Int, Int?) -> Unit,
+    onCreateDraft: (Instant, Instant) -> Unit,
     modifier: Modifier = Modifier,
     weekViewModel: WeekViewModel = hiltViewModel(),
     multiDayViewModel: MultiDayViewModel = hiltViewModel(),
@@ -264,7 +265,7 @@ fun TimelineScreen(
         onOpenDay = onOpenDay,
         onEventClick = onEventClick,
         onCreateEvent = onCreateEvent,
-        onCreateSpan = onCreateSpan,
+        onCreateDraft = onCreateDraft,
         modifier = modifier,
     )
 }
@@ -311,6 +312,12 @@ internal val CalendarView.timelineKind: TimelineKind
         else -> TimelineKind.Week
     }
 
+/**
+ * The zone the shown timeline is laid out in, so its blocks, drags and drops all
+ * read the same wall clock (#387).
+ */
+internal val LocalTimelineZone = staticCompositionLocalOf { TimeZone.currentSystemDefault() }
+
 /** How long a switch waits for the view it goes to before resizing into it without its events. */
 private const val MORPH_DATA_WAIT_MS = 150L
 
@@ -322,7 +329,7 @@ private fun PagedTimelineScreen(
     onOpenDay: (LocalDate) -> Unit,
     onEventClick: (EventInstance) -> Unit,
     onCreateEvent: (LocalDate, Int?) -> Unit,
-    onCreateSpan: (LocalDate, Int, Int?) -> Unit,
+    onCreateDraft: (Instant, Instant) -> Unit,
     modifier: Modifier,
 ) {
     // The view on screen, which trails [view] while the columns resize into it.
@@ -449,7 +456,8 @@ private fun PagedTimelineScreen(
 
     // Off the ticking clock rather than the loaded page, so it turns over at
     // midnight; derived, so the per-minute tick doesn't recompose the screen.
-    val zone = remember { TimeZone.currentSystemDefault() }
+    // The timeline's own zone, so "today" agrees with the blocks and drops (#387).
+    val zone by viewModel.zone.collectAsStateWithLifecycle()
     val today by remember(zone) { derivedStateOf { nowState.value.toLocalDateTime(zone).date } }
     val isOnCurrentWeek = state !is WeekUiState.Success || (today >= weekStart && today <= weekEnd)
 
@@ -490,7 +498,10 @@ private fun PagedTimelineScreen(
     )
 
     ScreenBody(modifier = modifier) { innerPadding ->
-        CompositionLocalProvider(LocalDimCutoff provides dimCutoff) {
+        CompositionLocalProvider(
+            LocalDimCutoff provides dimCutoff,
+            LocalTimelineZone provides zone,
+        ) {
             WeekContent(
                 state = state,
                 today = today,
@@ -504,7 +515,7 @@ private fun PagedTimelineScreen(
                 onEventClick = onEventClick,
                 onOpenDay = onOpenDay,
                 onCreateAt = { d, minutes -> onCreateEvent(d, minutes) },
-                onCreateSpan = onCreateSpan,
+                onCreateDraft = onCreateDraft,
                 draftMinutes = draftMinutes,
                 modifier = Modifier
                     .padding(innerPadding)
@@ -528,7 +539,7 @@ private fun WeekContent(
     onEventClick: (EventInstance) -> Unit,
     onOpenDay: (LocalDate) -> Unit,
     onCreateAt: (LocalDate, Int) -> Unit,
-    onCreateSpan: (LocalDate, Int, Int?) -> Unit,
+    onCreateDraft: (Instant, Instant) -> Unit,
     draftMinutes: Int,
     modifier: Modifier = Modifier,
 ) {
@@ -546,7 +557,7 @@ private fun WeekContent(
     val dragController = rememberTimelineDragController()
     SideEffect { dragController.draftMinutes = draftMinutes }
     val move = LocalEventMove.current
-    val zone = remember { TimeZone.currentSystemDefault() }
+    val zone = LocalTimelineZone.current
     val onDrop: (TimelineDrop) -> Unit = drop@{ drop ->
         val start = drop.startInstant(zone)
         val moved = drop.event.copy(start = start, end = start + (drop.event.end - drop.event.start))
@@ -587,11 +598,11 @@ private fun WeekContent(
         )
     }
 
-    // A drafted block (#153) opens the new-event form at the span it shows.
+    // A drafted block (#153) opens the new-event form at its own instants: the
+    // end it is drawn to differs on a DST change (#387).
     val createDraft: (EventInstance) -> Unit = { draft ->
         dragController.deselect()
-        val span = wallClockSpan(draft, zone)
-        onCreateSpan(span.day, span.startMin, span.endMin)
+        onCreateDraft(draft.start, draft.end)
     }
 
     // Selection (#141) ends on back, a page or view change, or any tap.
@@ -1410,7 +1421,7 @@ private fun DayColumnCard(
     val hourPx = with(density) { hourHeight.toPx() }
     val morphing = LocalViewMorph.current != null
     val showHourGrid = LocalShowHourGrid.current
-    val zone = remember { TimeZone.currentSystemDefault() }
+    val zone = LocalTimelineZone.current
     // A block drafted on an empty slot (#153), drawn over the part of it on this day.
     val draft by remember(dragController) {
         derivedStateOf { dragController.selection?.event?.takeIf { it.isDraft } }
@@ -1576,8 +1587,10 @@ private fun EventBlock(
     val title = block.event.title.ifBlank { stringResource(R.string.event_untitled) }
     val use24Hour = LocalUse24HourFormat.current
     val locale = currentLocale()
+    val zone = LocalTimelineZone.current
+    val labelEndMin = remember(block, date, zone) { block.labelEndMin(date, zone) }
     val timeLabel = "${minToHm(block.startMin, use24Hour, locale)}–" +
-        minToHm(block.endMin, use24Hour, locale)
+        minToHm(labelEndMin, use24Hour, locale)
     val density = LocalDensity.current
     val metrics = rememberBlockTextMetrics(height)
     // Only full-width (non-overlapping) blocks that are tall enough show the
@@ -1591,7 +1604,7 @@ private fun EventBlock(
     val textWidth = width - (BLOCK_OUTER_INSET + BLOCK_TEXT_PADDING) * 2
     val shownTime = rememberBlockTimeRange(
         minToHm(block.startMin, use24Hour, locale),
-        minToHm(block.endMin, use24Hour, locale),
+        minToHm(labelEndMin, use24Hour, locale),
         textWidth,
     )
     // A short block drops the title rather than serving a horizontally sliced
@@ -1622,7 +1635,6 @@ private fun EventBlock(
     val timeMaxLines = if (showTime) blockTimeLines(shownTime, textWidth, spare) else 1
     val dimCutoff = LocalDimCutoff.current
     val dimmed = dimCutoff != null && block.event.isPastOn(date, dimCutoff)
-    val zone = remember { TimeZone.currentSystemDefault() }
     val moveAction = eventMoveAction(block.event)
     val draft = block.event.isDraft
     val draggable = draft || eventDragAllowed(block.event)
@@ -1644,6 +1656,7 @@ private fun EventBlock(
                 dragController.begin(
                     block = block,
                     clipOffsetMin = clipOffset,
+                    zone = zone,
                     titleLines = if (showTitle) titleMaxLines else 0,
                     pointerInRoot = pointer,
                     // Measured off the block's placement rather than off where the
@@ -1806,7 +1819,7 @@ private fun rememberDraftSurface(
     val currentDrop by rememberUpdatedState(onDrop)
     val title = stringResource(R.string.event_edit_new_title)
     val color = MaterialTheme.colorScheme.primary.toArgb()
-    val zone = remember { TimeZone.currentSystemDefault() }
+    val zone = LocalTimelineZone.current
     val currentEdges by rememberUpdatedState(edges)
     // The draft this gesture lifted, selected again on release after the cancel.
     val lifted = remember { arrayOfNulls<EventInstance>(1) }
@@ -1830,6 +1843,7 @@ private fun rememberDraftSurface(
             lifted[0] = event
             dragController.beginDraft(
                 block = block,
+                zone = zone,
                 pointerInRoot = pointer,
                 blockInRoot = node + Offset(0f, startMin / 60f * hour),
             )

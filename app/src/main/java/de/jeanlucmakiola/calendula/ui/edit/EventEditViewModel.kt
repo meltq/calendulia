@@ -11,6 +11,7 @@ import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.data.time.ZoneSource
 import de.jeanlucmakiola.calendula.data.prefs.firstDayOfWeek
 import de.jeanlucmakiola.calendula.data.prefs.resolveDefaultEventDuration
 import de.jeanlucmakiola.calendula.data.prefs.resolveDefaultReminder
@@ -22,6 +23,15 @@ import de.jeanlucmakiola.calendula.domain.EventAttendee
 import de.jeanlucmakiola.calendula.domain.EventColorOption
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
+import de.jeanlucmakiola.calendula.domain.endInstant
+import de.jeanlucmakiola.calendula.domain.nextFullHour
+import de.jeanlucmakiola.calendula.domain.toFormTime
+import de.jeanlucmakiola.calendula.domain.resolvedZone
+import de.jeanlucmakiola.calendula.domain.startInstant
+import de.jeanlucmakiola.calendula.domain.withEnd
+import de.jeanlucmakiola.calendula.domain.withStart
+import de.jeanlucmakiola.calendula.domain.withTimes
+import de.jeanlucmakiola.calendula.domain.withTimezone
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.isEventTarget
@@ -32,7 +42,6 @@ import de.jeanlucmakiola.calendula.ui.detail.EventDetailViewModel.Companion.NO_O
 import de.jeanlucmakiola.calendula.ui.common.DeleteOutcome
 import de.jeanlucmakiola.calendula.ui.common.tryDeleteEvent
 import de.jeanlucmakiola.calendula.ui.common.stageEventShare
-import de.jeanlucmakiola.calendula.ui.common.wallClockTime
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -141,7 +150,12 @@ class EventEditViewModel @Inject constructor(
     private val settingsPrefs: SettingsPrefs,
     private val icsExporter: IcsExporter,
     @IoDispatcher private val io: CoroutineDispatcher,
+    private val zoneSource: ZoneSource,
 ) : ViewModel() {
+
+    /** The zone the form's unpinned times are read in, for the screen to show them in too. */
+    val zone: StateFlow<TimeZone> = zoneSource.zone
+        .stateIn(viewModelScope, SharingStarted.Eagerly, zoneSource.current())
 
     private val _form = MutableStateFlow<EventForm?>(null)
     private val _saveState = MutableStateFlow<SaveUiState>(SaveUiState.Idle)
@@ -302,7 +316,11 @@ class EventEditViewModel @Inject constructor(
         EventEditUiState(
             form = resolved,
             calendars = pickerCalendars,
-            problems = if (local.showProblems) resolved.problems() else emptySet(),
+            problems = if (local.showProblems) {
+                resolved.problems(zoneSource.current())
+            } else {
+                emptySet()
+            },
             saveState = local.saveState,
             visibleFields = visibleFields,
             hiddenFields = (offerableFields - visibleFields).sorted(),
@@ -349,32 +367,37 @@ class EventEditViewModel @Inject constructor(
      * in the day/week grid; without it the default is the next full hour (today)
      * or 09:00 (any other day). The event opens an hour long and is stretched to
      * the configured default by [applyDefaultDuration], like the reminders.
-     * A block drafted on the timeline (#153) passes [endMinutes] instead,
-     * counted from [date]'s midnight and past 1440 for a later day.
      * No-op when a form is already open, so user input survives configuration
      * changes; [reset] clears it when the screen closes.
      */
-    fun openNew(date: LocalDate, startMinutes: Int? = null, endMinutes: Int? = null) {
+    fun openNew(date: LocalDate, startMinutes: Int? = null) {
         if (_form.value != null) return
-        val zone = TimeZone.currentSystemDefault()
+        val zone = zoneSource.current()
         val now = Clock.System.now()
-        val start = when {
+        val startAt = when {
             startMinutes != null ->
-                LocalDateTime(date, LocalTime(startMinutes / 60, startMinutes % 60))
-            date == now.toLocalDateTime(zone).date -> {
-                // Today: the next full hour (may roll into tomorrow before midnight).
-                val hourMillis = 3_600_000L
-                val rounded = (now.toEpochMilliseconds() / hourMillis + 1) * hourMillis
-                Instant.fromEpochMilliseconds(rounded).toLocalDateTime(zone)
-            }
-            else -> LocalDateTime(date, LocalTime(9, 0))
+                LocalDateTime(date, LocalTime(startMinutes / 60, startMinutes % 60)).toInstant(zone)
+            date == now.toLocalDateTime(zone).date -> nextFullHour(now)
+            else -> LocalDateTime(date, LocalTime(9, 0)).toInstant(zone)
         }
-        val chosenEnd = endMinutes?.takeIf { startMinutes != null && it > startMinutes }
-            ?.let { wallClockTime(date, it) }
-        val end = chosenEnd ?: (start.toInstant(zone) + SettingsPrefs.DEFAULT_EVENT_DURATION.minutes)
-            .toLocalDateTime(zone)
-        _form.value = EventForm(calendarId = null, start = start, end = end)
-        if (chosenEnd != null) _durationTouched.value = true
+        val endAt = startAt + SettingsPrefs.DEFAULT_EVENT_DURATION.minutes
+        _form.value = EventForm(calendarId = null, start = startAt.toFormTime(zone), end = endAt.toFormTime(zone))
+        applyDefaultReminder()
+        applyDefaultDuration()
+    }
+
+    /**
+     * Initialise a fresh form for a block drafted on the timeline (#153), from
+     * [start] to [end]. These are the instants the block shows, so a time in the
+     * fall-back hour's repeat, or one moved out of the spring-forward gap, opens
+     * as drawn (#387). The user chose the length, so the default length doesn't
+     * apply. No-op when a form is already open, as [openNew].
+     */
+    fun openDraft(start: Instant, end: Instant) {
+        if (_form.value != null) return
+        val zone = zoneSource.current()
+        _form.value = EventForm(calendarId = null, start = start.toFormTime(zone), end = end.toFormTime(zone))
+        _durationTouched.value = true
         applyDefaultReminder()
         applyDefaultDuration()
     }
@@ -484,11 +507,10 @@ class EventEditViewModel @Inject constructor(
             if (_editTarget.value != null || _durationTouched.value) return@launch
             if (_form.value?.isAllDay != false) return@launch
             val duration = resolveDefaultEventDuration(global, overrides, targetId)
-            val zone = TimeZone.currentSystemDefault()
             update { form ->
-                form.copy(
-                    end = (form.start.toInstant(zone) + duration.minutes).toLocalDateTime(zone),
-                )
+                val zone = form.resolvedZone(zoneSource.current())
+                val start = form.startInstant(zone)
+                form.withTimes(start, start + duration.minutes, zone)
             }
         }
     }
@@ -549,7 +571,7 @@ class EventEditViewModel @Inject constructor(
                 _loadFailed.value = true
                 return@launch
             }
-            val zone = TimeZone.currentSystemDefault()
+            val zone = zoneSource.current()
             val begin = beginMillis.takeUnless { it == NO_OCCURRENCE_TIME }
                 ?: detail.instance.start.toEpochMilliseconds()
             val end = endMillis.takeUnless { it == NO_OCCURRENCE_TIME }
@@ -607,7 +629,11 @@ class EventEditViewModel @Inject constructor(
         // the provider stores UTC-anchored, so a zone could only misrepresent
         // them. Coming back out of all-day leaves the event on the device zone,
         // which is the same thing a fresh event gets.
-        edit { it.copy(isAllDay = value, timezone = if (value) null else it.timezone) }
+        // A kept pass of a repeated hour stays, so switching back out of all-day
+        // lands where the event was — unless dropping the pin changed the zone.
+        edit {
+            if (value) it.withTimezone(null, zoneSource.current()).copy(isAllDay = true) else it.copy(isAllDay = false)
+        }
         // The default reminder differs for all-day vs timed; re-apply the
         // type-appropriate default unless the user has hand-edited it (guarded).
         applyDefaultReminder()
@@ -622,7 +648,7 @@ class EventEditViewModel @Inject constructor(
      * time — only real picks are remembered, not the device fallback.
      */
     fun setTimezone(zoneId: String?) {
-        edit { it.copy(timezone = zoneId) }
+        edit { it.withTimezone(zoneId, zoneSource.current()) }
         if (zoneId != null) {
             viewModelScope.launch { withContext(io) { settingsPrefs.addRecentTimeZone(zoneId) } }
         }
@@ -700,12 +726,12 @@ class EventEditViewModel @Inject constructor(
     // default duration, so a later calendar switch keeps their span (#54).
     fun setEndDate(date: LocalDate) {
         _durationTouched.value = true
-        edit { it.copy(end = LocalDateTime(date, it.end.time)) }
+        moveEnd { LocalDateTime(date, it.time) }
     }
 
     fun setEndTime(time: LocalTime) {
         _durationTouched.value = true
-        edit { it.copy(end = LocalDateTime(it.end.date, time)) }
+        moveEnd { LocalDateTime(it.date, time) }
     }
 
     /**
@@ -718,7 +744,7 @@ class EventEditViewModel @Inject constructor(
         val current = state.value ?: return
         if (current.saveState == SaveUiState.Saving) return
         val form = current.form
-        if (form.problems().isNotEmpty()) {
+        if (form.problems(zoneSource.current()).isNotEmpty()) {
             _showProblems.value = true
             return
         }
@@ -874,12 +900,19 @@ class EventEditViewModel @Inject constructor(
     }
 
     private fun moveStart(transform: (LocalDateTime) -> LocalDateTime) = edit { form ->
-        val zone = TimeZone.currentSystemDefault()
-        val newStart = transform(form.start)
-        val duration = form.end.toInstant(zone) - form.start.toInstant(zone)
-        val newEnd = (newStart.toInstant(zone) + duration).toLocalDateTime(zone)
-        form.copy(start = newStart, end = newEnd)
+        form.withStart(transform(form.start.dateTime), form.resolvedZone(zoneSource.current()), opened(form)?.start)
     }
+
+    private fun moveEnd(transform: (LocalDateTime) -> LocalDateTime) = edit { form ->
+        form.withEnd(transform(form.end.dateTime), form.resolvedZone(zoneSource.current()), opened(form)?.end)
+    }
+
+    /**
+     * The event as it was opened, while its times still mean the same instants:
+     * picking one of them again keeps its pass of a repeated hour (#387).
+     */
+    private fun opened(form: EventForm): EventForm? =
+        _editTarget.value?.original?.takeIf { it.timezone == form.timezone && !it.isAllDay }
 
     private inline fun update(block: (EventForm) -> EventForm) {
         _form.value = _form.value?.let(block)

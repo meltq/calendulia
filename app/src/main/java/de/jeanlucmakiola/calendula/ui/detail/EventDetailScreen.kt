@@ -102,6 +102,7 @@ import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.timeOfDayFormatter
+import de.jeanlucmakiola.calendula.ui.common.withRepeatedHourZone
 import de.jeanlucmakiola.calendula.ui.common.recurrenceText
 import de.jeanlucmakiola.calendula.ui.common.reminderLeadTimeLabel
 import kotlinx.coroutines.launch
@@ -377,7 +378,7 @@ private fun EventDetailContent(
         val gap = 12.dp
 
         // "When" — date/all-day plus the time range.
-        val (whenPrimary, whenSecondary) = formatWhen(instance, TimeZone.currentSystemDefault(), locale)
+        val (whenPrimary, whenSecondary) = rememberWhen(instance, TimeZone.currentSystemDefault(), locale)
         DetailCard(icon = Icons.Default.Schedule, iconContentDescription = null) {
             Text(text = whenPrimary, style = MaterialTheme.typography.titleMedium)
             if (whenSecondary != null) {
@@ -417,7 +418,7 @@ private fun EventDetailContent(
                 // in the primary instead, so fall back to it. If the zone can't be
                 // read back at all, drop to just the abbreviation + offset.
                 val originalTime = runCatching { TimeZone.of(zoneOption.id) }.getOrNull()
-                    ?.let { formatWhen(instance, it, locale) }
+                    ?.let { rememberWhen(instance, it, locale) }
                     ?.let { (primary, secondary) -> secondary ?: primary }
                 Spacer(Modifier.height(2.dp))
                 Text(
@@ -806,18 +807,28 @@ private fun linkify(
  * single primary line spanning both ends.
  */
 @Composable
+private fun rememberWhen(instance: EventInstance, zone: TimeZone, locale: Locale): Pair<String, String?> {
+    val use24Hour = LocalUse24HourFormat.current
+    val allDayLabel = stringResource(R.string.event_detail_all_day)
+    // Remembered: a time in the repeated hour looks up its zone abbreviation (#387).
+    return remember(instance, zone, locale, use24Hour, allDayLabel) {
+        formatWhen(instance, zone, locale, use24Hour, allDayLabel)
+    }
+}
+
 private fun formatWhen(
     instance: EventInstance,
     zone: TimeZone,
     locale: Locale,
+    use24Hour: Boolean,
+    allDayLabel: String,
 ): Pair<String, String?> {
     val zid = ZoneId.of(zone.id)
     val dateFull = DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).withLocale(locale)
     val dateMedium = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale)
-    val timeShort = timeOfDayFormatter(LocalUse24HourFormat.current, locale)
+    val timeShort = timeOfDayFormatter(use24Hour, locale)
 
     val startLdt = instance.start.toJavaLocalDateTime(zid)
-    val allDayLabel = stringResource(R.string.event_detail_all_day)
 
     if (instance.isAllDay) {
         // All-day events live at UTC midnights with an exclusive end. Resolve
@@ -837,12 +848,13 @@ private fun formatWhen(
     }
 
     val endLdt = instance.end.toJavaLocalDateTime(zid)
+    val startTime = withRepeatedHourZone(timeShort.format(startLdt), instance.start, zone, locale)
+    val endTime = withRepeatedHourZone(timeShort.format(endLdt), instance.end, zone, locale)
     return if (startLdt.toLocalDate() == endLdt.toLocalDate()) {
-        dateFull.format(startLdt.toLocalDate()) to
-            "${timeShort.format(startLdt)} – ${timeShort.format(endLdt)}"
+        dateFull.format(startLdt.toLocalDate()) to "$startTime – $endTime"
     } else {
-        val start = "${dateMedium.format(startLdt.toLocalDate())} ${timeShort.format(startLdt)}"
-        val end = "${dateMedium.format(endLdt.toLocalDate())} ${timeShort.format(endLdt)}"
+        val start = "${dateMedium.format(startLdt.toLocalDate())} $startTime"
+        val end = "${dateMedium.format(endLdt.toLocalDate())} $endTime"
         "$start – $end" to null
     }
 }

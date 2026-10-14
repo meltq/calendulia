@@ -125,10 +125,13 @@ import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventAttendee
 import de.jeanlucmakiola.calendula.domain.EventColorOption
 import de.jeanlucmakiola.calendula.domain.EventForm
+import de.jeanlucmakiola.calendula.domain.startInstant
+import de.jeanlucmakiola.calendula.domain.endInstant
+import de.jeanlucmakiola.calendula.domain.resolvedZone
+import de.jeanlucmakiola.calendula.domain.isPinnedAwayFrom
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.zoneDescriptor
 import de.jeanlucmakiola.calendula.domain.timeZoneOptionOf
-import de.jeanlucmakiola.calendula.domain.timesIn
 import de.jeanlucmakiola.calendula.domain.EventFormProblem
 import de.jeanlucmakiola.calendula.domain.RecurrenceEnd
 import de.jeanlucmakiola.calendula.domain.RecurrenceFreq
@@ -171,6 +174,7 @@ import de.jeanlucmakiola.floret.reminders.ReminderUnit
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.timeOfDayFormatter
+import de.jeanlucmakiola.calendula.ui.common.withRepeatedHourZone
 import de.jeanlucmakiola.calendula.ui.common.reminderLeadTimeLabel
 import de.jeanlucmakiola.calendula.ui.common.reminderUnitLabel
 import de.jeanlucmakiola.calendula.ui.common.nextOccurrencesText
@@ -183,7 +187,6 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.toJavaDayOfWeek
 import kotlinx.datetime.toJavaLocalDate
-import kotlinx.datetime.toInstant
 import kotlinx.datetime.toJavaLocalTime
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.toJavaInstant
@@ -193,6 +196,7 @@ import java.time.format.FormatStyle
 import java.time.format.TextStyle as JavaTextStyle
 import java.util.Locale
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Full-screen event form: create (v1.2, from the FAB's anchor date) and edit
@@ -214,7 +218,7 @@ fun EventEditScreen(
     onSaved: () -> Unit,
     editKey: LongArray? = null,
     initialStartMinutes: Int? = null,
-    initialEndMinutes: Int? = null,
+    initialDraft: LongArray? = null,
     initialForm: EventForm? = null,
     initialFormSource: ImportSource = ImportSource.File,
     onManageCalendars: (() -> Unit)? = null,
@@ -224,7 +228,9 @@ fun EventEditScreen(
     visible: Boolean = true,
     viewModel: EventEditViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(initialDateIso, editKey, initialForm) {
+    // Keyed on every input that decides the form, so a second draft or slot on
+    // the same day opens its own form even when the composition is kept alive.
+    LaunchedEffect(initialDateIso, editKey, initialForm, initialDraft, initialStartMinutes) {
         when {
             // A prefilled open: a single-event .ics for review, or an external
             // ACTION_INSERT intent. The source drives how reminders are seeded.
@@ -234,10 +240,15 @@ fun EventEditScreen(
                 beginMillis = editKey[1],
                 endMillis = editKey[2],
             )
+            // A block drafted on the timeline (#153): its own start and end.
+            initialDraft != null -> viewModel.openDraft(
+                start = Instant.fromEpochMilliseconds(initialDraft[0]),
+                end = Instant.fromEpochMilliseconds(initialDraft[1]),
+            )
             else -> {
                 val date = initialDateIso?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-                    ?: Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
-                viewModel.openNew(date, initialStartMinutes, initialEndMinutes)
+                    ?: Clock.System.now().toLocalDateTime(viewModel.zone.value).date
+                viewModel.openNew(date, initialStartMinutes)
             }
         }
     }
@@ -681,6 +692,7 @@ private fun EventEditContent(
 ) {
     val form = state.form
     val locale = currentLocale()
+    val deviceZone by viewModel.zone.collectAsStateWithLifecycle()
     val firstDayOfWeek by viewModel.firstDayOfWeek.collectAsStateWithLifecycle()
     val dark = isSystemInDarkTheme()
     // The title, date and recurrence are managed by the special-dates sync, so
@@ -842,9 +854,14 @@ private fun EventEditContent(
             },
         ) {
             Spacer(Modifier.height(4.dp))
+            val formZone = remember(form.timezone, deviceZone) { form.resolvedZone(deviceZone) }
+            val startAt = remember(form.start, formZone) { form.startInstant(formZone) }
+            val endAt = remember(form.end, formZone) { form.endInstant(formZone) }
             ScheduleRow(
                 label = stringResource(R.string.event_edit_starts),
-                dateTime = form.start,
+                dateTime = form.start.dateTime,
+                instant = startAt,
+                zone = formZone,
                 isAllDay = form.isAllDay,
                 locale = locale,
                 onDateClick = { picker = PickerTarget.StartDate },
@@ -853,7 +870,9 @@ private fun EventEditContent(
             )
             ScheduleRow(
                 label = stringResource(R.string.event_edit_ends),
-                dateTime = form.end,
+                dateTime = form.end.dateTime,
+                instant = endAt,
+                zone = formZone,
                 isAllDay = form.isAllDay,
                 locale = locale,
                 onDateClick = { picker = PickerTarget.EndDate },
@@ -872,20 +891,20 @@ private fun EventEditContent(
             // The rows above edit a pinned event in *its own* zone, which is the
             // time it was set at — but that says nothing about when it lands for
             // whoever is reading it. Spell the local equivalent out rather than
-            // leaving the user to do the offset arithmetic. Absent (null) unless
-            // the event is pinned somewhere other than here.
+            // leaving the user to do the offset arithmetic. Absent unless the
+            // event is pinned somewhere other than here.
             // Keyed rather than recomputed: this sits in the same Column as the
             // title field, so it would otherwise re-parse the zone on every
             // keystroke.
-            val localTimes = remember(form.timezone, form.start, form.end, form.isAllDay) {
-                form.timesIn(TimeZone.currentSystemDefault())
+            val pinnedAway = remember(form.timezone, form.isAllDay, deviceZone) {
+                form.isPinnedAwayFrom(deviceZone)
             }
-            localTimes?.let { (localStart, localEnd) ->
+            if (pinnedAway) {
                 Spacer(Modifier.height(2.dp))
                 Text(
                     text = stringResource(
                         R.string.event_edit_timezone_local_time,
-                        formatTimeRange(localStart, localEnd, locale),
+                        formatTimeRange(startAt, endAt, deviceZone, locale),
                     ),
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -949,7 +968,7 @@ private fun EventEditContent(
                                 timeZoneOptionOf(
                                     id,
                                     locale,
-                                    at = form.start.toInstant(zone).toJavaInstant(),
+                                    at = form.startInstant(zone).toJavaInstant(),
                                     regionOf = ::icuTimeZoneRegion,
                                 )
                             }
@@ -2431,18 +2450,23 @@ private fun EditCard(
 }
 
 /**
- * "2:00 PM – 3:00 PM", honouring the user's 12/24-hour setting. Collapses to one
- * time when both land on the same minute (an instant event shouldn't read as a
- * range against itself). Dates are deliberately absent — the rows above carry
- * them.
+ * "2:00 PM – 3:00 PM" in [zone], honouring the user's 12/24-hour setting. Collapses
+ * to one time for an instant event, which shouldn't read as a range against
+ * itself. Dates are deliberately absent — the rows above carry them.
  */
 @Composable
-private fun formatTimeRange(start: LocalDateTime, end: LocalDateTime, locale: Locale): String {
+private fun formatTimeRange(start: Instant, end: Instant, zone: TimeZone, locale: Locale): String {
     val use24Hour = LocalUse24HourFormat.current
-    val timeFormat = remember(locale, use24Hour) { timeOfDayFormatter(use24Hour, locale) }
-    val from = timeFormat.format(start.time.toJavaLocalTime())
-    val to = timeFormat.format(end.time.toJavaLocalTime())
-    return if (from == to) from else "$from – $to"
+    return remember(start, end, zone, locale, use24Hour) {
+        val timeFormat = timeOfDayFormatter(use24Hour, locale)
+        fun format(at: Instant) = withRepeatedHourZone(
+            timeFormat.format(at.toLocalDateTime(zone).time.toJavaLocalTime()),
+            at,
+            zone,
+            locale,
+        )
+        if (start == end) format(start) else "${format(start)} – ${format(end)}"
+    }
 }
 
 /**
@@ -2524,6 +2548,8 @@ private fun firstLineHeight(
 private fun ScheduleRow(
     label: String,
     dateTime: LocalDateTime,
+    instant: Instant,
+    zone: TimeZone,
     isAllDay: Boolean,
     locale: Locale,
     onDateClick: () -> Unit,
@@ -2565,8 +2591,11 @@ private fun ScheduleRow(
                 .padding(vertical = 8.dp, horizontal = 6.dp),
         )
         if (!isAllDay) {
+            val time = remember(dateTime, instant, zone, locale, timeFormat) {
+                withRepeatedHourZone(timeFormat.format(dateTime.time.toJavaLocalTime()), instant, zone, locale)
+            }
             Text(
-                text = timeFormat.format(dateTime.time.toJavaLocalTime()),
+                text = time,
                 style = MaterialTheme.typography.titleMedium,
                 color = valueColor,
                 modifier = Modifier

@@ -4,7 +4,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toInstant
+import kotlinx.datetime.UtcOffset
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
@@ -17,8 +17,8 @@ data class EventForm(
     val calendarId: Long?,
     val title: String = "",
     val isAllDay: Boolean = false,
-    val start: LocalDateTime,
-    val end: LocalDateTime,
+    val start: FormTime,
+    val end: FormTime,
     /**
      * The zone [start]/[end] are wall-clock values in, or null to follow the
      * device — null is not "no zone", it is "whichever zone the device is in
@@ -69,6 +69,19 @@ data class EventForm(
      */
     val attendees: List<EventAttendee> = emptyList(),
 )
+
+/**
+ * One end of a form's span: a wall-clock [dateTime] in the form's zone, and the
+ * [offset] it was read at when the fall-back hour repeats that wall clock — both
+ * of the hour's instants share one [LocalDateTime] (#387). Null everywhere else,
+ * so a time changed and changed back compares equal again. A time picked by hand
+ * gets its pass from [repicked]; one without an offset reads as the earlier
+ * pass. One value, so a time never changes without its pass. See [toFormTime].
+ */
+data class FormTime(val dateTime: LocalDateTime, val offset: UtcOffset? = null) {
+    val date: LocalDate get() = dateTime.date
+    val time: LocalTime get() = dateTime.time
+}
 
 /**
  * One editable guest: the user controls the [email] (the identity we dedup and
@@ -145,16 +158,15 @@ fun EventDetail.toEditForm(beginMillis: Long, endMillis: Long, zone: TimeZone): 
             ?.takeIf { runCatching { TimeZone.of(it) }.isSuccess }
     }
     val formZone = pinnedZone?.let { TimeZone.of(it) } ?: zone
+    val begin = Instant.fromEpochMilliseconds(beginMillis)
+    val finish = Instant.fromEpochMilliseconds(endMillis)
     val (start, end) = if (instance.isAllDay) {
-        val startDate = Instant.fromEpochMilliseconds(beginMillis)
-            .toLocalDateTime(TimeZone.UTC).date
-        val endExclusive = Instant.fromEpochMilliseconds(endMillis)
-            .toLocalDateTime(TimeZone.UTC).date
+        val startDate = begin.toLocalDateTime(TimeZone.UTC).date
+        val endExclusive = finish.toLocalDateTime(TimeZone.UTC).date
         val endDate = maxOf(startDate, LocalDate.fromEpochDays(endExclusive.toEpochDays() - 1))
-        LocalDateTime(startDate, LocalTime(9, 0)) to LocalDateTime(endDate, LocalTime(10, 0))
+        FormTime(LocalDateTime(startDate, LocalTime(9, 0))) to FormTime(LocalDateTime(endDate, LocalTime(10, 0)))
     } else {
-        Instant.fromEpochMilliseconds(beginMillis).toLocalDateTime(formZone) to
-            Instant.fromEpochMilliseconds(endMillis).toLocalDateTime(formZone)
+        begin.toFormTime(formZone) to finish.toFormTime(formZone)
     }
     return EventForm(
         calendarId = instance.calendarId,
@@ -221,20 +233,18 @@ fun EventDetail.toEditSnapshot(beginMillis: Long, endMillis: Long, zone: TimeZon
     )
 
 /**
- * The form's times as they land in [target] — what a pinned event's wall-clock
- * actually means where the user is standing. Null when there's nothing to
- * disambiguate: an unpinned event (already in [target]), one pinned to [target]
- * itself, an all-day event (no zone), or an unparseable pinned zone.
+ * Whether this form's times mean something else in [target] — a timed event
+ * pinned to another zone. False when there's nothing to disambiguate: an
+ * unpinned event (already in [target]), one pinned to [target] itself, an
+ * all-day event (no zone), or an unparseable pinned zone.
  *
- * The form edits a pinned event in its own zone, so this is what lets the UI
- * show the other side of the pair rather than making the user do the arithmetic.
+ * The form edits a pinned event in its own zone, so this is what tells the UI
+ * to show the other side of the pair rather than making the user do the arithmetic.
  */
-fun EventForm.timesIn(target: TimeZone): Pair<LocalDateTime, LocalDateTime>? {
-    if (isAllDay) return null
-    val pinned = timezone?.let { runCatching { TimeZone.of(it) }.getOrNull() } ?: return null
-    if (pinned.id == target.id) return null
-    return start.toInstant(pinned).toLocalDateTime(target) to
-        end.toInstant(pinned).toLocalDateTime(target)
+fun EventForm.isPinnedAwayFrom(target: TimeZone): Boolean {
+    if (isAllDay) return false
+    val pinned = timezone?.let { runCatching { TimeZone.of(it) }.getOrNull() } ?: return false
+    return pinned.id != target.id
 }
 
 /**
@@ -254,9 +264,19 @@ fun EventForm.populatedFields(): Set<EventFormField> = buildSet {
     if (attendees.isNotEmpty()) add(EventFormField.Attendees)
 }
 
-fun EventForm.problems(): Set<EventFormProblem> = buildSet {
+/**
+ * What stops this form from saving. A timed span is checked as instants in the
+ * form's zone (else [deviceZone]): one ending in the fall-back hour's repeat can
+ * end on an earlier wall clock than it starts (#387).
+ */
+fun EventForm.problems(deviceZone: TimeZone): Set<EventFormProblem> = buildSet {
     if (calendarId == null) add(EventFormProblem.NoCalendar)
-    val endsTooEarly = if (isAllDay) end.date < start.date else end < start
+    val endsTooEarly = if (isAllDay) {
+        end.date < start.date
+    } else {
+        val zone = resolvedZone(deviceZone)
+        endInstant(zone) < startInstant(zone)
+    }
     if (endsTooEarly) add(EventFormProblem.EndBeforeStart)
     // An UNTIL before the first day would make the provider generate zero
     // occurrences — the event would silently vanish from every view.

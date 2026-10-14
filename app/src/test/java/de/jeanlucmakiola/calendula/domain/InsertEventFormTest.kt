@@ -53,8 +53,8 @@ class InsertEventFormTest {
         )
         assertThat(form.calendarId).isNull() // resolves to last-used / first-writable
         assertThat(form.isAllDay).isFalse()
-        assertThat(form.start).isEqualTo(start)
-        assertThat(form.end).isEqualTo(end)
+        assertThat(form.start.dateTime).isEqualTo(start)
+        assertThat(form.end.dateTime).isEqualTo(end)
         assertThat(form.title).isEqualTo("Standup")
         assertThat(form.description).isEqualTo("Daily")
         assertThat(form.location).isEqualTo("Room 1")
@@ -64,8 +64,8 @@ class InsertEventFormTest {
     @Test
     fun `missing times default to the next full hour and a one-hour duration`() {
         val form = build(title = "Quick note")
-        assertThat(form.start).isEqualTo(LocalDateTime(2026, 1, 15, 11, 0))
-        assertThat(form.end).isEqualTo(LocalDateTime(2026, 1, 15, 12, 0))
+        assertThat(form.start.dateTime).isEqualTo(LocalDateTime(2026, 1, 15, 11, 0))
+        assertThat(form.end.dateTime).isEqualTo(LocalDateTime(2026, 1, 15, 12, 0))
         assertThat(form.title).isEqualTo("Quick note")
     }
 
@@ -73,8 +73,8 @@ class InsertEventFormTest {
     fun `timed event with only a start gets a one-hour end`() {
         val start = LocalDateTime(2026, 5, 2, 9, 0)
         val form = build(beginMillis = millis(start))
-        assertThat(form.start).isEqualTo(start)
-        assertThat(form.end).isEqualTo(LocalDateTime(2026, 5, 2, 10, 0))
+        assertThat(form.start.dateTime).isEqualTo(start)
+        assertThat(form.end.dateTime).isEqualTo(LocalDateTime(2026, 5, 2, 10, 0))
     }
 
     @Test
@@ -82,7 +82,7 @@ class InsertEventFormTest {
         val start = LocalDateTime(2026, 5, 2, 9, 0)
         val badEnd = LocalDateTime(2026, 5, 2, 8, 0)
         val form = build(beginMillis = millis(start), endMillis = millis(badEnd))
-        assertThat(form.end).isEqualTo(LocalDateTime(2026, 5, 2, 10, 0))
+        assertThat(form.end.dateTime).isEqualTo(LocalDateTime(2026, 5, 2, 10, 0))
     }
 
     @Test

@@ -14,6 +14,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Scroll back to earlier days in the agenda.** Scroll up past today to see earlier days' events, loaded a month at a time. Past days follow the past-events setting: Dim fades them, and with Hide the agenda still starts at today ([#367]).
 
 ### Fixed
+- **Events on the day the clocks change show at their real time.** In the day, 3-day and week views, events later on the day of a daylight saving change were drawn an hour off, so a 14:45 event showed at 15:45. They now sit at their own time. When the clocks go back, 02:00 to 03:00 happens twice: an event in that hour now stays in the right one when you move, resize or edit it, and the editor and event details add the zone, like CEST or CET, so you can tell the two apart ([#387]).
 - **The agenda always starts today.** Coming from the month or day view, the agenda used to start at the day you had open there, so "Next 30 days" could show the 1st to the 30th of the month. It now opens on today with your chosen range. Backing out of a day you opened from the agenda still returns you to where you were ([#367]).
 - **Multi-day events dim on the days already behind you.** With past events dimmed, an event running over several days stayed at full strength on its earlier days until it ended. Those days now dim in the agenda, month, week and day views ([#367]).
 
@@ -1863,3 +1864,4 @@ automatically, with zero telemetry and no internet permission.
 [#141]: https://codeberg.org/jlmakiola/calendula/issues/141
 [#153]: https://codeberg.org/jlmakiola/calendula/issues/153
 [#339]: https://codeberg.org/jlmakiola/calendula/issues/339
+[#387]: https://codeberg.org/jlmakiola/calendula/issues/387

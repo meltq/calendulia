@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.ui.common
 
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.data.time.FakeZoneSource
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepositoryImpl
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
@@ -93,7 +94,7 @@ class RescheduleViewModelTest {
             ),
         )
         val repo = CalendarRepositoryImpl(fake, prefs, settings, dispatcher as CoroutineDispatcher)
-        return RescheduleViewModel(repo, dispatcher)
+        return RescheduleViewModel(repo, dispatcher, FakeZoneSource())
     }
 
     private fun CoroutineScope.activate(vm: RescheduleViewModel): Job =

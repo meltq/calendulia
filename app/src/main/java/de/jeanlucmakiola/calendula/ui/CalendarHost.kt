@@ -96,6 +96,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Holds the top-level view back stack (spec M1) and swaps between the calendar
@@ -240,18 +241,24 @@ fun CalendarHost(
     var heldCreateIso by remember { mutableStateOf<String?>(null) }
     var createStartMinutes by rememberSaveable { mutableStateOf<Int?>(null) }
     var heldCreateMinutes by remember { mutableStateOf<Int?>(null) }
-    // A drafted block's end (#153), in minutes from the start day's midnight.
-    var createEndMinutes by rememberSaveable { mutableStateOf<Int?>(null) }
-    var heldCreateEndMinutes by remember { mutableStateOf<Int?>(null) }
-    val onCreateSpan: (LocalDate, Int?, Int?) -> Unit = { date, startMinutes, endMinutes ->
+    // A drafted block's start and end (#153) as epoch millis. Instants rather than
+    // minutes into a day, so the form opens at the times drawn even across a DST
+    // change (#387).
+    var createDraftMillis by rememberSaveable { mutableStateOf<LongArray?>(null) }
+    var heldCreateDraftMillis by remember { mutableStateOf<LongArray?>(null) }
+    fun openCreate(date: LocalDate, startMinutes: Int?, draftMillis: LongArray?) {
         heldCreateIso = date.toString()
         createDateIso = date.toString()
         heldCreateMinutes = startMinutes
         createStartMinutes = startMinutes
-        heldCreateEndMinutes = endMinutes
-        createEndMinutes = endMinutes
+        heldCreateDraftMillis = draftMillis
+        createDraftMillis = draftMillis
     }
-    val onCreateEvent: (LocalDate, Int?) -> Unit = { date, startMinutes -> onCreateSpan(date, startMinutes, null) }
+    val onCreateEvent: (LocalDate, Int?) -> Unit = { date, startMinutes -> openCreate(date, startMinutes, null) }
+    val onCreateDraft: (Instant, Instant) -> Unit = { start, end ->
+        val date = start.toLocalDateTime(TimeZone.currentSystemDefault()).date
+        openCreate(date, null, longArrayOf(start.toEpochMilliseconds(), end.toEpochMilliseconds()))
+    }
 
     // Edit form (v1.3) — reuses the detail screen's occurrence key; for
     // recurring events the form itself asks for the write scope at save
@@ -387,8 +394,8 @@ fun CalendarHost(
                 createDateIso = iso
                 heldCreateMinutes = null
                 createStartMinutes = null
-                heldCreateEndMinutes = null
-                createEndMinutes = null
+                heldCreateDraftMillis = null
+                createDraftMillis = null
                 onWidgetNavConsumed()
             }
             null -> {}
@@ -604,7 +611,7 @@ fun CalendarHost(
                     onOpenDay = onOpenDay,
                     onEventClick = onEventClick,
                     onCreateEvent = onCreateEvent,
-                    onCreateSpan = onCreateSpan,
+                    onCreateDraft = onCreateDraft,
                 )
                 ViewScreen.Month -> MonthScreen(
                     onOpenDay = onOpenDay,
@@ -693,7 +700,7 @@ fun CalendarHost(
                 EventEditScreen(
                     initialDateIso = iso,
                     initialStartMinutes = createStartMinutes ?: heldCreateMinutes,
-                    initialEndMinutes = createEndMinutes ?: heldCreateEndMinutes,
+                    initialDraft = createDraftMillis ?: heldCreateDraftMillis,
                     onClose = { createDateIso = null },
                     onSaved = { createDateIso = null },
                     onManageCalendars = { showCalendars = true },

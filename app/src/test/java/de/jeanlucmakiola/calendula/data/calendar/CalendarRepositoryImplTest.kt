@@ -11,6 +11,7 @@ import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventColorOption
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.domain.FormTime
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
@@ -510,8 +511,8 @@ class CalendarRepositoryImplTest {
         val form = EventForm(
             calendarId = 1L,
             title = "Stand-up",
-            start = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 15)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 15))),
         )
 
         val id = repo.createEvent(form)
@@ -531,8 +532,8 @@ class CalendarRepositoryImplTest {
         val form = EventForm(
             calendarId = 1L,
             isAllDay = true,
-            start = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(0, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(0, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(0, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(0, 0))),
         )
 
         repo.createEvent(form)
@@ -548,8 +549,8 @@ class CalendarRepositoryImplTest {
         val repo = CalendarRepositoryImpl(fake, newPrefs(tempDir), newSettings(tempDir), Dispatchers.Unconfined)
         val form = EventForm(
             calendarId = 1L,
-            start = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(10, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(10, 0))),
         )
 
         try {
@@ -567,8 +568,8 @@ class CalendarRepositoryImplTest {
         val original = EventForm(
             calendarId = 1L,
             title = "Stand-up",
-            start = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 15)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 15))),
         )
         val updated = original.copy(title = "Daily")
 
@@ -584,8 +585,8 @@ class CalendarRepositoryImplTest {
         val original = EventForm(
             calendarId = 1L,
             title = "Stand-up",
-            start = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 15)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 15))),
         )
         val updated = original.copy(calendarId = 3L)
 
@@ -605,8 +606,8 @@ class CalendarRepositoryImplTest {
         val repo = CalendarRepositoryImpl(fake, newPrefs(tempDir), newSettings(tempDir), Dispatchers.Unconfined)
         val form = EventForm(
             calendarId = 1L,
-            start = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(10, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(10, 0))),
         )
 
         try {
@@ -625,8 +626,8 @@ class CalendarRepositoryImplTest {
         val repo = CalendarRepositoryImpl(fake, newPrefs(tempDir), newSettings(tempDir), Dispatchers.Unconfined)
         val form = EventForm(
             calendarId = 1L,
-            start = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(10, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(10, 0))),
         )
 
         try {
@@ -678,8 +679,8 @@ class CalendarRepositoryImplTest {
         val form = EventForm(
             calendarId = 1L,
             title = "Moved",
-            start = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(10, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(10, 0))),
         )
 
         val id = repo.updateOccurrence(
@@ -701,8 +702,8 @@ class CalendarRepositoryImplTest {
         val original = EventForm(
             calendarId = 1L,
             title = "Weekly",
-            start = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(10, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(10, 0))),
             rrule = "FREQ=WEEKLY",
         )
         val updated = original.copy(title = "Weekly, renamed")

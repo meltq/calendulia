@@ -11,10 +11,15 @@ import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.data.time.FakeZoneSource
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.domain.FormTime
+import de.jeanlucmakiola.calendula.domain.startInstant
+import de.jeanlucmakiola.calendula.domain.problems
+import de.jeanlucmakiola.calendula.domain.endInstant
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -30,6 +35,7 @@ import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
+import kotlinx.datetime.TimeZone
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -63,11 +69,16 @@ class EventEditViewModelTest {
         syncsEvents = syncsEvents,
     )
 
-    private fun detail(calendarId: Long, rrule: String? = null): EventDetail = EventDetail(
+    private fun detail(
+        calendarId: Long,
+        rrule: String? = null,
+        start: Instant = Instant.fromEpochMilliseconds(beginMillis),
+        end: Instant = Instant.fromEpochMilliseconds(endMillis),
+    ): EventDetail = EventDetail(
         instance = EventInstance(
             instanceId = 42L, eventId = 42L, calendarId = calendarId, title = "Standup",
-            start = Instant.fromEpochMilliseconds(beginMillis),
-            end = Instant.fromEpochMilliseconds(endMillis),
+            start = start,
+            end = end,
             isAllDay = false, color = 0xFF000000.toInt(), location = null,
         ),
         description = null, organizer = null, attendees = emptyList(), rrule = rrule,
@@ -96,11 +107,12 @@ class EventEditViewModelTest {
         // Passed in by the tests that need to seed a setting first; a second
         // DataStore on the same file would clash, so it is built only once.
         s: SettingsPrefs = settings(tempDir),
+        zones: FakeZoneSource = FakeZoneSource(),
     ): EventEditViewModel {
         val p = prefs(tempDir)
         val repo = CalendarRepositoryImpl(fake, p, s, dispatcher as CoroutineDispatcher)
         // Only `shareUri()` touches the exporter, and nothing here shares.
-        return EventEditViewModel(repo, p, s, IcsExporter(ContextWrapper(null)), dispatcher)
+        return EventEditViewModel(repo, p, s, IcsExporter(ContextWrapper(null)), dispatcher, zones)
     }
 
     /** Keep [EventEditViewModel.state] hot so it computes while the test drives it. */
@@ -226,12 +238,12 @@ class EventEditViewModelTest {
         advanceUntilIdle()
 
         // Calendar 1 has no length of its own, so it inherits the global 30 min.
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 9, 30))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 9, 30))
 
         vm.setCalendar(2L)
         advanceUntilIdle()
 
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 17, 0))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 17, 0))
         job.cancel()
     }
 
@@ -251,7 +263,7 @@ class EventEditViewModelTest {
         vm.setCalendar(2L)
         advanceUntilIdle()
 
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 10, 15))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 10, 15))
         job.cancel()
     }
 
@@ -272,7 +284,7 @@ class EventEditViewModelTest {
         advanceUntilIdle()
 
         // The file owns the length; a calendar switch must not restretch it.
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 11, 30))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 11, 30))
         job.cancel()
     }
 
@@ -293,15 +305,15 @@ class EventEditViewModelTest {
         )
         advanceUntilIdle()
 
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 9, 30))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 9, 30))
         job.cancel()
     }
 
     private fun importedForm(end: LocalDateTime) = EventForm(
         calendarId = null,
         title = "Imported",
-        start = LocalDateTime(2030, 1, 15, 9, 0),
-        end = end,
+        start = FormTime(LocalDateTime(2030, 1, 15, 9, 0)),
+        end = FormTime(end),
     )
 
     @Test
@@ -321,7 +333,7 @@ class EventEditViewModelTest {
         advanceUntilIdle()
 
         // Dates carry no length: the times stay where the form put them.
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 10, 0))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 10, 0))
         job.cancel()
     }
 
@@ -555,6 +567,95 @@ class EventEditViewModelTest {
         vm.applyImportedReminderDefault()
         advanceUntilIdle()
         assertThat(vm.hasUnsavedChanges.value).isTrue()
+        job.cancel()
+    }
+
+    @Test
+    fun `a drafted block opens at its own instants across the fall-back hour`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val vm = viewModel(tempDir, fake, zones = FakeZoneSource(berlin))
+        val job = activate(vm)
+
+        // An hour from 02:30 CEST ends at 02:30 CET, the same wall clock.
+        vm.openDraft(Instant.parse("2026-10-25T00:30:00Z"), Instant.parse("2026-10-25T01:30:00Z"))
+        advanceUntilIdle()
+
+        val form = vm.state.value!!.form!!
+        assertThat(form.startInstant(berlin)).isEqualTo(Instant.parse("2026-10-25T00:30:00Z"))
+        assertThat(form.endInstant(berlin)).isEqualTo(Instant.parse("2026-10-25T01:30:00Z"))
+        assertThat(form.problems(berlin)).isEmpty()
+        job.cancel()
+    }
+
+    @Test
+    fun `a drafted block on the second pass stays on it at its length`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val s = settings(tempDir)
+        s.setCalendarEventDuration(1L, 480)
+        val vm = viewModel(tempDir, fake, s, FakeZoneSource(berlin))
+        val job = activate(vm)
+
+        // 02:30 CET to 03:00 CET: the default length mustn't stretch it.
+        vm.openDraft(Instant.parse("2026-10-25T01:30:00Z"), Instant.parse("2026-10-25T02:00:00Z"))
+        advanceUntilIdle()
+
+        val form = vm.state.value!!.form!!
+        assertThat(form.startInstant(berlin)).isEqualTo(Instant.parse("2026-10-25T01:30:00Z"))
+        assertThat(form.endInstant(berlin)).isEqualTo(Instant.parse("2026-10-25T02:00:00Z"))
+        job.cancel()
+    }
+
+    @Test
+    fun `a time picked in the repeated hour and back keeps the opened pass`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        // Opened at 02:30 CET (the second pass) to 03:30, its start moved away and back.
+        val begin = Instant.parse("2026-10-25T01:30:00Z")
+        val end = Instant.parse("2026-10-25T02:30:00Z")
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L, start = begin, end = end) }
+        }
+        val vm = viewModel(tempDir, fake, zones = FakeZoneSource(berlin))
+        val job = activate(vm)
+        vm.openForEdit(eventId = 1L, beginMillis = begin.toEpochMilliseconds(), endMillis = end.toEpochMilliseconds())
+        advanceUntilIdle()
+        val opened = vm.state.value!!.form!!
+
+        vm.setStartTime(LocalTime(4, 0))
+        vm.setStartTime(LocalTime(2, 30))
+
+        assertThat(vm.state.value!!.form).isEqualTo(opened)
+        job.cancel()
+    }
+
+    private val berlin = TimeZone.of("Europe/Berlin")
+
+    @Test
+    fun `all-day on and off keeps a second-pass event where it was`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val begin = Instant.parse("2026-10-25T01:30:00Z")
+        val end = Instant.parse("2026-10-25T02:30:00Z")
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L, start = begin, end = end) }
+        }
+        val vm = viewModel(tempDir, fake, zones = FakeZoneSource(berlin))
+        val job = activate(vm)
+        vm.openForEdit(eventId = 1L, beginMillis = begin.toEpochMilliseconds(), endMillis = end.toEpochMilliseconds())
+        advanceUntilIdle()
+        val opened = vm.state.value!!.form!!
+
+        vm.setAllDay(true)
+        vm.setAllDay(false)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value!!.form).isEqualTo(opened)
         job.cancel()
     }
 }

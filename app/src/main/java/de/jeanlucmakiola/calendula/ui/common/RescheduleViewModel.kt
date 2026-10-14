@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.ui.common
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import de.jeanlucmakiola.calendula.data.time.ZoneSource
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
 import de.jeanlucmakiola.calendula.data.di.IoDispatcher
@@ -16,6 +17,8 @@ import de.jeanlucmakiola.calendula.domain.parseSimpleRecurrence
 import de.jeanlucmakiola.calendula.domain.problems
 import de.jeanlucmakiola.calendula.domain.realignRecurrence
 import de.jeanlucmakiola.calendula.domain.resizedTo
+import de.jeanlucmakiola.calendula.domain.endInstant
+import de.jeanlucmakiola.calendula.domain.startInstant
 import de.jeanlucmakiola.calendula.domain.resolvedZone
 import de.jeanlucmakiola.calendula.domain.shiftedByDays
 import de.jeanlucmakiola.calendula.domain.shiftedTo
@@ -128,6 +131,7 @@ sealed interface MoveOutcome {
 class RescheduleViewModel @Inject constructor(
     private val repository: CalendarRepository,
     @IoDispatcher private val io: CoroutineDispatcher,
+    private val zoneSource: ZoneSource,
 ) : ViewModel() {
 
     private val _scopePrompt = MutableStateFlow<MoveScopePrompt?>(null)
@@ -317,7 +321,7 @@ class RescheduleViewModel @Inject constructor(
             return null
         }
 
-        val zone = TimeZone.currentSystemDefault()
+        val zone = zoneSource.current()
         val original = detail.toEditForm(request.beginMillis, request.endMillis, zone)
         val shifted = when (val target = request.target) {
             is MoveTarget.Start -> original.shiftedTo(target.instant, zone)
@@ -329,7 +333,7 @@ class RescheduleViewModel @Inject constructor(
 
         // The UNTIL check is deferred to the write, which knows how far the move
         // reaches and so which date has to clear it.
-        if ((shifted.problems() - EventFormProblem.RecurrenceEndsBeforeStart).isNotEmpty()) {
+        if ((shifted.problems(zone) - EventFormProblem.RecurrenceEndsBeforeStart).isNotEmpty()) {
             _outcome.value = MoveOutcome.Failed
             return null
         }
@@ -495,8 +499,7 @@ class RescheduleViewModel @Inject constructor(
     private fun resizedEndMillis(prepared: PreparedMove): Long? {
         if (prepared.request.target !is MoveTarget.Span) return null
         val form = prepared.updated
-        return form.end.toInstant(form.resolvedZone(TimeZone.currentSystemDefault()))
-            .toEpochMilliseconds()
+        return form.endInstant(form.resolvedZone(zoneSource.current())).toEpochMilliseconds()
     }
 
     /**
@@ -508,8 +511,7 @@ class RescheduleViewModel @Inject constructor(
         return if (form.isAllDay) {
             form.start.date.atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds()
         } else {
-            form.start.toInstant(form.resolvedZone(TimeZone.currentSystemDefault()))
-                .toEpochMilliseconds()
+            form.startInstant(form.resolvedZone(zoneSource.current())).toEpochMilliseconds()
         }
     }
 
