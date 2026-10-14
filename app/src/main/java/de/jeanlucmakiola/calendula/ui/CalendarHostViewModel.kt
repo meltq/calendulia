@@ -11,6 +11,7 @@ import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.datetime.LocalDate
 import javax.inject.Inject
@@ -79,11 +80,8 @@ class CalendarHostViewModel @Inject constructor(
             initialValue = false,
         )
 
+    private val tapOpensEditorPref = prefs.tapOpensEditor
+
     /** Whether tapping an event opens the edit form rather than the detail screen (#178). */
-    val tapOpensEditor: StateFlow<Boolean> = prefs.tapOpensEditor
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
-            initialValue = false,
-        )
+    suspend fun tapOpensEditor(): Boolean = tapOpensEditorPref.first()
 }

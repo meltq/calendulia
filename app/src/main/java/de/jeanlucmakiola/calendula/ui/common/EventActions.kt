@@ -73,6 +73,11 @@ suspend fun CalendarRepository.deleteEvent(
 /** How a [tryDeleteEvent] ended. */
 enum class DeleteOutcome { Deleted, Gone, NeedsPermission, Failed }
 
+/** Whether this install may write to the calendar; v1.0 installs only hold read access. */
+fun Context.canWriteCalendar(): Boolean =
+    ContextCompat.checkSelfPermission(this, Manifest.permission.WRITE_CALENDAR) ==
+        PackageManager.PERMISSION_GRANTED
+
 /** [deleteEvent], with the provider's failures mapped to a [DeleteOutcome]. */
 suspend fun CalendarRepository.tryDeleteEvent(
     eventId: Long,
@@ -115,11 +120,7 @@ fun rememberWriteGateOr(): (action: () -> Unit, fallback: () -> Unit) -> Unit {
         pending = null
     }
     return { action, fallback ->
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.WRITE_CALENDAR,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
+        if (context.canWriteCalendar()) {
             action()
         } else {
             pending = action to fallback

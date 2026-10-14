@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -108,9 +109,12 @@ class EventEditViewModelTest {
         // DataStore on the same file would clash, so it is built only once.
         s: SettingsPrefs = settings(tempDir),
         zones: FakeZoneSource = FakeZoneSource(),
+        // A queued dispatcher here holds provider reads and writes until the test
+        // advances, so it can close the form while one is in flight.
+        io: CoroutineDispatcher = dispatcher,
     ): EventEditViewModel {
         val p = prefs(tempDir)
-        val repo = CalendarRepositoryImpl(fake, p, s, dispatcher as CoroutineDispatcher)
+        val repo = CalendarRepositoryImpl(fake, p, s, io)
         // Only `shareUri()` touches the exporter, and nothing here shares.
         return EventEditViewModel(repo, p, s, IcsExporter(ContextWrapper(null)), dispatcher, zones)
     }
@@ -465,6 +469,10 @@ class EventEditViewModelTest {
         vm.setTitle("Lunch")
         advanceUntilIdle()
         assertThat(vm.hasUnsavedChanges.value).isTrue()
+
+        vm.setTitle("")
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
         job.cancel()
     }
 
@@ -656,6 +664,74 @@ class EventEditViewModelTest {
         advanceUntilIdle()
 
         assertThat(vm.state.value!!.form).isEqualTo(opened)
+        job.cancel()
+    }
+
+    @Test
+    fun `a load abandoned by closing the form never lands on the next one`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { id ->
+                val base = detail(calendarId = 1L)
+                base.copy(instance = base.instance.copy(eventId = id, title = "Event $id"))
+            }
+        }
+        val vm = viewModel(tempDir, fake, io = StandardTestDispatcher(testScheduler))
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 1L, beginMillis = beginMillis, endMillis = endMillis)
+        vm.reset()
+        advanceUntilIdle()
+        vm.openForEdit(eventId = 2L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.form?.title).isEqualTo("Event 2")
+        job.cancel()
+    }
+
+    @Test
+    fun `a failed load abandoned by closing the form doesn't close the next one`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { null }
+        }
+        val vm = viewModel(tempDir, fake, io = StandardTestDispatcher(testScheduler))
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 1L, beginMillis = beginMillis, endMillis = endMillis)
+        vm.reset()
+        advanceUntilIdle()
+        vm.openNew(LocalDate(2026, 10, 12), startMinutes = 9 * 60)
+        advanceUntilIdle()
+
+        assertThat(vm.loadFailed.value).isFalse()
+        job.cancel()
+    }
+
+    @Test
+    fun `a delete still running when the form closes doesn't report to the next one`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L) }
+        }
+        val vm = viewModel(tempDir, fake, io = StandardTestDispatcher(testScheduler))
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        vm.delete(RecurringWriteScope.AllEvents)
+        vm.reset()
+        vm.openNew(LocalDate(2026, 10, 12), startMinutes = 9 * 60)
+        advanceUntilIdle()
+
+        assertThat(fake.deletedEventIds).containsExactly(42L)
+        assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.Idle)
         job.cancel()
     }
 }

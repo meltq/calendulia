@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
 import android.util.Patterns
@@ -38,6 +37,7 @@ import androidx.compose.material.icons.filled.Add
 import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import kotlinx.coroutines.launch
 import de.jeanlucmakiola.calendula.ui.common.sendEventShare
+import de.jeanlucmakiola.calendula.ui.common.canWriteCalendar
 import de.jeanlucmakiola.calendula.ui.common.rememberWriteGate
 import de.jeanlucmakiola.calendula.ui.common.DeleteEventDialog
 import androidx.compose.runtime.rememberCoroutineScope
@@ -115,7 +115,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
@@ -268,8 +267,14 @@ fun EventEditScreen(
     val hasUnsavedChanges by viewModel.hasUnsavedChanges.collectAsStateWithLifecycle()
     var showLeavePrompt by rememberSaveable { mutableStateOf(false) }
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+    // A running save or delete can't be called back, so leaving waits for it;
+    // its result then closes the form or reports why it didn't.
     val requestClose = {
-        if (hasUnsavedChanges) showLeavePrompt = true else close()
+        when {
+            state?.saveState == SaveUiState.Saving -> Unit
+            hasUnsavedChanges -> showLeavePrompt = true
+            else -> close()
+        }
     }
     // Something else wants this form's place, e.g. a second share (#306).
     LaunchedEffect(leaveRequested) {
@@ -287,26 +292,22 @@ fun EventEditScreen(
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Contextual WRITE_CALENDAR upgrade for v1.0 installs, like delete.
-    val writePermissionLauncher = rememberLauncherForActivityResult(
+    val scope = rememberCoroutineScope()
+    val requireWrite = rememberWriteGate()
+    // Save keeps its own launcher: its result calls straight into the ViewModel,
+    // so a save waiting on the permission dialog survives a rotation.
+    val savePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) viewModel.save()
     }
     val onSaveClick = {
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.WRITE_CALENDAR,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
+        if (context.canWriteCalendar()) {
             viewModel.save()
         } else {
-            writePermissionLauncher.launch(Manifest.permission.WRITE_CALENDAR)
+            savePermissionLauncher.launch(Manifest.permission.WRITE_CALENDAR)
         }
     }
-
-    val scope = rememberCoroutineScope()
-    val requireWrite = rememberWriteGate()
     val shareFailedMessage = stringResource(R.string.event_share_failed)
     val shareChooserTitle = stringResource(R.string.event_share_chooser_title)
     val onShareClick: () -> Unit = {

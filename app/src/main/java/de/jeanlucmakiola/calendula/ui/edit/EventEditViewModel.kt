@@ -34,6 +34,7 @@ import de.jeanlucmakiola.calendula.domain.withTimes
 import de.jeanlucmakiola.calendula.domain.withTimezone
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
+import de.jeanlucmakiola.calendula.domain.atOccurrence
 import de.jeanlucmakiola.calendula.domain.isEventTarget
 import de.jeanlucmakiola.calendula.domain.populatedFields
 import de.jeanlucmakiola.calendula.domain.problems
@@ -178,9 +179,11 @@ class EventEditViewModel @Inject constructor(
     // A one-time offer, raised when a .ics import opens, to replace the file's
     // reminders with the settings default (#49). Null while there's nothing to ask.
     private val _importReminderPrompt = MutableStateFlow<ImportReminderPrompt?>(null)
-    // Set by the first change the user makes, so a form only holding its own
-    // defaults or an import's prefill can be left without asking.
-    private val _edited = MutableStateFlow(false)
+    // The form as the user received it: the loaded event, or a new form with its
+    // prefill and auto-applied defaults. Anything else is an unsaved change.
+    private val _baseline = MutableStateFlow<EventForm?>(null)
+    // Bumped by reset(), so work started for a closed form never lands on the next.
+    private var session = 0
 
     /** True when the event to edit couldn't be loaded; the screen closes itself. */
     val loadFailed: StateFlow<Boolean> = _loadFailed.asStateFlow()
@@ -343,15 +346,11 @@ class EventEditViewModel @Inject constructor(
         )
 
     /**
-     * Whether leaving now would lose something the user did (#178): an edit that
-     * differs from the loaded event, or any change to a new or imported form.
+     * Whether leaving now would lose something the user did (#178): the form
+     * differs from how it opened, counting the defaults it applied itself.
      */
-    val hasUnsavedChanges: StateFlow<Boolean> = combine(_form, _editTarget, _edited) { form, target, edited ->
-        when {
-            form == null -> false
-            target != null -> form != target.original
-            else -> edited
-        }
+    val hasUnsavedChanges: StateFlow<Boolean> = combine(_form, _baseline) { form, baseline ->
+        form != null && form != baseline
     }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
@@ -381,7 +380,7 @@ class EventEditViewModel @Inject constructor(
             else -> LocalDateTime(date, LocalTime(9, 0)).toInstant(zone)
         }
         val endAt = startAt + SettingsPrefs.DEFAULT_EVENT_DURATION.minutes
-        _form.value = EventForm(calendarId = null, start = startAt.toFormTime(zone), end = endAt.toFormTime(zone))
+        open(EventForm(calendarId = null, start = startAt.toFormTime(zone), end = endAt.toFormTime(zone)))
         applyDefaultReminder()
         applyDefaultDuration()
     }
@@ -396,7 +395,7 @@ class EventEditViewModel @Inject constructor(
     fun openDraft(start: Instant, end: Instant) {
         if (_form.value != null) return
         val zone = zoneSource.current()
-        _form.value = EventForm(calendarId = null, start = start.toFormTime(zone), end = end.toFormTime(zone))
+        open(EventForm(calendarId = null, start = start.toFormTime(zone), end = end.toFormTime(zone)))
         _durationTouched.value = true
         applyDefaultReminder()
         applyDefaultDuration()
@@ -430,7 +429,7 @@ class EventEditViewModel @Inject constructor(
     fun openImported(form: EventForm, source: ImportSource) {
         if (_form.value != null || _editTarget.value != null) return
         _revealed.value = form.populatedFields()
-        _form.value = form
+        open(form)
         if (source.ownsDuration) _durationTouched.value = true else applyDefaultDuration()
         when (source) {
             ImportSource.Insert, ImportSource.InsertOpenEnded ->
@@ -455,16 +454,18 @@ class EventEditViewModel @Inject constructor(
      */
     private fun applyDefaultReminder(calendarId: Long? = null) {
         if (_editTarget.value != null || _remindersTouched.value) return
+        val opened = session
         viewModelScope.launch {
             val defaults = reminderDefaults()
             val targetId = calendarId ?: resolvedCalendarId.first()
             // Re-check after suspending: bail if the form closed or the user edited.
+            if (opened != session) return@launch
             val form = _form.value ?: return@launch
             if (_editTarget.value != null || _remindersTouched.value) return@launch
             val reminders = defaults.resolveFor(targetId, form.isAllDay)
-            // Write through update(): the duration default resolves in parallel,
-            // so both must compose onto the current form, not a pre-suspend copy.
-            update { it.copy(reminders = reminders) }
+            // The duration default resolves in parallel, so both must compose
+            // onto the current form, not a pre-suspend copy.
+            applyDefault { it.copy(reminders = reminders) }
             // Surface the section so an auto-applied default is visible and
             // removable, even when Reminders isn't a default-shown field.
             if (reminders.isNotEmpty()) {
@@ -493,6 +494,7 @@ class EventEditViewModel @Inject constructor(
      */
     private fun applyDefaultDuration(calendarId: Long? = null) {
         if (_editTarget.value != null || _durationTouched.value) return
+        val opened = session
         viewModelScope.launch {
             val global = settingsPrefs.defaultEventDurationMinutes.first()
             val overrides = settingsPrefs.perCalendarEventDuration.first()
@@ -504,10 +506,11 @@ class EventEditViewModel @Inject constructor(
                 else -> calendarId ?: resolvedCalendarId.first()
             }
             // Re-check after suspending: bail if the form closed or the user edited.
+            if (opened != session) return@launch
             if (_editTarget.value != null || _durationTouched.value) return@launch
             if (_form.value?.isAllDay != false) return@launch
             val duration = resolveDefaultEventDuration(global, overrides, targetId)
-            update { form ->
+            applyDefault { form ->
                 val zone = form.resolvedZone(zoneSource.current())
                 val start = form.startInstant(zone)
                 form.withTimes(start, start + duration.minutes, zone)
@@ -523,10 +526,12 @@ class EventEditViewModel @Inject constructor(
      * configured and it isn't already exactly what the file carried.
      */
     private fun maybePromptImportedReminderDefault(form: EventForm) {
+        val opened = session
         viewModelScope.launch {
             val targetId = resolvedCalendarId.first()
             val default = reminderDefaults().resolveFor(targetId, form.isAllDay)
             // Bail if the form closed or became an edit while we resolved.
+            if (opened != session) return@launch
             val current = _form.value ?: return@launch
             if (_editTarget.value != null) return@launch
             if (default.isEmpty() || default == current.reminders) return@launch
@@ -562,37 +567,35 @@ class EventEditViewModel @Inject constructor(
      */
     fun openForEdit(eventId: Long, beginMillis: Long, endMillis: Long) {
         if (_form.value != null || _editTarget.value != null) return
+        val opened = session
         viewModelScope.launch {
             val detail = try {
                 repository.eventDetail(eventId)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                _loadFailed.value = true
+                if (opened == session) _loadFailed.value = true
                 return@launch
             }
+            if (opened != session) return@launch
             val zone = zoneSource.current()
             val begin = beginMillis.takeUnless { it == NO_OCCURRENCE_TIME }
                 ?: detail.instance.start.toEpochMilliseconds()
             val end = endMillis.takeUnless { it == NO_OCCURRENCE_TIME }
                 ?: detail.instance.end.toEpochMilliseconds()
             val snapshot = detail.toEditSnapshot(begin, end, zone)
-            val occurrence = detail.copy(
-                instance = detail.instance.copy(
-                    start = Instant.fromEpochMilliseconds(begin),
-                    end = Instant.fromEpochMilliseconds(end),
-                ),
-            )
-            _editTarget.value = EditTarget(eventId, snapshot, begin, end, zone, occurrence)
+            _editTarget.value = EditTarget(eventId, snapshot, begin, end, zone, detail.atOccurrence(begin, end))
             // Sections holding data must show even when not in the defaults.
             _revealed.value = snapshot.form.populatedFields()
-            _form.value = snapshot.form
+            open(snapshot.form)
         }
     }
 
     /** Forget the open form; the next [openNew]/[openForEdit] starts clean. */
     fun reset() {
+        session++
         _form.value = null
+        _baseline.value = null
         _saveState.value = SaveUiState.Idle
         _showProblems.value = false
         _revealed.value = emptySet()
@@ -601,7 +604,6 @@ class EventEditViewModel @Inject constructor(
         _remindersTouched.value = false
         _durationTouched.value = false
         _importReminderPrompt.value = null
-        _edited.value = false
     }
 
     /** Unfold one optional field, picked in the "more fields" dialog. */
@@ -789,8 +791,13 @@ class EventEditViewModel @Inject constructor(
         ignoreConflict: Boolean = false,
     ) {
         val target = _editTarget.value
+        val opened = session
+        // A form closed mid-save drops the result rather than handing it to the next one.
+        fun settle(result: SaveUiState) {
+            if (opened == session) _saveState.value = result
+        }
         viewModelScope.launch {
-            _saveState.value = SaveUiState.Saving
+            settle(SaveUiState.Saving)
             // No locking (plan 03, decision 5): right before writing, re-read
             // the event and compare against what the form loaded. An external
             // change parks the save in a conflict dialog instead of silently
@@ -802,18 +809,18 @@ class EventEditViewModel @Inject constructor(
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: NoSuchEventException) {
-                    _saveState.value = SaveUiState.Gone
+                    settle(SaveUiState.Gone)
                     return@launch
                 } catch (e: Exception) {
                     // Can't verify — proceed; a real problem fails the write itself.
                     null
                 }
                 if (fresh != null && fresh != target.snapshot) {
-                    _saveState.value = SaveUiState.AwaitingConflict(scope)
+                    settle(SaveUiState.AwaitingConflict(scope))
                     return@launch
                 }
             }
-            _saveState.value = try {
+            val result = try {
                 if (target == null) {
                     repository.createEvent(form)
                     prefs.setLastUsedCalendarId(requireNotNull(form.calendarId))
@@ -864,6 +871,7 @@ class EventEditViewModel @Inject constructor(
                 Log.w(TAG, "Save failed (scope=$scope, eventId=${target?.eventId})", e)
                 SaveUiState.Failed
             }
+            settle(result)
         }
     }
 
@@ -883,10 +891,13 @@ class EventEditViewModel @Inject constructor(
     fun delete(scope: RecurringWriteScope) {
         val target = _editTarget.value ?: return
         if (_saveState.value == SaveUiState.Saving) return
+        val opened = session
+        _saveState.value = SaveUiState.Saving
         viewModelScope.launch {
-            _saveState.value = SaveUiState.Saving
-            // Already gone is what a delete wants anyway.
-            _saveState.value = when (repository.tryDeleteEvent(target.eventId, target.beginMillis, scope)) {
+            val outcome = repository.tryDeleteEvent(target.eventId, target.beginMillis, scope)
+            if (opened != session) return@launch
+            _saveState.value = when (outcome) {
+                // Already gone is what a delete wants anyway.
                 DeleteOutcome.Deleted, DeleteOutcome.Gone -> SaveUiState.Deleted
                 DeleteOutcome.NeedsPermission -> SaveUiState.DeleteDenied
                 DeleteOutcome.Failed -> SaveUiState.DeleteFailed
@@ -914,15 +925,19 @@ class EventEditViewModel @Inject constructor(
     private fun opened(form: EventForm): EventForm? =
         _editTarget.value?.original?.takeIf { it.timezone == form.timezone && !it.isAllDay }
 
-    private inline fun update(block: (EventForm) -> EventForm) {
-        _form.value = _form.value?.let(block)
+    private fun open(form: EventForm) {
+        _form.value = form
+        _baseline.value = form
     }
 
-    /** A change the user made, as opposed to a default the form applied itself. */
+    /** A default the form applied itself; it moves the baseline too, so it's no unsaved change. */
+    private inline fun applyDefault(block: (EventForm) -> EventForm) {
+        _form.value = _form.value?.let(block)
+        _baseline.value = _baseline.value?.let(block)
+    }
+
+    /** A change the user made. */
     private inline fun edit(block: (EventForm) -> EventForm) {
-        val current = _form.value ?: return
-        val next = block(current)
-        if (next != current) _edited.value = true
-        _form.value = next
+        _form.value = _form.value?.let(block)
     }
 }

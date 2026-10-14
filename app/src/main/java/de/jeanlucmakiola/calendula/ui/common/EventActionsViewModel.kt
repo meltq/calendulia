@@ -13,6 +13,7 @@ import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
+import de.jeanlucmakiola.calendula.domain.atOccurrence
 import de.jeanlucmakiola.calendula.domain.toDuplicateForm
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -20,6 +21,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -109,10 +111,22 @@ class EventActionsViewModel @Inject constructor(
         _failure.value = null
     }
 
+    /** Whether [calendarId] takes writes, asking the provider while [calendars] hasn't loaded yet. */
+    suspend fun canModify(calendarId: Long): Boolean {
+        val calendar = calendars.value[calendarId] ?: try {
+            repository.calendars().first().firstOrNull { it.id == calendarId }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        return calendar?.canModifyContents == true
+    }
+
     private suspend fun load(event: EventInstance): EventDetail? = try {
-        val detail = repository.eventDetail(event.eventId)
         // The row holds the series start; the actions work on this occurrence.
-        detail.copy(instance = detail.instance.copy(start = event.start, end = event.end))
+        repository.eventDetail(event.eventId)
+            .atOccurrence(event.start.toEpochMilliseconds(), event.end.toEpochMilliseconds())
     } catch (e: CancellationException) {
         throw e
     } catch (e: NoSuchEventException) {

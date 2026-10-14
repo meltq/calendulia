@@ -30,6 +30,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
 import de.jeanlucmakiola.calendula.ui.common.screen
 import de.jeanlucmakiola.calendula.ui.common.ViewScreen
@@ -61,6 +62,7 @@ import de.jeanlucmakiola.calendula.ui.common.EventMoveHost
 import de.jeanlucmakiola.calendula.ui.common.EventSelectionHost
 import de.jeanlucmakiola.calendula.ui.common.eventActionFailureMessage
 import de.jeanlucmakiola.calendula.ui.common.rememberFabSelection
+import de.jeanlucmakiola.calendula.ui.common.canWriteCalendar
 import de.jeanlucmakiola.calendula.ui.common.rememberWriteGateOr
 import de.jeanlucmakiola.calendula.ui.common.EventMoveScope
 import de.jeanlucmakiola.calendula.ui.common.LocalEventMove
@@ -456,15 +458,25 @@ fun CalendarHost(
         editKey = key
     }
     // A tap opens the edit form instead of the detail screen when the user chose
-    // so (#178) — only for events whose calendar takes writes.
-    val tapOpensEditor = viewModel.tapOpensEditor.collectAsStateWithLifecycle().value
-    val actionCalendars by eventActions.calendars.collectAsStateWithLifecycle()
+    // so (#178) — only for events whose calendar takes writes. Both are read at
+    // tap time, so a tap before they've loaded still routes right.
+    val tapScope = rememberCoroutineScope()
+    val tapContext = LocalContext.current
     val requireWriteOr = rememberWriteGateOr()
+    // A refused write upgrade is asked once; later taps just open the details.
+    var tapWriteRefused by rememberSaveable { mutableStateOf(false) }
     val onEventClick: (EventInstance) -> Unit = { event ->
-        if (tapOpensEditor && actionCalendars[event.calendarId]?.canModifyContents == true) {
-            requireWriteOr({ onEditEvent(event) }, { onOpenDetail(event) })
-        } else {
-            onOpenDetail(event)
+        tapScope.launch {
+            val toEditor = viewModel.tapOpensEditor() && eventActions.canModify(event.calendarId)
+            when {
+                !toEditor -> onOpenDetail(event)
+                tapContext.canWriteCalendar() -> onEditEvent(event)
+                tapWriteRefused -> onOpenDetail(event)
+                else -> requireWriteOr({ onEditEvent(event) }) {
+                    tapWriteRefused = true
+                    onOpenDetail(event)
+                }
+            }
         }
     }
     // Off by preference (#173) switches off the gesture, not the scope: blocks

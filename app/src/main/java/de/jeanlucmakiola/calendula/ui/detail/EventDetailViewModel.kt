@@ -11,6 +11,7 @@ import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
+import de.jeanlucmakiola.calendula.domain.atOccurrence
 import de.jeanlucmakiola.calendula.domain.descriptionRichText
 import de.jeanlucmakiola.calendula.domain.toDuplicateForm
 import de.jeanlucmakiola.calendula.ui.common.DeleteOutcome
@@ -33,7 +34,6 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Instant
 import javax.inject.Inject
 
 /**
@@ -113,8 +113,8 @@ class EventDetailViewModel @Inject constructor(
         if (_deleteState.value == DeleteUiState.Deleting) return
         viewModelScope.launch {
             _deleteState.value = DeleteUiState.Deleting
-            // Already gone is what a delete wants anyway.
             _deleteState.value = when (repository.tryDeleteEvent(target.eventId, target.beginMillis, scope)) {
+                // Already gone is what a delete wants anyway.
                 DeleteOutcome.Deleted, DeleteOutcome.Gone -> DeleteUiState.Deleted
                 DeleteOutcome.NeedsPermission -> DeleteUiState.NeedsPermission
                 DeleteOutcome.Failed -> DeleteUiState.Failed
@@ -148,20 +148,13 @@ class EventDetailViewModel @Inject constructor(
 
     private suspend fun loadDetail(target: Target): EventDetailUiState = try {
         val detail = repository.eventDetail(target.eventId)
-        // The Events row holds the series start; replace it with this
-        // occurrence's time so recurring events render correctly. An external
-        // "open event" that names no occurrence ([NO_OCCURRENCE_TIME] — e.g. a
-        // bare content://.../events/<id> VIEW intent, issue #48) keeps the row's
-        // own DTSTART/DTEND instead of overriding it to the epoch.
+        // An external "open event" that names no occurrence ([NO_OCCURRENCE_TIME] —
+        // e.g. a bare content://.../events/<id> VIEW intent, issue #48) keeps the
+        // row's own DTSTART/DTEND instead of overriding it to the epoch.
         val corrected = if (target.beginMillis == NO_OCCURRENCE_TIME) {
             detail
         } else {
-            detail.copy(
-                instance = detail.instance.copy(
-                    start = Instant.fromEpochMilliseconds(target.beginMillis),
-                    end = Instant.fromEpochMilliseconds(target.endMillis),
-                ),
-            )
+            detail.atOccurrence(target.beginMillis, target.endMillis)
         }
         val calendar = repository.calendars().first()
             .firstOrNull { it.id == corrected.instance.calendarId }
