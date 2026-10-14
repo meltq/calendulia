@@ -454,6 +454,8 @@
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_black">Black</string>
+    <string name="settings_theme_black_summary">Dark with pure black backgrounds, for AMOLED screens</string>
     <string name="settings_theme_hint">Whether the app is light or dark. The choice applies immediately.</string>
     <!-- %1$s is the theme the system currently resolves to, e.g. "Dark". -->
     <string name="settings_theme_system_summary">Currently %1$s</string>

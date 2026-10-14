@@ -8,7 +8,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -83,6 +82,7 @@ import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.SearchHit
 import de.jeanlucmakiola.calendula.domain.SearchMonth
 import de.jeanlucmakiola.calendula.domain.isDeclined
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.animateItemMotion
 import de.jeanlucmakiola.floret.identity.fadeThrough
 import de.jeanlucmakiola.floret.identity.predictiveBack
@@ -513,7 +513,7 @@ private fun SearchResultRow(
     // Spans are empty for a blank title — the query never matches the
     // placeholder — so marking the substitute is safe.
     val title = event.title.ifBlank { stringResource(R.string.event_untitled) }
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val soften = LocalSoftenColors.current
     // On a picked row the headline is already recoloured for the secondary
     // container, so the match is carried by weight alone there.

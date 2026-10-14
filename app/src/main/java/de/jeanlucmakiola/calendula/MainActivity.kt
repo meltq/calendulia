@@ -25,8 +25,10 @@ import androidx.core.content.IntentCompat
 import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.domain.EventForm
@@ -51,8 +53,11 @@ import de.jeanlucmakiola.floret.crash.CrashReportDialog
 import de.jeanlucmakiola.floret.crash.CrashReporter
 import de.jeanlucmakiola.floret.crash.submitCrashReport
 import de.jeanlucmakiola.calendula.ui.theme.CalendulaTheme
+import de.jeanlucmakiola.calendula.ui.theme.WindowThemeCache
+import de.jeanlucmakiola.calendula.ui.theme.windowBackgroundRes
 import de.jeanlucmakiola.calendula.ui.theme.calendulaTypography
 import de.jeanlucmakiola.calendula.ui.theme.resolveFontFamily
+import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -67,6 +72,7 @@ private data class InsertRequest(val form: EventForm, val source: ImportSource)
 class MainActivity : AppCompatActivity() {
 
     @Inject lateinit var calendarRepository: CalendarRepository
+    @Inject lateinit var settingsPrefs: SettingsPrefs
 
     // Which of light/dark the system bars are drawn for. The styles installed
     // in onCreate read this field live, so androidx's config-change replay
@@ -124,9 +130,25 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        systemBarsDark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+        val systemDark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
             Configuration.UI_MODE_NIGHT_YES
+        // The stored theme only arrives after the first frame, so a Light, Dark
+        // or Black override starts from its last mirrored copy: the matching
+        // backdrop and bar icons instead of the night qualifier's (#181).
+        val cachedTheme = WindowThemeCache.read(this)
+        cachedTheme?.windowBackgroundRes()?.let { window.setBackgroundDrawableResource(it) }
+        systemBarsDark = when (cachedTheme) {
+            null, ThemeMode.SYSTEM -> systemDark
+            ThemeMode.LIGHT -> false
+            ThemeMode.DARK, ThemeMode.BLACK -> true
+        }
         applyEdgeToEdge()
+        lifecycleScope.launch {
+            settingsPrefs.themeMode.collect { mode ->
+                WindowThemeCache.write(this@MainActivity, mode)
+                window.setBackgroundDrawableResource(mode.windowBackgroundRes() ?: R.color.window_background)
+            }
+        }
         // Android hands the intent that started the task back to onCreate every
         // time the activity is recreated — on a rotation, or on a restart after
         // the system reclaimed the process. Re-running a launch that opens one
@@ -161,7 +183,7 @@ class MainActivity : AppCompatActivity() {
             val darkTheme = when (settings.themeMode) {
                 ThemeMode.SYSTEM -> isSystemInDarkTheme()
                 ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
+                ThemeMode.DARK, ThemeMode.BLACK -> true
             }
             // onCreate can only see the night resource qualifier, not the in-app
             // override — re-apply from the resolved theme so the bar icons follow
@@ -201,6 +223,7 @@ class MainActivity : AppCompatActivity() {
             CalendulaTheme(
                 darkTheme = darkTheme,
                 dynamicColor = settings.dynamicColor,
+                pureBlack = settings.themeMode == ThemeMode.BLACK,
                 typography = typography,
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {

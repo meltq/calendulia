@@ -6,7 +6,6 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -95,6 +94,7 @@ import de.jeanlucmakiola.calendula.ui.common.LeadingAvatar
 import de.jeanlucmakiola.calendula.ui.common.SourceLogo
 import de.jeanlucmakiola.calendula.ui.common.curatedSourcePackage
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.collapseExit
 import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.identity.predictiveBack
@@ -478,7 +478,7 @@ private fun CalendarNameField(
     onNameChange: (String) -> Unit,
     onImeAction: () -> Unit,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val soften = LocalSoftenColors.current
     GroupedSurface(position = Position.Alone, modifier = Modifier.padding(horizontal = 16.dp)) {
         Row(
@@ -522,7 +522,7 @@ private fun CalendarNameField(
  */
 @Composable
 private fun CalendarColorGrid(selected: Int, onSelect: (Int) -> Unit) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val soften = LocalSoftenColors.current
     GroupedSurface(position = Position.Alone, modifier = Modifier.padding(horizontal = 16.dp)) {
         Column(

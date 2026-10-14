@@ -215,13 +215,13 @@ internal fun AppearanceScreen(
             selected = state.themeMode,
             label = { themeLabel(it) },
             summary = { mode ->
-                if (mode == ThemeMode.SYSTEM) {
-                    stringResource(
+                when (mode) {
+                    ThemeMode.SYSTEM -> stringResource(
                         R.string.settings_theme_system_summary,
                         themeLabel(if (systemDark) ThemeMode.DARK else ThemeMode.LIGHT),
                     )
-                } else {
-                    null
+                    ThemeMode.BLACK -> stringResource(R.string.settings_theme_black_summary)
+                    ThemeMode.LIGHT, ThemeMode.DARK -> null
                 }
             },
             onSelect = viewModel::setThemeMode,
@@ -258,6 +258,7 @@ private fun themeLabel(mode: ThemeMode): String = stringResource(
         ThemeMode.SYSTEM -> R.string.settings_theme_system
         ThemeMode.LIGHT -> R.string.settings_theme_light
         ThemeMode.DARK -> R.string.settings_theme_dark
+        ThemeMode.BLACK -> R.string.settings_theme_black
     },
 )
 

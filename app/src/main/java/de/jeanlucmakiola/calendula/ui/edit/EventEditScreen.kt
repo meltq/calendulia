@@ -13,7 +13,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -36,6 +35,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Add
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import kotlinx.coroutines.launch
 import de.jeanlucmakiola.calendula.ui.common.sendEventShare
 import de.jeanlucmakiola.calendula.ui.common.rememberWriteGate
@@ -703,7 +703,7 @@ private fun EventEditContent(
     val locale = currentLocale()
     val deviceZone by viewModel.zone.collectAsStateWithLifecycle()
     val firstDayOfWeek by viewModel.firstDayOfWeek.collectAsStateWithLifecycle()
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     // The title, date and recurrence are managed by the special-dates sync, so
     // they're locked here; everything else (reminders, location, notes) is the
     // user's to edit.
@@ -2299,7 +2299,7 @@ private fun ColorPickerDialog(
     onClear: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     FullScreenPicker(
         title = stringResource(R.string.event_edit_color),
         onDismiss = onDismiss,

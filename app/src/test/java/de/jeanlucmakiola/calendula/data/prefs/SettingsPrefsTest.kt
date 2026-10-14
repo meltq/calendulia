@@ -48,6 +48,13 @@ class SettingsPrefsTest {
     }
 
     @Test
+    fun `black theme mode round-trips`(@TempDir tempDir: Path) = runTest {
+        val prefs = SettingsPrefs(newDataStore(tempDir))
+        prefs.setThemeMode(ThemeMode.BLACK)
+        assertThat(prefs.themeMode.first()).isEqualTo(ThemeMode.BLACK)
+    }
+
+    @Test
     fun `dynamic colour round-trips`(@TempDir tempDir: Path) = runTest {
         val prefs = SettingsPrefs(newDataStore(tempDir))
         prefs.setDynamicColor(false)

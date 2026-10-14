@@ -2,7 +2,6 @@ package de.jeanlucmakiola.calendula.ui.agenda
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -39,6 +38,7 @@ import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.ui.common.formatTimeOfDay
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.Position
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.floret.locale.localizedDateFormatter
 import kotlinx.datetime.DateTimeUnit
@@ -127,7 +127,7 @@ internal fun AgendaEventRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val soften = LocalSoftenColors.current
     val title = event.title.ifBlank { stringResource(R.string.event_untitled) }
     GroupedRow(

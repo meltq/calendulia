@@ -24,6 +24,7 @@ import de.jeanlucmakiola.calendula.ui.common.morphEvent
 import de.jeanlucmakiola.calendula.ui.common.morphPageActive
 import de.jeanlucmakiola.calendula.ui.common.jumpToPage
 import de.jeanlucmakiola.calendula.ui.common.rememberCalendarPageSpec
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -46,7 +47,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -589,7 +589,7 @@ private const val MONTH_SETTLE_TIMEOUT_MILLIS = 450L
 @Composable
 private fun MonthDragOverlay(controller: MonthDragController) {
     var origin by remember { mutableStateOf(Offset.Zero) }
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val density = LocalDensity.current
     val timeChipWidth = rememberMonthTimeChipWidth()
     val reduceMotion = rememberReduceMotion()
@@ -1722,7 +1722,7 @@ internal fun SplitMonthGrid(
     onSelectDay: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val month = state.month
     val hasToday = state.today.year == month.year && state.today.month == month.month
     val ripple = rememberTodayRipple(active = hasToday)
@@ -2231,7 +2231,7 @@ private fun MonthWeekRow(
      */
     selected: LocalDate? = null,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val todayCol = week.days.indexOf(today).takeIf { it >= 0 && inMonth(today) }
     val ripple = rememberTodayRipple(active = todayCol != null)
     val overflowRow = rememberOverflowRowHeight()

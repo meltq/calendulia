@@ -5,7 +5,6 @@ import android.content.Intent
 import android.net.Uri
 import android.widget.Toast
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -93,6 +92,7 @@ import de.jeanlucmakiola.calendula.domain.RichText
 import de.jeanlucmakiola.calendula.domain.TimeZoneOption
 import de.jeanlucmakiola.calendula.domain.timeZoneOptionOf
 import de.jeanlucmakiola.calendula.domain.zoneDescriptor
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.predictiveBack
 import de.jeanlucmakiola.calendula.ui.common.CalendarFailure
 import de.jeanlucmakiola.calendula.ui.common.DeleteEventDialog
@@ -303,7 +303,7 @@ private fun EventDetailContent(
 ) {
     val detail = state.detail
     val instance = detail.instance
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val locale = currentDetailLocale()
     val accent = eventAccent(instance.color, dark, LocalSoftenColors.current)
 

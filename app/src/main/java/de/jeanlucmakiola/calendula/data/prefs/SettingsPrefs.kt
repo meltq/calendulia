@@ -41,8 +41,11 @@ import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/** Light/dark override. SYSTEM follows the device setting. */
-enum class ThemeMode { SYSTEM, LIGHT, DARK }
+/**
+ * Light/dark override. SYSTEM follows the device setting; BLACK is dark with
+ * pure-black surfaces, for AMOLED screens (#181).
+ */
+enum class ThemeMode { SYSTEM, LIGHT, DARK, BLACK }
 
 /**
  * Week-start override. [Auto] derives the first day from the active locale;

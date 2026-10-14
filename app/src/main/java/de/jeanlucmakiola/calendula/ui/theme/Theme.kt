@@ -16,13 +16,15 @@ import de.jeanlucmakiola.floret.identity.FloretExpressiveTheme
  *
  * The mechanics live in floret-kit's identity module; the look stays here, so a
  * sibling app reuses the same theming without inheriting Calendula's palette.
- * The Settings screen overrides darkTheme, dynamicColor and typography; the bare
- * defaults (used by the crash screen) just follow the system.
+ * The Settings screen overrides darkTheme, dynamicColor, pureBlack (the
+ * AMOLED theme, #181) and typography; the bare defaults (used by the crash
+ * screen) just follow the system.
  */
 @Composable
 fun CalendulaTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
     dynamicColor: Boolean = true,
+    pureBlack: Boolean = false,
     typography: Typography = CalendulaTypography,
     content: @Composable () -> Unit,
 ) {
@@ -31,6 +33,7 @@ fun CalendulaTheme(
         darkScheme = CalendulaDarkFallback,
         darkTheme = darkTheme,
         dynamicColor = dynamicColor,
+        pureBlack = pureBlack,
         typography = typography,
         content = content,
     )

@@ -20,12 +20,12 @@ import de.jeanlucmakiola.calendula.ui.common.rememberCalendarPageSpec
 import de.jeanlucmakiola.calendula.ui.common.rememberViewSwitchSpec
 import de.jeanlucmakiola.calendula.ui.common.jumpToPage
 import de.jeanlucmakiola.calendula.ui.common.pagedHeight
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
@@ -1188,7 +1188,7 @@ private fun AllDayStrip(
     animatedHeight: (() -> Dp)? = null,
     onEventClick: (EventInstance) -> Unit,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
 
     Row(
         modifier = Modifier
@@ -1295,7 +1295,7 @@ private fun Timeline(
     onResize: (TimelineResizeDrop) -> Unit,
 ) {
     val fullViewportHeight = remember(geometry) { intArrayOf(-1) }
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val zoom = LocalTimelineZoom.current
     val density = LocalDensity.current
     val isRtl = LocalLayoutDirection.current == LayoutDirection.Rtl

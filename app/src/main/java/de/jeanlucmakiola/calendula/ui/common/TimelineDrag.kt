@@ -6,7 +6,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.MutatePriority
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -56,6 +55,7 @@ import de.jeanlucmakiola.calendula.ui.week.TimedBlock
 import de.jeanlucmakiola.calendula.ui.week.minutesPast
 import de.jeanlucmakiola.calendula.ui.week.wallClockEndMinutes
 import de.jeanlucmakiola.calendula.ui.week.wallClockMinutes
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.rememberReduceMotion
 import de.jeanlucmakiola.floret.locale.currentLocale
 import kotlinx.coroutines.delay
@@ -1152,7 +1152,7 @@ const val SETTLE_FADE_MILLIS: Int = 250
 fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier = Modifier) {
     var origin by remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val use24Hour = LocalUse24HourFormat.current
     val locale = currentLocale()
     val reduceMotion = rememberReduceMotion()
