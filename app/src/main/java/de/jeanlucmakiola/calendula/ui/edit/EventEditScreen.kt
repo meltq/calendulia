@@ -225,6 +225,8 @@ fun EventEditScreen(
     onDuplicate: ((EventForm) -> Unit)? = null,
     onDeleted: () -> Unit = onSaved,
     onLoadFailed: () -> Unit = onClose,
+    leaveRequested: Boolean = false,
+    onLeaveDeclined: () -> Unit = {},
     visible: Boolean = true,
     viewModel: EventEditViewModel = hiltViewModel(),
 ) {
@@ -268,6 +270,10 @@ fun EventEditScreen(
     var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
     val requestClose = {
         if (hasUnsavedChanges) showLeavePrompt = true else close()
+    }
+    // Something else wants this form's place, e.g. a second share (#306).
+    LaunchedEffect(leaveRequested) {
+        if (leaveRequested) requestClose()
     }
     // The event vanished before the form could load it — fall back to the
     // detail screen, which shows its own failure state.
@@ -420,7 +426,10 @@ fun EventEditScreen(
                 showLeavePrompt = false
                 close()
             },
-            onDismiss = { showLeavePrompt = false },
+            onDismiss = {
+                showLeavePrompt = false
+                if (leaveRequested) onLeaveDeclined()
+            },
         )
     }
 

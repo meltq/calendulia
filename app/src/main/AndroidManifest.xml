@@ -151,6 +151,19 @@
                 <data android:mimeType="application/ics" />
             </intent-filter>
 
+            <!-- Text shared or selected in another app opens a prefilled new
+                 event (MainActivity.sharedTextExtrasOrNull, issue #306). -->
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+            <intent-filter android:label="@string/process_text_create_event">
+                <action android:name="android.intent.action.PROCESS_TEXT" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+
             <!-- Let another app or widget (e.g. the Todo Agenda widget) launch us
                  to create a new event, the way the AOSP calendar accepts it:
                  ACTION_INSERT on the events *dir* mime type, carrying the new

@@ -19,6 +19,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -81,6 +82,7 @@ import de.jeanlucmakiola.calendula.ui.common.rememberCalendarSlideSpec
 import de.jeanlucmakiola.calendula.ui.common.selectView
 import de.jeanlucmakiola.calendula.ui.common.viewBaseStack
 import de.jeanlucmakiola.calendula.ui.detail.EventDetailScreen
+import de.jeanlucmakiola.calendula.ui.edit.EventEditViewModel
 import de.jeanlucmakiola.calendula.ui.edit.EventEditScreen
 import de.jeanlucmakiola.calendula.ui.edit.ImportSource
 import de.jeanlucmakiola.calendula.ui.imports.ImportScreen
@@ -132,6 +134,7 @@ fun CalendarHost(
     requestedInsertForm: EventForm? = null,
     requestedInsertSource: ImportSource = ImportSource.Insert,
     onInsertConsumed: () -> Unit = {},
+    onExternalFormClosed: () -> Unit = {},
     requestedEditKey: LongArray? = null,
     onEditKeyConsumed: () -> Unit = {},
     viewModel: CalendarHostViewModel = hiltViewModel(),
@@ -277,6 +280,34 @@ fun CalendarHost(
     // Which channel filled [importForm]: an .ics file (prompt to apply the default
     // reminder) or an ACTION_INSERT intent (apply it automatically) — #49.
     var importFormSource by remember { mutableStateOf(ImportSource.File) }
+    // Bumped per open, so even an equal prefill starts a fresh form.
+    var importFormId by remember { mutableIntStateOf(0) }
+    // Whether [importForm] came from an external create request (#30, #306);
+    // closing it then hands control back to whoever asked.
+    var importFromRequest by rememberSaveable { mutableStateOf(false) }
+    // A second external request that arrived while a prefilled form was open:
+    // it waits behind that form's unsaved-changes prompt, then opens.
+    var pendingInsert by remember { mutableStateOf<Pair<EventForm, ImportSource>?>(null) }
+    val importViewModel: EventEditViewModel = hiltViewModel(key = "import")
+    fun openImportForm(form: EventForm, source: ImportSource, fromRequest: Boolean = false) {
+        importFormSource = source
+        importForm = form
+        importFormId++
+        importFromRequest = fromRequest
+    }
+    fun closeImportForm() {
+        val next = pendingInsert
+        pendingInsert = null
+        if (next != null) {
+            openImportForm(next.first, next.second, fromRequest = true)
+        } else {
+            importForm = null
+            if (importFromRequest) {
+                importFromRequest = false
+                onExternalFormClosed()
+            }
+        }
+    }
     // A restore (in-app "Restore from .ics" button) always runs the full import
     // flow — picker + summary — even for a single-event file, because the intent
     // is "restore a backup", not "add this one event". An externally opened .ics
@@ -306,8 +337,11 @@ fun CalendarHost(
     // reveals on top of whatever was open without extra dismissal.
     LaunchedEffect(requestedInsertForm) {
         if (requestedInsertForm != null) {
-            importFormSource = requestedInsertSource
-            importForm = requestedInsertForm
+            if (importForm == null) {
+                openImportForm(requestedInsertForm, requestedInsertSource, fromRequest = true)
+            } else {
+                pendingInsert = requestedInsertForm to requestedInsertSource
+            }
             onInsertConsumed()
         }
     }
@@ -323,6 +357,9 @@ fun CalendarHost(
         editKey = null
         importUri = null
         importForm = null
+        importFromRequest = false
+        pendingInsert = null
+        importViewModel.reset()
     }
 
     // An external "edit this event" (ACTION_EDIT, e.g. an assistant/task app or
@@ -570,8 +607,7 @@ fun CalendarHost(
                     onEdit = onEditEvent,
                     onDuplicate = { form ->
                         // A fresh event, like a duplicate from the detail screen (#52).
-                        importFormSource = ImportSource.Insert
-                        importForm = form
+                        openImportForm(form, ImportSource.Insert)
                     },
                     chipShown = moveOutcome != null || selectionFailure != null,
                     onDismissChip = {
@@ -681,8 +717,7 @@ fun CalendarHost(
                         // Reuse the prefilled-create overlay: a duplicate is a
                         // fresh event, so it applies the default reminder like an
                         // in-app new event (#52).
-                        importFormSource = ImportSource.Insert
-                        importForm = form
+                        openImportForm(form, ImportSource.Insert)
                         detailKey = null
                     },
                     visible = detailKey != null,
@@ -727,8 +762,7 @@ fun CalendarHost(
                     },
                     onManageCalendars = { showCalendars = true },
                     onDuplicate = { form ->
-                        importFormSource = ImportSource.Insert
-                        importForm = form
+                        openImportForm(form, ImportSource.Insert)
                     },
                     // Opened straight from a tap (#178) there's no detail screen
                     // below to show why, so open it.
@@ -786,21 +820,24 @@ fun CalendarHost(
                     importUri = null
                     calendarsAfterImport = false
                     backupAfterImport = false
-                    importFormSource = ImportSource.File
-                    importForm = form
+                    openImportForm(form, ImportSource.File)
                 },
             )
         }
         importForm?.let { form ->
-            EventEditScreen(
-                initialDateIso = null,
-                initialForm = form,
-                initialFormSource = importFormSource,
-                onClose = { importForm = null },
-                onSaved = { importForm = null },
-                onManageCalendars = { showCalendars = true },
-                viewModel = hiltViewModel(key = "import"),
-            )
+            key(importFormId) {
+                EventEditScreen(
+                    initialDateIso = null,
+                    initialForm = form,
+                    initialFormSource = importFormSource,
+                    onClose = ::closeImportForm,
+                    onSaved = ::closeImportForm,
+                    onManageCalendars = { showCalendars = true },
+                    leaveRequested = pendingInsert != null,
+                    onLeaveDeclined = { pendingInsert = null },
+                    viewModel = importViewModel,
+                )
+            }
         }
 
         // Declared last so it covers every overlay that can open it: Settings,

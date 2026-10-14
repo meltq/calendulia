@@ -31,6 +31,7 @@ import de.jeanlucmakiola.calendula.data.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.buildInsertEventForm
+import de.jeanlucmakiola.calendula.domain.sharedTextOrNull
 import de.jeanlucmakiola.calendula.ui.RootScreen
 import de.jeanlucmakiola.calendula.ui.common.LocalShowHourGrid
 import de.jeanlucmakiola.calendula.ui.common.LocalMultiDayCount
@@ -86,9 +87,17 @@ class MainActivity : AppCompatActivity() {
     private var requestedImportUri by mutableStateOf<Uri?>(null)
 
     // A prefilled new-event form from an external ACTION_INSERT launch (another
-    // app/widget asking us to create an event, issue #30). Consumed once by
-    // CalendarHost, which opens it in the create form for review.
+    // app/widget asking us to create an event, issue #30) or shared text (#306).
+    // Consumed once by CalendarHost, which opens it in the create form for review.
     private var requestedInsert by mutableStateOf<InsertRequest?>(null)
+
+    // Whether such a form is still open. Only then does a recreation re-read the
+    // intent to bring it back; a saved or dismissed one stays closed.
+    private var insertFormOpen = false
+
+    // Started just for an external create, so closing its form returns to the
+    // app that asked instead of leaving the calendar on top of it.
+    private var launchedForInsert = false
 
     // An external "edit this event" (ACTION_EDIT on content://.../events/<id>):
     // opens the occurrence in the edit form. Same occurrence-key shape as the
@@ -128,7 +137,8 @@ class MainActivity : AppCompatActivity() {
         //
         // Only those channels are held back. An .ics import or a prefilled
         // create form keeps no saved state of its own, so re-reading the intent
-        // is what carries one through a recreation.
+        // is what carries one through a recreation — the create form only while
+        // it's still open.
         val replaying = savedInstanceState != null || intent.isRelaunch()
         if (!replaying) {
             requestedDetailKey = intent.detailKeyOrNull() ?: intent.viewEventKeyOrNull()
@@ -137,7 +147,11 @@ class MainActivity : AppCompatActivity() {
         requestedNav = intent.navRequestOrNull()
             ?.takeUnless { replaying && it is WidgetNavRequest.OpenEvent }
         requestedImportUri = intent.importUriOrNull()
-        requestedInsert = intent.insertRequestOrNull()
+        val insertOpenBefore = savedInstanceState?.getBoolean(KEY_INSERT_FORM_OPEN) == true
+        requestedInsert = intent.createRequestOrNull()?.takeIf { !replaying || insertOpenBefore }
+        insertFormOpen = requestedInsert != null
+        launchedForInsert = savedInstanceState?.getBoolean(KEY_LAUNCHED_FOR_INSERT)
+            ?: (requestedInsert != null)
         if (CrashReporter.shouldPrompt(this)) pendingCrashReport = CrashReporter.pendingReport(this)
         setContent {
             // One activity-scoped SettingsViewModel drives both the theme here
@@ -208,6 +222,10 @@ class MainActivity : AppCompatActivity() {
                             requestedInsertForm = requestedInsert?.form,
                             requestedInsertSource = requestedInsert?.source ?: ImportSource.Insert,
                             onInsertConsumed = { requestedInsert = null },
+                            onExternalFormClosed = {
+                                insertFormOpen = false
+                                if (launchedForInsert) finish()
+                            },
                             requestedEditKey = requestedEditKey,
                             onEditKeyConsumed = { requestedEditKey = null },
                         )
@@ -261,12 +279,21 @@ class MainActivity : AppCompatActivity() {
         CrashReporter.markHealthy(this)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(KEY_INSERT_FORM_OPEN, insertFormOpen)
+        outState.putBoolean(KEY_LAUNCHED_FOR_INSERT, launchedForInsert)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         (intent.detailKeyOrNull() ?: intent.viewEventKeyOrNull())?.let { requestedDetailKey = it }
         intent.navRequestOrNull()?.let { requestedNav = it }
         intent.importUriOrNull()?.let { requestedImportUri = it }
-        intent.insertRequestOrNull()?.let { requestedInsert = it }
+        intent.createRequestOrNull()?.let {
+            requestedInsert = it
+            insertFormOpen = true
+        }
         intent.editEventKeyOrNull()?.let { requestedEditKey = it }
     }
 
@@ -288,7 +315,9 @@ class MainActivity : AppCompatActivity() {
     private fun Intent.importUriOrNull(): Uri? {
         val uri = when (action) {
             Intent.ACTION_VIEW -> data
+            // Plain text is a create (#306), never a file to import.
             Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(this, Intent.EXTRA_STREAM, Uri::class.java)
+                .takeUnless { type == SHARED_TEXT_TYPE }
             else -> null
         } ?: return null
         // The calendar "view time" Uri (a date tap) is also ACTION_VIEW/content;
@@ -331,6 +360,36 @@ class MainActivity : AppCompatActivity() {
         // landing before the start — leaves the length to the setting.
         val namesEnd = beginMillis != null && endMillis != null && endMillis >= beginMillis
         return InsertRequest(form, if (namesEnd) ImportSource.Insert else ImportSource.InsertOpenEnded)
+    }
+
+    /** Any external request to create an event: shared text or an insert intent. */
+    private fun Intent.createRequestOrNull(): InsertRequest? = sharedTextRequestOrNull() ?: insertRequestOrNull()
+
+    /**
+     * Plain text shared into us (`ACTION_SEND`) or picked from a text-selection
+     * menu (`ACTION_PROCESS_TEXT`), as a new event at the default time (#306).
+     */
+    private fun Intent.sharedTextRequestOrNull(): InsertRequest? {
+        val shared = when (action) {
+            Intent.ACTION_SEND -> if (type == SHARED_TEXT_TYPE) {
+                sharedTextOrNull(
+                    subject = getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString(),
+                    text = getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString(),
+                )
+            } else {
+                null
+            }
+            Intent.ACTION_PROCESS_TEXT ->
+                sharedTextOrNull(subject = null, text = getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString())
+            else -> null
+        } ?: return null
+        val form = buildInsertEventForm(
+            title = shared.title,
+            description = shared.description,
+            zone = TimeZone.currentSystemDefault(),
+            now = Clock.System.now(),
+        )
+        return InsertRequest(form, ImportSource.InsertOpenEnded)
     }
 
     /** A Long extra's value, or null when the extra is absent. */
@@ -458,6 +517,9 @@ class MainActivity : AppCompatActivity() {
         // The calendar provider's authority/host. A date tap arrives as
         // ACTION_VIEW on content://com.android.calendar/time/<epochMillis>.
         private const val CALENDAR_PROVIDER_HOST = "com.android.calendar"
+        private const val SHARED_TEXT_TYPE = "text/plain"
+        private const val KEY_INSERT_FORM_OPEN = "insert_form_open"
+        private const val KEY_LAUNCHED_FOR_INSERT = "launched_for_insert"
 
         private const val EXTRA_EVENT_ID = "de.jeanlucmakiola.calendula.extra.EVENT_ID"
         private const val EXTRA_BEGIN_MILLIS = "de.jeanlucmakiola.calendula.extra.BEGIN"

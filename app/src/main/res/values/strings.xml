@@ -844,6 +844,9 @@
     <string name="shortcut_new_event_short">New event</string>
     <string name="shortcut_new_event_long">Create a new event</string>
 
+    <!-- Text-selection menu entry -->
+    <string name="process_text_create_event">Create event</string>
+
     <!-- Quick Settings tile -->
     <string name="qs_tile_new_event_label">New event</string>
     <string name="settings_qs_tile">Add Quick Settings tile</string>

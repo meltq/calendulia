@@ -24,13 +24,13 @@ import kotlin.time.Instant
  * the extras lives in `MainActivity.insertFormOrNull`.
  */
 fun buildInsertEventForm(
-    beginMillis: Long?,
-    endMillis: Long?,
-    isAllDay: Boolean,
+    beginMillis: Long? = null,
+    endMillis: Long? = null,
+    isAllDay: Boolean = false,
     title: String?,
     description: String?,
-    location: String?,
-    rrule: String?,
+    location: String? = null,
+    rrule: String? = null,
     zone: TimeZone,
     now: Instant,
 ): EventForm {
@@ -70,4 +70,30 @@ fun buildInsertEventForm(
 internal fun nextFullHour(now: Instant): Instant {
     val hourMillis = 3_600_000L
     return Instant.fromEpochMilliseconds((now.toEpochMilliseconds() / hourMillis + 1) * hourMillis)
+}
+
+/** Title and description for text shared or selected into the app (#306). */
+data class SharedText(val title: String, val description: String)
+
+/**
+ * Split shared text into an event title and description: the share's subject
+ * becomes the title and the text the description. Without a subject the text's
+ * first non-blank line is the title and the rest the description. A title longer
+ * than [maxTitle] is cut, and the full text then stays in the description.
+ * Null when there is nothing to use.
+ */
+fun sharedTextOrNull(subject: String?, text: String?, maxTitle: Int = 255): SharedText? {
+    val body = text?.trim().orEmpty()
+    val given = subject?.trim()?.takeIf { it.isNotEmpty() }
+    val (title, rest) = if (given != null) {
+        given to body
+    } else {
+        val lines = body.lines()
+        val first = lines.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        first to lines.drop(1).joinToString("\n").trim()
+    }
+    if (title.length <= maxTitle) return SharedText(title, rest)
+    val cut = title.take(maxTitle).let { if (it.last().isHighSurrogate()) it.dropLast(1) else it }
+    val full = if (given != null) listOf(given, body).filter { it.isNotEmpty() }.joinToString("\n\n") else body
+    return SharedText(cut.trimEnd(), full)
 }

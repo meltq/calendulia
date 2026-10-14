@@ -54,6 +54,7 @@ fun RootScreen(
     requestedInsertSource: de.jeanlucmakiola.calendula.ui.edit.ImportSource =
         de.jeanlucmakiola.calendula.ui.edit.ImportSource.Insert,
     onInsertConsumed: () -> Unit = {},
+    onExternalFormClosed: () -> Unit = {},
     requestedEditKey: LongArray? = null,
     onEditKeyConsumed: () -> Unit = {},
 ) {
@@ -155,6 +156,7 @@ fun RootScreen(
                 requestedInsertForm = requestedInsertForm,
                 requestedInsertSource = requestedInsertSource,
                 onInsertConsumed = onInsertConsumed,
+                onExternalFormClosed = onExternalFormClosed,
                 requestedEditKey = requestedEditKey,
                 onEditKeyConsumed = onEditKeyConsumed,
             )
