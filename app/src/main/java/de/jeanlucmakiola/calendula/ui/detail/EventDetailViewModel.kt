@@ -11,6 +11,7 @@ import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
+import de.jeanlucmakiola.calendula.domain.descriptionRichText
 import de.jeanlucmakiola.calendula.domain.toDuplicateForm
 import de.jeanlucmakiola.calendula.ui.common.DeleteOutcome
 import de.jeanlucmakiola.calendula.ui.common.tryDeleteEvent
@@ -164,6 +165,9 @@ class EventDetailViewModel @Inject constructor(
         }
         val calendar = repository.calendars().first()
             .firstOrNull { it.id == corrected.instance.calendarId }
+        val description = corrected.description
+            ?.let(::descriptionRichText)
+            ?.takeIf { it.text.isNotBlank() }
         EventDetailUiState.Success(
             detail = corrected,
             calendarName = calendar?.displayName,
@@ -174,8 +178,9 @@ class EventDetailViewModel @Inject constructor(
             phoneLinks = findEventPhoneLinks(
                 title = corrected.instance.title,
                 location = corrected.instance.location,
-                description = corrected.description,
+                description = description?.text,
             ),
+            description = description,
         )
     } catch (e: CancellationException) {
         throw e

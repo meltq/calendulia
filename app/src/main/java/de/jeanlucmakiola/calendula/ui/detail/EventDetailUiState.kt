@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.ui.detail
 
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.FailureReason
+import de.jeanlucmakiola.calendula.domain.RichText
 
 /**
  * UI state for the event-detail screen (spec S4).
@@ -23,6 +24,8 @@ sealed interface EventDetailUiState {
         val isManaged: Boolean = false,
         /** Phone numbers to link in the title, location and description. */
         val phoneLinks: EventPhoneLinks = EventPhoneLinks(),
+        /** The description as drawn — HTML rendered (#271); null when there is none. */
+        val description: RichText? = null,
     ) : EventDetailUiState
 }
 

@@ -67,10 +67,14 @@ import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
@@ -83,7 +87,9 @@ import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.EventStatus
+import de.jeanlucmakiola.calendula.domain.InlineStyle
 import de.jeanlucmakiola.calendula.domain.Reminder
+import de.jeanlucmakiola.calendula.domain.RichText
 import de.jeanlucmakiola.calendula.domain.TimeZoneOption
 import de.jeanlucmakiola.calendula.domain.timeZoneOptionOf
 import de.jeanlucmakiola.calendula.domain.zoneDescriptor
@@ -476,8 +482,9 @@ private fun EventDetailContent(
             }
         }
 
-        // Description (conditional). URLs and phone numbers are auto-linked.
-        detail.description?.takeIf { it.isNotBlank() }?.let { description ->
+        // Description (conditional). HTML is rendered (#271); URLs and phone
+        // numbers are auto-linked.
+        state.description?.let { description ->
             val descriptionLabel = stringResource(R.string.event_detail_description)
             Spacer(Modifier.height(gap))
             DetailCard(
@@ -486,7 +493,7 @@ private fun EventDetailContent(
                 // The gesture sits on the card so the icon and padding answer
                 // it too: every linkified URL owns the pointer over its own
                 // glyphs, which leaves the text itself a patchy target.
-                modifier = Modifier.copyOnLongPress(descriptionLabel, description, copyField),
+                modifier = Modifier.copyOnLongPress(descriptionLabel, description.copyText(), copyField),
             ) {
                 Text(
                     text = linkify(description, state.phoneLinks.description, MaterialTheme.colorScheme.primary),
@@ -774,31 +781,72 @@ private fun linkify(
     phoneLinks: List<PhoneLink>,
     linkColor: Color,
     textDecoration: TextDecoration? = null,
+): AnnotatedString = linkify(RichText(text), phoneLinks, linkColor, textDecoration)
+
+/**
+ * [linkify] for text rendered from HTML: its own formatting and `<a href>`
+ * links come along, and a URL or number already inside one isn't linked again.
+ */
+@Composable
+private fun linkify(
+    text: RichText,
+    phoneLinks: List<PhoneLink>,
+    linkColor: Color,
+    textDecoration: TextDecoration? = null,
 ): AnnotatedString {
     val context = LocalContext.current
     return remember(text, phoneLinks, linkColor, textDecoration, context) {
-        val decoration = textDecoration
-            ?.let { TextDecoration.combine(listOf(it, TextDecoration.Underline)) }
-            ?: TextDecoration.Underline
-        val styles = TextLinkStyles(style = SpanStyle(color = linkColor, textDecoration = decoration))
+        // Decorations go on separately so overlapping ones add up: a span's
+        // textDecoration replaces whatever sits under it.
+        val styles = TextLinkStyles(style = SpanStyle(color = linkColor))
+        val decorations = mutableListOf<Triple<Int, Int, TextDecoration>>()
+        textDecoration?.let { decorations += Triple(0, text.text.length, it) }
+        for (range in text.styles) {
+            when (range.style) {
+                InlineStyle.Underline -> decorations += Triple(range.start, range.end, TextDecoration.Underline)
+                InlineStyle.Strikethrough -> decorations += Triple(range.start, range.end, TextDecoration.LineThrough)
+                else -> Unit
+            }
+        }
+        fun linked(start: Int, end: Int) = text.links.any { start < it.end && it.start < end }
         buildAnnotatedString {
-            append(text)
-            for (link in findWebLinks(text)) {
-                addLink(
-                    LinkAnnotation.Url(link.url, styles) { openWebLink(context, link.url) },
-                    link.start,
-                    link.end,
-                )
+            append(text.text)
+            for (range in text.styles) range.style.toSpanStyle()?.let { addStyle(it, range.start, range.end) }
+            fun link(url: String, start: Int, end: Int, onClick: () -> Unit) {
+                addLink(LinkAnnotation.Url(url, styles) { onClick() }, start, end)
+                decorations += Triple(start, end, TextDecoration.Underline)
+            }
+            for (link in text.links) {
+                if (link.url.startsWith("tel:")) {
+                    link(link.url, link.start, link.end) { dial(context, Uri.decode(link.url.substring(4))) }
+                } else {
+                    link(link.url, link.start, link.end) { openWebLink(context, link.url) }
+                }
+            }
+            for (link in findWebLinks(text.text)) {
+                if (linked(link.start, link.end)) continue
+                link(link.url, link.start, link.end) { openWebLink(context, link.url) }
             }
             for (link in phoneLinks) {
-                addLink(
-                    LinkAnnotation.Url("tel:${link.number}", styles) { dial(context, link.number) },
-                    link.start,
-                    link.end,
-                )
+                if (linked(link.start, link.end)) continue
+                link("tel:${link.number}", link.start, link.end) { dial(context, link.number) }
+            }
+            val bounds = decorations.flatMap { listOf(it.first, it.second) }.distinct().sorted()
+            for ((start, end) in bounds.zipWithNext()) {
+                val covering = decorations.filter { it.first <= start && end <= it.second }.map { it.third }.distinct()
+                if (covering.isNotEmpty()) addStyle(SpanStyle(textDecoration = TextDecoration.combine(covering)), start, end)
             }
         }
     }
+}
+
+private fun InlineStyle.toSpanStyle(): SpanStyle? = when (this) {
+    InlineStyle.Bold -> SpanStyle(fontWeight = FontWeight.Bold)
+    InlineStyle.Italic -> SpanStyle(fontStyle = FontStyle.Italic)
+    InlineStyle.Superscript -> SpanStyle(baselineShift = BaselineShift.Superscript, fontSize = 0.75.em)
+    InlineStyle.Subscript -> SpanStyle(baselineShift = BaselineShift.Subscript, fontSize = 0.75.em)
+    InlineStyle.Monospace -> SpanStyle(fontFamily = FontFamily.Monospace)
+    InlineStyle.Underline, InlineStyle.Strikethrough -> null
 }
 
 /**

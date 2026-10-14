@@ -309,6 +309,23 @@ class EventSearchTest {
     }
 
     @Test
+    fun `an html description matches and snippets on its text, not its tags`() {
+        val html = "<div class=\"x\"><p>Raum&nbsp;<b>4.12</b></p></div>"
+        assertThat(search(candidate("Notiz", description = html), query = "div").isEmpty).isTrue()
+
+        val snippet = search(candidate("Notiz", description = html), query = "raum 4.12")
+            .allHits.single().descriptionSnippet
+        requireNotNull(snippet)
+        assertThat(snippet.text).isEqualTo("Raum 4.12")
+    }
+
+    @Test
+    fun `a link address in an html description is still searchable`() {
+        val html = "<p><a href=\"https://zoom.us/j/81234567890\">Join Zoom Meeting</a></p>"
+        assertThat(search(candidate("Call", description = html), query = "81234567890").allHits).hasSize(1)
+    }
+
+    @Test
     fun `a blank query matches nothing`() {
         assertThat(search(candidate("Test"), query = "   ").isEmpty).isTrue()
     }

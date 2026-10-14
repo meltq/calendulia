@@ -162,16 +162,20 @@ object EventSearch {
         val title = candidate.title?.takeIf { it.isNotBlank() }
         val location = candidate.event.location?.takeIf { it.isNotBlank() }
         // Collapsed so a multi-line description matches the way it is drawn.
-        val description = candidate.description
+        val rich = candidate.description?.let(::descriptionRichText)
+        val description = rich?.text
             ?.replace(WHITESPACE, " ")
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
+        // A link's address isn't in the drawn text, but "zoom.us" should still find the invite.
+        val linkUrls = rich?.links.orEmpty().map { it.url }
 
         // Mid-word counts: "termin" has to keep finding "Zahnarzttermin".
         val present = { token: String ->
             title?.contains(token, ignoreCase = true) == true ||
                 location?.contains(token, ignoreCase = true) == true ||
-                description?.contains(token, ignoreCase = true) == true
+                description?.contains(token, ignoreCase = true) == true ||
+                linkUrls.any { it.contains(token, ignoreCase = true) }
         }
         if (!tokens.all(present)) return null
 
