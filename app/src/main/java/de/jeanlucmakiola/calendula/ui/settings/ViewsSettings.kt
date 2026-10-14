@@ -74,6 +74,7 @@ internal fun ViewsScreen(
     var showDefaultView by remember { mutableStateOf(false) }
     var showWeekStart by remember { mutableStateOf(false) }
     var showTimeFormat by remember { mutableStateOf(false) }
+    var showTapOpens by remember { mutableStateOf(false) }
     var showPastEvents by remember { mutableStateOf(false) }
     var showAgendaScreenRange by remember { mutableStateOf(false) }
     var showTimelineScale by remember { mutableStateOf(false) }
@@ -125,7 +126,7 @@ internal fun ViewsScreen(
         GroupedRow(
             title = stringResource(R.string.settings_dim_completed),
             summary = stringResource(R.string.settings_dim_completed_summary),
-            position = Position.Middle,
+            position = Position.Bottom,
             trailing = {
                 Switch(
                     checked = state.dimCompletedEvents,
@@ -133,6 +134,17 @@ internal fun ViewsScreen(
                 )
             },
             onClick = { viewModel.setDimCompletedEvents(!state.dimCompletedEvents) },
+        )
+
+        Spacer(Modifier.height(8.dp))
+
+        // How events respond to a tap and a long press (#178, #141).
+        SectionHeader(stringResource(R.string.settings_events_header))
+        GroupedRow(
+            title = stringResource(R.string.settings_tap_opens),
+            summary = tapOpensLabel(state.tapOpensEditor),
+            position = Position.Top,
+            onClick = { showTapOpens = true },
         )
         GroupedRow(
             title = stringResource(R.string.settings_drag_to_reschedule),
@@ -387,6 +399,18 @@ internal fun ViewsScreen(
             onDismiss = { showTimeFormat = false },
         )
     }
+    if (showTapOpens) {
+        OptionPicker(
+            title = stringResource(R.string.settings_tap_opens),
+            header = { PickerDescription(stringResource(R.string.settings_tap_opens_hint)) },
+            predictiveBack = true,
+            options = listOf(false, true),
+            selected = state.tapOpensEditor,
+            label = { tapOpensLabel(it) },
+            onSelect = viewModel::setTapOpensEditor,
+            onDismiss = { showTapOpens = false },
+        )
+    }
     if (showPastEvents) {
         PastEventsPicker(
             selected = state.pastEventDisplay,
@@ -521,6 +545,11 @@ internal fun weekStartLabel(pref: WeekStartPref): String = when (pref) {
     is WeekStartPref.Day -> java.time.DayOfWeek.of(pref.day.ordinal + 1)
         .getDisplayName(JavaTextStyle.FULL, currentLocale())
 }
+
+@Composable
+private fun tapOpensLabel(editor: Boolean): String = stringResource(
+    if (editor) R.string.settings_tap_opens_editor else R.string.settings_tap_opens_details,
+)
 
 @Composable
 private fun timeFormatLabel(pref: TimeFormatPref): String = stringResource(

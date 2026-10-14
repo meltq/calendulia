@@ -60,6 +60,7 @@ import de.jeanlucmakiola.calendula.ui.common.EventMoveHost
 import de.jeanlucmakiola.calendula.ui.common.EventSelectionHost
 import de.jeanlucmakiola.calendula.ui.common.eventActionFailureMessage
 import de.jeanlucmakiola.calendula.ui.common.rememberFabSelection
+import de.jeanlucmakiola.calendula.ui.common.rememberWriteGateOr
 import de.jeanlucmakiola.calendula.ui.common.EventMoveScope
 import de.jeanlucmakiola.calendula.ui.common.LocalEventMove
 import de.jeanlucmakiola.calendula.ui.common.LocalManageCalendars
@@ -192,7 +193,7 @@ fun CalendarHost(
     // placeholder — so the destination never loads a bogus id=0 on first frame.
     var detailKey by rememberSaveable { mutableStateOf<LongArray?>(null) }
     var heldKey by remember { mutableStateOf<LongArray?>(null) }
-    val onEventClick: (EventInstance) -> Unit = { event ->
+    val onOpenDetail: (EventInstance) -> Unit = { event ->
         val key = longArrayOf(
             event.eventId,
             event.start.toEpochMilliseconds(),
@@ -409,6 +410,18 @@ fun CalendarHost(
         )
         heldEditKey = key
         editKey = key
+    }
+    // A tap opens the edit form instead of the detail screen when the user chose
+    // so (#178) — only for events whose calendar takes writes.
+    val tapOpensEditor = viewModel.tapOpensEditor.collectAsStateWithLifecycle().value
+    val actionCalendars by eventActions.calendars.collectAsStateWithLifecycle()
+    val requireWriteOr = rememberWriteGateOr()
+    val onEventClick: (EventInstance) -> Unit = { event ->
+        if (tapOpensEditor && actionCalendars[event.calendarId]?.canModifyContents == true) {
+            requireWriteOr({ onEditEvent(event) }, { onOpenDetail(event) })
+        } else {
+            onOpenDetail(event)
+        }
     }
     // Off by preference (#173) switches off the gesture, not the scope: blocks
     // register no drag, while the edit form and its TalkBack action stay put.
@@ -685,6 +698,7 @@ fun CalendarHost(
                     onSaved = { createDateIso = null },
                     onManageCalendars = { showCalendars = true },
                     visible = createDateIso != null,
+                    viewModel = hiltViewModel(key = "create"),
                 )
             }
         }
@@ -705,7 +719,21 @@ fun CalendarHost(
                         detailKey = null
                     },
                     onManageCalendars = { showCalendars = true },
+                    onDuplicate = { form ->
+                        importFormSource = ImportSource.Insert
+                        importForm = form
+                    },
+                    // Opened straight from a tap (#178) there's no detail screen
+                    // below to show why, so open it.
+                    onLoadFailed = {
+                        editKey = null
+                        if (detailKey == null) {
+                            heldKey = key
+                            detailKey = key
+                        }
+                    },
                     visible = editKey != null,
+                    viewModel = hiltViewModel(key = "edit"),
                 )
             }
         }
@@ -764,6 +792,7 @@ fun CalendarHost(
                 onClose = { importForm = null },
                 onSaved = { importForm = null },
                 onManageCalendars = { showCalendars = true },
+                viewModel = hiltViewModel(key = "import"),
             )
         }
 

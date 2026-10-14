@@ -78,4 +78,12 @@ class CalendarHostViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = false,
         )
+
+    /** Whether tapping an event opens the edit form rather than the detail screen (#178). */
+    val tapOpensEditor: StateFlow<Boolean> = prefs.tapOpensEditor
+        .stateIn(
+            scope = viewModelScope,
+            started = SharingStarted.WhileSubscribed(5_000L),
+            initialValue = false,
+        )
 }

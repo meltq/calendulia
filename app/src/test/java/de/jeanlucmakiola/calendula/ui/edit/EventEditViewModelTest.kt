@@ -1,11 +1,14 @@
 package de.jeanlucmakiola.calendula.ui.edit
 
+import android.content.ContextWrapper
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepositoryImpl
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
+import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
+import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.CalendarSource
@@ -23,6 +26,7 @@ import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import kotlinx.coroutines.Dispatchers
+import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -95,7 +99,8 @@ class EventEditViewModelTest {
     ): EventEditViewModel {
         val p = prefs(tempDir)
         val repo = CalendarRepositoryImpl(fake, p, s, dispatcher as CoroutineDispatcher)
-        return EventEditViewModel(repo, p, s, dispatcher)
+        // Only `shareUri()` touches the exporter, and nothing here shares.
+        return EventEditViewModel(repo, p, s, IcsExporter(ContextWrapper(null)), dispatcher)
     }
 
     /** Keep [EventEditViewModel.state] hot so it computes while the test drives it. */
@@ -406,5 +411,150 @@ class EventEditViewModelTest {
         val new = "a".repeat(254) + "😀"
 
         assertThat(capLength(new, "")).isEqualTo("a".repeat(254))
+    }
+
+    @Test
+    fun `an edit counts as unsaved only while it differs from the loaded event`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L) }
+        }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+
+        vm.setTitle("Retro")
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isTrue()
+
+        vm.setTitle("Standup")
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+        job.cancel()
+    }
+
+    @Test
+    fun `a new form holding only its defaults has nothing to lose`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openNew(LocalDate(2026, 10, 12), startMinutes = 9 * 60)
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+
+        vm.setTitle("Lunch")
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isTrue()
+        job.cancel()
+    }
+
+    @Test
+    fun `deleting from the form removes the event and reports it`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L) }
+        }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        vm.delete(RecurringWriteScope.AllEvents)
+        advanceUntilIdle()
+
+        assertThat(fake.deletedEventIds).containsExactly(42L)
+        assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.Deleted)
+        job.cancel()
+    }
+
+    @Test
+    fun `deleting an event that is already gone counts as deleted`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L) }
+        }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        fake.writeError = NoSuchEventException(42L)
+        vm.delete(RecurringWriteScope.AllEvents)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.Deleted)
+        job.cancel()
+    }
+
+    @Test
+    fun `a delete without write access reports it as a delete`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L) }
+        }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        fake.writeError = SecurityException()
+        vm.delete(RecurringWriteScope.AllEvents)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.DeleteDenied)
+        job.cancel()
+    }
+
+    @Test
+    fun `a blank rrule does not make the edited event recurring`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L, rrule = "") }
+        }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+
+        assertThat(vm.editedEventRecurs()).isFalse()
+        job.cancel()
+    }
+
+    @Test
+    fun `accepting the default reminders for an import counts as a change`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val s = settings(tempDir)
+        s.setDefaultReminderMinutes(listOf(15))
+        val vm = viewModel(tempDir, fake, s)
+        val job = activate(vm)
+
+        vm.openImported(importedForm(end = LocalDateTime(2030, 1, 15, 10, 0)), ImportSource.File)
+        advanceUntilIdle()
+        assertThat(vm.importReminderPrompt.value).isNotNull()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+
+        vm.applyImportedReminderDefault()
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isTrue()
+        job.cancel()
     }
 }

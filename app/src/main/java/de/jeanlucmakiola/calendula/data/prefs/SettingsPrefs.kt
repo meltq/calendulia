@@ -347,6 +347,19 @@ class SettingsPrefs @Inject constructor(
     }
 
     /**
+     * Whether tapping an event in the calendar views opens the edit form instead
+     * of the detail screen (#178). Defaults to OFF; read-only events and
+     * reminder notifications always open the detail screen.
+     */
+    val tapOpensEditor: Flow<Boolean> = store.data.map { prefs ->
+        prefs[TAP_OPENS_EDITOR_KEY] ?: false
+    }
+
+    suspend fun setTapOpensEditor(enabled: Boolean) {
+        store.edit { it[TAP_OPENS_EDITOR_KEY] = enabled }
+    }
+
+    /**
      * How far ahead the in-app Agenda screen shows events (v2.11). Defaults to
      * [AgendaRange.Month] — a month of upcoming events. Independent of the
      * widget's [agendaWidgetRange].
@@ -1019,6 +1032,7 @@ class SettingsPrefs @Inject constructor(
         internal val TIMELINE_SCALE_KEY = stringPreferencesKey("timeline_scale")
         internal val TODAY_BUTTON_IN_TOOLBAR_KEY = booleanPreferencesKey("today_button_in_toolbar")
         internal val DRAG_TO_RESCHEDULE_KEY = booleanPreferencesKey("drag_to_reschedule")
+        internal val TAP_OPENS_EDITOR_KEY = booleanPreferencesKey("tap_opens_editor")
         internal val DEFAULT_VIEW_KEY = stringPreferencesKey("default_view")
         internal val QUICK_SWITCH_VIEWS_KEY = stringPreferencesKey("quick_switch_views")
         internal val DRAWER_VIEW_ORDER_KEY = stringPreferencesKey("drawer_view_order")

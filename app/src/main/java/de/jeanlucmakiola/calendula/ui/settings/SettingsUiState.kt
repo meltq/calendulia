@@ -47,6 +47,8 @@ data class SettingsUiState(
     val todayButtonInToolbar: Boolean = false,
     /** Whether events can be dragged to another slot to reschedule them (#68, #173). */
     val dragToReschedule: Boolean = true,
+    /** Whether tapping an event opens the edit form instead of the detail screen (#178). */
+    val tapOpensEditor: Boolean = false,
     /** How far ahead the in-app Agenda screen shows events (v2.11). */
     val agendaScreenRange: AgendaRange = AgendaRange.Month,
     /** How far ahead the agenda widget shows events (v2.11). */

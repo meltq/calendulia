@@ -36,6 +36,15 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Add
+import kotlinx.coroutines.launch
+import de.jeanlucmakiola.calendula.ui.common.sendEventShare
+import de.jeanlucmakiola.calendula.ui.common.rememberWriteGate
+import de.jeanlucmakiola.calendula.ui.common.DeleteEventDialog
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
@@ -192,6 +201,10 @@ import kotlin.time.Clock
  * first asks how far the change reaches (this occurrence / this and
  * following / whole series) — then closes. The calendar picker offers only
  * writable calendars; when editing, the calendar is fixed.
+ *
+ * Leaving with unsaved changes asks to save, discard or keep editing (#178).
+ * While editing, the overflow menu offers Duplicate (the form as it stands,
+ * handed to [onDuplicate] as a new event), Share and Delete.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -205,6 +218,9 @@ fun EventEditScreen(
     initialForm: EventForm? = null,
     initialFormSource: ImportSource = ImportSource.File,
     onManageCalendars: (() -> Unit)? = null,
+    onDuplicate: ((EventForm) -> Unit)? = null,
+    onDeleted: () -> Unit = onSaved,
+    onLoadFailed: () -> Unit = onClose,
     visible: Boolean = true,
     viewModel: EventEditViewModel = hiltViewModel(),
 ) {
@@ -236,10 +252,19 @@ fun EventEditScreen(
         viewModel.reset()
         onClose()
     }
-    // The event vanished between the detail screen and the edit tap — fall
-    // back to the detail screen, which shows its own failure state.
+    val hasUnsavedChanges by viewModel.hasUnsavedChanges.collectAsStateWithLifecycle()
+    var showLeavePrompt by rememberSaveable { mutableStateOf(false) }
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+    val requestClose = {
+        if (hasUnsavedChanges) showLeavePrompt = true else close()
+    }
+    // The event vanished before the form could load it — fall back to the
+    // detail screen, which shows its own failure state.
     LaunchedEffect(loadFailed) {
-        if (loadFailed) close()
+        if (loadFailed) {
+            viewModel.reset()
+            onLoadFailed()
+        }
     }
 
     val context = LocalContext.current
@@ -263,13 +288,48 @@ fun EventEditScreen(
         }
     }
 
+    val scope = rememberCoroutineScope()
+    val requireWrite = rememberWriteGate()
+    val shareFailedMessage = stringResource(R.string.event_share_failed)
+    val shareChooserTitle = stringResource(R.string.event_share_chooser_title)
+    val onShareClick: () -> Unit = {
+        scope.launch {
+            val uri = viewModel.shareUri()
+            val sent = uri != null && context.sendEventShare(uri, shareChooserTitle)
+            if (!sent) snackbarHostState.showSnackbar(shareFailedMessage)
+        }
+    }
+    // The copy opens over this form; a form with nothing to lose steps aside.
+    val onDuplicateClick: () -> Unit = {
+        requireWrite {
+            viewModel.duplicateForm()?.let { form ->
+                onDuplicate?.invoke(form)
+                if (!hasUnsavedChanges) close()
+            }
+        }
+    }
+
     val saveFailedMessage = stringResource(R.string.event_edit_save_failed)
     val writeDeniedMessage = stringResource(R.string.event_edit_write_denied)
+    val deleteFailedMessage = stringResource(R.string.event_delete_failed)
+    val deleteDeniedMessage = stringResource(R.string.event_delete_write_denied)
     LaunchedEffect(state?.saveState) {
         when (state?.saveState) {
             SaveUiState.Saved -> {
                 viewModel.reset()
                 onSaved()
+            }
+            SaveUiState.Deleted -> {
+                viewModel.reset()
+                onDeleted()
+            }
+            SaveUiState.DeleteFailed -> {
+                viewModel.consumeSaveResult()
+                snackbarHostState.showSnackbar(deleteFailedMessage, duration = SnackbarDuration.Long)
+            }
+            SaveUiState.DeleteDenied -> {
+                viewModel.consumeSaveResult()
+                snackbarHostState.showSnackbar(deleteDeniedMessage, duration = SnackbarDuration.Long)
             }
             // A failed save leaves the form looking unchanged, so the snackbar is
             // the only sign anything happened — long rather than the default
@@ -288,7 +348,7 @@ fun EventEditScreen(
     }
 
     Scaffold(
-        modifier = Modifier.predictiveBack(onBack = close, visible = visible),
+        modifier = Modifier.predictiveBack(onBack = requestClose, visible = visible),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -296,7 +356,7 @@ fun EventEditScreen(
                 // matching the detail screen's bare top bar.
                 title = {},
                 navigationIcon = {
-                    IconButton(onClick = close) {
+                    IconButton(onClick = requestClose) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = stringResource(R.string.event_edit_close),
@@ -304,6 +364,15 @@ fun EventEditScreen(
                     }
                 },
                 actions = {
+                    if (state?.isEditing == true) {
+                        EditActionsMenu(
+                            canDelete = state?.isManaged == false,
+                            canDuplicate = onDuplicate != null,
+                            onDuplicate = onDuplicateClick,
+                            onShare = onShareClick,
+                            onDelete = { requireWrite { showDeleteDialog = true } },
+                        )
+                    }
                     Button(
                         onClick = onSaveClick,
                         enabled = state != null && state?.saveState != SaveUiState.Saving,
@@ -328,6 +397,32 @@ fun EventEditScreen(
                 onManageCalendars = onManageCalendars,
             )
         }
+    }
+
+    if (showLeavePrompt) {
+        UnsavedChangesDialog(
+            onSave = {
+                showLeavePrompt = false
+                onSaveClick()
+            },
+            onDiscard = {
+                showLeavePrompt = false
+                close()
+            },
+            onDismiss = { showLeavePrompt = false },
+        )
+    }
+
+    val recurs = viewModel.editedEventRecurs()
+    if (showDeleteDialog && recurs != null) {
+        DeleteEventDialog(
+            isRecurring = recurs,
+            onConfirm = { deleteScope ->
+                showDeleteDialog = false
+                viewModel.delete(deleteScope)
+            },
+            onDismiss = { showDeleteDialog = false },
+        )
     }
 
     if (state?.saveState == SaveUiState.AwaitingScope) {
@@ -372,6 +467,90 @@ fun EventEditScreen(
             onKeep = viewModel::dismissImportedReminderPrompt,
         )
     }
+}
+
+/** Duplicate, Share and Delete for the event being edited, behind an overflow button. */
+@Composable
+private fun EditActionsMenu(
+    canDelete: Boolean,
+    canDuplicate: Boolean,
+    onDuplicate: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = stringResource(R.string.event_edit_more_actions),
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (canDuplicate) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.event_detail_duplicate)) },
+                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    onClick = {
+                        open = false
+                        onDuplicate()
+                    },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.event_detail_share)) },
+                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                onClick = {
+                    open = false
+                    onShare()
+                },
+            )
+            // Managed special-dates events have no delete, as on the detail screen.
+            if (canDelete) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.event_detail_delete)) },
+                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                    onClick = {
+                        open = false
+                        onDelete()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Asked when leaving the form with unsaved changes (#178). Dismissing keeps
+ * editing; a form with nothing changed closes without asking.
+ */
+@Composable
+private fun UnsavedChangesDialog(
+    onSave: () -> Unit,
+    onDiscard: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.event_edit_unsaved_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OptionCard(
+                    label = stringResource(R.string.event_edit_unsaved_save),
+                    onClick = onSave,
+                )
+                OptionCard(
+                    label = stringResource(R.string.event_edit_unsaved_discard),
+                    onClick = onDiscard,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.event_edit_unsaved_keep))
+            }
+        },
+    )
 }
 
 /**

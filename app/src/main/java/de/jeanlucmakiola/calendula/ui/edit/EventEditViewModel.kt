@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.edit
 
+import android.net.Uri
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -7,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
 import de.jeanlucmakiola.calendula.data.di.IoDispatcher
+import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.firstDayOfWeek
@@ -18,6 +20,7 @@ import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EditSnapshot
 import de.jeanlucmakiola.calendula.domain.EventAttendee
 import de.jeanlucmakiola.calendula.domain.EventColorOption
+import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
@@ -26,6 +29,9 @@ import de.jeanlucmakiola.calendula.domain.populatedFields
 import de.jeanlucmakiola.calendula.domain.problems
 import de.jeanlucmakiola.calendula.domain.toEditSnapshot
 import de.jeanlucmakiola.calendula.ui.detail.EventDetailViewModel.Companion.NO_OCCURRENCE_TIME
+import de.jeanlucmakiola.calendula.ui.common.DeleteOutcome
+import de.jeanlucmakiola.calendula.ui.common.tryDeleteEvent
+import de.jeanlucmakiola.calendula.ui.common.stageEventShare
 import de.jeanlucmakiola.calendula.ui.common.wallClockTime
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -133,6 +139,7 @@ class EventEditViewModel @Inject constructor(
     private val repository: CalendarRepository,
     private val prefs: CalendarPrefs,
     private val settingsPrefs: SettingsPrefs,
+    private val icsExporter: IcsExporter,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -157,6 +164,9 @@ class EventEditViewModel @Inject constructor(
     // A one-time offer, raised when a .ics import opens, to replace the file's
     // reminders with the settings default (#49). Null while there's nothing to ask.
     private val _importReminderPrompt = MutableStateFlow<ImportReminderPrompt?>(null)
+    // Set by the first change the user makes, so a form only holding its own
+    // defaults or an import's prefill can be left without asking.
+    private val _edited = MutableStateFlow(false)
 
     /** True when the event to edit couldn't be loaded; the screen closes itself. */
     val loadFailed: StateFlow<Boolean> = _loadFailed.asStateFlow()
@@ -177,6 +187,8 @@ class EventEditViewModel @Inject constructor(
         val beginMillis: Long,
         val endMillis: Long,
         val zone: TimeZone,
+        /** The event as loaded, on the tapped occurrence's times — what Share exports. */
+        val detail: EventDetail,
     ) {
         val original: EventForm get() = snapshot.form
     }
@@ -311,6 +323,18 @@ class EventEditViewModel @Inject constructor(
             started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = null,
         )
+
+    /**
+     * Whether leaving now would lose something the user did (#178): an edit that
+     * differs from the loaded event, or any change to a new or imported form.
+     */
+    val hasUnsavedChanges: StateFlow<Boolean> = combine(_form, _editTarget, _edited) { form, target, edited ->
+        when {
+            form == null -> false
+            target != null -> form != target.original
+            else -> edited
+        }
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, false)
 
     /**
      * First day of the week for ordering the recurrence weekday toggles — the
@@ -496,7 +520,7 @@ class EventEditViewModel @Inject constructor(
         val prompt = _importReminderPrompt.value ?: return
         _importReminderPrompt.value = null
         // Already frozen as touched by openImported; this just swaps the values.
-        update { it.copy(reminders = prompt.defaultReminders) }
+        edit { it.copy(reminders = prompt.defaultReminders) }
         _revealed.value = _revealed.value + EventFormField.Reminders
     }
 
@@ -531,7 +555,13 @@ class EventEditViewModel @Inject constructor(
             val end = endMillis.takeUnless { it == NO_OCCURRENCE_TIME }
                 ?: detail.instance.end.toEpochMilliseconds()
             val snapshot = detail.toEditSnapshot(begin, end, zone)
-            _editTarget.value = EditTarget(eventId, snapshot, begin, end, zone)
+            val occurrence = detail.copy(
+                instance = detail.instance.copy(
+                    start = Instant.fromEpochMilliseconds(begin),
+                    end = Instant.fromEpochMilliseconds(end),
+                ),
+            )
+            _editTarget.value = EditTarget(eventId, snapshot, begin, end, zone, occurrence)
             // Sections holding data must show even when not in the defaults.
             _revealed.value = snapshot.form.populatedFields()
             _form.value = snapshot.form
@@ -549,6 +579,7 @@ class EventEditViewModel @Inject constructor(
         _remindersTouched.value = false
         _durationTouched.value = false
         _importReminderPrompt.value = null
+        _edited.value = false
     }
 
     /** Unfold one optional field, picked in the "more fields" dialog. */
@@ -559,24 +590,24 @@ class EventEditViewModel @Inject constructor(
     // The title field wraps (multi-line) so long titles stay visible (#33), but
     // a title is one logical line: drop any newline the IME's Enter key or a
     // paste would introduce, so it never reaches the provider's TITLE column.
-    fun setTitle(value: String) = update {
+    fun setTitle(value: String) = edit {
         val cleaned = value.replace("\n", "").replace("\r", "")
         it.copy(title = capLength(cleaned, it.title))
     }
     // The location wraps too (#273) but is likewise one logical line. A pasted
     // multi-line address joins the way the contact picker's does (#146), so it
     // never runs together into "12 Main St10115 Berlin".
-    fun setLocation(value: String) = update {
+    fun setLocation(value: String) = edit {
         val cleaned = value.replace(LINE_BREAK, ", ")
         it.copy(location = capLength(cleaned, it.location))
     }
-    fun setDescription(value: String) = update { it.copy(description = value) }
+    fun setDescription(value: String) = edit { it.copy(description = value) }
     fun setAllDay(value: Boolean) {
         // Going all-day drops any pinned zone: the times become bare dates that
         // the provider stores UTC-anchored, so a zone could only misrepresent
         // them. Coming back out of all-day leaves the event on the device zone,
         // which is the same thing a fresh event gets.
-        update { it.copy(isAllDay = value, timezone = if (value) null else it.timezone) }
+        edit { it.copy(isAllDay = value, timezone = if (value) null else it.timezone) }
         // The default reminder differs for all-day vs timed; re-apply the
         // type-appropriate default unless the user has hand-edited it (guarded).
         applyDefaultReminder()
@@ -591,7 +622,7 @@ class EventEditViewModel @Inject constructor(
      * time — only real picks are remembered, not the device fallback.
      */
     fun setTimezone(zoneId: String?) {
-        update { it.copy(timezone = zoneId) }
+        edit { it.copy(timezone = zoneId) }
         if (zoneId != null) {
             viewModelScope.launch { withContext(io) { settingsPrefs.addRecentTimeZone(zoneId) } }
         }
@@ -603,35 +634,35 @@ class EventEditViewModel @Inject constructor(
      * The event falls back to the new calendar's colour until re-picked.
      */
     fun setCalendar(id: Long) {
-        update { it.copy(calendarId = id, colorKey = null, color = null) }
+        edit { it.copy(calendarId = id, colorKey = null, color = null) }
         // A fresh event re-inherits the new calendar's default reminder and
         // length unless the user has already hand-edited them (guarded inside).
         applyDefaultReminder(id)
         applyDefaultDuration(id)
     }
-    fun setAvailability(value: Availability) = update { it.copy(availability = value) }
-    fun setAccessLevel(value: AccessLevel) = update { it.copy(accessLevel = value) }
+    fun setAvailability(value: Availability) = edit { it.copy(availability = value) }
+    fun setAccessLevel(value: AccessLevel) = edit { it.copy(accessLevel = value) }
 
     /** Pick a palette colour (round-trips via its key); [argb] is its swatch. */
-    fun setColorKey(key: String, argb: Int) = update { it.copy(colorKey = key, color = argb) }
+    fun setColorKey(key: String, argb: Int) = edit { it.copy(colorKey = key, color = argb) }
 
     /** Pick a raw colour (local / opted-in calendars), clearing any palette key. */
-    fun setColorRaw(argb: Int) = update { it.copy(colorKey = null, color = argb) }
+    fun setColorRaw(argb: Int) = edit { it.copy(colorKey = null, color = argb) }
 
     /** Clear the colour so the event inherits its calendar's. */
-    fun clearColor() = update { it.copy(colorKey = null, color = null) }
+    fun clearColor() = edit { it.copy(colorKey = null, color = null) }
 
     /** Bare RRULE value from the recurrence picker; null = does not repeat. */
-    fun setRecurrence(rrule: String?) = update { it.copy(rrule = rrule) }
+    fun setRecurrence(rrule: String?) = edit { it.copy(rrule = rrule) }
 
     fun addReminder(minutes: Int) {
         _remindersTouched.value = true
-        update { it.copy(reminders = (it.reminders + minutes).distinct().sorted()) }
+        edit { it.copy(reminders = (it.reminders + minutes).distinct().sorted()) }
     }
 
     fun removeReminder(minutes: Int) {
         _remindersTouched.value = true
-        update { it.copy(reminders = it.reminders - minutes) }
+        edit { it.copy(reminders = it.reminders - minutes) }
     }
 
     /**
@@ -642,7 +673,7 @@ class EventEditViewModel @Inject constructor(
     fun addAttendee(email: String, name: String = "", optional: Boolean = false) {
         val trimmed = email.trim()
         if (trimmed.isEmpty()) return
-        update { form ->
+        edit { form ->
             val attendee = EventAttendee(email = trimmed, name = name.trim(), optional = optional)
             val rest = form.attendees.filterNot { it.email.equals(trimmed, ignoreCase = true) }
             form.copy(attendees = rest + attendee)
@@ -650,10 +681,10 @@ class EventEditViewModel @Inject constructor(
     }
 
     fun removeAttendee(attendee: EventAttendee) =
-        update { it.copy(attendees = it.attendees.filterNot { a -> a.email.equals(attendee.email, ignoreCase = true) }) }
+        edit { it.copy(attendees = it.attendees.filterNot { a -> a.email.equals(attendee.email, ignoreCase = true) }) }
 
     /** Flip a guest between required and optional (the per-row role toggle). */
-    fun setAttendeeOptional(attendee: EventAttendee, optional: Boolean) = update { form ->
+    fun setAttendeeOptional(attendee: EventAttendee, optional: Boolean) = edit { form ->
         form.copy(
             attendees = form.attendees.map { a ->
                 if (a.email.equals(attendee.email, ignoreCase = true)) a.copy(optional = optional) else a
@@ -669,12 +700,12 @@ class EventEditViewModel @Inject constructor(
     // default duration, so a later calendar switch keeps their span (#54).
     fun setEndDate(date: LocalDate) {
         _durationTouched.value = true
-        update { it.copy(end = LocalDateTime(date, it.end.time)) }
+        edit { it.copy(end = LocalDateTime(date, it.end.time)) }
     }
 
     fun setEndTime(time: LocalTime) {
         _durationTouched.value = true
-        update { it.copy(end = LocalDateTime(it.end.date, time)) }
+        edit { it.copy(end = LocalDateTime(it.end.date, time)) }
     }
 
     /**
@@ -810,12 +841,39 @@ class EventEditViewModel @Inject constructor(
         }
     }
 
+    /** Whether the event being edited recurs; null while not editing. */
+    fun editedEventRecurs(): Boolean? = _editTarget.value?.let { !it.detail.rrule.isNullOrBlank() }
+
+    /** The form as it stands, as a fresh one-off event — Duplicate in the edit form (#178). */
+    fun duplicateForm(): EventForm? = state.value?.form?.copy(rrule = null)
+
+    /** A staged `.ics` of the event as saved, or null when it can't be built. */
+    suspend fun shareUri(): Uri? {
+        val detail = _editTarget.value?.detail ?: return null
+        return withContext(io) { icsExporter.stageEventShare(detail) }
+    }
+
+    /** Delete the event being edited, as far as [scope] reaches; result lands in [saveState]. */
+    fun delete(scope: RecurringWriteScope) {
+        val target = _editTarget.value ?: return
+        if (_saveState.value == SaveUiState.Saving) return
+        viewModelScope.launch {
+            _saveState.value = SaveUiState.Saving
+            // Already gone is what a delete wants anyway.
+            _saveState.value = when (repository.tryDeleteEvent(target.eventId, target.beginMillis, scope)) {
+                DeleteOutcome.Deleted, DeleteOutcome.Gone -> SaveUiState.Deleted
+                DeleteOutcome.NeedsPermission -> SaveUiState.DeleteDenied
+                DeleteOutcome.Failed -> SaveUiState.DeleteFailed
+            }
+        }
+    }
+
     /** Reset [saveState] after the screen handled a terminal result. */
     fun consumeSaveResult() {
         _saveState.value = SaveUiState.Idle
     }
 
-    private fun moveStart(transform: (LocalDateTime) -> LocalDateTime) = update { form ->
+    private fun moveStart(transform: (LocalDateTime) -> LocalDateTime) = edit { form ->
         val zone = TimeZone.currentSystemDefault()
         val newStart = transform(form.start)
         val duration = form.end.toInstant(zone) - form.start.toInstant(zone)
@@ -825,5 +883,13 @@ class EventEditViewModel @Inject constructor(
 
     private inline fun update(block: (EventForm) -> EventForm) {
         _form.value = _form.value?.let(block)
+    }
+
+    /** A change the user made, as opposed to a default the form applied itself. */
+    private inline fun edit(block: (EventForm) -> EventForm) {
+        val current = _form.value ?: return
+        val next = block(current)
+        if (next != current) _edited.value = true
+        _form.value = next
     }
 }

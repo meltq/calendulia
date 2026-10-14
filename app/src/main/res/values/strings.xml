@@ -118,6 +118,11 @@
     <!-- Event form (v1.2 create) -->
     <string name="event_edit_new_title">New event</string>
     <string name="event_edit_close">Close</string>
+    <string name="event_edit_more_actions">More actions</string>
+    <string name="event_edit_unsaved_title">Unsaved changes</string>
+    <string name="event_edit_unsaved_save">Save changes</string>
+    <string name="event_edit_unsaved_discard">Discard changes</string>
+    <string name="event_edit_unsaved_keep">Keep editing</string>
     <string name="event_edit_save">Save</string>
     <string name="event_edit_title_hint">Add title</string>
     <!-- %1$s is the managing calendar's name, e.g. "Birthdays". -->
@@ -518,6 +523,11 @@
     <string name="settings_dim_completed_summary">Fade events that have already ended in month and week view</string>
     <string name="settings_drag_to_reschedule">Drag to reschedule</string>
     <string name="settings_drag_to_reschedule_summary">Move an event by dragging it to another day or time</string>
+    <string name="settings_events_header">Events</string>
+    <string name="settings_tap_opens">Tapping an event opens</string>
+    <string name="settings_tap_opens_details">Details</string>
+    <string name="settings_tap_opens_editor">Edit form</string>
+    <string name="settings_tap_opens_hint">Events you can\'t edit and reminder notifications always open the details.</string>
     <string name="settings_past_events">Past events</string>
     <string name="settings_past_events_show">Show</string>
     <string name="settings_past_events_dim">Dim</string>

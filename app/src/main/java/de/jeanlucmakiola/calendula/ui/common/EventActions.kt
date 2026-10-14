@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
@@ -25,12 +26,14 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
+import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.calendula.domain.ics.toShareIcsEvent
 import de.jeanlucmakiola.floret.components.OptionCard
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 
 /**
@@ -67,6 +70,28 @@ suspend fun CalendarRepository.deleteEvent(
     RecurringWriteScope.ThisAndFollowing -> deleteEventFromOccurrence(eventId, beginMillis)
 }
 
+/** How a [tryDeleteEvent] ended. */
+enum class DeleteOutcome { Deleted, Gone, NeedsPermission, Failed }
+
+/** [deleteEvent], with the provider's failures mapped to a [DeleteOutcome]. */
+suspend fun CalendarRepository.tryDeleteEvent(
+    eventId: Long,
+    beginMillis: Long,
+    scope: RecurringWriteScope,
+): DeleteOutcome = try {
+    deleteEvent(eventId, beginMillis, scope)
+    DeleteOutcome.Deleted
+} catch (e: CancellationException) {
+    throw e
+} catch (e: SecurityException) {
+    DeleteOutcome.NeedsPermission
+} catch (e: NoSuchEventException) {
+    DeleteOutcome.Gone
+} catch (e: Exception) {
+    Log.w("EventActions", "Delete failed (scope=$scope, eventId=$eventId)", e)
+    DeleteOutcome.Failed
+}
+
 /**
  * Runs an action that writes to the calendar, asking for `WRITE_CALENDAR` first
  * where the install only holds read access (v1.0 installs). A grant continues
@@ -74,15 +99,22 @@ suspend fun CalendarRepository.deleteEvent(
  */
 @Composable
 fun rememberWriteGate(): (() -> Unit) -> Unit {
+    val gate = rememberWriteGateOr()
+    return { action -> gate(action) {} }
+}
+
+/** [rememberWriteGate], running the fallback instead when the user refuses. */
+@Composable
+fun rememberWriteGateOr(): (action: () -> Unit, fallback: () -> Unit) -> Unit {
     val context = LocalContext.current
-    var pending by remember { mutableStateOf<(() -> Unit)?>(null) }
+    var pending by remember { mutableStateOf<Pair<() -> Unit, () -> Unit>?>(null) }
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
-        if (granted) pending?.invoke()
+        pending?.let { (action, fallback) -> if (granted) action() else fallback() }
         pending = null
     }
-    return { action ->
+    return { action, fallback ->
         val granted = ContextCompat.checkSelfPermission(
             context,
             Manifest.permission.WRITE_CALENDAR,
@@ -90,7 +122,7 @@ fun rememberWriteGate(): (() -> Unit) -> Unit {
         if (granted) {
             action()
         } else {
-            pending = action
+            pending = action to fallback
             launcher.launch(Manifest.permission.WRITE_CALENDAR)
         }
     }

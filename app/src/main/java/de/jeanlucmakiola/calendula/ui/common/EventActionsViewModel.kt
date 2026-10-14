@@ -87,17 +87,11 @@ class EventActionsViewModel @Inject constructor(
         _deletePrompt.value = null
         viewModelScope.launch {
             val event = prompt.event
-            _failure.value = try {
-                repository.deleteEvent(event.eventId, event.start.toEpochMilliseconds(), scope)
-                null
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: SecurityException) {
-                EventActionFailure.WriteDenied
-            } catch (e: NoSuchEventException) {
-                EventActionFailure.Gone
-            } catch (e: Exception) {
-                EventActionFailure.DeleteFailed
+            _failure.value = when (repository.tryDeleteEvent(event.eventId, event.start.toEpochMilliseconds(), scope)) {
+                DeleteOutcome.Deleted -> null
+                DeleteOutcome.Gone -> EventActionFailure.Gone
+                DeleteOutcome.NeedsPermission -> EventActionFailure.WriteDenied
+                DeleteOutcome.Failed -> EventActionFailure.DeleteFailed
             }
         }
     }

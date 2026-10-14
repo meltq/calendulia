@@ -148,13 +148,16 @@ class SettingsViewModel @Inject constructor(
                     prefs.softenCalendarColors,
                     combine(
                         prefs.todayButtonInToolbar,
-                        prefs.dragToReschedule,
+                        combine(prefs.dragToReschedule, prefs.tapOpensEditor, ::Pair),
                         prefs.multiDayCount,
                         ::Triple,
                     ),
-                ) { hourLines, weekNumbers, showToday, soften, (todayInToolbar, dragToMove, multiDay) ->
+                ) { hourLines, weekNumbers, showToday, soften, (todayInToolbar, gestures, multiDay) ->
                     DisplayToggles(
-                        hourLines, weekNumbers, showToday, soften, todayInToolbar, dragToMove, multiDay,
+                        hourLines, weekNumbers, showToday, soften, todayInToolbar,
+                        dragToReschedule = gestures.first,
+                        tapOpensEditor = gestures.second,
+                        multiDayCount = multiDay,
                     )
                 },
             ) { view, screenRange, widgetRange, timeFormat, toggles ->
@@ -166,6 +169,7 @@ class SettingsViewModel @Inject constructor(
                     softenColors = toggles.softenColors,
                     todayButtonInToolbar = toggles.todayButtonInToolbar,
                     dragToReschedule = toggles.dragToReschedule,
+                    tapOpensEditor = toggles.tapOpensEditor,
                     multiDayCount = toggles.multiDayCount,
                 )
             },
@@ -202,6 +206,7 @@ class SettingsViewModel @Inject constructor(
                 softenColors = views.softenColors,
                 todayButtonInToolbar = views.todayButtonInToolbar,
                 dragToReschedule = views.dragToReschedule,
+                tapOpensEditor = views.tapOpensEditor,
                 multiDayCount = views.multiDayCount,
                 agendaShowRangeBar = misc.showRangeBar,
                 autofocusEventTitle = misc.autofocusEventTitle,
@@ -305,6 +310,7 @@ class SettingsViewModel @Inject constructor(
         val softenColors: Boolean,
         val todayButtonInToolbar: Boolean,
         val dragToReschedule: Boolean,
+        val tapOpensEditor: Boolean,
         val multiDayCount: Int,
     )
 
@@ -315,6 +321,7 @@ class SettingsViewModel @Inject constructor(
         val softenColors: Boolean,
         val todayButtonInToolbar: Boolean,
         val dragToReschedule: Boolean,
+        val tapOpensEditor: Boolean,
         val multiDayCount: Int,
     )
 
@@ -560,6 +567,10 @@ class SettingsViewModel @Inject constructor(
 
     fun setDragToReschedule(enabled: Boolean) {
         viewModelScope.launch { prefs.setDragToReschedule(enabled) }
+    }
+
+    fun setTapOpensEditor(enabled: Boolean) {
+        viewModelScope.launch { prefs.setTapOpensEditor(enabled) }
     }
 
     /**

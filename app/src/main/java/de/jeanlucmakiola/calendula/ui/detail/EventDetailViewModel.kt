@@ -12,7 +12,8 @@ import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.toDuplicateForm
-import de.jeanlucmakiola.calendula.ui.common.deleteEvent
+import de.jeanlucmakiola.calendula.ui.common.DeleteOutcome
+import de.jeanlucmakiola.calendula.ui.common.tryDeleteEvent
 import de.jeanlucmakiola.calendula.ui.common.stageEventShare
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
@@ -111,15 +112,11 @@ class EventDetailViewModel @Inject constructor(
         if (_deleteState.value == DeleteUiState.Deleting) return
         viewModelScope.launch {
             _deleteState.value = DeleteUiState.Deleting
-            _deleteState.value = try {
-                repository.deleteEvent(target.eventId, target.beginMillis, scope)
-                DeleteUiState.Deleted
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: SecurityException) {
-                DeleteUiState.NeedsPermission
-            } catch (e: Exception) {
-                DeleteUiState.Failed
+            // Already gone is what a delete wants anyway.
+            _deleteState.value = when (repository.tryDeleteEvent(target.eventId, target.beginMillis, scope)) {
+                DeleteOutcome.Deleted, DeleteOutcome.Gone -> DeleteUiState.Deleted
+                DeleteOutcome.NeedsPermission -> DeleteUiState.NeedsPermission
+                DeleteOutcome.Failed -> DeleteUiState.Failed
             }
         }
     }
