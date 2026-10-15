@@ -79,4 +79,11 @@
     <string name="settings_theme">テーマ</string>
     <string name="settings_theme_system">システム</string>
     <string name="settings_dynamic_color">ダイナミックカラー</string>
+    <string name="view_agenda">予定リスト</string>
+    <string name="agenda_header_today">今日</string>
+    <string name="agenda_header_tomorrow">明日</string>
+    <string name="widget_agenda_label">Calendula 予定リスト</string>
+    <string name="settings_agenda_header">予定リスト</string>
+    <string name="settings_agenda_range">予定リストの範囲</string>
+    <string name="settings_section_appearance">外観</string>
 </resources>
