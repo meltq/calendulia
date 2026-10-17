@@ -86,4 +86,17 @@
     <string name="settings_agenda_header">予定リスト</string>
     <string name="settings_agenda_range">予定リストの範囲</string>
     <string name="settings_section_appearance">外観</string>
+    <string name="state_failure_unknown">問題が発生しました。</string>
+    <string name="state_failure_permission_body">Calendula はシステムのカレンダーから直接予定を読み取るため、予定を表示するにはカレンダーへのアクセスが必要です。</string>
+    <string name="state_failure_permission_action">アクセスを許可</string>
+    <string name="state_failure_no_calendars">カレンダーが設定されていません。</string>
+    <string name="state_failure_no_calendars_body">このデバイスにカレンダーアカウントを追加すると、そのカレンダーがここに表示されます。</string>
+    <string name="state_failure_no_calendars_action">システムのカレンダー設定を開く</string>
+    <string name="state_failure_all_hidden">すべてのカレンダーがオフになっています。</string>
+    <string name="state_failure_all_hidden_body">予定を表示するには、少なくとも 1 つのカレンダーを再度有効にしてください。</string>
+    <string name="state_failure_all_hidden_action">カレンダーの管理</string>
+    <string name="state_failure_no_import_target">新しい予定を追加できるカレンダーがありません。</string>
+    <string name="state_failure_provider">カレンダーを読み込めませんでした。</string>
+    <string name="event_move_failed">予定を移動できませんでした</string>
+    <string name="event_edit_save_failed">予定を保存できませんでした</string>
 </resources>
