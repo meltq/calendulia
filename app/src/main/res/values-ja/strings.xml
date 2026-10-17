@@ -99,4 +99,12 @@
     <string name="state_failure_provider">カレンダーを読み込めませんでした。</string>
     <string name="event_move_failed">予定を移動できませんでした</string>
     <string name="event_edit_save_failed">予定を保存できませんでした</string>
+    <string name="month_a11y_today_prefix">今日</string>
+    <string name="day_today_action">今日</string>
+    <string name="settings_time_format_auto">自動</string>
+    <string name="agenda_range_day">今日</string>
+    <string name="agenda_range_custom_hint">日</string>
+    <string name="dialog_save">保存</string>
+    <string name="calendars_description_label">説明</string>
+    <string name="special_dates_calendar_birthday">誕生日</string>
 </resources>
