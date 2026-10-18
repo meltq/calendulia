@@ -107,4 +107,10 @@
     <string name="dialog_save">保存</string>
     <string name="calendars_description_label">説明</string>
     <string name="special_dates_calendar_birthday">誕生日</string>
+    <string name="reminder_day_today">今日</string>
+    <string name="agenda_today_action">今日</string>
+    <string name="widget_today">今日</string>
+    <plurals name="duration_minutes">
+        <item quantity="other">分</item>
+    </plurals>
 </resources>
