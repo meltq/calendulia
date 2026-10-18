@@ -114,4 +114,6 @@
         <item quantity="other">%d分</item>
     </plurals>
     <string name="reminder_day_tomorrow">明日</string>
+    <string name="state_failure_no_import_target_body">有効になっているカレンダーが読み取り専用であるか、別のアプリによって管理されているか、またはこのデバイスに同期されていません。予定を追加できるカレンダーを有効にするか、ローカルのカレンダーを追加してください。</string>
+    <string name="state_failure_event_not_found">この予定はすでに存在しません。</string>
 </resources>
