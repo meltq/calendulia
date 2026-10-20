@@ -23,6 +23,8 @@ It works on top of the system calendar and has no network access.</p>
 <a href="https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://codeberg.org/jlmakiola/calendula"><img src="https://github.com/ImranR98/Obtainium/blob/main/assets/graphics/badge_obtainium.png?raw=true" alt="Get it on Obtainium" height="56"></a>
 &nbsp;
 <a href="https://ko-fi.com/jeanlucmakiola"><img src="https://storage.ko-fi.com/cdn/brandasset/v2/support_me_on_kofi_badge_beige.png" alt="Support me on Ko-fi" height="56"></a>
+&nbsp;
+<a href="https://liberapay.com/Jean-Luc_Makiola/donate"><img src="https://liberapay.com/assets/widgets/donate.svg" alt="Donate using Liberapay" height="56"></a>
 </p>
 
 <p>
@@ -202,6 +204,13 @@ anywhere. Your events stay in Android's own calendar store.
 
 [Privacy policy](https://jeanlucmakiola.de/calendula/privacy), written in
 [`docs/PRIVACY.md`](docs/PRIVACY.md), which is what that page renders.
+
+## Support
+
+Calendula is free and has no ads. If you'd like to support its development,
+you can tip once on [Ko-fi](https://ko-fi.com/jeanlucmakiola) or donate
+regularly on [Liberapay](https://liberapay.com/Jean-Luc_Makiola/donate). Both
+are linked in the app under *Settings → Support development*.
 
 ## License
 

@@ -15,6 +15,7 @@ import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Autorenew
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Cake
@@ -23,6 +24,7 @@ import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.Favorite
 import androidx.compose.material.icons.filled.Gavel
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.LocalCafe
 import androidx.compose.material.icons.filled.Notifications
 import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PrivacyTip
@@ -56,6 +58,7 @@ import de.jeanlucmakiola.calendula.ui.common.rememberCalendarSlideSpec
 import de.jeanlucmakiola.calendula.ui.licences.LicencesScreen
 import de.jeanlucmakiola.floret.components.AboutCard
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
+import de.jeanlucmakiola.floret.components.FullScreenPicker
 import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.OptionPicker
@@ -392,17 +395,46 @@ private fun AboutCard() {
     )
 }
 
-/** "Support development", as the closing row of the About card's group. */
+/**
+ * "Support development", as the closing row of the About card's group. Opens a
+ * picker of the donation platforms.
+ */
 @Composable
 private fun SupportRow() {
     val context = LocalContext.current
-    val url = stringResource(R.string.about_support_url)
+    var showPicker by rememberSaveable { mutableStateOf(false) }
+
     GroupedRow(
         title = stringResource(R.string.settings_about_support),
         position = Position.Bottom,
         leading = { CategoryIcon(Icons.Default.Favorite, ChipAccent.Primary) },
-        onClick = { openUrl(context, url) },
+        onClick = { showPicker = true },
     )
+
+    if (showPicker) {
+        val kofiUrl = stringResource(R.string.about_support_kofi_url)
+        val liberapayUrl = stringResource(R.string.about_support_liberapay_url)
+        FullScreenPicker(
+            title = stringResource(R.string.settings_about_support),
+            onDismiss = { showPicker = false },
+            predictiveBack = true,
+        ) {
+            GroupedRow(
+                title = stringResource(R.string.settings_support_kofi),
+                summary = stringResource(R.string.settings_support_kofi_hint),
+                position = Position.Top,
+                leading = { CategoryIcon(Icons.Default.LocalCafe, ChipAccent.Primary) },
+                onClick = { openUrl(context, kofiUrl) },
+            )
+            GroupedRow(
+                title = stringResource(R.string.settings_support_liberapay),
+                summary = stringResource(R.string.settings_support_liberapay_hint),
+                position = Position.Bottom,
+                leading = { CategoryIcon(Icons.Default.Autorenew, ChipAccent.Primary) },
+                onClick = { openUrl(context, liberapayUrl) },
+            )
+        }
+    }
 }
 
 /**
