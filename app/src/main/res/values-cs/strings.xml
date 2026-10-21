@@ -439,7 +439,7 @@
     <string name="settings_month_header">Měsíční zobrazení</string>
     <string name="settings_month_view_style">Styl měsíčního zobrazení</string>
     <string name="month_style_paged">Stránky</string>
-    <string name="month_style_paged_summary">Na obrazovce se zobrazuje jeden měsíc. Přejetím prstem doleva nebo doprava můžete změnit měsíc.</string>
+    <string name="month_style_paged_summary">Na obrazovce se zobrazuje jeden měsíc. Přejetím prstem doleva nebo doprava můžete změnit měsíc, přejetím prstem nahoru zobrazíte měsíční přehled.</string>
     <string name="month_style_continuous">Posouvání měsíců</string>
     <string name="month_style_continuous_summary">Každý měsíc je zobrazen pod vlastním nadpisem, od následujícího je oddělen malou mezerou.</string>
     <string name="month_style_dense">Nepřerušené týdny</string>
@@ -753,4 +753,15 @@
     <string name="settings_multi_day_count">Vícedenní zobrazení</string>
     <string name="settings_multi_day_count_hint">Počet dní zobrazujících se ve vícedenním přehledu vedle sebe. Dnešek se otevírá v prvním sloupci.</string>
     <string name="settings_timeline_scale_by_visible_hours">Nastaveno v části Viditelné hodiny</string>
+    <string name="settings_visible_hours">Viditelné hodiny</string>
+    <string name="settings_visible_hours_summary">Při otevření týdenního, vícedenního nebo denního zobrazení se rozsah hodin přizpůsobí obrazovce</string>
+    <string name="settings_visible_hours_on_summary">%1$s – %2$s vyplní obrazovku při otevření zobrazení</string>
+    <string name="settings_visible_hours_start">Od</string>
+    <string name="settings_visible_hours_end">Do</string>
+    <string name="settings_visible_hours_start_hint">Čas zobrazený v horní části obrazovky při otevření týdenního, vícedenního nebo denního přehledu. Předchozí časy lze zobrazit posunutím obrazovky.</string>
+    <string name="settings_visible_hours_end_hint">Hodina v dolní části obrazovky v okamžiku, kdy se otevře zobrazení. Další hodiny se zobrazí skrolováním, přiblížením prstů se obraz dočasně zvětší.</string>
+    <string name="settings_support_kofi">Ko-fi</string>
+    <string name="settings_support_kofi_hint">Jednorázové příspěvky</string>
+    <string name="settings_support_liberapay">Liberapay</string>
+    <string name="settings_support_liberapay_hint">Pravidelné příspěvky</string>
 </resources>
