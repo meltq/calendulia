@@ -10,7 +10,8 @@ import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesScheduler
 import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesSyncWorker
 import de.jeanlucmakiola.calendula.data.reminders.ReminderMaintenanceScheduler
 import de.jeanlucmakiola.calendula.data.reminders.ReminderMaintenanceWorker
-import de.jeanlucmakiola.calendula.widget.WidgetRolloverScheduler
+import de.jeanlucmakiola.calendula.widget.syncWidgetRollover
+import de.jeanlucmakiola.calendula.widget.widgetEntryPoint
 import de.jeanlucmakiola.floret.crash.CrashConfig
 import de.jeanlucmakiola.floret.crash.CrashReporter
 import kotlinx.coroutines.CoroutineScope
@@ -48,6 +49,7 @@ class CalendulaApp : Application() {
         reconcileCalendarVisibility()
         startReminderDelivery()
         reconcileWidgetRollover()
+        widgetEntryPoint().widgetRefreshCoordinator().start()
     }
 
     /**
@@ -58,7 +60,7 @@ class CalendulaApp : Application() {
      */
     private fun reconcileWidgetRollover() {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            WidgetRolloverScheduler.sync(this@CalendulaApp)
+            syncWidgetRollover(this@CalendulaApp)
         }
     }
 

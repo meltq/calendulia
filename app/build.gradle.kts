@@ -181,6 +181,7 @@ dependencies {
     implementation("de.jeanlucmakiola.floret:core-android")
     implementation("de.jeanlucmakiola.floret:identity")
     implementation("de.jeanlucmakiola.floret:components")
+    implementation("de.jeanlucmakiola.floret:glance")
     implementation(libs.kotlinx.coroutines.core)
 
     debugImplementation(libs.androidx.ui.tooling)

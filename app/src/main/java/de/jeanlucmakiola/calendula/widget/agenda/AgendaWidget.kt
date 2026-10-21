@@ -5,16 +5,9 @@ import de.jeanlucmakiola.calendula.widget.glanceDeclinedDecoration
 import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
-import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.booleanPreferencesKey
-import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
@@ -33,8 +26,6 @@ import androidx.glance.appwidget.lazy.LazyColumn
 import androidx.glance.appwidget.lazy.items
 import androidx.glance.appwidget.provideContent
 import androidx.glance.background
-import androidx.glance.currentState
-import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
@@ -53,15 +44,11 @@ import androidx.glance.text.TextStyle
 import de.jeanlucmakiola.calendula.MainActivity
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
-import de.jeanlucmakiola.calendula.data.prefs.parsePastEventDisplay
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.hasEnded
-import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaTimeLabel
 import de.jeanlucmakiola.calendula.ui.agenda.agendaTimeLabel
 import de.jeanlucmakiola.calendula.ui.agenda.anchorTodayIfMissing
-import de.jeanlucmakiola.calendula.ui.agenda.dayCount
-import de.jeanlucmakiola.calendula.ui.agenda.parseAgendaRange
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.ui.common.formatTimeOfDay
@@ -72,6 +59,9 @@ import de.jeanlucmakiola.calendula.widget.AgendaWidgetData
 import de.jeanlucmakiola.calendula.widget.CalendulaGlanceTheme
 import de.jeanlucmakiola.calendula.widget.WidgetSize
 import de.jeanlucmakiola.calendula.widget.loadAgendaWidgetData
+import de.jeanlucmakiola.calendula.widget.redrawWidgets
+import de.jeanlucmakiola.floret.glance.currentRefreshStamp
+import de.jeanlucmakiola.floret.glance.rememberWidgetData
 import de.jeanlucmakiola.calendula.widget.systemZone
 import de.jeanlucmakiola.calendula.widget.today
 import kotlinx.datetime.DateTimeUnit
@@ -81,40 +71,6 @@ import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 import java.util.Locale
-
-/**
- * Per-instance Glance state key holding the agenda range (as [AgendaRange.storageValue]).
- * The range is read reactively in the composition ([currentState]) so a settings
- * change is reflected by plain recomposition — `updateAll` does NOT reliably
- * re-run the `provideGlance` preamble for a live widget session, so loading the
- * range there and slicing it would silently keep the stale value (mirrors the
- * month widget's MONTH_INDEX_KEY approach).
- */
-internal val AGENDA_RANGE_KEY = stringPreferencesKey("agenda_range")
-
-/**
- * Per-instance Glance state key holding the past-event display mode (as
- * [PastEventDisplay.name]). Read reactively in the composition for the same
- * reason as [AGENDA_RANGE_KEY] — so toggling the setting reflects on the live
- * widget without depending on the `provideGlance` preamble re-running.
- */
-internal val AGENDA_PAST_DISPLAY_KEY = stringPreferencesKey("agenda_past_display")
-
-/**
- * Per-instance Glance state key holding the "always show today" toggle (#35).
- * Read reactively in the composition for the same reason as [AGENDA_RANGE_KEY] —
- * so toggling the setting reflects on the live widget without depending on the
- * `provideGlance` preamble re-running.
- */
-internal val AGENDA_SHOW_TODAY_STATE_KEY = booleanPreferencesKey("agenda_show_today")
-
-/**
- * Per-instance Glance state key holding the chosen [WidgetSize]. Read reactively
- * in the composition for the same reason as [AGENDA_RANGE_KEY] — so changing the
- * setting reflects on the live widget without depending on the `provideGlance`
- * preamble re-running.
- */
-internal val AGENDA_SIZE_KEY = stringPreferencesKey("widget_size")
 
 /**
  * "Upcoming" agenda widget — a continuously scrolling list of the next ~30 days
@@ -132,11 +88,13 @@ class AgendaWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Single
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val stored = getAppWidgetState<Preferences>(context, id)[AGENDA_RANGE_KEY]
-        val data = context.loadAgendaWidgetData(stored?.let { parseAgendaRange(it, AgendaRange.Month) })
+        val initial = context.loadAgendaWidgetData()
         val dark = (context.resources.configuration.uiMode and
             Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         provideContent {
+            // A running session never re-runs this preamble, so every redraw
+            // moves the stamp and the data reloads here instead (#420).
+            val data by rememberWidgetData(initial, currentRefreshStamp()) { context.loadAgendaWidgetData() }
             CalendulaGlanceTheme {
                 AgendaWidgetBody(data = data, dark = dark)
             }
@@ -144,16 +102,10 @@ class AgendaWidget : GlanceAppWidget() {
     }
 }
 
-/**
- * Redraws the widget (header refresh button). Targets the tapped widget's own id
- * rather than `updateAll`, whose provider-name lookup is empty in a process a tap
- * woke from cold — see `ShiftMonthAction` (#18). A cold process re-reads the
- * calendar in the `provideGlance` preamble; a live session only recomposes from
- * the snapshot it already has (see [AGENDA_RANGE_KEY]).
- */
+/** Reloads and redraws the widgets (header refresh button). */
 class RefreshAgendaAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        AgendaWidget().update(context.applicationContext, glanceId)
+        redrawWidgets(context.applicationContext)
     }
 }
 
@@ -176,14 +128,9 @@ private sealed interface AgendaRow {
 
 @Composable
 private fun AgendaWidgetBody(data: AgendaWidgetData, dark: Boolean) {
-    // Read reactively from per-instance Glance state, falling back to the saved
-    // pref for a freshly placed widget (#103, #51).
-    // The stripe is then re-resolved against the system font scale so it tracks the
+    // The stripe is re-resolved against the system font scale so it tracks the
     // sp-sized text beside it instead of drifting at large accessibility settings.
-    val savedSize = (data as? AgendaWidgetData.Ready)?.savedWidgetSize ?: WidgetSize.SMALL
-    val size = currentState(AGENDA_SIZE_KEY)
-        ?.let { stored -> WidgetSize.entries.firstOrNull { it.name == stored } }
-        ?: savedSize
+    val size = (data as? AgendaWidgetData.Ready)?.widgetSize ?: WidgetSize.SMALL
     val fontScale = androidx.glance.LocalContext.current.resources.configuration.fontScale
     val metrics = metricsFor(size).scaledForFont(fontScale)
     Column(
@@ -196,27 +143,7 @@ private fun AgendaWidgetBody(data: AgendaWidgetData, dark: Boolean) {
         Spacer(GlanceModifier.height(4.dp))
         when (data) {
             AgendaWidgetData.NeedsPermission -> WidgetMessage(R.string.widget_needs_permission, metrics)
-            is AgendaWidgetData.Ready -> {
-                // Range read reactively from per-instance Glance state (falls back
-                // to the saved pref for a freshly placed widget), then the loaded
-                // window is sliced to it — pure recomposition.
-                val range = parseAgendaRange(currentState(AGENDA_RANGE_KEY), data.savedRange)
-                val context = androidx.glance.LocalContext.current
-                var loaded by remember(data) { mutableStateOf<AgendaWidgetData.Ready>(data) }
-                // A range wider than what was loaded reloads in a live session,
-                // where provideGlance doesn't run again (#363).
-                LaunchedEffect(range) {
-                    val end = loaded.today.plus(
-                        range.dayCount(loaded.today, loaded.weekStart) - 1,
-                        DateTimeUnit.DAY,
-                    )
-                    if (end > loaded.loadedThrough) {
-                        (context.loadAgendaWidgetData(range) as? AgendaWidgetData.Ready)
-                            ?.let { loaded = it }
-                    }
-                }
-                AgendaRows(data = loaded, range = range, dark = dark, metrics = metrics)
-            }
+            is AgendaWidgetData.Ready -> AgendaRows(data = data, dark = dark, metrics = metrics)
         }
     }
 }
@@ -224,24 +151,16 @@ private fun AgendaWidgetBody(data: AgendaWidgetData, dark: Boolean) {
 @Composable
 private fun AgendaRows(
     data: AgendaWidgetData.Ready,
-    range: AgendaRange,
     dark: Boolean,
     metrics: AgendaMetrics,
 ) {
-    val pastDisplay =
-        parsePastEventDisplay(currentState(AGENDA_PAST_DISPLAY_KEY), data.savedPastDisplay)
-    val showToday = currentState(AGENDA_SHOW_TODAY_STATE_KEY) ?: data.savedShowToday
-    val rangeEnd = data.today.plus(
-        range.dayCount(data.today, data.weekStart) - 1,
-        DateTimeUnit.DAY,
-    )
-    // Slice to the chosen range, then drop finished events (and any day
-    // they leave empty) when the mode is Hide — so "Upcoming" really is.
-    // Finally re-anchor today (as an empty placeholder day) when the
-    // "always show today" pref is on and today has no events left (#35).
+    val pastDisplay = data.pastDisplay
+    // Drop finished events (and any day they leave empty) when the mode is
+    // Hide — so "Upcoming" really is. Then re-anchor today (as an empty
+    // placeholder day) when the "always show today" pref is on and today has
+    // no events left (#35).
     val visibleDays = anchorTodayIfMissing(
         days = data.days
-            .filter { it.date <= rangeEnd }
             .let { days ->
                 if (pastDisplay == PastEventDisplay.HIDE) {
                     days.mapNotNull { day ->
@@ -253,7 +172,7 @@ private fun AgendaRows(
                 }
             },
         today = data.today,
-        enabled = showToday,
+        enabled = data.showToday,
     )
     if (visibleDays.isEmpty()) {
         WidgetMessage(R.string.agenda_empty_title, metrics)

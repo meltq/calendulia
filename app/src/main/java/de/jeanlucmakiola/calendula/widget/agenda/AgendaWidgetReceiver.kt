@@ -4,7 +4,7 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
-import de.jeanlucmakiola.calendula.widget.WidgetRolloverScheduler
+import de.jeanlucmakiola.calendula.widget.syncWidgetRollover
 
 /**
  * Host-facing receiver for the agenda widget. Declared in the manifest with the
@@ -17,16 +17,16 @@ class AgendaWidgetReceiver : GlanceAppWidgetReceiver() {
     /** First agenda widget placed — start rolling "today" over at midnight (#228). */
     override fun onEnabled(context: Context) {
         super.onEnabled(context)
-        WidgetRolloverScheduler.sync(context)
+        syncWidgetRollover(context)
     }
 
     /**
-     * Last agenda widget removed. [WidgetRolloverScheduler.sync] cancels only if
+     * Last agenda widget removed. [syncWidgetRollover] cancels only if
      * no month widget is left either.
      */
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
-        WidgetRolloverScheduler.sync(context)
+        syncWidgetRollover(context)
     }
 
     /**
@@ -39,6 +39,6 @@ class AgendaWidgetReceiver : GlanceAppWidgetReceiver() {
         appWidgetIds: IntArray,
     ) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
-        WidgetRolloverScheduler.sync(context)
+        syncWidgetRollover(context)
     }
 }

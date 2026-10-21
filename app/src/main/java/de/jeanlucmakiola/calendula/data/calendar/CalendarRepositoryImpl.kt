@@ -87,6 +87,12 @@ class CalendarRepositoryImpl @Inject constructor(
         }
     }
 
+    override val changes: Flow<Unit> = merge(
+        ticks,
+        prefs.pendingDisabledCalendarIds.distinctUntilChanged().drop(1).map {},
+        prefs.hiddenCalendarIds.distinctUntilChanged().drop(1).map {},
+    )
+
     /**
      * Re-query signal for everything filtered by visibility: the provider's own
      * notifications, plus every change to the pending switch-off set.

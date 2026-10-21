@@ -3,9 +3,6 @@ package de.jeanlucmakiola.calendula.ui.settings
 import android.content.Context
 import android.net.Uri
 import android.os.Build
-import androidx.glance.appwidget.GlanceAppWidgetManager
-import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.appwidget.updateAll
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -42,7 +39,6 @@ import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
-import de.jeanlucmakiola.calendula.ui.agenda.storageValue
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.TimelineHours
 import de.jeanlucmakiola.calendula.ui.common.TimelineScale
@@ -50,12 +46,7 @@ import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
 import de.jeanlucmakiola.calendula.ui.theme.AppFontSettings
 import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
 import de.jeanlucmakiola.calendula.widget.WidgetSize
-import de.jeanlucmakiola.calendula.widget.agenda.AGENDA_PAST_DISPLAY_KEY
-import de.jeanlucmakiola.calendula.widget.agenda.AGENDA_RANGE_KEY
-import de.jeanlucmakiola.calendula.widget.agenda.AGENDA_SHOW_TODAY_STATE_KEY
-import de.jeanlucmakiola.calendula.widget.agenda.AGENDA_SIZE_KEY
-import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidget
-import de.jeanlucmakiola.calendula.widget.month.MonthWidget
+import de.jeanlucmakiola.calendula.widget.redrawWidgets
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -181,9 +172,16 @@ class SettingsViewModel @Inject constructor(
     private val _fontImportFailed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val fontImportFailed: SharedFlow<Unit> = _fontImportFailed
 
-    // Serialises widget redraws: concurrent updateAll calls coalesce around a
-    // stale read and can leave the widget on an intermediate value.
+    // Serialises widget redraws, so a quick run of setting changes lands in order.
     private val widgetRefreshMutex = Mutex()
+
+    /** Saves a setting the widgets draw with, then reloads them. */
+    private fun saveAndRedrawWidgets(block: suspend SettingsPrefs.() -> Unit) {
+        viewModelScope.launch {
+            prefs.block()
+            widgetRefreshMutex.withLock { redrawWidgets(appContext) }
+        }
+    }
 
     /** Contact special-dates sub-page (issue #15). */
     val specialDatesState: StateFlow<SpecialDatesUiState> = prefs.data.map { stored ->
@@ -267,16 +265,7 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicColor(enabled: Boolean) = save { setDynamicColor(enabled) }
 
-    fun setSoftenColors(enabled: Boolean) {
-        viewModelScope.launch {
-            prefs.setSoftenCalendarColors(enabled)
-            // Both widgets paint event colours through the same softener.
-            widgetRefreshMutex.withLock {
-                AgendaWidget().updateAll(appContext)
-                MonthWidget().updateAll(appContext)
-            }
-        }
-    }
+    fun setSoftenColors(enabled: Boolean) = saveAndRedrawWidgets { setSoftenCalendarColors(enabled) }
 
     fun setFont(role: FontRole, token: String) = save {
         when (role) {
@@ -304,70 +293,20 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setWeekStart(pref: WeekStartPref) {
-        viewModelScope.launch {
-            prefs.setWeekStart(pref)
-            // Both widgets depend on the week start (month weekday header; the
-            // agenda widget's "this week" range).
-            widgetRefreshMutex.withLock {
-                AgendaWidget().updateAll(appContext)
-                MonthWidget().updateAll(appContext)
-            }
-        }
-    }
+    fun setWeekStart(pref: WeekStartPref) = saveAndRedrawWidgets { setWeekStart(pref) }
 
     fun setAgendaScreenRange(range: AgendaRange) = save { setAgendaScreenRange(range) }
 
-    fun setAgendaWidgetRange(range: AgendaRange) {
-        viewModelScope.launch {
-            prefs.setAgendaWidgetRange(range)
-            widgetRefreshMutex.withLock {
-                // Push into each instance's Glance state and recompose:
-                // updateAll alone won't re-run provideGlance's data preamble.
-                val manager = GlanceAppWidgetManager(appContext)
-                manager.getGlanceIds(AgendaWidget::class.java).forEach { id ->
-                    updateAppWidgetState(appContext, id) { it[AGENDA_RANGE_KEY] = range.storageValue() }
-                }
-                AgendaWidget().updateAll(appContext)
-            }
-        }
-    }
+    fun setAgendaWidgetRange(range: AgendaRange) = saveAndRedrawWidgets { setAgendaWidgetRange(range) }
 
     fun setAgendaShowRangeBar(enabled: Boolean) = save { setAgendaShowRangeBar(enabled) }
 
-    /**
-     * Set the size the agenda widget draws its text at (#51), via the same
-     * Glance-state path as [setAgendaWidgetRange]. Agenda-only: the month widget
-     * sizes itself from the space it is given (#103).
-     */
-    fun setWidgetSize(size: WidgetSize) {
-        viewModelScope.launch {
-            prefs.setWidgetSize(size)
-            widgetRefreshMutex.withLock {
-                val manager = GlanceAppWidgetManager(appContext)
-                manager.getGlanceIds(AgendaWidget::class.java).forEach { id ->
-                    updateAppWidgetState(appContext, id) { it[AGENDA_SIZE_KEY] = size.name }
-                }
-                AgendaWidget().updateAll(appContext)
-            }
-        }
-    }
+    /** The size the agenda widget draws its text at (#51); the month widget sizes itself (#103). */
+    fun setWidgetSize(size: WidgetSize) = saveAndRedrawWidgets { setWidgetSize(size) }
 
-    fun setAgendaShowToday(enabled: Boolean) {
-        viewModelScope.launch {
-            prefs.setAgendaShowToday(enabled)
-            // Same Glance-state path as setPastEventDisplay.
-            widgetRefreshMutex.withLock {
-                val manager = GlanceAppWidgetManager(appContext)
-                manager.getGlanceIds(AgendaWidget::class.java).forEach { id ->
-                    updateAppWidgetState(appContext, id) { it[AGENDA_SHOW_TODAY_STATE_KEY] = enabled }
-                }
-                AgendaWidget().updateAll(appContext)
-            }
-        }
-    }
+    fun setAgendaShowToday(enabled: Boolean) = saveAndRedrawWidgets { setAgendaShowToday(enabled) }
 
-    fun setTimeFormat(pref: TimeFormatPref) = save { setTimeFormat(pref) }
+    fun setTimeFormat(pref: TimeFormatPref) = saveAndRedrawWidgets { setTimeFormat(pref) }
 
     fun setMultiDayCount(count: Int) = save { setMultiDayCount(count) }
 
@@ -396,19 +335,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setPastEventDisplay(mode: PastEventDisplay) {
-        viewModelScope.launch {
-            prefs.setPastEventDisplay(mode)
-            // Same Glance-state path as setAgendaWidgetRange.
-            widgetRefreshMutex.withLock {
-                val manager = GlanceAppWidgetManager(appContext)
-                manager.getGlanceIds(AgendaWidget::class.java).forEach { id ->
-                    updateAppWidgetState(appContext, id) { it[AGENDA_PAST_DISPLAY_KEY] = mode.name }
-                }
-                AgendaWidget().updateAll(appContext)
-            }
-        }
-    }
+    fun setPastEventDisplay(mode: PastEventDisplay) = saveAndRedrawWidgets { setPastEventDisplay(mode) }
 
     fun setDimCompletedEvents(enabled: Boolean) = save { setDimCompletedEvents(enabled) }
 

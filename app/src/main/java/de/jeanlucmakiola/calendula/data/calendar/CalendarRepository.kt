@@ -18,6 +18,10 @@ interface CalendarRepository {
 
     /** Re-query every open [calendars] / [instances] flow. */
     fun refresh()
+
+    /** Emits whenever [instances] would re-query: a provider change, an own write, or a visibility change. */
+    val changes: Flow<Unit>
+
     suspend fun eventDetail(eventId: Long): EventDetail
 
     /**

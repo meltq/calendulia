@@ -5,11 +5,7 @@ import de.jeanlucmakiola.calendula.widget.glanceDeclinedDecoration
 import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.Preferences
@@ -66,11 +62,12 @@ import de.jeanlucmakiola.calendula.ui.common.eventInk
 import de.jeanlucmakiola.calendula.widget.CalendulaGlanceTheme
 import de.jeanlucmakiola.calendula.widget.MonthWidgetSource
 import de.jeanlucmakiola.calendula.widget.loadMonthWidgetSource
+import de.jeanlucmakiola.calendula.widget.monthWindowCenter
+import de.jeanlucmakiola.floret.glance.currentRefreshStamp
+import de.jeanlucmakiola.floret.glance.rememberWidgetData
 import de.jeanlucmakiola.calendula.widget.monthIndexOf
 import de.jeanlucmakiola.calendula.widget.systemZone
 import de.jeanlucmakiola.calendula.widget.today
-import de.jeanlucmakiola.calendula.widget.widgetEntryPoint
-import kotlinx.coroutines.flow.first
 import androidx.compose.ui.unit.Dp
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -129,15 +126,20 @@ class MonthWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val shown = getAppWidgetState<Preferences>(context, id)[MONTH_INDEX_KEY]
-        val source = context.loadMonthWidgetSource(shown)
+            ?: currentMonthIndex(systemZone())
+        val initial = context.loadMonthWidgetSource(monthWindowCenter(shown))
         val dark = (context.resources.configuration.uiMode and
             Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
-        // Read fresh (not through the cached source) so toggling the softener
-        // redraws with the new choice; it's one cheap DataStore read.
-        val soften = context.widgetEntryPoint().settingsPrefs().softenCalendarColors.first()
         provideContent {
+            val index = currentState(MONTH_INDEX_KEY) ?: currentMonthIndex(systemZone())
+            // Reloads when paging leaves the loaded window, and on every redraw,
+            // which a running session would otherwise never see (#420).
+            val center = monthWindowCenter(index)
+            val source by rememberWidgetData(initial, center, currentRefreshStamp()) {
+                context.loadMonthWidgetSource(center)
+            }
             CalendulaGlanceTheme {
-                MonthWidgetBody(source = source, dark = dark, soften = soften)
+                MonthWidgetBody(source = source, index = index, dark = dark)
             }
         }
     }
@@ -188,7 +190,7 @@ class ResetMonthAction : ActionCallback {
 }
 
 @Composable
-private fun MonthWidgetBody(source: MonthWidgetSource, dark: Boolean, soften: Boolean) {
+private fun MonthWidgetBody(source: MonthWidgetSource, index: Int, dark: Boolean) {
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
@@ -202,32 +204,21 @@ private fun MonthWidgetBody(source: MonthWidgetSource, dark: Boolean, soften: Bo
             }
             is MonthWidgetSource.Ready -> {
                 val zone = systemZone()
-                val index = currentState(MONTH_INDEX_KEY) ?: currentMonthIndex(zone)
                 val ym = yearMonthOf(index)
-                // Paging past the loaded months reloads around the new one in a
-                // live session, where provideGlance doesn't run again.
-                val context = LocalContext.current
-                var loaded by remember(source) { mutableStateOf<MonthWidgetSource.Ready>(source) }
-                LaunchedEffect(index) {
-                    if (index !in loaded.months) {
-                        (context.loadMonthWidgetSource(index) as? MonthWidgetSource.Ready)
-                            ?.let { loaded = it }
-                    }
-                }
                 // Column width from the live widget size, minus our H padding.
                 val colW = (LocalSize.current.width - GRID_HPADDING * 2) / 7
-                val weeks = layoutMonthWeeks(ym, loaded.weekStart, loaded.instances, zone)
+                val weeks = layoutMonthWeeks(ym, source.weekStart, source.instances, zone)
 
-                MonthHeader(label = monthLabel(ym, loaded.today.year))
+                MonthHeader(label = monthLabel(ym, source.today.year))
                 Spacer(GlanceModifier.height(2.dp))
-                WeekdayHeader(weekStart = loaded.weekStart, colW = colW)
+                WeekdayHeader(weekStart = source.weekStart, colW = colW)
                 weeks.forEach { week ->
                     WeekRow(
                         week = week,
                         currentMonth = ym.month,
-                        today = loaded.today,
+                        today = source.today,
                         dark = dark,
-                        soften = soften,
+                        soften = source.soften,
                         colW = colW,
                         modifier = GlanceModifier.defaultWeight(),
                     )
