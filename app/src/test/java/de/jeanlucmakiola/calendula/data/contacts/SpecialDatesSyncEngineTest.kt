@@ -1,12 +1,10 @@
 package de.jeanlucmakiola.calendula.data.contacts
 
 import android.provider.CalendarContract
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.datastore.preferences.core.Preferences
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
 import de.jeanlucmakiola.calendula.data.calendar.ManagedEventRow
+import de.jeanlucmakiola.calendula.testSettings
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.contacts.ContactSpecialDate
@@ -37,13 +35,6 @@ class SpecialDatesSyncEngineTest {
         }
     }
 
-    private fun prefs(tempDir: Path): SettingsPrefs {
-        val store: DataStore<Preferences> = PreferenceDataStoreFactory.create(
-            produceFile = { tempDir.resolve("settings_test.preferences_pb").toFile() },
-        )
-        return SettingsPrefs(store)
-    }
-
     private fun birthday(key: String, name: String, month: Int, day: Int, year: Int?) =
         ContactSpecialDate(key, name, SpecialDateType.Birthday, month, day, year)
 
@@ -53,7 +44,7 @@ class SpecialDatesSyncEngineTest {
         calendars: FakeCalendarDataSource = FakeCalendarDataSource(),
         enabled: Boolean = true,
     ): Pair<SpecialDatesSyncEngine, SettingsPrefs> {
-        val settings = prefs(tempDir)
+        val settings = testSettings(tempDir)
         if (enabled) settings.setSpecialDatesEnabled(true)
         return SpecialDatesSyncEngine(contacts, calendars, settings, FakeSpec()) to settings
     }

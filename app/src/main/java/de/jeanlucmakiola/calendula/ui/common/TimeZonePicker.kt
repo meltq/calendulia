@@ -1,6 +1,5 @@
 package de.jeanlucmakiola.calendula.ui.common
 
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -39,11 +38,10 @@ import de.jeanlucmakiola.calendula.domain.timeZoneOptionOf
 import de.jeanlucmakiola.calendula.domain.timeZoneOptions
 import de.jeanlucmakiola.calendula.domain.zoneDescriptor
 import de.jeanlucmakiola.floret.components.FullScreenPicker
-import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.components.InlineTextField
 import de.jeanlucmakiola.floret.components.Position
-import de.jeanlucmakiola.floret.components.SelectedCheck
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.floret.locale.currentLocale
 import kotlinx.coroutines.Dispatchers
@@ -118,19 +116,14 @@ fun TimeZonePickerDialog(
                         title = stringResource(R.string.event_edit_timezone_device),
                         summary = deviceSummary,
                         position = Position.Alone,
-                        selected = selected == null,
+                        checked = selected == null,
                         leading = { Icon(Icons.Default.Public, contentDescription = null) },
-                        trailing = if (selected == null) {
-                            { SelectedCheck() }
-                        } else {
-                            null
-                        },
                         onClick = { choose(null) },
                     )
                 }
                 if (recentZones.isNotEmpty()) {
                     item(key = "recent_header") {
-                        SectionHeader(stringResource(R.string.event_edit_timezone_recent))
+                        GroupedSectionHeader(stringResource(R.string.event_edit_timezone_recent))
                     }
                     itemsIndexed(
                         items = recentZones,
@@ -145,7 +138,7 @@ fun TimeZonePickerDialog(
                     }
                 }
                 item(key = "all_header") {
-                    SectionHeader(stringResource(R.string.event_edit_timezone_all))
+                    GroupedSectionHeader(stringResource(R.string.event_edit_timezone_all))
                 }
             }
 
@@ -234,23 +227,6 @@ private fun SearchField(
     }
 }
 
-/** A small primary-coloured group label, matching the settings screens. */
-@Composable
-private fun SectionHeader(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(
-            start = GroupedListInset,
-            end = GroupedListInset,
-            top = 16.dp,
-            bottom = 4.dp,
-        ),
-    )
-}
-
-
 @Composable
 private fun ZoneRow(
     zone: TimeZoneOption,
@@ -262,12 +238,7 @@ private fun ZoneRow(
         title = zone.label,
         summary = zoneDescriptor(zone),
         position = position,
-        selected = selected,
-        trailing = if (selected) {
-            { SelectedCheck() }
-        } else {
-            null
-        },
+        checked = selected,
         onClick = onClick,
     )
 }

@@ -10,17 +10,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.FolderOpen
 import androidx.compose.material.icons.filled.Schedule
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.floret.components.BenefitRow
+import de.jeanlucmakiola.floret.components.OnboardingPrimaryButton
 import de.jeanlucmakiola.floret.components.OnboardingScaffold
 import de.jeanlucmakiola.floret.components.OnboardingSpace
 
@@ -53,15 +50,10 @@ internal fun BackupStep(
         topSpacing = OnboardingSpace.lg,
         hero = { IconHero(Icons.Filled.CloudOff) },
         actions = {
-            Button(
+            OnboardingPrimaryButton(
+                text = stringResource(R.string.onboarding_backup_enable_button),
                 onClick = { runCatching { pickFolder.launch(null) } },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.onboarding_backup_enable_button),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
+            )
             TextButton(
                 onClick = onSkip,
                 modifier = Modifier.fillMaxWidth(),
@@ -69,20 +61,9 @@ internal fun BackupStep(
                 Text(stringResource(R.string.onboarding_backup_skip_button))
             }
         },
+        headline = stringResource(R.string.onboarding_backup_title),
+        supporting = stringResource(R.string.onboarding_backup_body),
     ) {
-        Text(
-            text = stringResource(R.string.onboarding_backup_title),
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = stringResource(R.string.onboarding_backup_body),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-
         Spacer(Modifier.height(OnboardingSpace.lg))
 
         BenefitRow(

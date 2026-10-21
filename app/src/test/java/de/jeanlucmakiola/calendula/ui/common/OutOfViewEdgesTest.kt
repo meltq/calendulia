@@ -1,26 +1,15 @@
 package de.jeanlucmakiola.calendula.ui.common
 
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.testEvent
 import de.jeanlucmakiola.calendula.ui.week.TimedBlock
-import kotlin.time.Instant
 import org.junit.jupiter.api.Test
 
 /** Which events a column's edge bars point at, and where a tap scrolls (#188). */
 class OutOfViewEdgesTest {
 
     private fun block(id: Long, startMin: Int, endMin: Int) = TimedBlock(
-        event = EventInstance(
-            instanceId = id,
-            eventId = id,
-            calendarId = 1L,
-            title = "Event $id",
-            start = Instant.fromEpochMilliseconds(0),
-            end = Instant.fromEpochMilliseconds(0),
-            isAllDay = false,
-            color = 0xFF112233.toInt(),
-            location = null,
-        ),
+        event = testEvent(id = id, title = "Event $id", color = 0xFF112233.toInt()),
         startMin = startMin,
         endMin = endMin,
         lane = 0,

@@ -5,7 +5,6 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.ics.IcsImporter
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventForm
@@ -15,6 +14,7 @@ import de.jeanlucmakiola.calendula.domain.ics.IcsParser
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.toEventForm
 import de.jeanlucmakiola.calendula.domain.isEventTarget
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow

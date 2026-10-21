@@ -34,7 +34,6 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.Position
-import de.jeanlucmakiola.floret.components.SelectedCheck
 
 /**
  * The app's single "which calendar" selection list, shared by the event editor
@@ -114,17 +113,11 @@ private fun CalendarPickerGroup(
         leading = leading,
     )
     calendars.forEachIndexed { index, calendar ->
-        val isSelected = calendar.id == selectedId
         GroupedRow(
-            title = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
+            title = calendar.displayName.orUnnamed(),
             position = if (index == calendars.lastIndex) Position.Bottom else Position.Middle,
-            selected = isSelected,
+            checked = calendar.id == selectedId,
             leading = { CalendarColorChip(calendar.color) },
-            trailing = if (isSelected) {
-                { SelectedCheck() }
-            } else {
-                null
-            },
             onClick = { onSelect(calendar.id) },
         )
     }

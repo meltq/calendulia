@@ -1,29 +1,23 @@
 package de.jeanlucmakiola.calendula.ui.search
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.data.calendar.CalendarRepositoryImpl
+import de.jeanlucmakiola.calendula.MainDispatcherExtension
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
-import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
-import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.CalendarSource
-import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
-import kotlinx.coroutines.CoroutineDispatcher
+import de.jeanlucmakiola.calendula.testEvent
+import de.jeanlucmakiola.calendula.testPrefs
+import de.jeanlucmakiola.calendula.testRepository
+import de.jeanlucmakiola.calendula.testSettings
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.RegisterExtension
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.time.Instant
@@ -35,10 +29,9 @@ import kotlin.time.Instant
 @OptIn(ExperimentalCoroutinesApi::class)
 class SearchViewModelTest {
 
-    private val dispatcher = UnconfinedTestDispatcher()
-
-    @BeforeEach fun setUp() = Dispatchers.setMain(dispatcher)
-    @AfterEach fun tearDown() = Dispatchers.resetMain()
+    @JvmField @RegisterExtension
+    val mainDispatcher = MainDispatcherExtension()
+    private val dispatcher = mainDispatcher.dispatcher
 
     private val begin = 1_800_000_000_000L
 
@@ -53,28 +46,20 @@ class SearchViewModelTest {
         recurring: Boolean = false,
         startMillis: Long = begin,
     ) = SearchCandidate(
-        EventInstance(
-            instanceId = id, eventId = id, calendarId = calendarId, title = "Standup $id",
+        testEvent(
+            id = id, calendarId = calendarId, title = "Standup $id",
             start = Instant.fromEpochMilliseconds(startMillis),
             end = Instant.fromEpochMilliseconds(startMillis + 3_600_000L),
-            isAllDay = false, color = 0xFF000000.toInt(), location = null, isRecurring = recurring,
+            color = 0xFF000000.toInt(), isRecurring = recurring,
         ),
     )
 
     private fun viewModel(tempDir: Path, fake: FakeCalendarDataSource): SearchViewModel {
-        val prefs = CalendarPrefs(
-            PreferenceDataStoreFactory.create(
-                scope = CoroutineScope(dispatcher),
-                produceFile = { tempDir.resolve("search_prefs.preferences_pb").toFile() },
-            ),
+        val repo = testRepository(
+            fake, tempDir, dispatcher,
+            prefs = testPrefs(tempDir, CoroutineScope(dispatcher)),
+            settings = testSettings(tempDir, CoroutineScope(dispatcher)),
         )
-        val settings = SettingsPrefs(
-            PreferenceDataStoreFactory.create(
-                scope = CoroutineScope(dispatcher),
-                produceFile = { tempDir.resolve("search_settings.preferences_pb").toFile() },
-            ),
-        )
-        val repo = CalendarRepositoryImpl(fake, prefs, settings, dispatcher as CoroutineDispatcher)
         return SearchViewModel(repo, dispatcher)
     }
 

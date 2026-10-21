@@ -166,6 +166,17 @@ data class EventDetail(
 )
 
 /**
+ * This event on one occurrence's times. The Events row holds the series start,
+ * so a recurring event needs the tapped occurrence pinned to render and share right.
+ */
+fun EventDetail.atOccurrence(beginMillis: Long, endMillis: Long): EventDetail = copy(
+    instance = instance.copy(
+        start = Instant.fromEpochMilliseconds(beginMillis),
+        end = Instant.fromEpochMilliseconds(endMillis),
+    ),
+)
+
+/**
  * One selectable event colour published by a calendar's account
  * (`CalendarContract.Colors`, `TYPE_EVENT`): [key] is the account-scoped
  * `COLOR_KEY` written as `EVENT_COLOR_KEY` (so the colour survives sync),

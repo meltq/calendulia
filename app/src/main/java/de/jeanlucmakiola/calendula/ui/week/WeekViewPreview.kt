@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.week
 
+import de.jeanlucmakiola.calendula.ui.common.startOfWeek
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -7,9 +8,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
-import de.jeanlucmakiola.calendula.ui.common.ScaledViewPreview
 import de.jeanlucmakiola.calendula.ui.common.rememberTimelineDragController
 import de.jeanlucmakiola.calendula.ui.common.sampleTimelineEvents
+import de.jeanlucmakiola.floret.components.ScaledViewPreview
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -51,13 +52,16 @@ internal fun WeekViewPreview(
             state = state,
             showWeekNumber = dayCount == 7,
             headerBias = if (dayCount == 1) TimelineKind.Day.headerBias else 0f,
-            scrollState = scrollState,
             allDayHeight = state.allDayStripHeight(),
-            dragController = rememberTimelineDragController(),
-            onEventClick = {},
-            onOpenDay = {},
-            onCreateAt = { _, _ -> },
-            onDrop = {},
+            actions = rememberTimelineActions(
+                scrollState = scrollState,
+                dragController = rememberTimelineDragController(),
+                onEventClick = {},
+                onOpenDay = {},
+                onCreateAt = { _, _ -> },
+                onDrop = {},
+                onResize = {},
+            ),
         )
     }
 }

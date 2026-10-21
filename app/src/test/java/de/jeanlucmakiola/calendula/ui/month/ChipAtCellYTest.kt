@@ -1,16 +1,14 @@
 package de.jeanlucmakiola.calendula.ui.month
 
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.allDayEvent
 import de.jeanlucmakiola.calendula.domain.EventInstance
-import kotlinx.datetime.DateTimeUnit
+import de.jeanlucmakiola.calendula.timedEvent
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.YearMonth
-import kotlinx.datetime.atTime
-import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
 import org.junit.jupiter.api.Test
 
 /**
@@ -31,29 +29,11 @@ class ChipAtCellYTest {
     private fun rowOfJuly6(events: List<EventInstance>) =
         layoutMonthWeeks(jul26, DayOfWeek.MONDAY, events, zone)[1]
 
-    private fun allDay(from: LocalDate, toInclusive: LocalDate, id: Long) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = "A$id",
-        start = from.atTime(0, 0).toInstant(zone),
-        end = toInclusive.plus(1, DateTimeUnit.DAY).atTime(0, 0).toInstant(zone),
-        isAllDay = true,
-        color = 0xFF2196F3.toInt(),
-        location = null,
-    )
+    private fun allDay(from: LocalDate, toInclusive: LocalDate, id: Long) =
+        allDayEvent(from, toInclusive, id = id, title = "A$id", color = 0xFF2196F3.toInt(), zone = zone)
 
-    private fun timed(date: LocalDate, hour: Int, id: Long) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = "T$id",
-        start = date.atTime(hour, 0).toInstant(zone),
-        end = date.atTime(hour + 1, 0).toInstant(zone),
-        isAllDay = false,
-        color = 0xFFF44336.toInt(),
-        location = null,
-    )
+    private fun timed(date: LocalDate, hour: Int, id: Long) =
+        timedEvent(date, hour, zone = zone, id = id, title = "T$id", color = 0xFFF44336.toInt())
 
     private fun MonthWeek.chipAt(col: Int, cellY: Float) =
         chipAtCellY(

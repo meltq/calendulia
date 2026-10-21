@@ -90,8 +90,10 @@ fun ImportScreen(
     val state by viewModel.state.collectAsStateWithLifecycle()
 
     // A single event isn't shown here — it opens the create form for review.
+    // Read live: the state composed with may be the previous import's result,
+    // which the load above has already replaced.
     LaunchedEffect(state) {
-        (state as? ImportUiState.Single)?.let { onOpenSingle(it.form); onClose() }
+        (viewModel.state.value as? ImportUiState.Single)?.let { onOpenSingle(it.form); onClose() }
     }
 
     // Hoisted target calendar so the always-visible top-bar Import action can

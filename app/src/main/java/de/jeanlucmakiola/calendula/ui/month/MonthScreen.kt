@@ -11,6 +11,8 @@ import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.rememberUpdatedState
+import de.jeanlucmakiola.calendula.ui.agenda.AgendaDay
+import de.jeanlucmakiola.calendula.ui.agenda.agendaDays
 import de.jeanlucmakiola.calendula.ui.common.PublishChrome
 import de.jeanlucmakiola.calendula.ui.common.ScreenActions
 import de.jeanlucmakiola.calendula.ui.common.ScreenBody
@@ -21,9 +23,9 @@ import de.jeanlucmakiola.calendula.ui.common.LocalViewFocus
 import de.jeanlucmakiola.calendula.ui.common.ViewMorphKey
 import de.jeanlucmakiola.calendula.ui.common.morphDay
 import de.jeanlucmakiola.calendula.ui.common.morphEvent
-import de.jeanlucmakiola.calendula.ui.common.morphPageActive
 import de.jeanlucmakiola.calendula.ui.common.jumpToPage
 import de.jeanlucmakiola.calendula.ui.common.rememberCalendarPageSpec
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.drop
 import androidx.compose.animation.ExperimentalSharedTransitionApi
@@ -46,7 +48,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -67,7 +68,6 @@ import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -75,13 +75,10 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.DrawerValue
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.InputChip
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ripple
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -167,10 +164,9 @@ import de.jeanlucmakiola.calendula.ui.agenda.agendaDayLabel
 import de.jeanlucmakiola.calendula.ui.common.formatCalendarTitle
 import de.jeanlucmakiola.calendula.ui.common.AppBarSpacing
 import de.jeanlucmakiola.calendula.ui.common.CalendarFailure
-import de.jeanlucmakiola.calendula.ui.common.CalendarView
-import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
 import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.ui.common.LocalDimCutoff
+import de.jeanlucmakiola.calendula.ui.common.isPastOn
 import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.inlineTimeLabel
@@ -197,10 +193,13 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.YearMonth
+import kotlinx.datetime.toJavaDayOfWeek
 import kotlinx.datetime.toJavaLocalDate
 import kotlin.time.Instant
 import java.time.format.TextStyle as JavaTextStyle
 import java.util.Locale
+import kotlinx.datetime.toJavaMonth
+import kotlinx.datetime.yearMonth
 
 private val LocalTodayPulse = staticCompositionLocalOf { 0 }
 
@@ -349,7 +348,7 @@ fun MonthScreen(
             if (dense) {
                 val midweek = weekStartForIndex(listState.firstVisibleItemIndex + 1, weekStart)
                     .plus(3, DateTimeUnit.DAY)
-                YearMonth(midweek.year, midweek.month)
+                midweek.yearMonth
             } else {
                 yearMonthForIndex(monthIndexForItem(listState.firstVisibleItemIndex))
             }
@@ -398,7 +397,7 @@ fun MonthScreen(
             }
     }
 
-    val isOnCurrentMonth = titleMonth == YearMonth(today.year, today.month)
+    val isOnCurrentMonth = titleMonth == today.yearMonth
     var splitExpanded by rememberSaveable(viewStyle) {
         mutableStateOf(viewStyle == MonthViewStyle.Paged)
     }
@@ -427,7 +426,7 @@ fun MonthScreen(
     val jumpToToday: () -> Unit = {
         todayPulse++
         if (scrolling) {
-            val targetMonth = YearMonth(today.year, today.month)
+            val targetMonth = today.yearMonth
             pendingScrollMonth = targetMonth
             val requestId = ++scrollRequestId
             viewModel.goToToday()
@@ -445,13 +444,13 @@ fun MonthScreen(
             }
         } else {
             viewModel.goToToday()
-            jumpToMonth(YearMonth(today.year, today.month))
+            jumpToMonth(today.yearMonth)
         }
     }
     // Drawer jump-to-date.
     val jumpToDate: (LocalDate) -> Unit = { target ->
         if (scrolling) {
-            val targetMonth = YearMonth(target.year, target.month)
+            val targetMonth = target.yearMonth
             pendingScrollMonth = targetMonth
             val requestId = ++scrollRequestId
             viewModel.goToDate(target)
@@ -469,7 +468,7 @@ fun MonthScreen(
             }
         } else {
             viewModel.goToDate(target)
-            jumpToMonth(YearMonth(target.year, target.month))
+            jumpToMonth(target.yearMonth)
         }
     }
 
@@ -533,7 +532,7 @@ fun MonthScreen(
                         onOpenDay = onOpenDay,
                         onEventClick = onEventClick,
                     )
-                } else if (viewStyle == MonthViewStyle.Split || viewStyle == MonthViewStyle.Paged) {
+                } else {
                     SplitMonthContent(
                         state = state,
                         selected = selectedDate,
@@ -553,22 +552,11 @@ fun MonthScreen(
                         // still settling would land and take the tap back.
                         onSelectDay = { date ->
                             viewModel.selectDate(date)
-                            jumpToMonth(YearMonth(date.year, date.month))
+                            jumpToMonth(date.yearMonth)
                         },
                         onOpenDay = onOpenDay,
                         onEventClick = onEventClick,
                         onCreateEvent = { onCreateEvent(it, null) },
-                    )
-                } else {
-                    MonthContent(
-                        state = state,
-                        pagerState = pagerState,
-                        weekStart = weekStart,
-                        monthState = viewModel::month,
-                        showWeekNumbers = showWeekNumbers,
-                        onRetry = jumpToToday,
-                        onOpenDay = onOpenDay,
-                        onEventClick = onEventClick,
                     )
                 }
             }
@@ -588,14 +576,14 @@ private const val MONTH_SETTLE_TIMEOUT_MILLIS = 450L
 @Composable
 private fun MonthDragOverlay(controller: MonthDragController) {
     var origin by remember { mutableStateOf(Offset.Zero) }
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val density = LocalDensity.current
     val timeChipWidth = rememberMonthTimeChipWidth()
     val reduceMotion = rememberReduceMotion()
     val moveInFlight = moveInFlight()
     // Here rather than beside the controller: this reads [drag], which changes
     // every frame, and this composable is the one that is meant to.
-    DragSnapHaptics(controller.drag?.targetDate)
+    DragSnapHaptics(controller.drag?.targetDate, controller.drops)
     // Hold the landed chip until the write is done — including the time a
     // recurring drop's scope dialog is up — and then, unlike the timeline, carry
     // it to its seat: it was dropped at whatever height the finger was at, while
@@ -678,118 +666,6 @@ private fun MonthDragOverlay(controller: MonthDragController) {
     }
 }
 
-@Composable
-private fun MonthContent(
-    state: MonthUiState,
-    pagerState: PagerState,
-    weekStart: DayOfWeek,
-    monthState: (YearMonth, DayOfWeek) -> StateFlow<MonthUiState>,
-    showWeekNumbers: Boolean,
-    onRetry: () -> Unit,
-    onOpenDay: (LocalDate) -> Unit,
-    onEventClick: (EventInstance) -> Unit,
-) {
-    val fadeSpec = rememberCalendarFadeSpec()
-    // Loading and failure concern the provider as a whole, so they stand in for
-    // the pager; a page still loading its own month handles that itself.
-    AnimatedContent(
-        targetState = state,
-        modifier = Modifier.fillMaxSize(),
-        contentKey = { it::class },
-        transitionSpec = { fadeIn(fadeSpec) togetherWith fadeOut(fadeSpec) },
-        label = "month-state",
-    ) { s ->
-        when (s) {
-            MonthUiState.Loading -> MonthGridLoading()
-            is MonthUiState.Failure -> CalendarFailure(reason = s.reason, onRetry = onRetry)
-            is MonthUiState.Success -> MonthPager(
-                pagerState = pagerState,
-                weekStart = weekStart,
-                monthState = monthState,
-                modifier = Modifier.fillMaxSize(),
-            ) { _, page ->
-                MonthGrid(
-                    state = page,
-                    showWeekNumbers = showWeekNumbers,
-                    onOpenDay = onOpenDay,
-                    onEventClick = onEventClick,
-                )
-            }
-        }
-    }
-}
-
-/**
- * The paged and split styles' months as pages that follow the finger and snap
- * once a swipe passes half a page or is flung (#336). Only the page on screen
- * carries the chip drag and the morph tags: its neighbours show some of its
- * dates among their leading and trailing days, and would otherwise claim its
- * drops and its shared elements.
- */
-@Composable
-private fun MonthPager(
-    pagerState: PagerState,
-    weekStart: DayOfWeek,
-    monthState: (YearMonth, DayOfWeek) -> StateFlow<MonthUiState>,
-    modifier: Modifier = Modifier,
-    loading: @Composable () -> Unit = { MonthGridLoading() },
-    page: @Composable (index: Int, state: MonthUiState.Success) -> Unit,
-) {
-    val chipDrag = LocalMonthDrag.current
-    HorizontalPager(
-        state = pagerState,
-        modifier = modifier,
-        // The months either side are composed ahead, so a swipe lands on a loaded
-        // month rather than watching it fill in.
-        beyondViewportPageCount = 1,
-        verticalAlignment = Alignment.Top,
-        // A held chip moves within its month; the page stays put under it.
-        userScrollEnabled = chipDrag?.isDragging != true,
-        flingBehavior = PagerDefaults.flingBehavior(
-            state = pagerState,
-            snapAnimationSpec = rememberCalendarPageSpec(),
-        ),
-    ) { index ->
-        MonthPage(
-            index = index,
-            active = index == pagerState.currentPage,
-            morphActive = morphPageActive(index, pagerState.settledPage),
-            weekStart = weekStart,
-            monthState = monthState,
-            loading = loading,
-            page = page,
-        )
-    }
-}
-
-@Composable
-private fun MonthPage(
-    index: Int,
-    active: Boolean,
-    morphActive: Boolean,
-    weekStart: DayOfWeek,
-    monthState: (YearMonth, DayOfWeek) -> StateFlow<MonthUiState>,
-    loading: @Composable () -> Unit,
-    page: @Composable (index: Int, state: MonthUiState.Success) -> Unit,
-) {
-    val ym = yearMonthForIndex(index)
-    val state by remember(ym, weekStart) { monthState(ym, weekStart) }.collectAsStateWithLifecycle()
-    val today = LocalMonthToday.current
-    val chipDrag = LocalMonthDrag.current
-    val morph = LocalMonthMorph.current
-    val viewMorph = LocalViewMorph.current
-    CompositionLocalProvider(
-        LocalMonthDrag provides chipDrag.takeIf { active },
-        LocalMonthMorph provides morph.takeIf { active },
-        LocalViewMorph provides viewMorph.takeIf { morphActive },
-    ) {
-        when (val s = state) {
-            is MonthUiState.Success -> page(index, s.withToday(today))
-            else -> loading()
-        }
-    }
-}
-
 /**
  * Content for both scrolling styles. No swipe detector and no [AnimatedContent]:
  * vertical scrolling owns the gesture, and the list never swaps wholesale — it
@@ -849,7 +725,7 @@ internal fun WeekdayHeader(weekStart: DayOfWeek, showWeekNumbers: Boolean) {
         if (showWeekNumbers) Spacer(Modifier.width(rememberWeekNumberGutter()))
         days.forEach { dow ->
             val isWeekend = dow == DayOfWeek.SATURDAY || dow == DayOfWeek.SUNDAY
-            val javaDow = java.time.DayOfWeek.of(dow.ordinal + 1)
+            val javaDow = dow.toJavaDayOfWeek()
             Text(
                 text = javaDow.getDisplayName(JavaTextStyle.SHORT, locale),
                 style = MaterialTheme.typography.labelMedium,
@@ -966,7 +842,7 @@ internal fun monthBandHeight(rowHeight: Dp): Dp =
 
 /** Whether any day in this week holds more than [lanes] lanes can seat. */
 private fun MonthWeek.overflowsAt(lanes: Int): Boolean =
-    days.withIndex().any { (col, day) -> overflowEvents(col, day, lanes).isNotEmpty() }
+    days.indices.any { col -> overflowEvents(col, lanes).isNotEmpty() }
 
 /**
  * Row height in the continuous grid. The paged grid divides the viewport between
@@ -1068,7 +944,7 @@ internal fun ContinuousMonthGrid(
     modifier: Modifier = Modifier,
 ) {
     val monthCount = remember { continuousMonthCount() }
-    val todayMonth = remember(state.today) { YearMonth(state.today.year, state.today.month) }
+    val todayMonth = remember(state.today) { state.today.yearMonth }
     val timeChipWidth = rememberMonthTimeChipWidth()
     LazyColumn(
         state = listState,
@@ -1462,8 +1338,14 @@ private fun SplitMonthContent(
                             showWeekNumbers = showWeekNumbers,
                             expandDrag = expandDrag,
                             onSelectDay = onSelectDay,
-                            onPaneSwipeNext = onPaneSwipeNext,
-                            onPaneSwipePrev = onPaneSwipePrev,
+                            onPaneSwipeNext = {
+                                onPaneSwipeNext()
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            },
+                            onPaneSwipePrev = {
+                                onPaneSwipePrev()
+                                haptics.performHapticFeedback(HapticFeedbackType.SegmentTick)
+                            },
                             onClearSelection = onClearSelection,
                             onOpenDay = onOpenDay,
                             onEventClick = onEventClick,
@@ -1648,18 +1530,30 @@ private fun SplitExpandHandle(
         modifier = modifier
             .fillMaxWidth()
             .height(SPLIT_HANDLE_ROW_HEIGHT)
-            .clickable(onClick = onToggle)
             .semantics { contentDescription = label },
         contentAlignment = Alignment.Center,
     ) {
         Box(
             Modifier
-                .size(width = SPLIT_HANDLE_WIDTH, height = SPLIT_HANDLE_HEIGHT)
-                // Tagged too, so it slides from the pane's seam down to the foot
-                // of the grid rather than blinking out at one and in at the other.
-                .morphElement(MonthMorphKey.Handle)
-                .background(MaterialTheme.colorScheme.outlineVariant, CircleShape),
-        )
+                .size(width = SPLIT_HANDLE_RIPPLE_WIDTH, height = SPLIT_HANDLE_ROW_HEIGHT)
+                .clip(RoundedCornerShape(percent = 50))
+                .clickable(
+                    interactionSource = null,
+                    indication = ripple(),
+                    onClick = onToggle,
+                )
+                .clearAndSetSemantics { },
+            contentAlignment = Alignment.Center,
+        ) {
+            Box(
+                Modifier
+                    .size(width = SPLIT_HANDLE_WIDTH, height = SPLIT_HANDLE_HEIGHT)
+                    // Tagged too, so it slides from the pane's seam down to the foot
+                    // of the grid rather than blinking out at one and in at the other.
+                    .morphElement(MonthMorphKey.Handle)
+                    .background(MaterialTheme.colorScheme.outlineVariant, CircleShape),
+            )
+        }
     }
 }
 
@@ -1692,6 +1586,7 @@ private val SPLIT_DOT_SIZE = 5.dp
 private val SPLIT_HANDLE_WIDTH = 32.dp
 private val SPLIT_HANDLE_HEIGHT = 4.dp
 private val SPLIT_HANDLE_ROW_HEIGHT = 24.dp
+private val SPLIT_HANDLE_RIPPLE_WIDTH = SPLIT_HANDLE_WIDTH + 24.dp
 
 /** The pane below the split grid fades in once the grid's morph has mostly landed. */
 private const val SPLIT_PANE_FADE_IN_DELAY_MILLIS = 300
@@ -1721,7 +1616,7 @@ internal fun SplitMonthGrid(
     onSelectDay: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val month = state.month
     val hasToday = state.today.year == month.year && state.today.month == month.month
     val ripple = rememberTodayRipple(active = hasToday)
@@ -1746,11 +1641,11 @@ internal fun SplitMonthGrid(
                     val inMonth = day.month == month.month && day.year == month.year
                     // Seated by lane rather than gathered by colour, so each dot
                     // is the event the expanded grid draws in that same lane.
-                    val seated = week.laneEvents(col, day, SPLIT_DOT_LANES)
+                    val seated = week.laneEvents(col, SPLIT_DOT_LANES)
                     SplitDayCell(
                         date = day,
                         events = seated,
-                        hidden = week.overflowEvents(col, day, SPLIT_DOT_LANES),
+                        hidden = week.overflowEvents(col, SPLIT_DOT_LANES),
                         isToday = day == state.today,
                         // A page marks only the days its own month owns. Paging
                         // moves the selection before this month's replacement
@@ -1835,6 +1730,7 @@ private fun SplitDayCell(
         modifier = modifier
             .padding(horizontal = CELL_GAP, vertical = 1.dp)
             .todayRipple(relativeToToday, rippleProgress)
+            .clip(CELL_SHAPE)
             .selectable(selected = isSelected, onClick = onClick),
         contentAlignment = Alignment.TopCenter,
     ) {
@@ -1940,7 +1836,7 @@ private fun SplitDots(
                 modifier = Modifier
                     .morphBounds(MonthMorphKey.Event(date, event.instanceId))
                     .size(SPLIT_DOT_SIZE)
-                    .alpha(if (dimCutoff != null && event.hasEnded(dimCutoff)) EventDimAlpha else 1f)
+                    .alpha(if (dimCutoff != null && event.isPastOn(date, dimCutoff)) EventDimAlpha else 1f)
                     .background(eventAccent(event.color, dark, soften), CircleShape),
             )
         }
@@ -1954,13 +1850,12 @@ private fun SplitDots(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
                     .morphBounds(MonthMorphKey.Overflow(date))
-                    .alpha(if (allEnded(hidden, dimCutoff)) EventDimAlpha else 1f),
+                    .alpha(if (allEnded(hidden, date, dimCutoff)) EventDimAlpha else 1f),
             )
         }
     }
 }
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun SplitMonthAgendaPane(
     state: MonthUiState.Success,
@@ -1978,33 +1873,16 @@ private fun SplitMonthAgendaPane(
     val dimCutoff = LocalDimCutoff.current
     val listState = key(state.month) { rememberLazyListState() }
     LazyColumn(state = listState, contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
-        days.forEach { day ->
-            val events = state.instancesByDay[day].orEmpty()
-            stickyHeader(key = "header-$day") {
-                AgendaDayHeader(date = day, today = state.today, onOpenDay = onOpenDay)
-            }
-            if (events.isEmpty()) {
-                item(key = "empty-$day") {
-                    AgendaEmptyDayRow(
-                        text = stringResource(R.string.month_split_no_events),
-                        onClick = { onCreateEvent(day) },
-                    )
-                }
-            } else {
-                itemsIndexed(events, key = { _, event -> "$day-${event.instanceId}" }) { index, event ->
-                    AgendaEventRow(
-                        event = event,
-                        day = day,
-                        zone = state.zone,
-                        position = positionOf(index, events.size),
-                        dimmed = dimCutoff != null && event.hasEnded(dimCutoff),
-                        modifier = animateItemMotion().morphEvent(ViewMorphKey.event(event, day)),
-                        onClick = { onEventClick(event) },
-                    )
-                }
-            }
-            item(key = "gap-$day") { Spacer(Modifier.height(8.dp)) }
-        }
+        agendaDays(
+            days = days.map { AgendaDay(it, state.instancesByDay[it].orEmpty()) },
+            today = state.today,
+            zone = state.zone,
+            emptyText = R.string.month_split_no_events,
+            onEmptyClick = onCreateEvent,
+            dimmed = { event, day -> dimCutoff != null && event.isPastOn(day, dimCutoff) },
+            onOpenDay = onOpenDay,
+            onEventClick = onEventClick,
+        )
     }
 }
 
@@ -2066,7 +1944,7 @@ internal fun SplitDayPane(
                             day = day,
                             zone = zone,
                             position = positionOf(index, dayEvents.size),
-                            dimmed = dimCutoff != null && event.hasEnded(dimCutoff),
+                            dimmed = dimCutoff != null && event.isPastOn(day, dimCutoff),
                             onClick = { onEventClick(event) },
                             // An event added to or removed from the day you are
                             // already looking at moves its neighbours rather
@@ -2230,13 +2108,13 @@ private fun MonthWeekRow(
      */
     selected: LocalDate? = null,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val todayCol = week.days.indexOf(today).takeIf { it >= 0 && inMonth(today) }
     val ripple = rememberTodayRipple(active = todayCol != null)
     val overflowRow = rememberOverflowRowHeight()
     val laneCap = week.laneCapFor(rowHeight, overflowRow)
-    val laneCount = (week.spans.maxOfOrNull { it.lane } ?: -1) + 1
-    val shownLanes = laneCount.coerceAtMost(laneCap)
+    // Once per row rather than per frame: a drag recomposes every frame.
+    val seatings = remember(week, laneCap) { week.days.indices.map { week.seating(it, laneCap) } }
     val morphing = morphInFlight()
     // Every chip's start time for this row at once, and only when the row's own
     // inputs change: formatting is a parsed pattern per call, and the dim cutoff
@@ -2420,7 +2298,7 @@ private fun MonthWeekRow(
                         .then(if (morphing || dragging) Modifier else Modifier.clipToBounds()),
                 ) {
                     // Spanning bars on their shared lanes.
-                    week.spans.filter { it.lane < shownLanes }.forEach { span ->
+                    week.spans.filter { it.lane < laneCap }.forEach { span ->
                         val cols = span.endCol - span.startCol + 1
                         MonthBar(
                             event = span.event,
@@ -2492,19 +2370,13 @@ private fun MonthWeekRow(
                             )
                         }
                     }
-                    // Single-day timed pills + overflow, per column. Pills fill the
-                    // lane slots no bar occupies on THIS day (top-most first), so a
-                    // bar-free day isn't pushed down by a multi-day event that only
-                    // sits on other days of the week.
+                    // Single-day timed pills + overflow, per column, in the lanes
+                    // [seating] gave them.
                     week.days.forEachIndexed { col, d ->
-                        val timed = week.timedByDay[d].orEmpty()
-                        val occupied = week.spans
-                            .filter { it.lane < shownLanes && col in it.startCol..it.endCol }
-                            .map { it.lane }
-                            .toSet()
-                        val freeSlots = (0 until laneCap).filter { it !in occupied }
-                        val pillsShown = timed.take(freeSlots.size)
-                        pillsShown.forEachIndexed { i, ev ->
+                        val seating = seatings[col]
+                        seating.seated.forEach { seat ->
+                            if (seat.bar) return@forEach
+                            val ev = seat.event
                             MonthBar(
                                 event = ev,
                                 dark = dark,
@@ -2516,7 +2388,7 @@ private fun MonthWeekRow(
                                 modifier = Modifier
                                     .offset(
                                         x = colW * col,
-                                        y = EVENT_ROW_HEIGHT * freeSlots[i],
+                                        y = EVENT_ROW_HEIGHT * seat.lane,
                                     )
                                     .morphBounds(MonthMorphKey.Event(d, ev.instanceId))
                                     .then(
@@ -2532,17 +2404,10 @@ private fun MonthWeekRow(
                                     .padding(horizontal = MONTH_CHIP_INSET, vertical = 1.dp),
                             )
                         }
-                        val hidden = (week.countByDay[d] ?: 0) - occupied.size - pillsShown.size
-                        if (hidden > 0) {
-                            val hiddenEvents = buildList {
-                                week.spans
-                                    .filter { it.lane >= shownLanes && col in it.startCol..it.endCol }
-                                    .forEach { add(it.event) }
-                                addAll(timed.drop(pillsShown.size))
-                            }
+                        if (seating.hidden.isNotEmpty()) {
                             OverflowDots(
-                                events = hiddenEvents,
-                                total = hidden,
+                                events = seating.hidden,
+                                day = d,
                                 dark = dark,
                                 rowHeight = overflowRow,
                                 modifier = Modifier
@@ -2766,11 +2631,12 @@ private fun WeekNumberGutter(weekStart: LocalDate, modifier: Modifier = Modifier
     val onOpenWeek = LocalOpenWeek.current
     Box(
         modifier = modifier
+            .padding(horizontal = CELL_GAP, vertical = 1.dp)
+            .clip(CELL_SHAPE)
+            .background(MaterialTheme.colorScheme.secondaryContainer)
             .then(if (onOpenWeek != null) Modifier.clickable(onClickLabel = openLabel) {
                 onOpenWeek(weekStart)
             } else Modifier)
-            .padding(horizontal = CELL_GAP, vertical = 1.dp)
-            .background(MaterialTheme.colorScheme.secondaryContainer, CELL_SHAPE)
             .semantics { contentDescription = "$label $weekNumber" },
         contentAlignment = Alignment.Center,
     ) {
@@ -2837,7 +2703,7 @@ private fun DayNumberCell(
 private fun shortMonthName(date: LocalDate): String {
     val locale = currentLocale()
     return remember(date.month, locale) {
-        java.time.Month.of(date.month.ordinal + 1)
+        date.month.toJavaMonth()
             .getDisplayName(JavaTextStyle.SHORT, locale)
     }
 }
@@ -2866,7 +2732,9 @@ private fun MonthBar(
 ) {
     val title = event.title.ifBlank { stringResource(R.string.event_untitled) }
     val dimCutoff = LocalDimCutoff.current
-    val dimmed = dimCutoff != null && event.hasEnded(dimCutoff)
+    // A bar is one piece, so it dims once the last day it covers has passed.
+    val dimmed = dimCutoff != null &&
+        (event.hasEnded(dimCutoff) || days?.let { event.isPastOn(it.last(), dimCutoff) } == true)
     val paint = eventPaint(event, dark)
     // The same title/secondary ink pairing the week and day blocks use, with
     // the time on the quieter half.
@@ -2919,7 +2787,7 @@ private fun MonthBar(
 @Composable
 private fun OverflowDots(
     events: List<EventInstance>,
-    total: Int,
+    day: LocalDate,
     dark: Boolean,
     rowHeight: Dp,
     modifier: Modifier = Modifier,
@@ -2937,25 +2805,25 @@ private fun OverflowDots(
             Box(
                 modifier = Modifier
                     .size(OVERFLOW_DOT_SIZE)
-                    .alpha(if (allEnded(byColor.getValue(argb), dimCutoff)) EventDimAlpha else 1f)
+                    .alpha(if (allEnded(byColor.getValue(argb), day, dimCutoff)) EventDimAlpha else 1f)
                     .background(eventAccent(argb, dark, soften), CircleShape),
             )
         }
-        val extra = total - dots.size
+        val extra = events.size - dots.size
         if (extra > 0) {
             Text(
                 text = "+$extra",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.alpha(if (allEnded(events, dimCutoff)) EventDimAlpha else 1f),
+                modifier = Modifier.alpha(if (allEnded(events, day, dimCutoff)) EventDimAlpha else 1f),
             )
         }
     }
 }
 
-/** True when dimming is on and every one of [events] is already over. */
-private fun allEnded(events: List<EventInstance>, dimCutoff: Instant?): Boolean =
-    dimCutoff != null && events.isNotEmpty() && events.all { it.hasEnded(dimCutoff) }
+/** True when dimming is on and every one of [events] is already over on [day]. */
+private fun allEnded(events: List<EventInstance>, day: LocalDate, dimCutoff: Instant?): Boolean =
+    dimCutoff != null && events.isNotEmpty() && events.all { it.isPastOn(day, dimCutoff) }
 
 @Composable
 private fun MonthGridLoading() {
@@ -2997,7 +2865,7 @@ private fun formatMonthTitle(
     abbreviated: Boolean = false,
 ): String =
     formatCalendarTitle(
-        date = java.time.LocalDate.of(ym.year, ym.month.ordinal + 1, 1),
+        date = ym.firstDay.toJavaLocalDate(),
         locale = locale,
         currentYear = currentYear,
         skeleton = if (abbreviated) "LLL" else "LLLL",

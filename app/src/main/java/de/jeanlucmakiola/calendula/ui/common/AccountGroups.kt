@@ -57,7 +57,7 @@ fun List<CalendarSource>.groupByAccount(): List<CalendarAccountGroup> {
  */
 @Composable
 fun accountGroupTitle(group: CalendarAccountGroup): String {
-    val label = group.label.ifBlank { stringResource(R.string.calendar_unnamed) }
+    val label = group.label.orUnnamed()
     return if (!group.ambiguous) {
         label
     } else {

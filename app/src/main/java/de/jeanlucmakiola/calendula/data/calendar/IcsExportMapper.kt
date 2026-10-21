@@ -1,13 +1,9 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
 import de.jeanlucmakiola.floret.time.toKotlinInstantFromEpochMillis
-import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.deriveIcsUid
-import de.jeanlucmakiola.calendula.domain.ics.parseRfc2445DurationMillis
-import java.time.Instant
 import java.time.ZoneId
-import java.time.ZoneOffset
 
 /**
  * Map one Events row (read through [EventExportProjection]) into an [IcsEvent]
@@ -33,19 +29,8 @@ internal fun ColumnReader.toIcsEvent(
     val rrule = getString(EventExportProjection.IDX_RRULE)?.takeIf { it.isNotBlank() }
     val isAllDay = getInt(EventExportProjection.IDX_ALL_DAY) != 0
 
-    // Recurring rows store DURATION instead of DTEND; reconstruct the end from it
-    // so the writer can render DTEND. A missing/blank both means a zero-length event.
-    val end = when {
-        !isNull(EventExportProjection.IDX_DTEND) -> getLong(EventExportProjection.IDX_DTEND)
-        else -> dtStart + parseRfc2445DurationMillis(getString(EventExportProjection.IDX_DURATION))
-    }
-
-    // STATUS shares value 0 with TENTATIVE, so an absent column must read as Confirmed.
-    val status = if (isNull(EventExportProjection.IDX_STATUS)) {
-        EventStatus.Confirmed
-    } else {
-        mapEventStatus(getInt(EventExportProjection.IDX_STATUS))
-    }
+    // Unclamped: the writer renders DTEND as stored.
+    val end = endMillis(dtStart, EventExportProjection.IDX_DTEND, EventExportProjection.IDX_DURATION)
 
     return IcsEvent(
         uid = deriveIcsUid(getString(EventExportProjection.IDX_UID), eventId, dtStart),
@@ -68,14 +53,14 @@ internal fun ColumnReader.toIcsEvent(
         location = getString(EventExportProjection.IDX_LOCATION),
         description = getString(EventExportProjection.IDX_DESCRIPTION),
         reminderMinutes = if (isAllDay) {
-            val startDate = Instant.ofEpochMilli(dtStart).atZone(ZoneOffset.UTC).toLocalDate()
+            val startDate = utcDate(dtStart)
             reminderMinutes.map {
                 fromProviderAllDayMinutes(it, startDate, zone, allDayReminderTimeMinutes)
             }
         } else {
             reminderMinutes
         },
-        status = status,
+        status = eventStatus(EventExportProjection.IDX_STATUS),
         availability = mapAvailability(getInt(EventExportProjection.IDX_AVAILABILITY)),
         calendarName = calendarName,
     )
@@ -112,11 +97,7 @@ internal fun exportExDates(
 ): List<String> {
     if (exdate.isNullOrBlank()) return emptyList()
     val zone = exdateListZone(exdate, eventTimezone)
-    return exdate
-        .withoutExdateParameters()
-        .split(',')
-        .map { it.trim() }
-        .filter { it.isNotEmpty() }
+    return exdateStamps(exdate)
         .map { stamp ->
             if (isAllDay) {
                 stamp.substringBefore('T')

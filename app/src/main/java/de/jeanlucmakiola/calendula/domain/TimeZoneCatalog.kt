@@ -157,13 +157,35 @@ fun timeZoneOptionOf(
  * the offset isn't stated twice in ICU's spelling and ours.
  */
 fun zoneDescriptor(option: TimeZoneOption): String {
-    val abbrev = option.shortName
-    return when {
-        abbrev == "UTC" -> "UTC"
-        abbrev.startsWith("GMT") -> formatGmtOffset(option.offsetMinutes)
-        else -> "$abbrev · ${formatGmtOffset(option.offsetMinutes)}"
-    }
+    val name = zoneAbbreviation(option)
+    val statesOffset = option.shortName == "UTC" || option.shortName.startsWith("GMT")
+    return if (statesOffset) name else "$name · ${formatGmtOffset(option.offsetMinutes)}"
 }
+
+/**
+ * [option]'s short name on its own — "CEST", "UTC" — with an offset-shaped one
+ * normalised to our GMT form, as [zoneDescriptor] spells it.
+ */
+fun zoneAbbreviation(option: TimeZoneOption): String = abbreviation(option.shortName, option.offsetMinutes)
+
+/**
+ * Zone [id]'s abbreviation [at] an instant, as [zoneAbbreviation] spells it,
+ * without the localized long name a whole [TimeZoneOption] would look up. Null
+ * for an id the tz database can't parse.
+ */
+fun zoneAbbreviationAt(
+    id: String,
+    locale: Locale,
+    at: Instant,
+    regionOf: (String) -> String? = { null },
+): String? {
+    val zone = runCatching { ZoneId.of(id) }.getOrNull() ?: return null
+    val shortName = resolveAbbreviation(zone.id, zone.rules.isDaylightSavings(at), locale, regionOf)
+    return abbreviation(shortName, zone.rules.getOffset(at).totalSeconds / 60)
+}
+
+private fun abbreviation(shortName: String, offsetMinutes: Int): String =
+    if (shortName.startsWith("GMT")) formatGmtOffset(offsetMinutes) else shortName
 
 /**
  * [options] matching [query], best matches first; a blank query returns the list

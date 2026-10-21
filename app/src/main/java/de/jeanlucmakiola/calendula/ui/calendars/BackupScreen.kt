@@ -1,7 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.calendars
 
 import android.net.Uri
-import android.text.format.DateUtils
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Box
@@ -54,13 +53,17 @@ import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.CalendarFailure
 import de.jeanlucmakiola.calendula.ui.common.LeadingAvatar
 import de.jeanlucmakiola.calendula.ui.common.LocalManageCalendars
+import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.DialogAmountField
 import de.jeanlucmakiola.floret.components.DialogUnitDropdown
 import de.jeanlucmakiola.floret.components.FullScreenPicker
+import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.positionOf
+import de.jeanlucmakiola.floret.locale.relativeTimeAgo
 import java.time.LocalDate
 
 // SAF mime filter for the restore picker. Source apps hand `.ics` files out
@@ -222,8 +225,8 @@ private fun BackupContent(
     val onRestoreClick = if (canImport) onRestore else (manageCalendars ?: onRestore)
 
     if (exportable.isEmpty()) {
-        SectionHeader(stringResource(R.string.calendars_restore_header))
-        HintText(restoreSummary)
+        GroupedSectionHeader(stringResource(R.string.calendars_restore_header))
+        GroupedHint(restoreSummary, style = MaterialTheme.typography.bodySmall)
         GroupedRow(
             title = stringResource(R.string.calendars_restore_action),
             position = Position.Alone,
@@ -233,7 +236,7 @@ private fun BackupContent(
         return
     }
 
-    HintText(stringResource(R.string.calendars_backup_hint))
+    GroupedHint(stringResource(R.string.calendars_backup_hint), style = MaterialTheme.typography.bodySmall)
     GroupedRow(
         title = stringResource(R.string.calendars_backup_action),
         position = Position.Top,
@@ -272,7 +275,7 @@ private fun BackupContent(
             position = Position.Bottom,
             onClick = onEditInterval,
         )
-        HintText(backupStatusText(autoBackup.status))
+        GroupedHint(backupStatusText(autoBackup.status), style = MaterialTheme.typography.bodySmall)
     }
 }
 
@@ -309,12 +312,13 @@ private fun ExportCalendarPicker(
     FullScreenPicker(
         title = stringResource(R.string.calendars_export_title),
         onDismiss = onDismiss,
+        predictiveBack = true,
     ) {
-        HintText(stringResource(R.string.calendars_export_hint))
+        GroupedHint(stringResource(R.string.calendars_export_hint), style = MaterialTheme.typography.bodySmall)
         calendars.forEachIndexed { index, calendar ->
             val isSelected = calendar.id in selected
             GroupedRow(
-                title = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
+                title = calendar.displayName.orUnnamed(),
                 summary = calendar.description,
                 position = positionOf(index, calendars.size),
                 leading = { CalendarColorChip(calendar.color) },
@@ -376,9 +380,7 @@ private fun backupIntervalLabel(minutes: Long): String {
 @Composable
 private fun backupStatusText(status: BackupStatus): String {
     if (status.lastRun == 0L) return stringResource(R.string.calendars_auto_backup_status_never)
-    val relative = DateUtils.getRelativeTimeSpanString(
-        status.lastRun, System.currentTimeMillis(), DateUtils.MINUTE_IN_MILLIS,
-    ).toString()
+    val relative = relativeTimeAgo(status.lastRun)
     return if (status.lastSuccess) {
         stringResource(R.string.calendars_auto_backup_status_ok, relative)
     } else {

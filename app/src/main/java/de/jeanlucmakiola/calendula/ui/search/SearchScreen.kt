@@ -1,14 +1,9 @@
 package de.jeanlucmakiola.calendula.ui.search
 
-import android.Manifest
-import android.content.pm.PackageManager
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -61,7 +56,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
@@ -73,7 +67,6 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
@@ -83,9 +76,11 @@ import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.SearchHit
 import de.jeanlucmakiola.calendula.domain.SearchMonth
 import de.jeanlucmakiola.calendula.domain.isDeclined
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.animateItemMotion
 import de.jeanlucmakiola.floret.identity.fadeThrough
 import de.jeanlucmakiola.floret.identity.predictiveBack
+import de.jeanlucmakiola.calendula.ui.common.rememberWriteAction
 import de.jeanlucmakiola.calendula.ui.common.declinedTitle
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.InlineTextField
@@ -99,7 +94,6 @@ import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
 import de.jeanlucmakiola.calendula.ui.common.RecurringScopeDialog
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
-import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.domain.spanFirstDay
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.timeOfDayFormatter
@@ -135,7 +129,6 @@ fun SearchScreen(
     val deleteState by viewModel.deleteState.collectAsStateWithLifecycle()
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
-    val context = LocalContext.current
     val inSelection = selection.isNotEmpty()
     var showDeleteDialog by remember { mutableStateOf(false) }
 
@@ -157,27 +150,8 @@ fun SearchScreen(
         keyboard?.show()
     }
 
-    // Same in-place WRITE_CALENDAR upgrade the detail screen does: a v1.0 install
-    // holds only READ_CALENDAR, and granting continues into the held delete.
-    var pendingWrite by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val writePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) pendingWrite?.invoke()
-        pendingWrite = null
-    }
-    val requireWrite: (() -> Unit) -> Unit = { action ->
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.WRITE_CALENDAR,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
-            action()
-        } else {
-            pendingWrite = action
-            writePermissionLauncher.launch(Manifest.permission.WRITE_CALENDAR)
-        }
-    }
+    // A v1.0 install holds only READ_CALENDAR; granting continues into the held delete.
+    val onDeleteClick = rememberWriteAction { showDeleteDialog = true }
 
     // Back leaves selection mode before it leaves the screen, and without the
     // predictive-back scale-out — that would read as search closing and snapping
@@ -198,7 +172,7 @@ fun SearchScreen(
                 onBack = onBack,
                 onCloseSelection = viewModel::clearSelection,
                 onSelectAll = viewModel::selectAll,
-                onDelete = { requireWrite { showDeleteDialog = true } },
+                onDelete = onDeleteClick,
             )
         },
     ) { padding ->
@@ -513,7 +487,7 @@ private fun SearchResultRow(
     // Spans are empty for a blank title — the query never matches the
     // placeholder — so marking the substitute is safe.
     val title = event.title.ifBlank { stringResource(R.string.event_untitled) }
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val soften = LocalSoftenColors.current
     // On a picked row the headline is already recoloured for the secondary
     // container, so the match is carried by weight alone there.

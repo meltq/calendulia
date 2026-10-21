@@ -1,34 +1,30 @@
 package de.jeanlucmakiola.calendula.ui.common
 
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.data.calendar.CalendarRepositoryImpl
+import de.jeanlucmakiola.calendula.MainDispatcherExtension
+import de.jeanlucmakiola.calendula.data.time.FakeZoneSource
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
-import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
-import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventDetail
-import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
-import kotlinx.coroutines.CoroutineDispatcher
+import de.jeanlucmakiola.calendula.testDetail
+import de.jeanlucmakiola.calendula.testEvent
+import de.jeanlucmakiola.calendula.testPrefs
+import de.jeanlucmakiola.calendula.testRepository
+import de.jeanlucmakiola.calendula.testSettings
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toInstant
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.RegisterExtension
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.time.Instant
@@ -40,10 +36,9 @@ import kotlin.time.Instant
 @OptIn(ExperimentalCoroutinesApi::class)
 class RescheduleViewModelTest {
 
-    private val dispatcher = UnconfinedTestDispatcher()
-
-    @BeforeEach fun setUp() = Dispatchers.setMain(dispatcher)
-    @AfterEach fun tearDown() = Dispatchers.resetMain()
+    @JvmField @RegisterExtension
+    val mainDispatcher = MainDispatcherExtension()
+    private val dispatcher = mainDispatcher.dispatcher
 
     // Monday 2026-06-08, midday in the device zone — the zone the drop path
     // reads dates back in. The BYDAY assertions depend on it being a Monday.
@@ -68,32 +63,24 @@ class RescheduleViewModelTest {
         isAllDay: Boolean = false,
         isException: Boolean = false,
         anchorMillis: Long = beginMillis,
-    ): EventDetail = EventDetail(
-        instance = EventInstance(
-            instanceId = 42L, eventId = 42L, calendarId = 1L, title = "Standup",
+    ): EventDetail = testDetail(
+        instance = testEvent(
+            id = 42L, title = "Standup",
             start = Instant.fromEpochMilliseconds(anchorMillis),
             end = Instant.fromEpochMilliseconds(anchorMillis + (endMillis - beginMillis)),
-            isAllDay = isAllDay, color = 0xFF000000.toInt(), location = null,
+            isAllDay = isAllDay, color = 0xFF000000.toInt(),
         ),
-        description = null, organizer = null, attendees = emptyList(), rrule = rrule,
+        rrule = rrule,
         isException = isException,
     )
 
     private fun viewModel(tempDir: Path, fake: FakeCalendarDataSource): RescheduleViewModel {
-        val prefs = CalendarPrefs(
-            PreferenceDataStoreFactory.create(
-                scope = CoroutineScope(dispatcher),
-                produceFile = { tempDir.resolve("move_prefs.preferences_pb").toFile() },
-            ),
+        val repo = testRepository(
+            fake, tempDir, dispatcher,
+            prefs = testPrefs(tempDir, CoroutineScope(dispatcher)),
+            settings = testSettings(tempDir, CoroutineScope(dispatcher)),
         )
-        val settings = SettingsPrefs(
-            PreferenceDataStoreFactory.create(
-                scope = CoroutineScope(dispatcher),
-                produceFile = { tempDir.resolve("move_settings.preferences_pb").toFile() },
-            ),
-        )
-        val repo = CalendarRepositoryImpl(fake, prefs, settings, dispatcher as CoroutineDispatcher)
-        return RescheduleViewModel(repo, dispatcher)
+        return RescheduleViewModel(repo, dispatcher, FakeZoneSource())
     }
 
     private fun CoroutineScope.activate(vm: RescheduleViewModel): Job =
@@ -113,6 +100,17 @@ class RescheduleViewModelTest {
         beginMillis = beginMillis,
         endMillis = endMillis,
         target = MoveTarget.Start(Instant.fromEpochMilliseconds(beginMillis + 3_600_000L)),
+    )
+
+    /** The end dragged an hour later, the start left where it is. */
+    private fun endOneHourLater() = MoveRequest(
+        eventId = 42L,
+        beginMillis = beginMillis,
+        endMillis = endMillis,
+        target = MoveTarget.Span(
+            Instant.fromEpochMilliseconds(beginMillis),
+            Instant.fromEpochMilliseconds(endMillis + 3_600_000L),
+        ),
     )
 
     @Test
@@ -594,5 +592,83 @@ class RescheduleViewModelTest {
 
         assertThat(vm.outcome.value).isInstanceOf(MoveOutcome.Moved::class.java)
         assertThat(vm.abandoned.value).isEqualTo(0)
+    }
+
+    @Test
+    fun `a resize writes the new length and reports both ends`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
+        val vm = viewModel(tempDir, fake)
+
+        vm.move(endOneHourLater())
+        advanceUntilIdle()
+
+        val (_, original, updated) = fake.updatedEvents.single()
+        assertThat(updated.start).isEqualTo(original.start)
+        assertThat(updated.end).isNotEqualTo(original.end)
+        val moved = vm.outcome.value as MoveOutcome.Moved
+        assertThat(moved.startMillis).isEqualTo(beginMillis)
+        assertThat(moved.endMillis).isEqualTo(endMillis + 3_600_000L)
+        assertThat(moved.undo).isNotNull()
+    }
+
+    @Test
+    fun `a moved event reports no end, so its chip keeps the move wording`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
+        val vm = viewModel(tempDir, fake)
+
+        vm.move(oneHourLater())
+        advanceUntilIdle()
+
+        assertThat((vm.outcome.value as MoveOutcome.Moved).endMillis).isNull()
+    }
+
+    @Test
+    fun `resizing a recurring event asks for the scope, as a resize`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = { detail(rrule = "FREQ=WEEKLY;BYDAY=MO") }
+        }
+        val vm = viewModel(tempDir, fake)
+
+        vm.move(endOneHourLater())
+        advanceUntilIdle()
+
+        assertThat(vm.scopePrompt.value)
+            .isEqualTo(MoveScopePrompt(occurrenceOnly = false, resize = true))
+        vm.moveWithScope(RecurringWriteScope.AllEvents)
+        advanceUntilIdle()
+        // The start stays put, so the rule needs no realigning.
+        assertThat(fake.updatedEvents.single().third.rrule).isEqualTo("FREQ=WEEKLY;BYDAY=MO")
+    }
+
+    @Test
+    fun `pulling a recurring event's start back over midnight resizes only the occurrence`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = { detail(rrule = "FREQ=WEEKLY;BYDAY=MO") }
+        }
+        val vm = viewModel(tempDir, fake)
+        val sundayEvening = LocalDateTime(LocalDate(2026, 6, 7), LocalTime(22, 0))
+            .toInstant(TimeZone.currentSystemDefault())
+
+        vm.move(
+            MoveRequest(
+                eventId = 42L,
+                beginMillis = beginMillis,
+                endMillis = endMillis,
+                target = MoveTarget.Span(sundayEvening, Instant.fromEpochMilliseconds(endMillis)),
+            ),
+        )
+        advanceUntilIdle()
+
+        // Not a whole-day shift, so the series anchor can't follow.
+        assertThat(vm.scopePrompt.value)
+            .isEqualTo(MoveScopePrompt(occurrenceOnly = true, resize = true))
     }
 }

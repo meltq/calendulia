@@ -9,7 +9,6 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudSync
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
@@ -30,6 +29,7 @@ import de.jeanlucmakiola.calendula.data.calendar.CalendarColorPalette
 import de.jeanlucmakiola.calendula.ui.calendars.CalendarEditor
 import de.jeanlucmakiola.calendula.ui.settings.openUrl
 import de.jeanlucmakiola.floret.components.BenefitRow
+import de.jeanlucmakiola.floret.components.OnboardingPrimaryButton
 import de.jeanlucmakiola.floret.components.OnboardingScaffold
 import de.jeanlucmakiola.floret.components.OnboardingSpace
 
@@ -108,18 +108,13 @@ internal fun CalendarsStep(
         topSpacing = OnboardingSpace.lg,
         hero = { IconHero(Icons.Filled.CalendarMonth) },
         actions = {
-            Button(
+            OnboardingPrimaryButton(
+                text = stringResource(R.string.onboarding_calendars_local_button),
                 onClick = {
                     onClearCreation()
                     creating = true
                 },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.onboarding_calendars_local_button),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
+            )
             OutlinedButton(
                 onClick = { openUrl(context, DAVX5_URL) },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
@@ -133,20 +128,9 @@ internal fun CalendarsStep(
                 Text(stringResource(R.string.onboarding_calendars_skip_button))
             }
         },
+        headline = stringResource(R.string.onboarding_calendars_title),
+        supporting = stringResource(R.string.onboarding_calendars_body),
     ) {
-        Text(
-            text = stringResource(R.string.onboarding_calendars_title),
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = stringResource(R.string.onboarding_calendars_body),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-
         if (creation is CalendarCreation.Failed) {
             Spacer(Modifier.height(12.dp))
             Text(
@@ -189,30 +173,14 @@ private fun CalendarCreated(
         topSpacing = OnboardingSpace.lg,
         hero = { IconHero(Icons.Filled.CheckCircle) },
         actions = {
-            Button(
+            OnboardingPrimaryButton(
+                text = stringResource(R.string.onboarding_calendars_created_continue),
                 onClick = onContinue,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.onboarding_calendars_created_continue),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
+            )
         },
+        headline = stringResource(R.string.onboarding_calendars_created_title, name),
+        supporting = stringResource(R.string.onboarding_calendars_created_body),
     ) {
-        Text(
-            text = stringResource(R.string.onboarding_calendars_created_title, name),
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = stringResource(R.string.onboarding_calendars_created_body),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-
         Spacer(Modifier.height(OnboardingSpace.lg))
 
         BenefitRow(

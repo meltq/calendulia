@@ -5,12 +5,15 @@ import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventForm
+import de.jeanlucmakiola.calendula.domain.FormTime
 import de.jeanlucmakiola.calendula.domain.realignRecurrence
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
+import kotlinx.datetime.UtcOffset
 import org.junit.jupiter.api.Test
 import java.time.ZoneId
+import kotlin.time.Instant
 
 class EventWriteMapperTest {
 
@@ -24,8 +27,8 @@ class EventWriteMapperTest {
     ): EventForm = EventForm(
         calendarId = 1L,
         isAllDay = isAllDay,
-        start = start,
-        end = end,
+        start = FormTime(start),
+        end = FormTime(end),
         timezone = timezone,
     )
 
@@ -154,8 +157,8 @@ class EventWriteMapperTest {
         assertThat(values).doesNotContainKey(CalendarContract.Events.EVENT_TIMEZONE)
 
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(11, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 30)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(11, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 30))),
         )
         assertThat(update(original, moved)[CalendarContract.Events.EVENT_TIMEZONE])
             .isEqualTo("America/New_York")
@@ -201,8 +204,8 @@ class EventWriteMapperTest {
     fun `time edit on a one-off event writes absolute times and clears recurrence columns`() {
         val original = form()
         val updated = original.copy(
-            start = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(11, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(11, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 0))),
         )
         val values = update(original, updated)
         // 2026-06-11 11:00 CEST == 09:00Z.
@@ -221,8 +224,8 @@ class EventWriteMapperTest {
         val original = form().copy(rrule = "FREQ=WEEKLY")
         val updated = original.copy(
             // Pushed one hour later than the displayed occurrence.
-            start = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(11, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 30)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(11, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 11), LocalTime(12, 30))),
         )
         val values = update(original, updated)
         assertThat(values[CalendarContract.Events.DTSTART]).isEqualTo(seriesStart + 3_600_000L)
@@ -263,8 +266,8 @@ class EventWriteMapperTest {
             end = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(10, 0)),
         ).copy(rrule = "FREQ=WEEKLY")
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(10, 0)),
-            end = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(11, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 7, 15), LocalTime(10, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 7, 15), LocalTime(11, 0))),
         )
 
         assertThat(update(original, moved, series)[CalendarContract.Events.DTSTART])
@@ -279,8 +282,8 @@ class EventWriteMapperTest {
             end = LocalDateTime(LocalDate(2026, 1, 7), LocalTime(10, 0)),
         ).copy(rrule = "FREQ=WEEKLY")
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 1, 9), LocalTime(14, 30)),
-            end = LocalDateTime(LocalDate(2026, 1, 9), LocalTime(15, 30)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 1, 9), LocalTime(14, 30))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 1, 9), LocalTime(15, 30))),
         )
 
         assertThat(update(original, moved, series)[CalendarContract.Events.DTSTART])
@@ -297,8 +300,8 @@ class EventWriteMapperTest {
             end = LocalDateTime(LocalDate(2026, 6, 8), LocalTime(10, 0)),
         ).copy(rrule = "FREQ=WEEKLY;BYDAY=MO")
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 6, 10), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 10), LocalTime(10, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 10), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 10), LocalTime(10, 0))),
             rrule = realignRecurrence("FREQ=WEEKLY;BYDAY=MO", LocalDate(2026, 6, 8), LocalDate(2026, 6, 10)),
         )
 
@@ -319,8 +322,8 @@ class EventWriteMapperTest {
             end = LocalDateTime(LocalDate(2026, 1, 7), LocalTime(10, 30)),
         ).copy(rrule = "FREQ=WEEKLY")
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 1, 8), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 1, 8), LocalTime(10, 30)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 1, 8), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 1, 8), LocalTime(10, 30))),
         )
 
         assertThat(update(original, moved, series)[CalendarContract.Events.DURATION])
@@ -331,8 +334,8 @@ class EventWriteMapperTest {
     fun `shifting a one-off event and back again restores the original values`() {
         val original = form()
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(14, 0)),
-            end = LocalDateTime(LocalDate(2026, 6, 12), LocalTime(15, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(14, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 6, 12), LocalTime(15, 0))),
         )
 
         val forward = update(original, moved)
@@ -357,8 +360,8 @@ class EventWriteMapperTest {
             end = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(10, 0)),
         ).copy(rrule = "FREQ=WEEKLY")
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(14, 30)),
-            end = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(15, 30)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(14, 30))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(15, 30))),
         )
 
         val movedAnchor = update(original, moved, series)[CalendarContract.Events.DTSTART] as Long
@@ -678,8 +681,8 @@ class EventWriteMapperTest {
 
     /** [julySeries] pushed to [hour]:00, the shift an "all events" time edit makes. */
     private fun EventForm.atHour(hour: Int): EventForm = copy(
-        start = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(hour, 0)),
-        end = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(hour + 1, 0)),
+        start = FormTime(LocalDateTime(LocalDate(2026, 7, 15), LocalTime(hour, 0))),
+        end = FormTime(LocalDateTime(LocalDate(2026, 7, 15), LocalTime(hour + 1, 0))),
     )
 
     @Test
@@ -728,8 +731,8 @@ class EventWriteMapperTest {
             end = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(0, 0)),
         ).copy(rrule = "FREQ=WEEKLY")
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0)),
-            end = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0))),
         )
 
         assertThat(update(original, moved, series, "20260722")[CalendarContract.Events.EXDATE])
@@ -748,8 +751,8 @@ class EventWriteMapperTest {
             end = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(0, 0)),
         ).copy(rrule = "FREQ=WEEKLY")
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0)),
-            end = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0))),
         )
 
         val values = update(original, moved, series, "20260722T000000Z")
@@ -768,8 +771,8 @@ class EventWriteMapperTest {
             end = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(0, 0)),
         ).copy(rrule = "FREQ=WEEKLY")
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0)),
-            end = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0))),
         )
 
         val values = update(original, moved, series, "20260722T000000")
@@ -787,8 +790,8 @@ class EventWriteMapperTest {
             end = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(0, 0)),
         ).copy(rrule = "FREQ=WEEKLY")
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0)),
-            end = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(0, 0))),
         )
 
         val values = update(original, moved, series, "20260722T090000Z")
@@ -815,8 +818,8 @@ class EventWriteMapperTest {
         ).copy(rrule = "FREQ=WEEKLY")
         val timed = original.copy(
             isAllDay = false,
-            start = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(9, 0)),
-            end = LocalDateTime(LocalDate(2026, 7, 15), LocalTime(10, 0)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 7, 15), LocalTime(9, 0))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 7, 15), LocalTime(10, 0))),
         )
         // The excluded day gains the new 09:00 Berlin time-of-day == 07:00Z.
         assertThat(update(original, timed, series, "20260722")[CalendarContract.Events.EXDATE])
@@ -898,8 +901,8 @@ class EventWriteMapperTest {
         val series = instantAt("2026-01-07T09:00", "Europe/Berlin")
         val original = julySeries()
         val moved = original.copy(
-            start = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(14, 30)),
-            end = LocalDateTime(LocalDate(2026, 7, 17), LocalTime(15, 30)),
+            start = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(14, 30))),
+            end = FormTime(LocalDateTime(LocalDate(2026, 7, 17), LocalTime(15, 30))),
         )
         val exdate = "20260722T070000Z"
 
@@ -1176,47 +1179,21 @@ class EventWriteMapperTest {
         assertThat(values[CalendarContract.Events.DURATION]).isEqualTo("P5400S")
     }
 
-    // --- buildCopiedExceptionValues (calendar move: exception replay) ---
-
-    private fun exceptionSnapshot(
-        isCancelled: Boolean = false,
-        duration: String? = null,
-        // Occurrence starts one hour into the day and runs 30 minutes.
-        dtEndMillis: Long? = 1_781_164_800_000L + 3_600_000L + 1_800_000L,
-    ) = ExceptionRowSnapshot(
-        exceptionEventId = 42L,
-        originalInstanceMillis = 1_781_164_800_000L,
-        isCancelled = isCancelled,
-        status = if (isCancelled) CalendarContract.Events.STATUS_CANCELED else CalendarContract.Events.STATUS_CONFIRMED,
-        title = "Moved occurrence",
-        isAllDay = false,
-        dtStartMillis = 1_781_164_800_000L + 3_600_000L,
-        dtEndMillis = dtEndMillis,
-        duration = duration,
-        timezone = "Europe/Berlin",
-        availability = CalendarContract.Events.AVAILABILITY_BUSY,
-        accessLevel = CalendarContract.Events.ACCESS_DEFAULT,
-        location = "",
-        description = "Notes",
-    )
-
     @Test
-    fun `copied modified occurrence carries the original instance and DURATION not DTEND`() {
-        val values = buildCopiedExceptionValues(exceptionSnapshot())
-        assertThat(values[CalendarContract.Events.ORIGINAL_INSTANCE_TIME])
-            .isEqualTo(1_781_164_800_000L)
-        assertThat(values[CalendarContract.Events.TITLE]).isEqualTo("Moved occurrence")
-        assertThat(values[CalendarContract.Events.DTSTART]).isEqualTo(1_781_164_800_000L + 3_600_000L)
-        // 30-minute occurrence derived from DTEND, written as DURATION only.
-        assertThat(values[CalendarContract.Events.DURATION]).isEqualTo("P1800S")
-        assertThat(values).doesNotContainKey(CalendarContract.Events.DTEND)
-        assertThat(values).containsEntry(CalendarContract.Events.EVENT_LOCATION, null)
-    }
-
-    @Test
-    fun `copied modified occurrence keeps a stored duration verbatim`() {
-        val values = buildCopiedExceptionValues(exceptionSnapshot(duration = "P900S", dtEndMillis = null))
-        assertThat(values[CalendarContract.Events.DURATION]).isEqualTo("P900S")
+    fun `several occurrences are excluded in one exdate write`() {
+        val values = buildOccurrencesExdateValues(
+            existingExdate = "20260601T090000Z",
+            occurrences = listOf(1_781_168_400_000L, 1_781_254_800_000L, 1_781_168_400_000L),
+            dtStartMillis = 1_780_304_400_000L,
+            rrule = "FREQ=DAILY",
+            rdate = null,
+            duration = "P3600S",
+            timezone = "Europe/Berlin",
+            allDay = 0,
+        )
+        assertThat(values[CalendarContract.Events.EXDATE])
+            .isEqualTo("20260601T090000Z,20260611T090000Z,20260612T090000Z")
+        assertThat(values[CalendarContract.Events.RRULE]).isEqualTo("FREQ=DAILY")
     }
 
     @Test
@@ -1386,5 +1363,68 @@ class EventWriteMapperTest {
         // The parent keeps its own anchor and rule — only this occurrence leaves.
         assertThat(parent[CalendarContract.Events.DTSTART]).isEqualTo(1_780_560_000_000L)
         assertThat(parent[CalendarContract.Events.RRULE]).isEqualTo("FREQ=WEEKLY")
+    }
+
+    @Test
+    fun `a time in the repeated fall-back hour is written at its own offset`() {
+        val repeated = LocalDateTime(LocalDate(2026, 10, 25), LocalTime(2, 0))
+        val times = form(start = repeated, end = repeated)
+            .copy(start = FormTime(repeated, UtcOffset(hours = 2)), end = FormTime(repeated, UtcOffset(hours = 1)))
+            .toWriteTimes(berlin)
+        assertThat(times.dtStartMillis).isEqualTo(Instant.parse("2026-10-25T00:00:00Z").toEpochMilliseconds())
+        assertThat(times.dtEndMillis).isEqualTo(Instant.parse("2026-10-25T01:00:00Z").toEpochMilliseconds())
+    }
+
+    @Test
+    fun `a move between the two repeated fall-back hours writes the new times`() {
+        // 02:30 CEST to 02:30 CET: the same wall clock, an hour later.
+        val repeated = LocalDateTime(LocalDate(2026, 10, 25), LocalTime(2, 30))
+        val original = form(start = repeated, end = repeated)
+            .copy(start = FormTime(repeated, UtcOffset(hours = 2)), end = FormTime(repeated, UtcOffset(hours = 2)))
+        val updated = original.copy(
+            start = original.start.copy(offset = UtcOffset(hours = 1)),
+            end = original.end.copy(offset = UtcOffset(hours = 1)),
+        )
+        val values = update(original, updated)
+        assertThat(values[CalendarContract.Events.DTSTART])
+            .isEqualTo(Instant.parse("2026-10-25T01:30:00Z").toEpochMilliseconds())
+        assertThat(values[CalendarContract.Events.DTEND])
+            .isEqualTo(Instant.parse("2026-10-25T01:30:00Z").toEpochMilliseconds())
+    }
+
+    @Test
+    fun `an untouched form in the repeated fall-back hour writes no times`() {
+        val repeated = LocalDateTime(LocalDate(2026, 10, 25), LocalTime(2, 30))
+        val original = form(start = repeated, end = repeated)
+            .copy(start = FormTime(repeated, UtcOffset(hours = 2)), end = FormTime(repeated, UtcOffset(hours = 1)))
+        assertThat(update(original, original.copy(title = "Renamed")))
+            .doesNotContainKey(CalendarContract.Events.DTSTART)
+    }
+
+    @Test
+    fun `a series anchored on the second repeated hour keeps it through a time edit`() {
+        // The series starts 02:30 CET on the fall-back day; an occurrence a week
+        // later gets ten more minutes.
+        val anchor = Instant.parse("2026-10-25T01:30:00Z").toEpochMilliseconds()
+        val original = form(
+            start = LocalDateTime(LocalDate(2026, 11, 1), LocalTime(2, 30)),
+            end = LocalDateTime(LocalDate(2026, 11, 1), LocalTime(3, 30)),
+        ).copy(rrule = "FREQ=WEEKLY")
+        val updated = original.copy(end = FormTime(LocalDateTime(LocalDate(2026, 11, 1), LocalTime(3, 40))))
+        val values = update(original, updated, series = anchor)
+        assertThat(values[CalendarContract.Events.DTSTART]).isEqualTo(anchor)
+    }
+
+    @Test
+    fun `a series anchor moved between the repeated hours follows the form`() {
+        // Editing the anchor occurrence itself from 02:30 CEST onto 02:30 CET.
+        val repeated = LocalDateTime(LocalDate(2026, 10, 25), LocalTime(2, 30))
+        val anchor = Instant.parse("2026-10-25T00:30:00Z").toEpochMilliseconds()
+        val original = form(start = repeated, end = LocalDateTime(LocalDate(2026, 10, 25), LocalTime(4, 0)))
+            .copy(start = FormTime(repeated, UtcOffset(hours = 2)), rrule = "FREQ=WEEKLY")
+        val updated = original.copy(start = FormTime(repeated, UtcOffset(hours = 1)))
+        val values = update(original, updated, series = anchor)
+        assertThat(values[CalendarContract.Events.DTSTART])
+            .isEqualTo(Instant.parse("2026-10-25T01:30:00Z").toEpochMilliseconds())
     }
 }

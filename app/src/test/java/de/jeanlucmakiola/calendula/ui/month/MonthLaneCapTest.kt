@@ -2,14 +2,12 @@ package de.jeanlucmakiola.calendula.ui.month
 
 import androidx.compose.ui.unit.dp
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.timedEvent
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.YearMonth
-import kotlinx.datetime.atTime
-import kotlinx.datetime.toInstant
 import org.junit.jupiter.api.Test
 
 /**
@@ -25,17 +23,8 @@ class MonthLaneCapTest {
     /** Cell chrome above the band: 6 + 22 + 4. */
     private val header = 32.dp
 
-    private fun timed(day: LocalDate, hour: Int, id: Long) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = "T$id",
-        start = day.atTime(hour, 0).toInstant(zone),
-        end = day.atTime(hour + 1, 0).toInstant(zone),
-        isAllDay = false,
-        color = 0xFFF44336.toInt(),
-        location = null,
-    )
+    private fun timed(day: LocalDate, hour: Int, id: Long) =
+        timedEvent(day, hour, zone = zone, id = id, title = "T$id", color = 0xFFF44336.toInt())
 
     /** Jul 6-12, wholly inside July 2026. */
     private fun week(eventsOnMonday: Int) = layoutMonthWeeks(

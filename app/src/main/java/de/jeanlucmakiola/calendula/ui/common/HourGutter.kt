@@ -19,12 +19,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import de.jeanlucmakiola.calendula.ui.week.MINUTES_PER_DAY
 import de.jeanlucmakiola.floret.locale.currentLocale
 
 /** Width of the hour gutter down the start edge of the day and week timelines. */
@@ -67,7 +69,7 @@ fun HourGutter(
     val locale = currentLocale()
     // Derived: the drag is rewritten every frame, its snapped start once a slot.
     val dragStartMin by remember(dragController) {
-        derivedStateOf { dragController.drag?.startMin }
+        derivedStateOf { dragController.drag?.markerMin }
     }
     val hourAlpha by animateFloatAsState(
         targetValue = if (dragStartMin != null) DIMMED_HOUR_ALPHA else 1f,
@@ -107,12 +109,24 @@ fun HourGutter(
                 }
             }
         }
-        dragStartMin?.let { startMin ->
+        // Held while it fades, so it goes out where it was rather than blinking off.
+        val badgeMin = rememberHeld(dragStartMin)
+        val badgeIn by animateFloatAsState(
+            targetValue = if (dragStartMin != null) 1f else 0f,
+            animationSpec = MaterialTheme.motionScheme.fastEffectsSpec(),
+            label = "gutterBadge",
+        )
+        badgeMin?.takeIf { badgeIn > 0f }?.let { startMin ->
             val top = (hourHeight * (startMin / 60f) - BADGE_HEIGHT / 2).coerceAtLeast(0.dp)
             Box(
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .offset(y = top)
+                    .graphicsLayer {
+                        alpha = badgeIn
+                        scaleX = 0.8f + 0.2f * badgeIn
+                        scaleY = 0.8f + 0.2f * badgeIn
+                    }
                     .height(BADGE_HEIGHT)
                     .background(MaterialTheme.colorScheme.primary, CircleShape)
                     .padding(horizontal = 4.dp)
@@ -121,7 +135,8 @@ fun HourGutter(
                 contentAlignment = Alignment.Center,
             ) {
                 Text(
-                    text = formatGutterTime(startMin, use24Hour, locale),
+                    // A resized end can sit on midnight: 00:00, not a clamped 23:59.
+                    text = formatGutterTime(startMin % MINUTES_PER_DAY, use24Hour, locale),
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onPrimary,
                     maxLines = 1,

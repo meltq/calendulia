@@ -4,15 +4,15 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.util.Log
-import androidx.core.content.ContextCompat
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.domain.calendarVisibilityPlan
 import de.jeanlucmakiola.calendula.domain.hasSystemHiddenCalendars
+import de.jeanlucmakiola.floret.android.hasPermission
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -47,7 +47,7 @@ class CalendarVisibilityReconciler @Inject constructor(
             // Settled ahead of the permission gate, so an update installed
             // before the first grant can't later look like an upgrade.
             if (!isUpgradeInstall()) settleNoticeOnce(pending = false)
-            if (!hasPermission(Manifest.permission.READ_CALENDAR)) return@withContext
+            if (!context.hasPermission(Manifest.permission.READ_CALENDAR)) return@withContext
             val pending = prefs.pendingDisabledCalendarIds.first()
             val noticeSettled = prefs.visibilityNoticePending.first() != null
             if (pending.isEmpty() && noticeSettled) return@withContext
@@ -56,7 +56,7 @@ class CalendarVisibilityReconciler @Inject constructor(
             // Both decisions below are one-way, so leave them to the next run.
             if (calendars.isEmpty()) return@withContext
             settleNoticeOnce(hasSystemHiddenCalendars(calendars, pending))
-            if (pending.isEmpty() || !hasPermission(Manifest.permission.WRITE_CALENDAR)) {
+            if (pending.isEmpty() || !context.hasPermission(Manifest.permission.WRITE_CALENDAR)) {
                 return@withContext
             }
             val plan = calendarVisibilityPlan(calendars, pending)
@@ -96,9 +96,6 @@ class CalendarVisibilityReconciler @Inject constructor(
         Log.w(TAG, "Own package info unavailable; treating as a fresh install", e)
         false
     }
-
-    private fun hasPermission(permission: String): Boolean =
-        ContextCompat.checkSelfPermission(context, permission) == PackageManager.PERMISSION_GRANTED
 
     /** Lets non-injectable entry points (the Application) reach the reconciler. */
     @EntryPoint

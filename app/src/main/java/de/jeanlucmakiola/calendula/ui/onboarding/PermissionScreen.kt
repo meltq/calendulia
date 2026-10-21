@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.ui.onboarding
 
 import de.jeanlucmakiola.floret.components.BenefitRow
+import de.jeanlucmakiola.floret.components.OnboardingPrimaryButton
 import de.jeanlucmakiola.floret.components.OnboardingScaffold
 import de.jeanlucmakiola.floret.components.OnboardingSpace
 
@@ -13,28 +14,20 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Lock
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
 
 private val CALENDAR_PERMISSIONS = arrayOf(
@@ -47,9 +40,8 @@ fun PermissionScreen(
     onGranted: () -> Unit,
     modifier: Modifier = Modifier,
     progress: (@Composable () -> Unit)? = null,
-    viewModel: PermissionViewModel = hiltViewModel(),
 ) {
-    val state by viewModel.state.collectAsStateWithLifecycle()
+    var denied by rememberSaveable { mutableStateOf(false) }
 
     // READ and WRITE are requested together (one system dialog — same
     // permission group), but only READ gates the app: declining write keeps
@@ -58,33 +50,27 @@ fun PermissionScreen(
         contract = ActivityResultContracts.RequestMultiplePermissions(),
     ) { results ->
         if (results[Manifest.permission.READ_CALENDAR] == true) {
-            viewModel.onGranted()
+            onGranted()
         } else {
-            viewModel.onDenied()
+            denied = true
         }
     }
 
-    LaunchedEffect(state) {
-        if (state == PermissionUiState.Granted) onGranted()
-    }
-
-    when (state) {
-        is PermissionUiState.Rationale -> RationaleContent(
-            onRequest = { launcher.launch(CALENDAR_PERMISSIONS) },
-            progress = progress,
-            modifier = modifier,
-        )
-        is PermissionUiState.Denied -> DeniedContent(
+    if (denied) {
+        DeniedContent(
             onRetry = {
-                viewModel.onRetry()
+                denied = false
                 launcher.launch(CALENDAR_PERMISSIONS)
             },
             progress = progress,
             modifier = modifier,
         )
-        is PermissionUiState.Granted -> {
-            // Transient — LaunchedEffect above fires and parent replaces us.
-        }
+    } else {
+        RationaleContent(
+            onRequest = { launcher.launch(CALENDAR_PERMISSIONS) },
+            progress = progress,
+            modifier = modifier,
+        )
     }
 }
 
@@ -100,37 +86,15 @@ private fun RationaleContent(
         topSpacing = OnboardingSpace.lg,
         hero = { BrandHero() },
         actions = {
-            Button(
+            OnboardingPrimaryButton(
+                text = stringResource(R.string.permission_request_button),
                 onClick = onRequest,
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-                contentPadding = ButtonDefaults.ButtonWithIconContentPadding,
-            ) {
-                Text(
-                    text = stringResource(R.string.permission_request_button),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-                Spacer(Modifier.width(OnboardingSpace.xs))
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ArrowForward,
-                    contentDescription = null,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+                trailingIcon = Icons.AutoMirrored.Filled.ArrowForward,
+            )
         },
+        headline = stringResource(R.string.permission_rationale_title),
+        supporting = stringResource(R.string.permission_rationale_body),
     ) {
-        Text(
-            text = stringResource(R.string.permission_rationale_title),
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = stringResource(R.string.permission_rationale_body),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-
         Spacer(Modifier.height(OnboardingSpace.lg))
 
         BenefitRow(
@@ -159,7 +123,8 @@ private fun DeniedContent(
         progress = progress,
         hero = { BrandHero(HeroBadge.Denied) },
         actions = {
-            Button(
+            OnboardingPrimaryButton(
+                text = stringResource(R.string.permission_open_settings_button),
                 onClick = {
                     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
                         data = Uri.fromParts("package", context.packageName, null)
@@ -167,13 +132,7 @@ private fun DeniedContent(
                     }
                     context.startActivity(intent)
                 },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.permission_open_settings_button),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
+            )
             TextButton(
                 onClick = onRetry,
                 modifier = Modifier.fillMaxWidth(),
@@ -181,18 +140,7 @@ private fun DeniedContent(
                 Text(stringResource(R.string.permission_retry_button))
             }
         },
-    ) {
-        Text(
-            text = stringResource(R.string.permission_denied_title),
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = stringResource(R.string.permission_denied_body),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-    }
+        headline = stringResource(R.string.permission_denied_title),
+        supporting = stringResource(R.string.permission_denied_body),
+    )
 }

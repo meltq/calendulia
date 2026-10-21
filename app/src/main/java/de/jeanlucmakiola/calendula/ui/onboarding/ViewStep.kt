@@ -19,8 +19,6 @@ import de.jeanlucmakiola.calendula.ui.agenda.AgendaViewPreview
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
 import de.jeanlucmakiola.calendula.ui.common.LocalMultiDayCount
-import de.jeanlucmakiola.calendula.ui.common.PickerDescription
-import de.jeanlucmakiola.calendula.ui.common.ViewPreviewFrame
 import de.jeanlucmakiola.calendula.ui.common.icon
 import de.jeanlucmakiola.calendula.ui.common.label
 import de.jeanlucmakiola.calendula.ui.month.MonthStylePreview
@@ -28,11 +26,12 @@ import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
 import de.jeanlucmakiola.calendula.ui.month.descriptionRes
 import de.jeanlucmakiola.calendula.ui.month.labelRes
 import de.jeanlucmakiola.calendula.ui.week.WeekViewPreview
+import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.OnboardingScaffold
 import de.jeanlucmakiola.floret.components.OnboardingSpace
 import de.jeanlucmakiola.floret.components.GroupedRow
-import de.jeanlucmakiola.floret.components.SelectedCheck
+import de.jeanlucmakiola.floret.components.ViewPreviewFrame
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.floret.locale.currentLocale
 
@@ -77,22 +76,16 @@ internal fun ViewStep(
             }
         }
         IMPLEMENTED_VIEWS.forEachIndexed { index, view ->
-            val isSelected = view == choice.defaultView
             GroupedRow(
                 title = view.label(),
                 position = positionOf(index, IMPLEMENTED_VIEWS.size),
-                selected = isSelected,
+                checked = view == choice.defaultView,
                 leading = {
                     Icon(
                         imageVector = view.icon,
                         contentDescription = null,
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
-                },
-                trailing = if (isSelected) {
-                    { SelectedCheck() }
-                } else {
-                    null
                 },
                 onClick = { onSelect(view) },
             )
@@ -127,18 +120,12 @@ internal fun MonthStyleStep(
         StepPreview(selected = choice.monthViewStyle) { style ->
             MonthStylePreview(style = style, weekStart = weekStart, height = PREVIEW_HEIGHT)
         }
-        PickerDescription(stringResource(choice.monthViewStyle.descriptionRes))
+        GroupedHint(stringResource(choice.monthViewStyle.descriptionRes), verticalPadding = 8.dp)
         options.forEachIndexed { index, style ->
-            val isSelected = style == choice.monthViewStyle
             GroupedRow(
                 title = stringResource(style.labelRes),
                 position = positionOf(index, options.size),
-                selected = isSelected,
-                trailing = if (isSelected) {
-                    { SelectedCheck() }
-                } else {
-                    null
-                },
+                checked = style == choice.monthViewStyle,
                 onClick = { onSelect(style) },
             )
         }

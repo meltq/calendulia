@@ -1,9 +1,15 @@
 package de.jeanlucmakiola.calendula.ui.common
 
 import androidx.compose.runtime.staticCompositionLocalOf
+import de.jeanlucmakiola.calendula.domain.inRepeatedHour
+import de.jeanlucmakiola.calendula.domain.zoneAbbreviationAt
+import kotlinx.datetime.TimeZone
 import java.time.LocalTime
+import kotlin.time.Instant
+import kotlin.time.toJavaInstant
 import java.time.format.DateTimeFormatter
 import java.util.Locale
+import kotlinx.datetime.toLocalDateTime
 
 /**
  * The resolved clock convention for the whole UI: `true` = 24-hour ("14:00"),
@@ -31,6 +37,12 @@ fun timeOfDayFormatter(is24Hour: Boolean, locale: Locale): DateTimeFormatter =
 fun formatTimeOfDay(hour: Int, minute: Int, is24Hour: Boolean, locale: Locale): String =
     LocalTime.of(hour.coerceIn(0, 23), minute.coerceIn(0, 59))
         .format(timeOfDayFormatter(is24Hour, locale))
+
+/** [instant]'s wall-clock time in [zone], as [formatTimeOfDay] renders it. */
+fun formatTimeOfDay(instant: Instant, zone: TimeZone, is24Hour: Boolean, locale: Locale): String {
+    val time = instant.toLocalDateTime(zone).time
+    return formatTimeOfDay(time.hour, time.minute, is24Hour, locale)
+}
 
 /**
  * Format minutes-from-midnight (0..1440) as a time label. The end-of-day value
@@ -68,3 +80,15 @@ fun formatHourLabel(hour: Int, is24Hour: Boolean, locale: Locale): String =
     }
 
 private const val MINUTES_PER_DAY = 1_440
+
+/**
+ * [formatted] — [instant]'s time in [zone] — with the zone's abbreviation after
+ * it ("2:30 AM CEST") when the fall-back hour repeats that time, the one case
+ * where the time alone doesn't say which instant it is (#387).
+ */
+fun withRepeatedHourZone(formatted: String, instant: Instant, zone: TimeZone, locale: Locale): String {
+    if (!instant.inRepeatedHour(zone)) return formatted
+    val abbreviation = zoneAbbreviationAt(zone.id, locale, instant.toJavaInstant(), ::icuTimeZoneRegion)
+        ?: return formatted
+    return "$formatted $abbreviation"
+}

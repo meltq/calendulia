@@ -1,10 +1,11 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
 import android.util.Log
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import de.jeanlucmakiola.floret.time.toEpochMillis
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.domain.curatedForPicker
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventColorOption
 import de.jeanlucmakiola.calendula.domain.EventDetail
@@ -125,8 +126,7 @@ class CalendarRepositoryImpl @Inject constructor(
                         beginMillis = range.start.toEpochMillis(),
                         endMillis = range.endInclusive.toEpochMillis(),
                     ),
-                    switchedOffCalendarIds = invisibleCalendarIds() +
-                        prefs.pendingDisabledCalendarIds.first(),
+                    switchedOffCalendarIds = switchedOffCalendarIds(),
                 )
             },
             prefs.hiddenCalendarIds,
@@ -150,6 +150,10 @@ class CalendarRepositoryImpl @Inject constructor(
     private suspend fun invisibleCalendarIds(): Set<Long> = calendarsSnapshot()
         .filterNot { it.isVisibleInSystem }
         .mapTo(mutableSetOf()) { it.id }
+
+    /** [invisibleCalendarIds] plus the switch-offs still waiting to be written. */
+    private suspend fun switchedOffCalendarIds(): Set<Long> =
+        invisibleCalendarIds() + prefs.pendingDisabledCalendarIds.first()
 
     private val calendarsLock = Mutex()
     private var cachedGeneration = -1L
@@ -184,15 +188,13 @@ class CalendarRepositoryImpl @Inject constructor(
 
     override suspend fun searchEvents(query: String): List<SearchCandidate> = withContext(io) {
         if (query.isBlank()) return@withContext emptyList()
-        val excluded = prefs.hiddenCalendarIds.first() +
-            prefs.pendingDisabledCalendarIds.first() +
-            invisibleCalendarIds()
+        val excluded = prefs.hiddenCalendarIds.first() + switchedOffCalendarIds()
         dataSource.searchEvents(query)
             .let { if (excluded.isEmpty()) it else it.filterNot { c -> c.event.calendarId in excluded } }
     }
 
     override suspend fun eventColorPalette(calendarId: Long): List<EventColorOption> =
-        withContext(io) { dataSource.eventColorPalette(calendarId) }
+        withContext(io) { dataSource.publishedEventColors(calendarId).curatedForPicker() }
 
     override suspend fun createLocalCalendar(
         displayName: String,
@@ -214,16 +216,15 @@ class CalendarRepositoryImpl @Inject constructor(
 
     override suspend fun setCalendarsVisible(ids: Collection<Long>, visible: Boolean) =
         write {
-            if (dataSource.canWriteCalendars()) {
-                ids.forEach { dataSource.setCalendarVisible(it, visible) }
-                // Nothing of ours is left waiting for the provider once the
-                // write lands (and switching one back on retires its entry).
-                prefs.removePendingDisabledCalendarIds(ids)
-            } else if (visible) {
+            val canWrite = dataSource.canWriteCalendars()
+            if (canWrite) ids.forEach { dataSource.setCalendarVisible(it, visible) }
+            // Nothing of ours is left waiting for the provider once the write
+            // lands, and switching one back on retires its entry. With read-only
+            // permission a switch-off still works, app-side, and the reconciler
+            // flushes it if WRITE_CALENDAR ever arrives.
+            if (canWrite || visible) {
                 prefs.removePendingDisabledCalendarIds(ids)
             } else {
-                // Read-only permission: the switch still works, app-side, and
-                // the reconciler flushes it if WRITE_CALENDAR ever arrives.
                 prefs.addPendingDisabledCalendarIds(ids)
             }
         }

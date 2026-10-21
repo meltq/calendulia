@@ -32,8 +32,8 @@ android {
         // (up to 2.22.3: 2.22.3 -> 22203; from 2.22.4: 2.23.0-beta.1 -> 2230001,
         // 2.22.4 -> 2220499), and CI fails if the committed one doesn't match.
         // See docs/RELEASING.md.
-        versionCode = 2220599
-        versionName = "2.22.5"
+        versionCode = 2230099
+        versionName = "2.23.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
@@ -175,7 +175,10 @@ dependencies {
     implementation("de.jeanlucmakiola.floret:core-time")
     implementation("de.jeanlucmakiola.floret:core-locale")
     implementation("de.jeanlucmakiola.floret:core-crash")
+    implementation("de.jeanlucmakiola.floret:core-di")
+    implementation("de.jeanlucmakiola.floret:core-prefs")
     implementation("de.jeanlucmakiola.floret:core-reminders")
+    implementation("de.jeanlucmakiola.floret:core-android")
     implementation("de.jeanlucmakiola.floret:identity")
     implementation("de.jeanlucmakiola.floret:components")
     implementation(libs.kotlinx.coroutines.core)

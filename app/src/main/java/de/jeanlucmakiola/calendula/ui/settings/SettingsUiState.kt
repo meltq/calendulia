@@ -3,7 +3,7 @@ package de.jeanlucmakiola.calendula.ui.settings
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
-import de.jeanlucmakiola.calendula.data.prefs.ThemeMode
+import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.data.prefs.TimeFormatPref
 import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
 import de.jeanlucmakiola.calendula.domain.CalendarSource
@@ -47,6 +47,8 @@ data class SettingsUiState(
     val todayButtonInToolbar: Boolean = false,
     /** Whether events can be dragged to another slot to reschedule them (#68, #173). */
     val dragToReschedule: Boolean = true,
+    /** Whether tapping an event opens the edit form instead of the detail screen (#178). */
+    val tapOpensEditor: Boolean = false,
     /** How far ahead the in-app Agenda screen shows events (v2.11). */
     val agendaScreenRange: AgendaRange = AgendaRange.Month,
     /** How far ahead the agenda widget shows events (v2.11). */
@@ -114,7 +116,7 @@ data class SettingsUiState(
 
 /**
  * State for the contact special-dates sub-page (issue #15). Exposed as its own
- * flow rather than folded into [SettingsUiState] (whose combine is already full).
+ * flow rather than folded into [SettingsUiState].
  * [titleTemplates] is always populated — a blank stored template resolves to the
  * localized default so the editor never shows an empty field.
  */

@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.ui.agenda
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.spansMultipleDays
+import de.jeanlucmakiola.calendula.testEvent
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
@@ -26,17 +27,7 @@ class GroupAgendaDaysTest {
         start: Instant,
         end: Instant,
         isAllDay: Boolean = false,
-    ) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1,
-        title = title,
-        start = start,
-        end = end,
-        isAllDay = isAllDay,
-        color = 0,
-        location = null,
-    )
+    ) = testEvent(id = id, title = title, start = start, end = end, isAllDay = isAllDay)
 
     private fun days(instances: List<EventInstance>) =
         groupAgendaDays(anchor, windowEnd, instances, zone)

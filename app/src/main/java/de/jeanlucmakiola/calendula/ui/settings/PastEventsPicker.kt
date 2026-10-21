@@ -27,10 +27,9 @@ import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaDayHeader
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaEventRow
-import de.jeanlucmakiola.calendula.ui.common.PickerDescription
 import de.jeanlucmakiola.floret.components.FullScreenPicker
-import de.jeanlucmakiola.floret.components.GroupedRow
-import de.jeanlucmakiola.floret.components.SelectedCheck
+import de.jeanlucmakiola.floret.components.GroupedHint
+import de.jeanlucmakiola.floret.components.OptionRows
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.floret.identity.rememberReduceMotion
 import kotlinx.datetime.LocalDate
@@ -80,21 +79,13 @@ internal fun PastEventsPicker(
                 }
             }
         }
-        PickerDescription(stringResource(R.string.settings_past_events_hint))
-        options.forEachIndexed { index, mode ->
-            val isSelected = mode == selected
-            GroupedRow(
-                title = stringResource(pastEventDisplayLabelRes(mode)),
-                position = positionOf(index, options.size),
-                selected = isSelected,
-                trailing = if (isSelected) {
-                    { SelectedCheck() }
-                } else {
-                    null
-                },
-                onClick = { onSelect(mode) },
-            )
-        }
+        GroupedHint(stringResource(R.string.settings_past_events_hint), verticalPadding = 8.dp)
+        OptionRows(
+            options = options,
+            selected = selected,
+            label = { stringResource(pastEventDisplayLabelRes(it)) },
+            onSelect = onSelect,
+        )
     }
 }
 

@@ -33,7 +33,6 @@ import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
 import de.jeanlucmakiola.calendula.ui.common.AgendaRangePicker
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
-import de.jeanlucmakiola.calendula.ui.common.PickerDescription
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.TimelineHours
 import de.jeanlucmakiola.calendula.ui.common.TimelineScale
@@ -46,7 +45,10 @@ import de.jeanlucmakiola.calendula.ui.common.label
 import de.jeanlucmakiola.calendula.ui.common.labelRes
 import de.jeanlucmakiola.calendula.ui.month.labelRes
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
+import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.GroupedSectionHeader
+import de.jeanlucmakiola.floret.components.GroupedSwitchRow
 import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.ReorderableColumn
@@ -54,6 +56,7 @@ import de.jeanlucmakiola.floret.components.ReorderableRowHeight
 import de.jeanlucmakiola.floret.locale.currentLocale
 import kotlinx.datetime.DayOfWeek
 import java.time.format.TextStyle as JavaTextStyle
+import kotlinx.datetime.toJavaDayOfWeek
 
 /**
  * Views: everything that changes how a calendar view reads, grouped by the view
@@ -74,6 +77,7 @@ internal fun ViewsScreen(
     var showDefaultView by remember { mutableStateOf(false) }
     var showWeekStart by remember { mutableStateOf(false) }
     var showTimeFormat by remember { mutableStateOf(false) }
+    var showTapOpens by remember { mutableStateOf(false) }
     var showPastEvents by remember { mutableStateOf(false) }
     var showAgendaScreenRange by remember { mutableStateOf(false) }
     var showTimelineScale by remember { mutableStateOf(false) }
@@ -91,7 +95,7 @@ internal fun ViewsScreen(
         val config = state.quickSwitchConfig
 
         // What holds for every view, above the per-view groups.
-        SectionHeader(stringResource(R.string.settings_views_all_header))
+        GroupedSectionHeader(stringResource(R.string.settings_views_all_header))
         GroupedRow(
             title = stringResource(R.string.settings_default_view),
             summary = state.defaultView.label(),
@@ -110,66 +114,57 @@ internal fun ViewsScreen(
             position = Position.Middle,
             onClick = { showTimeFormat = true },
         )
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_today_toolbar),
+            checked = state.todayButtonInToolbar,
+            onCheckedChange = viewModel::setTodayButtonInToolbar,
             summary = stringResource(R.string.settings_today_toolbar_summary),
             position = Position.Middle,
-            trailing = {
-                Switch(
-                    checked = state.todayButtonInToolbar,
-                    onCheckedChange = viewModel::setTodayButtonInToolbar,
-                )
-            },
-            onClick = { viewModel.setTodayButtonInToolbar(!state.todayButtonInToolbar) },
         )
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_dim_completed),
+            checked = state.dimCompletedEvents,
+            onCheckedChange = viewModel::setDimCompletedEvents,
             summary = stringResource(R.string.settings_dim_completed_summary),
-            position = Position.Middle,
-            trailing = {
-                Switch(
-                    checked = state.dimCompletedEvents,
-                    onCheckedChange = viewModel::setDimCompletedEvents,
-                )
-            },
-            onClick = { viewModel.setDimCompletedEvents(!state.dimCompletedEvents) },
-        )
-        GroupedRow(
-            title = stringResource(R.string.settings_drag_to_reschedule),
-            summary = stringResource(R.string.settings_drag_to_reschedule_summary),
             position = Position.Bottom,
-            trailing = {
-                Switch(
-                    checked = state.dragToReschedule,
-                    onCheckedChange = viewModel::setDragToReschedule,
-                )
-            },
-            onClick = { viewModel.setDragToReschedule(!state.dragToReschedule) },
         )
 
         Spacer(Modifier.height(8.dp))
-        SectionHeader(stringResource(R.string.settings_month_header))
+
+        // How events respond to a tap and a long press (#178, #141).
+        GroupedSectionHeader(stringResource(R.string.settings_events_header))
+        GroupedRow(
+            title = stringResource(R.string.settings_tap_opens),
+            summary = tapOpensLabel(state.tapOpensEditor),
+            position = Position.Top,
+            onClick = { showTapOpens = true },
+        )
+        GroupedSwitchRow(
+            title = stringResource(R.string.settings_drag_to_reschedule),
+            checked = state.dragToReschedule,
+            onCheckedChange = viewModel::setDragToReschedule,
+            summary = stringResource(R.string.settings_drag_to_reschedule_summary),
+            position = Position.Bottom,
+        )
+
+        Spacer(Modifier.height(8.dp))
+        GroupedSectionHeader(stringResource(R.string.settings_month_header))
         GroupedRow(
             title = stringResource(R.string.settings_month_view_style),
             summary = stringResource(state.monthViewStyle.labelRes),
             position = Position.Top,
             onClick = { showMonthStyle = true },
         )
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_week_numbers),
+            checked = state.showWeekNumbers,
+            onCheckedChange = viewModel::setShowWeekNumbers,
             summary = stringResource(R.string.settings_week_numbers_summary),
             position = Position.Bottom,
-            trailing = {
-                Switch(
-                    checked = state.showWeekNumbers,
-                    onCheckedChange = viewModel::setShowWeekNumbers,
-                )
-            },
-            onClick = { viewModel.setShowWeekNumbers(!state.showWeekNumbers) },
         )
 
         Spacer(Modifier.height(8.dp))
-        SectionHeader(stringResource(R.string.settings_week_day_header))
+        GroupedSectionHeader(stringResource(R.string.settings_week_day_header))
         GroupedRow(
             title = stringResource(R.string.settings_multi_day_count),
             summary = multiDayLabel(state.multiDayCount),
@@ -187,8 +182,10 @@ internal fun ViewsScreen(
             dimmed = hours.enabled,
             onClick = if (hours.enabled) null else ({ showTimelineScale = true }),
         )
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_visible_hours),
+            checked = hours.enabled,
+            onCheckedChange = { viewModel.setTimelineHours(hours.copy(enabled = it)) },
             summary = if (hours.enabled) {
                 stringResource(
                     R.string.settings_visible_hours_on_summary,
@@ -199,13 +196,6 @@ internal fun ViewsScreen(
                 stringResource(R.string.settings_visible_hours_summary)
             },
             position = Position.Middle,
-            trailing = {
-                Switch(
-                    checked = hours.enabled,
-                    onCheckedChange = { viewModel.setTimelineHours(hours.copy(enabled = it)) },
-                )
-            },
-            onClick = { viewModel.setTimelineHours(hours.copy(enabled = !hours.enabled)) },
         )
         if (hours.enabled) {
             GroupedRow(
@@ -221,21 +211,16 @@ internal fun ViewsScreen(
                 onClick = { showHoursEnd = true },
             )
         }
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_hour_lines),
+            checked = state.showHourGrid,
+            onCheckedChange = viewModel::setShowHourGrid,
             summary = stringResource(R.string.settings_hour_lines_summary),
             position = Position.Bottom,
-            trailing = {
-                Switch(
-                    checked = state.showHourGrid,
-                    onCheckedChange = viewModel::setShowHourGrid,
-                )
-            },
-            onClick = { viewModel.setShowHourGrid(!state.showHourGrid) },
         )
 
         Spacer(Modifier.height(8.dp))
-        SectionHeader(stringResource(R.string.settings_agenda_header))
+        GroupedSectionHeader(stringResource(R.string.settings_agenda_header))
         GroupedRow(
             title = stringResource(R.string.settings_agenda_range),
             summary = agendaRangeLabel(state.agendaScreenRange),
@@ -248,34 +233,24 @@ internal fun ViewsScreen(
             position = Position.Middle,
             onClick = { showPastEvents = true },
         )
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_agenda_show_today),
+            checked = state.agendaShowToday,
+            onCheckedChange = viewModel::setAgendaShowToday,
             summary = stringResource(R.string.settings_agenda_show_today_hint),
             position = Position.Middle,
-            trailing = {
-                Switch(
-                    checked = state.agendaShowToday,
-                    onCheckedChange = viewModel::setAgendaShowToday,
-                )
-            },
-            onClick = { viewModel.setAgendaShowToday(!state.agendaShowToday) },
         )
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_agenda_range_bar),
+            checked = state.agendaShowRangeBar,
+            onCheckedChange = viewModel::setAgendaShowRangeBar,
             summary = stringResource(R.string.settings_agenda_range_bar_hint),
             position = Position.Bottom,
-            trailing = {
-                Switch(
-                    checked = state.agendaShowRangeBar,
-                    onCheckedChange = viewModel::setAgendaShowRangeBar,
-                )
-            },
-            onClick = { viewModel.setAgendaShowRangeBar(!state.agendaShowRangeBar) },
         )
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(stringResource(R.string.settings_quick_switch_header))
-        SettingsHint(stringResource(R.string.settings_quick_switch_hint))
+        GroupedSectionHeader(stringResource(R.string.settings_quick_switch_header))
+        GroupedHint(stringResource(R.string.settings_quick_switch_hint))
         Spacer(Modifier.height(8.dp))
         ReorderableColumn(
             items = config.order,
@@ -299,8 +274,8 @@ internal fun ViewsScreen(
         }
 
         Spacer(Modifier.height(24.dp))
-        SectionHeader(stringResource(R.string.settings_drawer_order_header))
-        SettingsHint(stringResource(R.string.settings_drawer_order_hint))
+        GroupedSectionHeader(stringResource(R.string.settings_drawer_order_header))
+        GroupedHint(stringResource(R.string.settings_drawer_order_hint))
         Spacer(Modifier.height(8.dp))
         ReorderableColumn(
             items = state.drawerViewOrder,
@@ -328,7 +303,7 @@ internal fun ViewsScreen(
     if (showDefaultView) {
         OptionPicker(
             title = stringResource(R.string.settings_default_view),
-            header = { PickerDescription(stringResource(R.string.settings_default_view_hint)) },
+            header = { GroupedHint(stringResource(R.string.settings_default_view_hint), verticalPadding = 8.dp) },
             predictiveBack = true,
             options = IMPLEMENTED_VIEWS,
             selected = state.defaultView,
@@ -359,7 +334,7 @@ internal fun ViewsScreen(
         val systemIs24Hour = DateFormat.is24HourFormat(LocalContext.current)
         OptionPicker(
             title = stringResource(R.string.settings_time_format),
-            header = { PickerDescription(stringResource(R.string.settings_time_format_hint)) },
+            header = { GroupedHint(stringResource(R.string.settings_time_format_hint), verticalPadding = 8.dp) },
             predictiveBack = true,
             options = TimeFormatPref.entries,
             selected = state.timeFormat,
@@ -387,6 +362,18 @@ internal fun ViewsScreen(
             onDismiss = { showTimeFormat = false },
         )
     }
+    if (showTapOpens) {
+        OptionPicker(
+            title = stringResource(R.string.settings_tap_opens),
+            header = { GroupedHint(stringResource(R.string.settings_tap_opens_hint), verticalPadding = 8.dp) },
+            predictiveBack = true,
+            options = listOf(false, true),
+            selected = state.tapOpensEditor,
+            label = { tapOpensLabel(it) },
+            onSelect = viewModel::setTapOpensEditor,
+            onDismiss = { showTapOpens = false },
+        )
+    }
     if (showPastEvents) {
         PastEventsPicker(
             selected = state.pastEventDisplay,
@@ -397,7 +384,7 @@ internal fun ViewsScreen(
     if (showMultiDayCount) {
         OptionPicker(
             title = stringResource(R.string.settings_multi_day_count),
-            header = { PickerDescription(stringResource(R.string.settings_multi_day_count_hint)) },
+            header = { GroupedHint(stringResource(R.string.settings_multi_day_count_hint), verticalPadding = 8.dp) },
             predictiveBack = true,
             options = SettingsPrefs.MULTI_DAY_COUNTS.toList(),
             selected = state.multiDayCount,
@@ -409,7 +396,7 @@ internal fun ViewsScreen(
     if (showTimelineScale) {
         OptionPicker(
             title = stringResource(R.string.settings_timeline_scale),
-            header = { PickerDescription(stringResource(R.string.settings_timeline_scale_hint)) },
+            header = { GroupedHint(stringResource(R.string.settings_timeline_scale_hint), verticalPadding = 8.dp) },
             predictiveBack = true,
             // A height pinched on the timeline is listed alongside the presets
             // rather than left as a silently unticked list: it is the current
@@ -428,7 +415,7 @@ internal fun ViewsScreen(
     if (showHoursStart) {
         OptionPicker(
             title = stringResource(R.string.settings_visible_hours_start),
-            header = { PickerDescription(stringResource(R.string.settings_visible_hours_start_hint)) },
+            header = { GroupedHint(stringResource(R.string.settings_visible_hours_start_hint), verticalPadding = 8.dp) },
             predictiveBack = true,
             options = TimelineHours.startOptions(hours.endHour),
             selected = hours.startHour,
@@ -440,7 +427,7 @@ internal fun ViewsScreen(
     if (showHoursEnd) {
         OptionPicker(
             title = stringResource(R.string.settings_visible_hours_end),
-            header = { PickerDescription(stringResource(R.string.settings_visible_hours_end_hint)) },
+            header = { GroupedHint(stringResource(R.string.settings_visible_hours_end_hint), verticalPadding = 8.dp) },
             predictiveBack = true,
             options = TimelineHours.endOptions(hours.startHour),
             selected = hours.endHour,
@@ -518,9 +505,14 @@ private val WEEK_START_OPTIONS: List<WeekStartPref> =
 internal fun weekStartLabel(pref: WeekStartPref): String = when (pref) {
     WeekStartPref.Auto -> stringResource(R.string.settings_week_start_auto)
     // Localised weekday name, so no per-day string resource is needed.
-    is WeekStartPref.Day -> java.time.DayOfWeek.of(pref.day.ordinal + 1)
+    is WeekStartPref.Day -> pref.day.toJavaDayOfWeek()
         .getDisplayName(JavaTextStyle.FULL, currentLocale())
 }
+
+@Composable
+private fun tapOpensLabel(editor: Boolean): String = stringResource(
+    if (editor) R.string.settings_tap_opens_editor else R.string.settings_tap_opens_details,
+)
 
 @Composable
 private fun timeFormatLabel(pref: TimeFormatPref): String = stringResource(

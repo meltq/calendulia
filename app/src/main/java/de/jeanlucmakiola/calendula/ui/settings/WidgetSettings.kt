@@ -21,11 +21,11 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
 import de.jeanlucmakiola.calendula.qs.NewEventTileService
 import de.jeanlucmakiola.calendula.ui.common.AgendaRangePicker
-import de.jeanlucmakiola.calendula.ui.common.PickerDescription
 import de.jeanlucmakiola.calendula.ui.common.agendaRangeLabel
 import de.jeanlucmakiola.calendula.widget.WidgetSize
 import de.jeanlucmakiola.calendula.widget.agenda.metricsFor
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
+import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
@@ -53,7 +53,7 @@ internal fun WidgetsScreen(
         predictiveBack = true,
         visible = visible,
     ) {
-        SettingsHint(stringResource(R.string.settings_widgets_hint))
+        GroupedHint(stringResource(R.string.settings_widgets_hint))
         Spacer(Modifier.height(8.dp))
 
         GroupedRow(
@@ -90,7 +90,7 @@ internal fun WidgetsScreen(
     if (showWidgetSize) {
         OptionPicker(
             title = stringResource(R.string.settings_widget_size),
-            header = { PickerDescription(stringResource(R.string.settings_widget_size_hint)) },
+            header = { GroupedHint(stringResource(R.string.settings_widget_size_hint), verticalPadding = 8.dp) },
             predictiveBack = true,
             options = WidgetSize.entries,
             selected = state.widgetSize,

@@ -6,34 +6,27 @@ import android.content.Intent
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Backup
 import androidx.compose.material.icons.filled.CalendarMonth
-import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Palette
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
@@ -41,20 +34,14 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -85,6 +72,7 @@ import de.jeanlucmakiola.calendula.domain.stateLabels
 import de.jeanlucmakiola.calendula.data.calendar.CalendarColorPalette
 import de.jeanlucmakiola.calendula.ui.common.AccountKey
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
+import de.jeanlucmakiola.calendula.ui.common.CalendarVisibilitySwitch
 import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
 import de.jeanlucmakiola.calendula.ui.common.groupByAccount
 import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
@@ -94,11 +82,14 @@ import de.jeanlucmakiola.calendula.ui.common.eventInk
 import de.jeanlucmakiola.calendula.ui.common.LeadingAvatar
 import de.jeanlucmakiola.calendula.ui.common.SourceLogo
 import de.jeanlucmakiola.calendula.ui.common.curatedSourcePackage
+import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
+import de.jeanlucmakiola.floret.components.GroupedHint
+import de.jeanlucmakiola.floret.components.GroupedSectionHeader
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.collapseExit
 import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.identity.predictiveBack
-import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.InlineTextField
 import de.jeanlucmakiola.floret.components.Position
@@ -224,7 +215,7 @@ private fun CalendarsList(
         visible = visible,
     ) {
         // What the per-calendar / per-account switches below actually do.
-        HintText(stringResource(R.string.calendars_visibility_hint))
+        GroupedHint(stringResource(R.string.calendars_visibility_hint), style = MaterialTheme.typography.bodySmall)
 
         // Local (device-only) calendars — one collapsible group. The header's
         // "+" adds a calendar; the switch enables/disables them all at once;
@@ -245,24 +236,13 @@ private fun CalendarsList(
             onToggleAll = { enabled -> onSetAccountVisible(local.map { it.id }, enabled) },
         ) {
             if (local.isEmpty()) {
-                HintText(stringResource(R.string.calendars_local_empty))
+                GroupedHint(stringResource(R.string.calendars_local_empty), style = MaterialTheme.typography.bodySmall)
             } else {
                 local.forEachIndexed { index, calendar ->
-                    val disabled = !calendar.isVisibleInSystem
-                    GroupedRow(
-                        title = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
-                        summary = calendarRowSummary(calendar),
-                        position = if (index == local.lastIndex) Position.Bottom else Position.Middle,
-                        container = MaterialTheme.colorScheme.surfaceContainerHighest,
-                        dimmed = disabled,
-                        leading = { CalendarColorChip(calendar.color, dimIf(disabled)) },
-                        trailing = {
-                            EnableSwitch(
-                                calendarName = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
-                                enabled = !disabled,
-                                onToggle = { enabled -> onSetVisible(calendar.id, enabled) },
-                            )
-                        },
+                    CalendarManagerRow(
+                        calendar = calendar,
+                        last = index == local.lastIndex,
+                        onSetVisible = onSetVisible,
                         onClick = { onEdit(calendar) },
                     )
                 }
@@ -291,8 +271,8 @@ private fun CalendarsList(
         // Synced calendars — read-only, grouped by account. Each account is a
         // collapsible group whose header opens the source app (icon) and toggles
         // all of its calendars at once (switch).
-        SectionHeader(stringResource(R.string.calendars_synced_header))
-        HintText(stringResource(R.string.calendars_synced_hint))
+        GroupedSectionHeader(stringResource(R.string.calendars_synced_header))
+        GroupedHint(stringResource(R.string.calendars_synced_hint), style = MaterialTheme.typography.bodySmall)
         synced
             .groupByAccount()
             .forEach { group ->
@@ -333,27 +313,10 @@ private fun CalendarsList(
                     // bottom, dimmed and switchless.
                     val ordered = cals.orderedForManager()
                     ordered.forEachIndexed { index, calendar ->
-                        val disabled = !calendar.isVisibleInSystem || calendar.isNotSynced
-                        GroupedRow(
-                            title = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
-                            summary = calendarRowSummary(calendar),
-                            position = if (index == ordered.lastIndex) Position.Bottom else Position.Middle,
-                            container = MaterialTheme.colorScheme.surfaceContainerHighest,
-                            dimmed = disabled,
-                            leading = { CalendarColorChip(calendar.color, dimIf(disabled)) },
-                            trailing = if (calendar.hasVisibilitySwitch) {
-                                {
-                                    EnableSwitch(
-                                        calendarName = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
-                                        enabled = calendar.isVisibleInSystem,
-                                        onToggle = { enabled ->
-                                            onSetVisible(calendar.id, enabled)
-                                        },
-                                    )
-                                }
-                            } else {
-                                null
-                            },
+                        CalendarManagerRow(
+                            calendar = calendar,
+                            last = index == ordered.lastIndex,
+                            onSetVisible = onSetVisible,
                         )
                     }
                 }
@@ -478,7 +441,7 @@ private fun CalendarNameField(
     onNameChange: (String) -> Unit,
     onImeAction: () -> Unit,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val soften = LocalSoftenColors.current
     GroupedSurface(position = Position.Alone, modifier = Modifier.padding(horizontal = 16.dp)) {
         Row(
@@ -522,7 +485,7 @@ private fun CalendarNameField(
  */
 @Composable
 private fun CalendarColorGrid(selected: Int, onSelect: (Int) -> Unit) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val soften = LocalSoftenColors.current
     GroupedSurface(position = Position.Alone, modifier = Modifier.padding(horizontal = 16.dp)) {
         Column(
@@ -692,17 +655,37 @@ private fun calendarRowSummary(calendar: CalendarSource): String? {
  * `Calendars.VISIBLE`. Unchecked drops the calendar out of every surface and
  * stops its reminders. Carries its own content description.
  */
+/**
+ * One calendar in a group: dimmed while switched off or not syncing, with the
+ * visibility switch only where it can change anything.
+ */
 @Composable
-private fun EnableSwitch(
-    calendarName: String,
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
+private fun CalendarManagerRow(
+    calendar: CalendarSource,
+    last: Boolean,
+    onSetVisible: (Long, Boolean) -> Unit,
+    onClick: (() -> Unit)? = null,
 ) {
-    val label = stringResource(R.string.calendars_visibility_a11y, calendarName)
-    Switch(
-        checked = enabled,
-        onCheckedChange = onToggle,
-        modifier = Modifier.semantics { contentDescription = label },
+    val disabled = !calendar.isVisibleInSystem || calendar.isNotSynced
+    GroupedRow(
+        title = calendar.displayName.orUnnamed(),
+        summary = calendarRowSummary(calendar),
+        position = if (last) Position.Bottom else Position.Middle,
+        container = MaterialTheme.colorScheme.surfaceContainerHighest,
+        dimmed = disabled,
+        leading = { CalendarColorChip(calendar.color, dimIf(disabled)) },
+        trailing = if (calendar.hasVisibilitySwitch) {
+            {
+                CalendarVisibilitySwitch(
+                    calendarName = calendar.displayName.orUnnamed(),
+                    enabled = calendar.isVisibleInSystem,
+                    onToggle = { enabled -> onSetVisible(calendar.id, enabled) },
+                )
+            }
+        } else {
+            null
+        },
+        onClick = onClick,
     )
 }
 
@@ -838,33 +821,6 @@ private fun CalendarGroupMenu(
             )
         }
     }
-}
-
-
-@Composable
-internal fun SectionHeader(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        // The cards' own edge, so header and group share a left margin.
-        modifier = Modifier.padding(
-            start = GroupedListInset,
-            end = GroupedListInset,
-            top = 16.dp,
-            bottom = 4.dp,
-        ),
-    )
-}
-
-@Composable
-internal fun HintText(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodySmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = GroupedListInset, vertical = 4.dp),
-    )
 }
 
 

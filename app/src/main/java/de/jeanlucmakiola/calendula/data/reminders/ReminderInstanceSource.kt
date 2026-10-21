@@ -1,9 +1,9 @@
 package de.jeanlucmakiola.calendula.data.reminders
 
 import android.content.Context
-import android.content.ContentUris
 import android.provider.CalendarContract
 import dagger.hilt.android.qualifiers.ApplicationContext
+import de.jeanlucmakiola.calendula.data.calendar.instancesUri
 import de.jeanlucmakiola.calendula.domain.reminders.ReminderEventInstance
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -37,10 +37,7 @@ class ProviderReminderInstanceSource @Inject constructor(
 ) : ReminderInstanceSource {
 
     override fun occurrences(fromMillis: Long, toMillis: Long): List<ReminderEventInstance> {
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().apply {
-            ContentUris.appendId(this, fromMillis)
-            ContentUris.appendId(this, toMillis)
-        }.build()
+        val uri = instancesUri(fromMillis, toMillis)
         // `visible` is the flag the app's one visibility model writes (#75).
         // The status clause mirrors CalendarDataSource.instances: NULL means
         // "normal", so a bare `!= CANCELED` would drop every ordinary event.

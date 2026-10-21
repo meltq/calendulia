@@ -1,13 +1,12 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
-import de.jeanlucmakiola.floret.time.toEpochMillis
+import de.jeanlucmakiola.floret.android.hasPermission
 import de.jeanlucmakiola.floret.time.toKotlinInstantFromEpochMillis
 import android.Manifest
 import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
-import android.content.pm.PackageManager
 import android.database.ContentObserver
 import android.database.Cursor
 import android.net.Uri
@@ -15,7 +14,6 @@ import android.os.Handler
 import android.os.Looper
 import android.provider.CalendarContract
 import android.util.Log
-import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.domain.Attendee
 import de.jeanlucmakiola.calendula.domain.AttendeeRelationship
@@ -28,7 +26,6 @@ import de.jeanlucmakiola.calendula.domain.curatedForPicker
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.EventSearch
-import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.Reminder
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import de.jeanlucmakiola.calendula.domain.contacts.MANAGED_UID_PREFIX
@@ -36,9 +33,11 @@ import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.semanticReminderMinutes
+import de.jeanlucmakiola.calendula.domain.ics.parseRfc2445DurationMillis
 import de.jeanlucmakiola.calendula.domain.rruleTruncatedAt
+import de.jeanlucmakiola.calendula.domain.toEditForm
+import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toJavaLocalDate
-import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.ZoneOffset
@@ -76,21 +75,13 @@ interface CalendarDataSource {
 
     /**
      * The event-colour palette the calendar's account publishes
-     * (`CalendarContract.Colors`, `TYPE_EVENT`), curated for display — deduped,
-     * thinned to visually distinct swatches when oversized (CalDAV adapters
-     * publish all ~147 CSS3 names, #22) and hue-sorted; see [curatedForPicker].
+     * (`CalendarContract.Colors`, `TYPE_EVENT`), every key in provider order.
      * Empty when the account exposes no palette (most local calendars, some
      * CalDAV) — the signal that a custom colour can only be written as a raw
-     * `EVENT_COLOR`, which a synced calendar may drop on its next sync.
-     */
-    fun eventColorPalette(calendarId: Long): List<EventColorOption>
-
-    /**
-     * The same palette **uncurated** — every key the account publishes, in
-     * provider order. Curation is a display concession (it folds look-alikes and
-     * drops the neutrals outright from an oversized palette), so matching a
-     * colour that came from outside the account has to run against the full set:
-     * those keys are all the calendar accepts. See [eventColorPalette].
+     * `EVENT_COLOR`, which a synced calendar may drop on its next sync. The
+     * picker shows it curated ([curatedForPicker]); matching a colour that came
+     * from outside the account runs against this full set, since those keys are
+     * all the calendar accepts.
      */
     fun publishedEventColors(calendarId: Long): List<EventColorOption>
 
@@ -238,8 +229,10 @@ interface CalendarDataSource {
      * and cancelled occurrences) to [targetCalendarId], returning the new
      * `Events._ID`. `CALENDAR_ID` is sync-adapter-owned and can't be updated in
      * place, so this is copy+delete: the row is re-inserted on the target (its
-     * `UID_2445` preserved), its exceptions, reminders and editable guests
-     * replayed, the [original]→[updated] field edits applied, then the source
+     * `UID_2445` preserved), its reminders and editable guests copied, its
+     * exceptions turned into EXDATEs (modified ones also into standalone events,
+     * as the new row has no `_sync_id` to attach them to), the
+     * [original]→[updated] field edits applied, then the source
      * deleted. The source is removed only once the copy fully succeeds; a failure
      * before that rolls the new event back, leaving the original untouched.
      * [allDayReminderTimeMinutes]: see [insertEvent].
@@ -323,8 +316,7 @@ class AndroidCalendarDataSource @Inject constructor(
     private val registeredObservers = mutableSetOf<ContentObserver>()
 
     private fun hasCalendarPermission(): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR) ==
-            PackageManager.PERMISSION_GRANTED
+        context.hasPermission(Manifest.permission.READ_CALENDAR)
 
     /**
      * Attach any not-yet-registered observers to the provider, but only once the
@@ -358,7 +350,7 @@ class AndroidCalendarDataSource @Inject constructor(
             CalendarProjection.COLUMNS,
             null, null,
             CalendarContract.Calendars.CALENDAR_DISPLAY_NAME + " ASC",
-        )?.use { it.mapAll(::toCalendarSource) } ?: emptyList()
+        )?.use { c -> c.mapRows { toCalendarSource() } } ?: emptyList()
     }
 
     /**
@@ -375,7 +367,20 @@ class AndroidCalendarDataSource @Inject constructor(
         )
         .build()
 
-    override fun createLocalCalendar(displayName: String, color: Int, description: String?): Long {
+    override fun createLocalCalendar(displayName: String, color: Int, description: String?): Long =
+        insertLocalCalendar(displayName, color, "create local calendar") { putDescription(description) }
+
+    /**
+     * Insert an owned, visible, syncing calendar on the Calendula local account;
+     * [extra] adds the columns that tell the kinds apart. [what] names the write
+     * in the failure — never the calendar name, which can reach a crash report.
+     */
+    private fun insertLocalCalendar(
+        displayName: String,
+        color: Int,
+        what: String,
+        extra: ContentValues.() -> Unit,
+    ): Long {
         val name = displayName.trim()
         val values = ContentValues().apply {
             put(CalendarContract.Calendars.ACCOUNT_NAME, LOCAL_ACCOUNT_NAME)
@@ -391,11 +396,9 @@ class AndroidCalendarDataSource @Inject constructor(
             )
             put(CalendarContract.Calendars.VISIBLE, 1)
             put(CalendarContract.Calendars.SYNC_EVENTS, 1)
-            putDescription(description)
+            extra()
         }
-        val uri = resolver.insert(localCalendarsUri(), values)
-            // No calendar name in the message — it can reach a crash report.
-            ?: throw WriteFailedException("create local calendar")
+        val uri = resolver.insert(localCalendarsUri(), values) ?: throw WriteFailedException(what)
         return ContentUris.parseId(uri)
     }
 
@@ -460,33 +463,15 @@ class AndroidCalendarDataSource @Inject constructor(
     }
 
     override fun canWriteCalendars(): Boolean =
-        ContextCompat.checkSelfPermission(context, Manifest.permission.WRITE_CALENDAR) ==
-            PackageManager.PERMISSION_GRANTED
+        context.hasPermission(Manifest.permission.WRITE_CALENDAR)
 
-    override fun createManagedCalendar(displayName: String, color: Int, type: SpecialDateType): Long {
-        val name = displayName.trim()
-        val values = ContentValues().apply {
-            put(CalendarContract.Calendars.ACCOUNT_NAME, LOCAL_ACCOUNT_NAME)
-            put(CalendarContract.Calendars.ACCOUNT_TYPE, CalendarContract.ACCOUNT_TYPE_LOCAL)
-            put(CalendarContract.Calendars.OWNER_ACCOUNT, LOCAL_ACCOUNT_NAME)
-            put(CalendarContract.Calendars.NAME, name)
-            put(CalendarContract.Calendars.CALENDAR_DISPLAY_NAME, name)
-            put(CalendarContract.Calendars.CALENDAR_COLOR, color)
-            put(
-                CalendarContract.Calendars.CALENDAR_ACCESS_LEVEL,
-                CalendarContract.Calendars.CAL_ACCESS_OWNER,
-            )
-            put(CalendarContract.Calendars.VISIBLE, 1)
-            put(CalendarContract.Calendars.SYNC_EVENTS, 1)
+    override fun createManagedCalendar(displayName: String, color: Int, type: SpecialDateType): Long =
+        insertLocalCalendar(displayName, color, "create managed calendar") {
             // The marker that identifies this as our special-dates calendar,
             // independent of the (user-editable) display name. CAL_SYNC1 already
             // holds the description, so the marker lives in CAL_SYNC2.
             put(MANAGED_MARKER_COLUMN, markerFor(type))
         }
-        val uri = resolver.insert(localCalendarsUri(), values)
-            ?: throw WriteFailedException("create managed calendar")
-        return ContentUris.parseId(uri)
-    }
 
     override fun findManagedCalendars(): List<ManagedCalendarRow> = resolver.query(
         CalendarContract.Calendars.CONTENT_URI,
@@ -550,22 +535,16 @@ class AndroidCalendarDataSource @Inject constructor(
         // Seeded once, then never re-touched by sync — so a user who moves a
         // birthday reminder keeps their change. Encoded against the upcoming
         // occurrence, not the ancient DTSTART anchor (wrong timezone offset).
-        val anchor = Instant.ofEpochMilli(times.dtStartMillis).atZone(ZoneOffset.UTC).toLocalDate()
         insertReminderRows(
             eventId,
-            managedAllDayReminderMinutes(anchor, form.reminders, allDayReminderTimeMinutes),
+            managedAllDayReminderMinutes(utcDate(times.dtStartMillis), form.reminders, allDayReminderTimeMinutes),
         )
         return eventId
     }
 
     override fun updateManagedFields(eventId: Long, values: Map<String, Any?>) {
         if (values.isEmpty()) return
-        val rows = resolver.update(
-            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
-            values.toContentValues(),
-            null, null,
-        )
-        if (rows == 0) throw WriteFailedException("update managed event id=$eventId")
+        updateEventRow(eventId, values.toContentValues(), "update managed event id=$eventId")
     }
 
     override fun applyManagedCalendarReminders(
@@ -573,38 +552,21 @@ class AndroidCalendarDataSource @Inject constructor(
         allDayReminderTimeMinutes: Int,
         minutes: List<Int>,
     ) {
-        resolver.query(
-            CalendarContract.Events.CONTENT_URI,
-            arrayOf(CalendarContract.Events._ID, CalendarContract.Events.DTSTART),
-            // Only our own mirror events, so a stray user event in this calendar
-            // isn't all-day-re-encoded or stripped of its own reminders.
-            "${CalendarContract.Events.CALENDAR_ID} = ? AND " +
-                "${CalendarContract.Events.DELETED} = 0 AND " +
-                "${CalendarContract.Events.UID_2445} LIKE ?",
-            arrayOf(calendarId.toString(), "$MANAGED_UID_PREFIX%"),
-            null,
-        )?.use { c ->
-            while (c.moveToNext()) {
-                val eventId = c.getLong(0)
-                // Managed events are all-day: DTSTART is a UTC midnight anchor.
-                val anchor = Instant.ofEpochMilli(c.getLong(1))
-                    .atZone(ZoneOffset.UTC).toLocalDate()
-                reconcileReminders(
-                    eventId,
-                    managedAllDayReminderMinutes(anchor, minutes, allDayReminderTimeMinutes),
-                )
-            }
+        // Only our own mirror events, so a stray user event in this calendar
+        // isn't all-day-re-encoded or stripped of its own reminders.
+        queryManagedEvents(calendarId).forEach { event ->
+            // Managed events are all-day: DTSTART is a UTC midnight anchor.
+            reconcileReminders(
+                event.eventId,
+                managedAllDayReminderMinutes(utcDate(event.dtStartMillis), minutes, allDayReminderTimeMinutes),
+            )
         }
     }
 
     override fun instances(beginMillis: Long, endMillis: Long): List<EventInstance> {
         ensureObserversRegistered()
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().apply {
-            ContentUris.appendId(this, beginMillis)
-            ContentUris.appendId(this, endMillis)
-        }.build()
         return resolver.query(
-            uri,
+            instancesUri(beginMillis, endMillis),
             InstanceProjection.COLUMNS,
             // Hide cancelled occurrences: "delete only this event" writes a
             // cancelled exception for the one instance (#47). A NULL status is a
@@ -617,7 +579,7 @@ class AndroidCalendarDataSource @Inject constructor(
                 "${CalendarContract.Events.DELETED} = 0",
             null,
             CalendarContract.Instances.BEGIN + " ASC",
-        )?.use { c -> c.mapAllNotNull { CursorColumnReader(c).toEventInstance() } } ?: emptyList()
+        )?.use { c -> c.mapRowsNotNull { toEventInstance() } } ?: emptyList()
     }
 
     override fun searchEvents(query: String): List<SearchCandidate> {
@@ -721,13 +683,9 @@ class AndroidCalendarDataSource @Inject constructor(
         endMillis: Long,
         soonestFirst: Boolean,
     ): Pair<Long, Long>? {
-        val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().apply {
-            ContentUris.appendId(this, beginMillis)
-            ContentUris.appendId(this, endMillis)
-        }.build()
         val order = CalendarContract.Instances.BEGIN + if (soonestFirst) " ASC" else " DESC"
         return resolver.query(
-            uri,
+            instancesUri(beginMillis, endMillis),
             arrayOf(CalendarContract.Instances.BEGIN, CalendarContract.Instances.END),
             "${CalendarContract.Instances.EVENT_ID} = ?",
             arrayOf(eventId.toString()),
@@ -741,7 +699,7 @@ class AndroidCalendarDataSource @Inject constructor(
         val attendees = queryAttendees(eventId)
         val reminders = queryReminders(eventId)
         return resolver.query(
-            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+            eventUri(eventId),
             EventDetailProjection.COLUMNS,
             null, null, null,
         )?.use { c ->
@@ -751,9 +709,6 @@ class AndroidCalendarDataSource @Inject constructor(
             )
         }
     }
-
-    override fun eventColorPalette(calendarId: Long): List<EventColorOption> =
-        publishedEventColors(calendarId).curatedForPicker()
 
     override fun publishedEventColors(calendarId: Long): List<EventColorOption> {
         val account = calendarAccount(calendarId) ?: return emptyList()
@@ -770,7 +725,7 @@ class AndroidCalendarDataSource @Inject constructor(
             ),
             null,
         )?.use { c ->
-            c.mapAll { EventColorOption(key = it.getString(0).orEmpty(), argb = it.getInt(1)) }
+            c.mapRows { EventColorOption(key = getString(0).orEmpty(), argb = getInt(1)) }
         }
             ?.filter { it.key.isNotEmpty() }
             ?: emptyList()
@@ -807,11 +762,10 @@ class AndroidCalendarDataSource @Inject constructor(
             null,
             CalendarContract.Events.DTSTART + " ASC",
         )?.use { c ->
-            c.mapAll {
-                val reader = CursorColumnReader(c)
-                val eventId = reader.getLong(EventExportProjection.IDX_ID)
-                val calendarId = reader.getLong(EventExportProjection.IDX_CALENDAR_ID)
-                reader.toIcsEvent(
+            c.mapRows {
+                val eventId = getLong(EventExportProjection.IDX_ID)
+                val calendarId = getLong(EventExportProjection.IDX_CALENDAR_ID)
+                toIcsEvent(
                     reminderMinutes = queryReminders(eventId).map { it.minutes },
                     calendarName = names[calendarId],
                     allDayReminderTimeMinutes = allDayReminderTimeMinutes,
@@ -846,7 +800,7 @@ class AndroidCalendarDataSource @Inject constructor(
             calendarId = calendarId,
             // Preserve the file's UID so a re-import dedups against it; mint one
             // only when the source event carried none.
-            uid = event.uid?.takeIf { it.isNotBlank() } ?: "${UUID.randomUUID()}@calendula",
+            uid = event.uid?.takeIf { it.isNotBlank() } ?: mintUid(),
             palette = colorPalette,
         )
         val uri = resolver.insert(CalendarContract.Events.CONTENT_URI, values.toContentValues())
@@ -859,8 +813,7 @@ class AndroidCalendarDataSource @Inject constructor(
         // (see [importedAllDayReminderDate]).
         val reminderDate = if (event.isAllDay) {
             importedAllDayReminderDate(
-                startDate = Instant.ofEpochMilli(event.start.toEpochMilliseconds())
-                    .atZone(ZoneOffset.UTC).toLocalDate(),
+                startDate = utcDate(event.start.toEpochMilliseconds()),
                 recurrenceRule = event.recurrenceRule,
                 today = LocalDate.now(zone),
             )
@@ -878,24 +831,7 @@ class AndroidCalendarDataSource @Inject constructor(
             } else {
                 minutes
             }
-            val reminder = ContentValues().apply {
-                put(CalendarContract.Reminders.EVENT_ID, eventId)
-                put(CalendarContract.Reminders.MINUTES, providerMinutes)
-                put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
-            }
-            // The event row is already in. A reminder that won't attach costs
-            // that one alarm, not the event: throwing here would have the import
-            // count an event it did create as failed, and the retry would then
-            // skip it as a duplicate.
-            val attached = try {
-                resolver.insert(CalendarContract.Reminders.CONTENT_URI, reminder)
-            } catch (e: Exception) {
-                Log.w(TAG, "Reminder insert threw for imported event $eventId", e)
-                null
-            }
-            if (attached == null) {
-                Log.w(TAG, "Failed to attach reminder ($minutes min) to imported event $eventId")
-            }
+            insertReminderRow(eventId, providerMinutes)
         }
         return eventId
     }
@@ -951,18 +887,13 @@ class AndroidCalendarDataSource @Inject constructor(
         // back to a stable synthesised UID at export time (deriveIcsUid).
         val values = buildEventInsertValues(
             form,
-            uid = "${UUID.randomUUID()}@calendula",
+            uid = mintUid(),
             times = form.toWriteTimes(ZoneId.systemDefault()),
-        ).toContentValues().apply {
-            // A null colour just leaves both columns unset (the event inherits
-            // its calendar's colour), so only the key/raw cases are written.
-            when {
-                form.colorKey != null ->
-                    put(CalendarContract.Events.EVENT_COLOR_KEY, form.colorKey)
-                form.color != null -> put(CalendarContract.Events.EVENT_COLOR, form.color)
-            }
-        }
-        val uri = resolver.insert(CalendarContract.Events.CONTENT_URI, values)
+        ) + eventColorColumns(form.colorKey, form.color)
+            // A new row has nothing to clear: unset columns inherit the
+            // calendar's colour, so only the key/raw values are written.
+            .filterValues { it != null }
+        val uri = resolver.insert(CalendarContract.Events.CONTENT_URI, values.toContentValues())
             ?: throw WriteFailedException("insert event into calendar id=${form.calendarId}")
         val eventId = ContentUris.parseId(uri)
         seedReminders(eventId, form, allDayReminderTimeMinutes)
@@ -983,16 +914,32 @@ class AndroidCalendarDataSource @Inject constructor(
 
     /** Insert one `METHOD_ALERT` reminder row per raw provider offset. */
     private fun insertReminderRows(eventId: Long, encodedMinutes: List<Int>) {
-        encodedMinutes.forEach { minutes ->
-            val reminder = ContentValues().apply {
-                put(CalendarContract.Reminders.EVENT_ID, eventId)
-                put(CalendarContract.Reminders.MINUTES, minutes)
-                put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
-            }
-            if (resolver.insert(CalendarContract.Reminders.CONTENT_URI, reminder) == null) {
-                Log.w(TAG, "Failed to attach reminder ($minutes min) to event $eventId")
-            }
+        encodedMinutes.forEach { insertReminderRow(eventId, it) }
+    }
+
+    /**
+     * Best effort: the event row is already in, so a reminder that won't attach
+     * costs that one alarm, not the event. Throwing would report an event that
+     * was created as failed — and an import retry would then skip it as a
+     * duplicate.
+     */
+    private fun insertReminderRow(
+        eventId: Long,
+        minutes: Int,
+        method: Int = CalendarContract.Reminders.METHOD_ALERT,
+    ) {
+        val reminder = ContentValues().apply {
+            put(CalendarContract.Reminders.EVENT_ID, eventId)
+            put(CalendarContract.Reminders.MINUTES, minutes)
+            put(CalendarContract.Reminders.METHOD, method)
         }
+        val attached = try {
+            resolver.insert(CalendarContract.Reminders.CONTENT_URI, reminder)
+        } catch (e: Exception) {
+            Log.w(TAG, "Reminder insert threw for event $eventId", e)
+            null
+        }
+        if (attached == null) Log.w(TAG, "Failed to attach reminder ($minutes min) to event $eventId")
     }
 
     /**
@@ -1029,12 +976,7 @@ class AndroidCalendarDataSource @Inject constructor(
             zone = ZoneId.systemDefault(),
         )
         if (values.isNotEmpty()) {
-            val rows = resolver.update(
-                ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
-                values.toContentValues(),
-                null, null,
-            )
-            if (rows == 0) throw WriteFailedException("update event id=$eventId")
+            updateEventRow(eventId, values.toContentValues(), "update event id=$eventId")
         }
         // Untouched reminder sets are left alone so unrelated edits can't
         // disturb provider rows the form never knew about. The diff is on the
@@ -1067,16 +1009,17 @@ class AndroidCalendarDataSource @Inject constructor(
             ?: throw WriteFailedException("read event to move id=$eventId")
         // Keep the source UID so an .ics backup dedups and a sync adapter can
         // recognise the moved event; mint one only if the source carried none.
-        val uid = master.uid?.takeIf { it.isNotEmpty() } ?: "${UUID.randomUUID()}@calendula"
+        val uid = master.uid?.takeIf { it.isNotEmpty() } ?: mintUid()
         val newEventId = resolver.insert(
             CalendarContract.Events.CONTENT_URI,
             buildMovedMasterValues(master.event, targetCalendarId, uid).toContentValues(),
         )?.let(ContentUris::parseId)
             ?: throw WriteFailedException("insert moved event into calendar id=$targetCalendarId")
+        val detached = mutableListOf<Long>()
         try {
             copyReminderRows(fromEventId = eventId, toEventId = newEventId)
             insertAttendees(newEventId, editableAttendees(eventId))
-            copyExceptions(fromEventId = eventId, toEventId = newEventId)
+            copyExceptions(eventId, newEventId, targetCalendarId, allDayReminderTimeMinutes, detached)
             // Apply the user's field edits exactly as a same-calendar "all
             // events" save would: the moved master carries the source's values,
             // so the dirty diff against [original] writes only what changed
@@ -1086,6 +1029,7 @@ class AndroidCalendarDataSource @Inject constructor(
             // Undo the partial copy so a failed move leaves nothing behind; the
             // source is still intact (it's deleted only past this point).
             runCatching { deleteEvent(newEventId) }
+            detached.forEach(::rollBackDetached)
             throw t
         }
         deleteEvent(eventId)
@@ -1094,7 +1038,7 @@ class AndroidCalendarDataSource @Inject constructor(
 
     /** The master row of the event to move, as a verbatim-insert snapshot. */
     private fun queryMoveMaster(eventId: Long): MoveMaster? = resolver.query(
-        ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+        eventUri(eventId),
         MoveMasterProjection.COLUMNS,
         null, null, null,
     )?.use { c ->
@@ -1106,8 +1050,7 @@ class AndroidCalendarDataSource @Inject constructor(
                 title = r.getString(MoveMasterProjection.IDX_TITLE).orEmpty(),
                 isAllDay = r.getInt(MoveMasterProjection.IDX_ALL_DAY) != 0,
                 dtStartMillis = r.getLong(MoveMasterProjection.IDX_DTSTART),
-                dtEndMillis = r.getLong(MoveMasterProjection.IDX_DTEND)
-                    .takeUnless { r.isNull(MoveMasterProjection.IDX_DTEND) },
+                dtEndMillis = r.getLongOrNull(MoveMasterProjection.IDX_DTEND),
                 duration = r.getString(MoveMasterProjection.IDX_DURATION),
                 rrule = r.getString(MoveMasterProjection.IDX_RRULE)?.takeIf { it.isNotBlank() },
                 rdate = r.getString(MoveMasterProjection.IDX_RDATE),
@@ -1115,8 +1058,7 @@ class AndroidCalendarDataSource @Inject constructor(
                 timezone = r.getString(MoveMasterProjection.IDX_EVENT_TIMEZONE),
                 availability = r.getInt(MoveMasterProjection.IDX_AVAILABILITY),
                 accessLevel = r.getInt(MoveMasterProjection.IDX_ACCESS_LEVEL),
-                status = r.getInt(MoveMasterProjection.IDX_STATUS)
-                    .takeUnless { r.isNull(MoveMasterProjection.IDX_STATUS) },
+                status = r.getIntOrNull(MoveMasterProjection.IDX_STATUS),
                 location = r.getString(MoveMasterProjection.IDX_LOCATION),
                 description = r.getString(MoveMasterProjection.IDX_DESCRIPTION),
             ),
@@ -1133,16 +1075,7 @@ class AndroidCalendarDataSource @Inject constructor(
         arrayOf(fromEventId.toString()),
         null,
     )?.use { c ->
-        while (c.moveToNext()) {
-            val values = ContentValues().apply {
-                put(CalendarContract.Reminders.EVENT_ID, toEventId)
-                put(CalendarContract.Reminders.MINUTES, c.getInt(0))
-                put(CalendarContract.Reminders.METHOD, c.getInt(1))
-            }
-            if (resolver.insert(CalendarContract.Reminders.CONTENT_URI, values) == null) {
-                Log.w(TAG, "Failed to copy a reminder to moved event $toEventId")
-            }
-        }
+        while (c.moveToNext()) insertReminderRow(toEventId, minutes = c.getInt(0), method = c.getInt(1))
     } ?: Unit
 
     /**
@@ -1162,44 +1095,33 @@ class AndroidCalendarDataSource @Inject constructor(
         }
 
     /**
-     * Replay every exception of the series [fromEventId] against the moved series
-     * [toEventId]. The copy preserved the recurrence skeleton, so each occurrence
-     * time still resolves: a cancelled occurrence is re-hidden with a cancelled
-     * exception, a modified one is re-inserted with its fields (then its reminders
-     * reconciled and editable guests copied). No-op for a non-recurring event.
+     * Carry every exception of the series [fromEventId] over to the moved series
+     * [toEventId]. The moved row has no `_sync_id` yet, so exception rows would
+     * never attach to it ([deleteOccurrence], [detachOccurrence]): a cancelled
+     * occurrence becomes an EXDATE, a modified one an EXDATE plus a standalone
+     * event on [targetCalendarId], its id added to [detached] for rollback.
      */
-    private fun copyExceptions(fromEventId: Long, toEventId: Long) {
-        queryExceptionRows(fromEventId).forEach { ex ->
-            if (ex.isCancelled) {
-                val values = ContentValues().apply {
-                    put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, ex.originalInstanceMillis)
-                    put(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CANCELED)
-                }
-                resolver.insert(
-                    ContentUris.withAppendedId(
-                        CalendarContract.Events.CONTENT_EXCEPTION_URI, toEventId,
-                    ),
-                    values,
-                ) ?: throw WriteFailedException("copy cancelled occurrence to event id=$toEventId")
-            } else {
-                val uri = resolver.insert(
-                    ContentUris.withAppendedId(
-                        CalendarContract.Events.CONTENT_EXCEPTION_URI, toEventId,
-                    ),
-                    buildCopiedExceptionValues(ex).toContentValues(),
-                ) ?: throw WriteFailedException("copy modified occurrence to event id=$toEventId")
-                val newExceptionId = ContentUris.parseId(uri)
-                // The provider may clone the parent's reminders onto the new
-                // exception; reconcile to the source exception's exact set so
-                // they neither double nor drop. Same DTSTART → same all-day
-                // encoding, so the stored offsets match directly.
-                reconcileReminders(
-                    newExceptionId,
-                    queryReminders(ex.exceptionEventId).map { it.minutes },
-                )
-                insertAttendees(newExceptionId, editableAttendees(ex.exceptionEventId))
-            }
+    private fun copyExceptions(
+        fromEventId: Long,
+        toEventId: Long,
+        targetCalendarId: Long,
+        allDayReminderTimeMinutes: Int,
+        detached: MutableList<Long>,
+    ) {
+        val exceptions = queryExceptionRows(fromEventId)
+        if (exceptions.isEmpty()) return
+        val zone = TimeZone.currentSystemDefault()
+        exceptions.filterNot { it.isCancelled }.forEach { ex ->
+            val detail = eventDetail(ex.exceptionEventId, allDayReminderTimeMinutes)
+                ?: throw WriteFailedException("read modified occurrence id=${ex.exceptionEventId}")
+            val endMillis = ex.dtEndMillis ?: (ex.dtStartMillis + parseRfc2445DurationMillis(ex.duration))
+            val form = detail.toEditForm(ex.dtStartMillis, endMillis, zone)
+                .copy(calendarId = targetCalendarId, colorKey = null)
+                .toDetachedOccurrence()
+            detached += insertEvent(form, allDayReminderTimeMinutes)
         }
+        val values = querySeriesRow(toEventId).exdateValues(exceptions.map { it.originalInstanceMillis })
+        updateEventRow(toEventId, values, "exdate moved exceptions event id=$toEventId")
     }
 
     /** The series' exception rows (modified + cancelled), oldest occurrence first. */
@@ -1210,26 +1132,14 @@ class AndroidCalendarDataSource @Inject constructor(
         arrayOf(seriesEventId.toString()),
         CalendarContract.Events.ORIGINAL_INSTANCE_TIME + " ASC",
     )?.use { c ->
-        c.mapAll {
-            val r = CursorColumnReader(c)
-            val status = r.getInt(ExceptionProjection.IDX_STATUS)
-                .takeUnless { r.isNull(ExceptionProjection.IDX_STATUS) }
+        c.mapRows {
             ExceptionRowSnapshot(
-                exceptionEventId = r.getLong(ExceptionProjection.IDX_ID),
-                originalInstanceMillis = r.getLong(ExceptionProjection.IDX_ORIGINAL_INSTANCE_TIME),
-                isCancelled = status == CalendarContract.Events.STATUS_CANCELED,
-                status = status,
-                title = r.getString(ExceptionProjection.IDX_TITLE).orEmpty(),
-                isAllDay = r.getInt(ExceptionProjection.IDX_ALL_DAY) != 0,
-                dtStartMillis = r.getLong(ExceptionProjection.IDX_DTSTART),
-                dtEndMillis = r.getLong(ExceptionProjection.IDX_DTEND)
-                    .takeUnless { r.isNull(ExceptionProjection.IDX_DTEND) },
-                duration = r.getString(ExceptionProjection.IDX_DURATION),
-                timezone = r.getString(ExceptionProjection.IDX_EVENT_TIMEZONE),
-                availability = r.getInt(ExceptionProjection.IDX_AVAILABILITY),
-                accessLevel = r.getInt(ExceptionProjection.IDX_ACCESS_LEVEL),
-                location = r.getString(ExceptionProjection.IDX_LOCATION),
-                description = r.getString(ExceptionProjection.IDX_DESCRIPTION),
+                exceptionEventId = getLong(ExceptionProjection.IDX_ID),
+                originalInstanceMillis = getLong(ExceptionProjection.IDX_ORIGINAL_INSTANCE_TIME),
+                isCancelled = getIntOrNull(ExceptionProjection.IDX_STATUS) == CalendarContract.Events.STATUS_CANCELED,
+                dtStartMillis = getLong(ExceptionProjection.IDX_DTSTART),
+                dtEndMillis = getLongOrNull(ExceptionProjection.IDX_DTEND),
+                duration = getString(ExceptionProjection.IDX_DURATION),
             )
         }
     } ?: emptyList()
@@ -1266,7 +1176,7 @@ class AndroidCalendarDataSource @Inject constructor(
         val exceptionId = ContentUris.parseId(uri)
         form.colorKey?.let { key ->
             resolver.update(
-                ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, exceptionId),
+                eventUri(exceptionId),
                 ContentValues().apply { put(CalendarContract.Events.EVENT_COLOR_KEY, key) },
                 null, null,
             )
@@ -1320,33 +1230,18 @@ class AndroidCalendarDataSource @Inject constructor(
         // a fresh UID — the detached row is a separate event now, and sharing the
         // parent's would collide with it in .ics restore dedup.
         val detachedId = insertEvent(form.toDetachedOccurrence(), allDayReminderTimeMinutes)
-        val values = buildOccurrenceExdateValues(
-            existingExdate = row.exdate,
-            occurrenceMillis = beginMillis,
-            dtStartMillis = row.dtStartMillis,
-            rrule = row.rrule,
-            rdate = row.rdate,
-            duration = row.duration,
-            timezone = row.timezone,
-            allDay = row.allDay,
-        )
         // Rows touched, not occurrences excluded — 1 whenever the series row still
         // exists. It catches the row disappearing under us, not an EXDATE the
         // provider's expansion fails to match.
-        val updatedRows = try {
-            resolver.update(
-                ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
-                values.toContentValues(), null, null,
+        try {
+            updateEventRow(
+                eventId,
+                row.exdateValues(listOf(beginMillis)),
+                "exdate occurrence for edit, event id=$eventId begin=$beginMillis",
             )
         } catch (t: Throwable) {
             rollBackDetached(detachedId)
             throw t
-        }
-        if (updatedRows == 0) {
-            rollBackDetached(detachedId)
-            throw WriteFailedException(
-                "exdate occurrence for edit, event id=$eventId begin=$beginMillis",
-            )
         }
         return detachedId
     }
@@ -1420,23 +1315,11 @@ class AndroidCalendarDataSource @Inject constructor(
             updated = updated,
             zone = ZoneId.systemDefault(),
         ) ?: return
-        val row = querySeriesRow(newEventId)
-        val values = ContentValues().apply {
+        val values = querySeriesRow(newEventId).timeColumns().apply {
             put(CalendarContract.Events.EXDATE, carried)
-            put(CalendarContract.Events.DTSTART, row.dtStartMillis)
-            put(CalendarContract.Events.RRULE, row.rrule)
-            put(CalendarContract.Events.DURATION, row.duration)
-            put(CalendarContract.Events.EVENT_TIMEZONE, row.timezone)
-            put(CalendarContract.Events.ALL_DAY, row.allDay)
         }
         try {
-            val rows = resolver.update(
-                ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, newEventId),
-                values, null, null,
-            )
-            if (rows == 0) {
-                throw WriteFailedException("carry exdate onto split series id=$newEventId")
-            }
+            updateEventRow(newEventId, values, "carry exdate onto split series id=$newEventId")
         } catch (t: Throwable) {
             runCatching { deleteEvent(newEventId) }
             throw t
@@ -1464,29 +1347,18 @@ class AndroidCalendarDataSource @Inject constructor(
      */
     private fun truncateSeries(eventId: Long, row: SeriesRow, beginMillis: Long) {
         requireNotNull(row.rrule) { "truncateSeries needs a recurring row" }
-        val values = ContentValues().apply {
-            put(CalendarContract.Events.DTSTART, row.dtStartMillis)
-            put(CalendarContract.Events.DURATION, row.duration)
-            put(CalendarContract.Events.EVENT_TIMEZONE, row.timezone)
-            put(CalendarContract.Events.ALL_DAY, row.allDay)
+        val values = row.timeColumns().apply {
             put(
                 CalendarContract.Events.RRULE,
                 rruleTruncatedAt(row.rrule, untilUtcMillis = row.truncationCutoff(beginMillis)),
             )
         }
-        val rows = resolver.update(
-            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
-            values,
-            null, null,
-        )
-        if (rows == 0) {
-            throw WriteFailedException("truncate series event id=$eventId begin=$beginMillis")
-        }
+        updateEventRow(eventId, values, "truncate series event id=$eventId begin=$beginMillis")
     }
 
     /** The series anchor: every time-related column of the Events row. */
     private fun querySeriesRow(eventId: Long): SeriesRow = resolver.query(
-        ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+        eventUri(eventId),
         arrayOf(
             CalendarContract.Events.DTSTART,
             CalendarContract.Events.RRULE,
@@ -1534,6 +1406,30 @@ class AndroidCalendarDataSource @Inject constructor(
          */
         val recurs: Boolean get() = !rrule.isNullOrBlank() || !rdate.isNullOrBlank()
 
+        /**
+         * The time/recurrence set a series write carries together: the provider
+         * re-expands instances only from what the update itself holds.
+         */
+        fun timeColumns(): ContentValues = ContentValues().apply {
+            put(CalendarContract.Events.DTSTART, dtStartMillis)
+            put(CalendarContract.Events.RRULE, rrule)
+            put(CalendarContract.Events.DURATION, duration)
+            put(CalendarContract.Events.EVENT_TIMEZONE, timezone)
+            put(CalendarContract.Events.ALL_DAY, allDay)
+        }
+
+        /** This row's columns with [occurrences] added to EXDATE ([buildOccurrencesExdateValues]). */
+        fun exdateValues(occurrences: List<Long>): Map<String, Any?> = buildOccurrencesExdateValues(
+            existingExdate = exdate,
+            occurrences = occurrences,
+            dtStartMillis = dtStartMillis,
+            rrule = rrule,
+            rdate = rdate,
+            duration = duration,
+            timezone = timezone,
+            allDay = allDay,
+        )
+
         /** UNTIL cutoff for ending the series before the occurrence at [beginMillis]. */
         fun truncationCutoff(beginMillis: Long): Long = previousLocalDayEndUtcMillis(
             beginMillis = beginMillis,
@@ -1559,20 +1455,10 @@ class AndroidCalendarDataSource @Inject constructor(
                 arrayOf(eventId.toString(), minutes.toString()),
             )
         }
-        (target - existing).forEach { minutes ->
-            val reminder = ContentValues().apply {
-                put(CalendarContract.Reminders.EVENT_ID, eventId)
-                put(CalendarContract.Reminders.MINUTES, minutes)
-                put(CalendarContract.Reminders.METHOD, CalendarContract.Reminders.METHOD_ALERT)
-            }
-            if (resolver.insert(CalendarContract.Reminders.CONTENT_URI, reminder) == null) {
-                Log.w(TAG, "Failed to attach reminder ($minutes min) to event $eventId")
-            }
-        }
+        insertReminderRows(eventId, (target - existing).toList())
     }
 
-    /** Normalised key an attendee is matched/deduped on (case-insensitive email). */
-    private fun EventAttendee.key(): String = email.trim().lowercase()
+    private fun EventAttendee.key(): String = emailKey(email)
 
     /** Distinct guests by email; blanks dropped (we key and write on the address). */
     private fun List<EventAttendee>.distinctByEmail(): List<EventAttendee> {
@@ -1624,7 +1510,7 @@ class AndroidCalendarDataSource @Inject constructor(
         val relationship: Int,
         val type: Int,
     ) {
-        val key: String get() = email.trim().lowercase()
+        val key: String get() = emailKey(email)
     }
 
     private fun queryAttendeeRows(eventId: Long): List<AttendeeRow> = resolver.query(
@@ -1689,16 +1575,19 @@ class AndroidCalendarDataSource @Inject constructor(
                 )
             }
         }
-        target.filterNot { it.key() in editableKeys }.forEach { attendee ->
-            if (resolver.insert(
-                    CalendarContract.Attendees.CONTENT_URI,
-                    attendeeValues(eventId, attendee),
-                ) == null
-            ) {
-                Log.w(TAG, "Failed to attach a guest to event $eventId")
-            }
-        }
+        insertAttendees(eventId, target.filterNot { it.key() in editableKeys })
     }
+
+    private fun eventUri(eventId: Long): Uri =
+        ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId)
+
+    /** Update the Events row [eventId]; [what] names the write when no row was touched. */
+    private fun updateEventRow(eventId: Long, values: ContentValues, what: String) {
+        if (resolver.update(eventUri(eventId), values, null, null) == 0) throw WriteFailedException(what)
+    }
+
+    private fun updateEventRow(eventId: Long, values: Map<String, Any?>, what: String) =
+        updateEventRow(eventId, values.toContentValues(), what)
 
     private fun Map<String, Any?>.toContentValues(): ContentValues =
         ContentValues().also { cv ->
@@ -1716,7 +1605,7 @@ class AndroidCalendarDataSource @Inject constructor(
 
     override fun deleteEvent(eventId: Long) {
         val deleted = resolver.delete(
-            ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+            eventUri(eventId),
             null, null,
         )
         if (deleted == 0) throw WriteFailedException("delete event id=$eventId")
@@ -1738,23 +1627,11 @@ class AndroidCalendarDataSource @Inject constructor(
             // occurrence with it (#47 on a local calendar). EXDATE needs no link.
             // Calendula's own contact special-date calendars are local and hold
             // yearly series, so this path is reached in normal use.
-            val values = buildOccurrenceExdateValues(
-                existingExdate = row.exdate,
-                occurrenceMillis = beginMillis,
-                dtStartMillis = row.dtStartMillis,
-                rrule = row.rrule,
-                rdate = row.rdate,
-                duration = row.duration,
-                timezone = row.timezone,
-                allDay = row.allDay,
+            updateEventRow(
+                eventId,
+                row.exdateValues(listOf(beginMillis)),
+                "exdate occurrence event id=$eventId begin=$beginMillis",
             )
-            val updated = resolver.update(
-                ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
-                values.toContentValues(), null, null,
-            )
-            if (updated == 0) {
-                throw WriteFailedException("exdate occurrence event id=$eventId begin=$beginMillis")
-            }
             return
         }
         // A cancelled exception row hides exactly this occurrence; the sync
@@ -1804,7 +1681,7 @@ class AndroidCalendarDataSource @Inject constructor(
         CalendarContract.Attendees.EVENT_ID + " = ?",
         arrayOf(eventId.toString()),
         null,
-    )?.use { c -> c.mapAll { CursorColumnReader(c).toAttendee() } } ?: emptyList()
+    )?.use { c -> c.mapRows { toAttendee() } } ?: emptyList()
 
     private fun queryReminders(eventId: Long): List<Reminder> = resolver.query(
         CalendarContract.Reminders.CONTENT_URI,
@@ -1812,19 +1689,10 @@ class AndroidCalendarDataSource @Inject constructor(
         CalendarContract.Reminders.EVENT_ID + " = ?",
         arrayOf(eventId.toString()),
         null,
-    )?.use { c -> c.mapAll { CursorColumnReader(c).toReminder() } } ?: emptyList()
+    )?.use { c -> c.mapRows { toReminder() } } ?: emptyList()
 
-    private fun toCalendarSource(c: Cursor): CalendarSource = CursorColumnReader(c).toCalendarSource()
-
-    /** Iterate every row and map; skips nothing. */
-    private inline fun <T> Cursor.mapAll(mapper: (Cursor) -> T): List<T> = buildList {
-        while (moveToNext()) add(mapper(this@mapAll))
-    }
-
-    /** Iterate every row and map; drops nulls. */
-    private inline fun <T : Any> Cursor.mapAllNotNull(mapper: (Cursor) -> T?): List<T> = buildList {
-        while (moveToNext()) mapper(this@mapAllNotNull)?.let(::add)
-    }
+    /** A fresh globally-unique `UID_2445`, for an event that carries none of its own. */
+    private fun mintUid(): String = "${UUID.randomUUID()}@calendula"
 
     /** The `CAL_SYNC2` marker value identifying a managed calendar's [type]. */
     private fun markerFor(type: SpecialDateType): String = when (type) {
@@ -1839,6 +1707,9 @@ class AndroidCalendarDataSource @Inject constructor(
 
     private companion object {
         const val TAG = "CalendarDataSource"
+
+        /** Normalised key an attendee is matched/deduped on (case-insensitive email). */
+        fun emailKey(email: String): String = email.trim().lowercase()
 
         /**
          * Shared account for every app-created local calendar, so they group

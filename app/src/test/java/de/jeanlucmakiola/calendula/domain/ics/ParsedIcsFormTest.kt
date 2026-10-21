@@ -29,8 +29,8 @@ class ParsedIcsFormTest {
         assertThat(form.calendarId).isNull()
         assertThat(form.title).isEqualTo("Call")
         // 13:00 UTC == 15:00 Berlin (summer).
-        assertThat(form.start).isEqualTo(LocalDateTime(2026, 6, 18, 15, 0, 0))
-        assertThat(form.end).isEqualTo(LocalDateTime(2026, 6, 18, 16, 0, 0))
+        assertThat(form.start.dateTime).isEqualTo(LocalDateTime(2026, 6, 18, 15, 0, 0))
+        assertThat(form.end.dateTime).isEqualTo(LocalDateTime(2026, 6, 18, 16, 0, 0))
         assertThat(form.reminders).containsExactly(5, 10).inOrder()
         assertThat(form.rrule).isEqualTo("FREQ=WEEKLY")
     }

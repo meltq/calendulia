@@ -1,14 +1,8 @@
 package de.jeanlucmakiola.calendula.ui.common
 
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
 import androidx.compose.material3.Checkbox
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -22,17 +16,16 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.floret.components.CustomAmountEditor
+import de.jeanlucmakiola.floret.components.CustomExpandRow
 import de.jeanlucmakiola.floret.components.FullScreenPicker
-import de.jeanlucmakiola.floret.components.GroupedListInset
+import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.Position
-import de.jeanlucmakiola.floret.components.SelectedCheck
 import de.jeanlucmakiola.floret.components.positionOf
-import de.jeanlucmakiola.floret.identity.collapseExit
-import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.floret.reminders.ReminderUnit
+import de.jeanlucmakiola.floret.reminders.minutesOrEmpty
 import de.jeanlucmakiola.floret.reminders.reminderOverrideForMinutes
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.agendaRangeWindowSummary
@@ -90,7 +83,7 @@ fun ReminderDefaultPicker(
     }
     val inherits = current is ReminderOverride.Inherit
     val isNone = current is ReminderOverride.None
-    val selectedMinutes = (current as? ReminderOverride.Minutes)?.minutes.orEmpty()
+    val selectedMinutes = current.minutesOrEmpty()
     // Custom (non-preset) lead times seen this session, so unchecking one keeps
     // its row (unchecked) until the picker closes instead of vanishing mid-tap,
     // which would strand a hand-entered value with no way to re-check it.
@@ -121,24 +114,14 @@ fun ReminderDefaultPicker(
             GroupedRow(
                 title = stringResource(R.string.reminder_use_default),
                 position = Position.Top,
-                selected = inherits,
-                trailing = if (inherits) {
-                    { SelectedCheck() }
-                } else {
-                    null
-                },
+                checked = inherits,
                 onClick = { apply(ReminderOverride.Inherit) },
             )
         }
         GroupedRow(
             title = stringResource(R.string.reminder_none),
             position = if (allowInherit) Position.Bottom else Position.Alone,
-            selected = isNone,
-            trailing = if (isNone) {
-                { SelectedCheck() }
-            } else {
-                null
-            },
+            checked = isNone,
             onClick = { apply(ReminderOverride.None) },
         )
         Spacer(Modifier.height(24.dp))
@@ -154,17 +137,11 @@ fun ReminderDefaultPicker(
                 onClick = { toggle(minute) },
             )
         }
-        // When expanded, the Custom row connects downward into the editor card
-        // so the two read as one grouped container (the per-calendar pattern).
-        GroupedRow(
+        CustomExpandRow(
             title = stringResource(R.string.event_edit_reminder_custom),
-            position = if (customExpanded) Position.Top else positionOf(rows.size, rowCount),
-            onClick = { customExpanded = !customExpanded },
-        )
-        AnimatedVisibility(
-            visible = customExpanded,
-            enter = expandEnter(),
-            exit = collapseExit(),
+            position = positionOf(rows.size, rowCount),
+            expanded = customExpanded,
+            onExpandedChange = { customExpanded = it },
         ) {
             CustomReminderEditor(
                 amountText = amountText,
@@ -212,19 +189,6 @@ private fun CustomReminderEditor(
     )
 }
 
-/** A short explanatory paragraph shown under a picker's title, above the rows,
- *  on the same left margin as the rows themselves. */
-@Composable
-internal fun PickerDescription(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = GroupedListInset, vertical = 8.dp),
-    )
-}
-
-
 /**
  * Agenda-range picker, full-screen. Two grouped lists — the calendar-aligned
  * options (today / this week / this month) and the rolling windows (next 7 / 30
@@ -265,17 +229,11 @@ fun AgendaRangePicker(
     }
 
     val rangeRow: @Composable (AgendaRange, Position) -> Unit = { option, position ->
-        val isSelected = option == selected
         GroupedRow(
             title = agendaRangeLabel(option),
             summary = windowSummary(option),
             position = position,
-            selected = isSelected,
-            trailing = if (isSelected) {
-                { SelectedCheck() }
-            } else {
-                null
-            },
+            checked = option == selected,
             onClick = {
                 onSelect(option)
                 onDismiss()
@@ -284,7 +242,7 @@ fun AgendaRangePicker(
     }
 
     FullScreenPicker(title = title, onDismiss = onDismiss) {
-        PickerDescription(description)
+        GroupedHint(description, verticalPadding = 8.dp)
 
         // Calendar-aligned windows.
         calendarAligned.forEachIndexed { index, option ->
@@ -297,7 +255,7 @@ fun AgendaRangePicker(
         rolling.forEachIndexed { index, option ->
             rangeRow(option, positionOf(index, rollingRowCount))
         }
-        GroupedRow(
+        CustomExpandRow(
             title = if (customSelected) {
                 agendaRangeLabel(selected)
             } else {
@@ -306,19 +264,10 @@ fun AgendaRangePicker(
             // An unset custom window has no day count yet, so the row stays
             // single-line until it does.
             summary = if (customSelected) windowSummary(selected) else null,
-            position = if (customExpanded) Position.Top else positionOf(rolling.size, rollingRowCount),
-            selected = customSelected,
-            trailing = if (customSelected) {
-                { SelectedCheck() }
-            } else {
-                null
-            },
-            onClick = { customExpanded = !customExpanded },
-        )
-        AnimatedVisibility(
-            visible = customExpanded,
-            enter = expandEnter(),
-            exit = collapseExit(),
+            position = positionOf(rolling.size, rollingRowCount),
+            expanded = customExpanded,
+            onExpandedChange = { customExpanded = it },
+            checked = customSelected,
         ) {
             CustomDaysEditor(
                 amountText = amountText,
@@ -396,17 +345,12 @@ fun DurationPicker(
     }
 
     FullScreenPicker(title = title, onDismiss = onDismiss, predictiveBack = true) {
-        if (description != null) PickerDescription(description)
+        if (description != null) GroupedHint(description, verticalPadding = 8.dp)
         if (inheritLabel != null) {
             GroupedRow(
                 title = inheritLabel,
                 position = Position.Alone,
-                selected = inherits,
-                trailing = if (inherits) {
-                    { SelectedCheck() }
-                } else {
-                    null
-                },
+                checked = inherits,
                 onClick = {
                     onSelect(null)
                     onDismiss()
@@ -415,39 +359,22 @@ fun DurationPicker(
             Spacer(Modifier.height(24.dp))
         }
         presets.forEachIndexed { index, minute ->
-            val isSelected = minute == selected
             GroupedRow(
                 title = label(minute),
                 position = positionOf(index, rowCount),
-                selected = isSelected,
-                trailing = if (isSelected) {
-                    { SelectedCheck() }
-                } else {
-                    null
-                },
+                checked = minute == selected,
                 onClick = {
                     onSelect(minute)
                     onDismiss()
                 },
             )
         }
-        // The Custom row connects downward into the editor card when expanded, so
-        // the two read as one grouped container (the shared custom-expand pattern).
-        GroupedRow(
+        CustomExpandRow(
             title = custom?.let { label(it) } ?: stringResource(R.string.event_edit_reminder_custom),
-            position = if (customExpanded) Position.Top else positionOf(presets.size, rowCount),
-            selected = custom != null,
-            trailing = if (custom != null) {
-                { SelectedCheck() }
-            } else {
-                null
-            },
-            onClick = { customExpanded = !customExpanded },
-        )
-        AnimatedVisibility(
-            visible = customExpanded,
-            enter = expandEnter(),
-            exit = collapseExit(),
+            position = positionOf(presets.size, rowCount),
+            expanded = customExpanded,
+            onExpandedChange = { customExpanded = it },
+            checked = custom != null,
         ) {
             CustomDurationEditor(
                 amountText = amountText,

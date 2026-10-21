@@ -6,8 +6,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
-import de.jeanlucmakiola.calendula.ui.common.ScaledViewPreview
 import de.jeanlucmakiola.calendula.ui.common.sampleAgendaEvents
+import de.jeanlucmakiola.floret.components.ScaledViewPreview
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
@@ -51,6 +51,7 @@ private fun sampleAgendaState(today: LocalDate, zone: TimeZone): AgendaUiState.S
     val windowEnd = today.plus(PREVIEW_WINDOW_DAYS, DateTimeUnit.DAY)
     return AgendaUiState.Success(
         anchor = today,
+        windowStart = today,
         today = today,
         days = groupAgendaDays(today, windowEnd, sampleAgendaEvents(today, zone), zone),
         range = AgendaRange.Custom(PREVIEW_WINDOW_DAYS),

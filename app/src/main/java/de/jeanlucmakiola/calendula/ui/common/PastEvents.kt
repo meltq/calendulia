@@ -5,6 +5,11 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.style.TextDecoration
+import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.domain.hasEnded
+import kotlinx.datetime.LocalDate
+import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
 /**
@@ -15,6 +20,17 @@ import kotlin.time.Instant
  * as the minute ticks, mirroring [LocalShowHourGrid] / [LocalUse24HourFormat].
  */
 val LocalDimCutoff = compositionLocalOf<Instant?> { null }
+
+/**
+ * Whether [this] counts as past where it's drawn on [day]: once it has ended,
+ * or on any day before the one [now] falls in, so a multi-day event still
+ * running doesn't stay undimmed on the days already behind it.
+ */
+fun EventInstance.isPastOn(
+    day: LocalDate,
+    now: Instant,
+    zone: TimeZone = TimeZone.currentSystemDefault(),
+): Boolean = hasEnded(now) || day < now.toLocalDateTime(zone).date
 
 /** Opacity applied to a completed/past event chip when it is dimmed. */
 const val EventDimAlpha = 0.4f

@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.domain
 
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.testEvent
 import kotlinx.datetime.TimeZone
 import org.junit.jupiter.api.Test
 import kotlin.time.Instant
@@ -27,15 +28,11 @@ class EventSearchTest {
     ): SearchCandidate {
         val begin = Instant.parse(start)
         return SearchCandidate(
-            event = EventInstance(
-                instanceId = nextId,
-                eventId = nextId++,
-                calendarId = 1L,
+            event = testEvent(
+                id = nextId++,
                 title = title,
                 start = begin,
                 end = begin.plus(kotlin.time.Duration.parse("1h")),
-                isAllDay = false,
-                color = 0,
                 location = location,
             ),
             description = description,
@@ -46,16 +43,12 @@ class EventSearchTest {
     private fun allDayCandidate(title: String, day: String): SearchCandidate {
         val begin = Instant.parse("${day}T00:00:00Z")
         return SearchCandidate(
-            event = EventInstance(
-                instanceId = nextId,
-                eventId = nextId++,
-                calendarId = 1L,
+            event = testEvent(
+                id = nextId++,
                 title = title,
                 start = begin,
                 end = begin.plus(kotlin.time.Duration.parse("24h")),
                 isAllDay = true,
-                color = 0,
-                location = null,
             ),
         )
     }
@@ -183,16 +176,12 @@ class EventSearchTest {
         // Behind UTC an all-day event sits at midnight UTC, which is the previous
         // month locally (#82) — the month has to come from the span's first day.
         val newYear = SearchCandidate(
-            event = EventInstance(
-                instanceId = 99L,
-                eventId = 99L,
-                calendarId = 1L,
+            event = testEvent(
+                id = 99L,
                 title = "Test holiday",
                 start = Instant.parse("2027-02-01T00:00:00Z"),
                 end = Instant.parse("2027-02-02T00:00:00Z"),
                 isAllDay = true,
-                color = 0,
-                location = null,
             ),
         )
 
@@ -306,6 +295,23 @@ class EventSearchTest {
 
         requireNotNull(snippet)
         assertThat(snippet.text).isEqualTo("erste Zeile zweite Zeile")
+    }
+
+    @Test
+    fun `an html description matches and snippets on its text, not its tags`() {
+        val html = "<div class=\"x\"><p>Raum&nbsp;<b>4.12</b></p></div>"
+        assertThat(search(candidate("Notiz", description = html), query = "div").isEmpty).isTrue()
+
+        val snippet = search(candidate("Notiz", description = html), query = "raum 4.12")
+            .allHits.single().descriptionSnippet
+        requireNotNull(snippet)
+        assertThat(snippet.text).isEqualTo("Raum 4.12")
+    }
+
+    @Test
+    fun `a link address in an html description is still searchable`() {
+        val html = "<p><a href=\"https://zoom.us/j/81234567890\">Join Zoom Meeting</a></p>"
+        assertThat(search(candidate("Call", description = html), query = "81234567890").allHits).hasSize(1)
     }
 
     @Test

@@ -1,5 +1,8 @@
 package de.jeanlucmakiola.calendula.domain
 
+import de.jeanlucmakiola.calendula.domain.ics.parseBasicDate
+import de.jeanlucmakiola.calendula.domain.ics.parseBasicDateTime
+import de.jeanlucmakiola.calendula.domain.ics.toUtcBasic
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -57,24 +60,13 @@ fun parseSimpleRecurrence(
     rrule: String,
     zone: TimeZone = TimeZone.currentSystemDefault(),
 ): SimpleRecurrence? {
-    val parts = rrule.removePrefix("RRULE:").split(';')
-        .filter { it.isNotBlank() }
-        .associate { token ->
-            val eq = token.indexOf('=')
-            if (eq <= 0) return null
-            token.substring(0, eq).uppercase() to token.substring(eq + 1)
-        }
+    val parts = rruleParts(rrule).associate { part -> (part.key ?: return null) to part.value }
     if (parts.keys.any { it !in setOf("FREQ", "INTERVAL", "UNTIL", "COUNT", "WKST", "BYDAY") }) {
         return null
     }
 
-    val freq = when (parts["FREQ"]?.uppercase()) {
-        "DAILY" -> RecurrenceFreq.Daily
-        "WEEKLY" -> RecurrenceFreq.Weekly
-        "MONTHLY" -> RecurrenceFreq.Monthly
-        "YEARLY" -> RecurrenceFreq.Yearly
-        else -> return null
-    }
+    val freq = RecurrenceFreq.entries.firstOrNull { it.name.equals(parts["FREQ"], ignoreCase = true) }
+        ?: return null
     val interval = parts["INTERVAL"]?.let { it.toIntOrNull()?.takeIf { n -> n >= 1 } ?: return null } ?: 1
 
     // BYDAY is simple only as plain weekday picks on a weekly rule; ordinal
@@ -124,19 +116,26 @@ fun SimpleRecurrence.toRRule(zone: TimeZone = TimeZone.currentSystemDefault()): 
     when (val e = end) {
         RecurrenceEnd.Never -> Unit
         is RecurrenceEnd.Until -> {
-            val utc = LocalDateTime(e.date, LocalTime(23, 59, 59))
-                .toInstant(zone)
-                .toLocalDateTime(TimeZone.UTC)
-            append(
-                ";UNTIL=%04d%02d%02dT%02d%02d%02dZ".format(
-                    utc.year, utc.month.number, utc.day,
-                    utc.hour, utc.minute, utc.second,
-                ),
-            )
+            append(";UNTIL=")
+            append(LocalDateTime(e.date, LocalTime(23, 59, 59)).toInstant(zone).toUtcBasic())
         }
         is RecurrenceEnd.Count -> append(";COUNT=${e.times}")
     }
 }
+
+/** One `;`-separated part of an RRULE as written; [key] is null when it has no `KEY=`. */
+internal class RrulePart(val raw: String) {
+    private val eq = raw.indexOf('=')
+    val key: String? = if (eq > 0) raw.substring(0, eq).uppercase() else null
+    val value: String = if (eq > 0) raw.substring(eq + 1) else ""
+}
+
+/**
+ * [rule]'s non-blank parts, after an optional leading "RRULE:". What to do
+ * with a malformed one (reject, repair or skip) is the caller's call.
+ */
+internal fun rruleParts(rule: String): List<RrulePart> =
+    rule.removePrefix("RRULE:").split(';').filter { it.isNotBlank() }.map(::RrulePart)
 
 internal val RRULE_DAY_CODES: Map<DayOfWeek, String> = mapOf(
     DayOfWeek.MONDAY to "MO",
@@ -165,11 +164,7 @@ fun rruleTruncatedAt(rrule: String, untilUtcMillis: Long): String {
             val key = part.substringBefore('=').trim().uppercase()
             key == "UNTIL" || key == "COUNT"
         }
-    val until = Instant.fromEpochMilliseconds(untilUtcMillis).toLocalDateTime(TimeZone.UTC)
-    val untilPart = "UNTIL=%04d%02d%02dT%02d%02d%02dZ".format(
-        until.year, until.month.number, until.day,
-        until.hour, until.minute, until.second,
-    )
+    val untilPart = "UNTIL=" + Instant.fromEpochMilliseconds(untilUtcMillis).toUtcBasic()
     return (kept + untilPart).joinToString(";")
 }
 
@@ -178,20 +173,8 @@ fun rruleTruncatedAt(rrule: String, untilUtcMillis: Long): String {
  * forms are UTC (RFC 5545); the date is taken after converting into [zone] so
  * a [toRRule]-rendered value round-trips to the day the user picked.
  */
-private fun parseUntilDate(raw: String, zone: TimeZone): LocalDate? = runCatching {
-    val date = LocalDate(
-        raw.substring(0, 4).toInt(),
-        raw.substring(4, 6).toInt(),
-        raw.substring(6, 8).toInt(),
-    )
-    if (raw.length >= 15 && raw[8] == 'T') {
-        val time = LocalTime(
-            raw.substring(9, 11).toInt(),
-            raw.substring(11, 13).toInt(),
-            raw.substring(13, 15).toInt(),
-        )
-        LocalDateTime(date, time).toInstant(TimeZone.UTC).toLocalDateTime(zone).date
-    } else {
-        date
-    }
-}.getOrNull()
+private fun parseUntilDate(raw: String, zone: TimeZone): LocalDate? {
+    val date = parseBasicDate(raw) ?: return null
+    if (raw.length < 15 || raw[8] != 'T') return date
+    return parseBasicDateTime(raw)?.toInstant(TimeZone.UTC)?.toLocalDateTime(zone)?.date
+}

@@ -93,22 +93,21 @@ fun groupAgendaDays(
 }
 
 /**
- * Ensure [today] surfaces as the first agenda day even when it carries no
- * (remaining) events, by prepending an empty-event [AgendaDay] the agenda widget
+ * Ensure [today] surfaces in the agenda even when it carries no (remaining)
+ * events, by inserting an empty-event [AgendaDay] in date order that the agenda
  * renders as a "nothing left today" placeholder. A no-op unless [enabled], and
- * when today already has its own day in [days]. Keeps today anchored at the top
- * so a glance tells today's events apart from a future day's (issue #35).
+ * when today already has its own day in [days]. Keeps today anchored so a glance
+ * tells today's events apart from a future day's (issue #35).
  */
 fun anchorTodayIfMissing(
     days: List<AgendaDay>,
     today: LocalDate,
     enabled: Boolean,
-): List<AgendaDay> =
-    if (enabled && days.none { it.date == today }) {
-        listOf(AgendaDay(today, emptyList())) + days
-    } else {
-        days
-    }
+): List<AgendaDay> {
+    if (!enabled || days.any { it.date == today }) return days
+    val at = days.indexOfFirst { it.date > today }.let { if (it < 0) days.size else it }
+    return days.take(at) + AgendaDay(today, emptyList()) + days.drop(at)
+}
 
 /**
  * State for the Agenda view: a flat, forward-looking list of upcoming events
@@ -118,8 +117,10 @@ sealed interface AgendaUiState {
     data object Loading : AgendaUiState
     data class Failure(val reason: FailureReason) : AgendaUiState
     data class Success(
-        /** First day of the loaded window (today, or a jumped-to date). */
+        /** The day the agenda opens on (today, or a jumped-to date). */
         val anchor: LocalDate,
+        /** First loaded day, before [anchor] once past days are loaded (#367). */
+        val windowStart: LocalDate,
         val today: LocalDate,
         val days: List<AgendaDay>,
         /** The range currently in effect — the saved default or a session override. */

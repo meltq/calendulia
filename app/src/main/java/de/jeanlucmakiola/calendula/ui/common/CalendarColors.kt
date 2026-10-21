@@ -1,7 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.common
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -14,6 +13,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 
 /**
  * Leading avatar for a calendar: a neutral chip holding a calendar glyph tinted
@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
  */
 @Composable
 fun CalendarColorChip(color: Int, modifier: Modifier = Modifier) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val soften = LocalSoftenColors.current
     Box(
         modifier = modifier

@@ -6,16 +6,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
-import de.jeanlucmakiola.calendula.ui.common.PickerDescription
-import de.jeanlucmakiola.calendula.ui.common.ViewPreviewFrame
 import de.jeanlucmakiola.calendula.ui.month.MonthStylePreview
 import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
 import de.jeanlucmakiola.calendula.ui.month.descriptionRes
 import de.jeanlucmakiola.calendula.ui.month.labelRes
 import de.jeanlucmakiola.floret.components.FullScreenPicker
-import de.jeanlucmakiola.floret.components.GroupedRow
-import de.jeanlucmakiola.floret.components.SelectedCheck
-import de.jeanlucmakiola.floret.components.positionOf
+import de.jeanlucmakiola.floret.components.GroupedHint
+import de.jeanlucmakiola.floret.components.OptionRows
+import de.jeanlucmakiola.floret.components.ViewPreviewFrame
 import kotlinx.datetime.DayOfWeek
 
 /**
@@ -29,7 +27,7 @@ import kotlinx.datetime.DayOfWeek
  *
  * Under the preview sits the selected style's own one-line blurb, then the
  * family's standard picker shape: connected single-line grouped rows with a
- * tonal highlight and [SelectedCheck] on the current one.
+ * tonal highlight and a check on the current one.
  */
 @Composable
 internal fun MonthViewStylePicker(
@@ -58,23 +56,15 @@ internal fun MonthViewStylePicker(
         // The selected style's own blurb lives here, under its preview, rather
         // than on every row — the rows stay single-line and dense, and the words
         // describe exactly what is being shown above.
-        PickerDescription(stringResource(selected.descriptionRes))
-        options.forEachIndexed { index, style ->
-            val isSelected = style == selected
-            GroupedRow(
-                title = stringResource(style.labelRes),
-                position = positionOf(index, options.size),
-                selected = isSelected,
-                trailing = if (isSelected) {
-                    { SelectedCheck() }
-                } else {
-                    null
-                },
-                // Applies straight away; the preview above is the confirmation,
-                // so there is nothing to dismiss for.
-                onClick = { onSelect(style) },
-            )
-        }
+        GroupedHint(stringResource(selected.descriptionRes), verticalPadding = 8.dp)
+        // Applies straight away; the preview above is the confirmation, so
+        // there is nothing to dismiss for.
+        OptionRows(
+            options = options,
+            selected = selected,
+            label = { stringResource(it.labelRes) },
+            onSelect = onSelect,
+        )
     }
 }
 

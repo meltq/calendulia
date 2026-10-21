@@ -2,9 +2,8 @@ package de.jeanlucmakiola.calendula.domain.ics
 
 import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventStatus
-import kotlinx.datetime.LocalDateTime
+import de.jeanlucmakiola.calendula.domain.zoneOrNull
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.number
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 
@@ -41,7 +40,7 @@ class IcsWriter(private val prodId: String = ICS_PROD_ID) {
     private fun MutableList<String>.appendEvent(event: IcsEvent, dtStamp: Instant) {
         add("BEGIN:VEVENT")
         add("UID:${event.uid}")
-        add("DTSTAMP:${utcStamp(dtStamp)}")
+        add("DTSTAMP:${dtStamp.toUtcBasic()}")
         add("SUMMARY:${escapeText(event.summary)}")
         appendTimes(event)
         event.recurrenceRule?.takeIf { it.isNotBlank() }
@@ -63,24 +62,24 @@ class IcsWriter(private val prodId: String = ICS_PROD_ID) {
 
     private fun MutableList<String>.appendTimes(event: IcsEvent) = when {
         event.isAllDay -> {
-            add("DTSTART;VALUE=DATE:${utcDate(event.start)}")
-            add("DTEND;VALUE=DATE:${utcDate(event.end)}")
+            add("DTSTART;VALUE=DATE:${event.start.toLocalDateTime(TimeZone.UTC).date.toBasic()}")
+            add("DTEND;VALUE=DATE:${event.end.toLocalDateTime(TimeZone.UTC).date.toBasic()}")
         }
         // Recurring: anchor to wall-clock in the event's own zone.
         event.recurrenceRule?.isNotBlank() == true -> {
-            val zone = runCatching { TimeZone.of(event.zoneId) }.getOrNull()
+            val zone = zoneOrNull(event.zoneId)
             if (zone != null) {
-                add("DTSTART;TZID=${event.zoneId}:${localStamp(event.start, zone)}")
-                add("DTEND;TZID=${event.zoneId}:${localStamp(event.end, zone)}")
+                add("DTSTART;TZID=${event.zoneId}:${event.start.toLocalDateTime(zone).toBasic()}")
+                add("DTEND;TZID=${event.zoneId}:${event.end.toLocalDateTime(zone).toBasic()}")
             } else {
                 // Unknown zone id → fall back to plain UTC instants.
-                add("DTSTART:${utcStamp(event.start)}")
-                add("DTEND:${utcStamp(event.end)}")
+                add("DTSTART:${event.start.toUtcBasic()}")
+                add("DTEND:${event.end.toUtcBasic()}")
             }
         }
         else -> {
-            add("DTSTART:${utcStamp(event.start)}")
-            add("DTEND:${utcStamp(event.end)}")
+            add("DTSTART:${event.start.toUtcBasic()}")
+            add("DTEND:${event.end.toUtcBasic()}")
         }
     }
 
@@ -120,20 +119,5 @@ class IcsWriter(private val prodId: String = ICS_PROD_ID) {
         // A lead time of 0 fires at start (PT0M); anything positive is "before".
         fun triggerValue(minutes: Int): String =
             if (minutes <= 0) "PT0M" else "-PT${minutes}M"
-
-        fun utcStamp(instant: Instant): String =
-            basic(instant.toLocalDateTime(TimeZone.UTC)) + "Z"
-
-        fun localStamp(instant: Instant, zone: TimeZone): String =
-            basic(instant.toLocalDateTime(zone))
-
-        fun utcDate(instant: Instant): String {
-            val dt = instant.toLocalDateTime(TimeZone.UTC)
-            return "%04d%02d%02d".format(dt.year, dt.month.number, dt.day)
-        }
-
-        fun basic(dt: LocalDateTime): String = "%04d%02d%02dT%02d%02d%02d".format(
-            dt.year, dt.month.number, dt.day, dt.hour, dt.minute, dt.second,
-        )
     }
 }

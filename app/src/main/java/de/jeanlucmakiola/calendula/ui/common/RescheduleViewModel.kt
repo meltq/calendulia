@@ -3,9 +3,9 @@ package de.jeanlucmakiola.calendula.ui.common
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import de.jeanlucmakiola.calendula.data.time.ZoneSource
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventFormProblem
@@ -15,26 +15,28 @@ import de.jeanlucmakiola.calendula.domain.allowsEventMove
 import de.jeanlucmakiola.calendula.domain.parseSimpleRecurrence
 import de.jeanlucmakiola.calendula.domain.problems
 import de.jeanlucmakiola.calendula.domain.realignRecurrence
+import de.jeanlucmakiola.calendula.domain.resizedTo
+import de.jeanlucmakiola.calendula.domain.endInstant
+import de.jeanlucmakiola.calendula.domain.startInstant
 import de.jeanlucmakiola.calendula.domain.resolvedZone
 import de.jeanlucmakiola.calendula.domain.shiftedByDays
 import de.jeanlucmakiola.calendula.domain.shiftedTo
 import de.jeanlucmakiola.calendula.domain.toEditForm
+import de.jeanlucmakiola.floret.android.stateWhileSubscribed
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Instant
@@ -54,6 +56,9 @@ sealed interface MoveTarget {
      * disagree by a day over which zone the event's first day is resolved in.
      */
     data class ByDays(val days: Int) : MoveTarget
+
+    /** New start and end instants — a timeline resize, which changes the length. */
+    data class Span(val start: Instant, val end: Instant) : MoveTarget
 }
 
 /**
@@ -74,7 +79,7 @@ data class MoveRequest(
  * re-derive (`BYDAY=MO,WE`, `2TH`, …), or the shift wouldn't carry the anchor
  * across the same midnights the occurrence crossed.
  */
-data class MoveScopePrompt(val occurrenceOnly: Boolean)
+data class MoveScopePrompt(val occurrenceOnly: Boolean, val resize: Boolean = false)
 
 /** The inverse of a completed move, for the undo action. */
 data class MoveUndo(
@@ -88,12 +93,14 @@ data class MoveUndo(
 sealed interface MoveOutcome {
     /**
      * Written. [startMillis] is where the dragged occurrence now begins, for the
-     * confirmation message; [undo] is null when the write has no clean inverse.
+     * confirmation message, and [endMillis] where it ends — set only for a resize,
+     * whose message names both; [undo] is null when the write has no clean inverse.
      */
     data class Moved(
         val startMillis: Long,
         val isAllDay: Boolean,
         val undo: MoveUndo?,
+        val endMillis: Long? = null,
     ) : MoveOutcome
 
     data object Undone : MoveOutcome
@@ -122,6 +129,7 @@ sealed interface MoveOutcome {
 class RescheduleViewModel @Inject constructor(
     private val repository: CalendarRepository,
     @IoDispatcher private val io: CoroutineDispatcher,
+    private val zoneSource: ZoneSource,
 ) : ViewModel() {
 
     private val _scopePrompt = MutableStateFlow<MoveScopePrompt?>(null)
@@ -179,9 +187,8 @@ class RescheduleViewModel @Inject constructor(
         .map { calendars -> calendars.filter { it.allowsEventMove }.map { it.id }.toSet() }
         .catch { emit(emptySet<Long>()) }
         .flowOn(io)
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = emptySet(),
         )
 
@@ -226,7 +233,10 @@ class RescheduleViewModel @Inject constructor(
             } else {
                 // Still busy: the scope dialog is now the thing in flight.
                 pending = prepared
-                _scopePrompt.value = MoveScopePrompt(occurrenceOnly = !prepared.canRealign)
+                _scopePrompt.value = MoveScopePrompt(
+                    occurrenceOnly = !prepared.canRealign,
+                    resize = request.target is MoveTarget.Span,
+                )
             }
         }
         return true
@@ -308,18 +318,19 @@ class RescheduleViewModel @Inject constructor(
             return null
         }
 
-        val zone = TimeZone.currentSystemDefault()
+        val zone = zoneSource.current()
         val original = detail.toEditForm(request.beginMillis, request.endMillis, zone)
         val shifted = when (val target = request.target) {
             is MoveTarget.Start -> original.shiftedTo(target.instant, zone)
             is MoveTarget.ByDays -> original.shiftedByDays(target.days, zone)
+            is MoveTarget.Span -> original.resizedTo(target.start, target.end, zone)
         }
         // A zero-distance drop is not a write.
         if (shifted == original) return null
 
         // The UNTIL check is deferred to the write, which knows how far the move
         // reaches and so which date has to clear it.
-        if ((shifted.problems() - EventFormProblem.RecurrenceEndsBeforeStart).isNotEmpty()) {
+        if ((shifted.problems(zone) - EventFormProblem.RecurrenceEndsBeforeStart).isNotEmpty()) {
             _outcome.value = MoveOutcome.Failed
             return null
         }
@@ -396,6 +407,7 @@ class RescheduleViewModel @Inject constructor(
                 startMillis = movedStartMillis(prepared),
                 isAllDay = prepared.updated.isAllDay,
                 undo = undoFor(prepared, scope),
+                endMillis = resizedEndMillis(prepared),
             )
         } catch (e: CancellationException) {
             throw e
@@ -480,6 +492,13 @@ class RescheduleViewModel @Inject constructor(
             null
         }
 
+    /** Where a resized occurrence now ends; null for a move, which keeps its length. */
+    private fun resizedEndMillis(prepared: PreparedMove): Long? {
+        if (prepared.request.target !is MoveTarget.Span) return null
+        val form = prepared.updated
+        return form.endInstant(form.resolvedZone(zoneSource.current())).toEpochMilliseconds()
+    }
+
     /**
      * Where the dragged occurrence now begins, in the same anchoring the views
      * read dates back in: UTC midnight for an all-day event.
@@ -489,8 +508,7 @@ class RescheduleViewModel @Inject constructor(
         return if (form.isAllDay) {
             form.start.date.atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds()
         } else {
-            form.start.toInstant(form.resolvedZone(TimeZone.currentSystemDefault()))
-                .toEpochMilliseconds()
+            form.startInstant(form.resolvedZone(zoneSource.current())).toEpochMilliseconds()
         }
     }
 

@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.domain
 
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.testEvent
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
@@ -29,17 +30,8 @@ class EventInstanceSpanTest {
     private fun utc(y: Int, mo: Int, d: Int, h: Int = 0): Instant =
         LocalDateTime(y, mo, d, h, 0).toInstant(TimeZone.UTC)
 
-    private fun instance(start: Instant, end: Instant, isAllDay: Boolean) = EventInstance(
-        instanceId = 1L,
-        eventId = 1L,
-        calendarId = 1L,
-        title = "Event",
-        start = start,
-        end = end,
-        isAllDay = isAllDay,
-        color = 0xFF000000.toInt(),
-        location = null,
-    )
+    private fun instance(start: Instant, end: Instant, isAllDay: Boolean) =
+        testEvent(start = start, end = end, isAllDay = isAllDay, color = 0xFF000000.toInt())
 
     @Test
     fun `all-day event keeps its date west of UTC`() {

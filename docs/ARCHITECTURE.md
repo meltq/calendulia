@@ -119,7 +119,11 @@ gesture finishes from its scaled preview.
   switch only changes what they say.
 A tapped reminder notification routes through `MainActivity` (`singleTop` +
 `onNewIntent`) as an external detail key that `CalendarHost` consumes
-exactly like an event tap.
+like an event tap. With the "tapping an event opens" setting on the edit form
+(#178), a tap in the views or search opens the edit overlay directly for events
+in writable calendars; notifications and widgets always open the detail. The
+edit form guards its own back: unsaved changes ask to save, discard or keep
+editing.
 
 ### First-launch wizard
 

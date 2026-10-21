@@ -1,5 +1,7 @@
 package de.jeanlucmakiola.calendula.domain.ics
 
+import de.jeanlucmakiola.calendula.domain.rruleParts
+
 private val VALID_FREQ = setOf(
     "SECONDLY", "MINUTELY", "HOURLY", "DAILY", "WEEKLY", "MONTHLY", "YEARLY",
 )
@@ -64,7 +66,9 @@ data class SanitizedRrule(val rule: String?, val repaired: Boolean)
  * rule at all — gives up entirely.
  */
 fun sanitizeRrule(raw: String?): SanitizedRrule {
-    val rule = raw?.trim()?.removePrefix("RRULE:")?.trim().orEmpty()
+    val rule = raw?.trim()
+        ?.let { if (it.startsWith("RRULE:", ignoreCase = true)) it.drop("RRULE:".length) else it }
+        ?.trim().orEmpty()
     if (rule.isEmpty()) return SanitizedRrule(rule = null, repaired = false)
 
     var freqSeen = false
@@ -79,13 +83,12 @@ fun sanitizeRrule(raw: String?): SanitizedRrule {
         return kept.takeIf { it.isNotEmpty() }?.joinToString(",")
     }
 
-    for (part in rule.split(';')) {
-        // A stray separator ("FREQ=DAILY;") normalises away; nothing was lost.
-        // A part that carries text but no '=' ("FREQ=WEEKLY;BYDAY") is a part
-        // being dropped, so it falls through and marks the rule repaired.
-        if (part.isBlank()) continue
-        val key = part.substringBefore('=', "").trim().uppercase()
-        val value = if ('=' in part) part.substringAfter('=').trim() else ""
+    // A stray separator ("FREQ=DAILY;") normalises away; nothing was lost.
+    // A part that carries text but no '=' ("FREQ=WEEKLY;BYDAY") is a part
+    // being dropped, so it falls through and marks the rule repaired.
+    for (part in rruleParts(rule)) {
+        val key = part.key?.trim()?.uppercase().orEmpty()
+        val value = part.value.trim()
         val kept = when {
             key.isEmpty() || value.isEmpty() -> null
             key == "FREQ" ->

@@ -16,8 +16,6 @@ data class TimelineHours(
     val startHour: Int = DEFAULT_START_HOUR,
     val endHour: Int = DEFAULT_END_HOUR,
 ) {
-    val span: Int get() = endHour - startHour
-
     companion object {
         const val DEFAULT_START_HOUR = 7
         const val DEFAULT_END_HOUR = 22

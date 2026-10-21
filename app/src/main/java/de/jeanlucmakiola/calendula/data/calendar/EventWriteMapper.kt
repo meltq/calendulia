@@ -1,15 +1,19 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
+import de.jeanlucmakiola.calendula.domain.instantIn
+import kotlinx.datetime.toKotlinTimeZone
 import android.provider.CalendarContract
 import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventColorOption
 import de.jeanlucmakiola.calendula.domain.EventForm
+import de.jeanlucmakiola.calendula.domain.FormTime
 import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import de.jeanlucmakiola.calendula.domain.nearestTo
 import kotlinx.datetime.toJavaLocalDate
 import kotlinx.datetime.toJavaLocalDateTime
+import kotlinx.datetime.toJavaZoneOffset
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
@@ -48,8 +52,8 @@ internal fun EventForm.toWriteTimes(zone: ZoneId): EventWriteTimes = if (isAllDa
 } else {
     val writeZone = writeZone(zone)
     EventWriteTimes(
-        dtStartMillis = start.toJavaLocalDateTime().atZone(writeZone).toInstant().toEpochMilli(),
-        dtEndMillis = end.toJavaLocalDateTime().atZone(writeZone).toInstant().toEpochMilli(),
+        dtStartMillis = start.instantIn(writeZone.toKotlinTimeZone()).toEpochMilliseconds(),
+        dtEndMillis = end.instantIn(writeZone.toKotlinTimeZone()).toEpochMilliseconds(),
         timezone = writeZone.id,
     )
 }
@@ -75,7 +79,7 @@ private fun EventForm.writeZone(deviceZone: ZoneId): ZoneId = if (isAllDay) {
 private fun EventForm.anchorLocal(): JavaLocalDateTime = if (isAllDay) {
     start.date.toJavaLocalDate().atStartOfDay()
 } else {
-    start.toJavaLocalDateTime()
+    start.dateTime.toJavaLocalDateTime()
 }
 
 /**
@@ -181,7 +185,8 @@ internal fun buildEventUpdateValues(
 
     // A zone change counts as a time change even when the wall-clock is
     // untouched: the same 09:00 in another zone is a different instant, so
-    // DTSTART has to move with it.
+    // DTSTART has to move with it. So does a switch between the two passes of
+    // the fall-back hour, which each [FormTime] carries (#387).
     val timesChanged = updated.start != original.start ||
         updated.end != original.end ||
         updated.isAllDay != original.isAllDay ||
@@ -209,15 +214,23 @@ internal fun buildEventUpdateValues(
         // is a different offset from the series anchor's whenever a DST boundary
         // sits between them, or whenever the zone itself changed. Working in wall
         // clock keeps "09:00" meaning 09:00 at both ends.
-        val seriesLocal = Instant.ofEpochMilli(seriesDtStartMillis)
-            .atZone(original.writeZone(zone)).toLocalDateTime()
+        val seriesZoned = Instant.ofEpochMilli(seriesDtStartMillis).atZone(original.writeZone(zone))
+        val seriesLocal = seriesZoned.toLocalDateTime()
         val wallClockShift = Duration.between(original.anchorLocal(), updated.anchorLocal())
         val shifted = seriesLocal.plus(wallClockShift)
         // An all-day series anchor must sit on a UTC midnight. A pure day move
         // already lands there (both ends are midnights), but *switching* a
         // recurring event to all-day shifts by a time-of-day too, so snap.
         val newSeriesLocal = if (updated.isAllDay) shifted.toLocalDate().atStartOfDay() else shifted
-        val newSeriesStart = newSeriesLocal.atZone(updated.writeZone(zone))
+        // A wall clock the fall-back hour repeats keeps the anchor's own pass, or,
+        // when the anchor is the edited occurrence itself, the pass the form now
+        // holds: a bare wall clock would always take the earlier one (#387).
+        val pass = if (seriesLocal == original.anchorLocal()) {
+            updated.start.offset?.toJavaZoneOffset()
+        } else {
+            seriesZoned.offset
+        }
+        val newSeriesStart = ZonedDateTime.ofLocal(newSeriesLocal, updated.writeZone(zone), pass)
         put(CalendarContract.Events.DTSTART, newSeriesStart.toInstant().toEpochMilli())
         put(CalendarContract.Events.DTEND, null)
         put(CalendarContract.Events.RRULE, updated.rrule)
@@ -359,47 +372,10 @@ internal data class ExceptionRowSnapshot(
     val exceptionEventId: Long,
     val originalInstanceMillis: Long,
     val isCancelled: Boolean,
-    val status: Int?,
-    val title: String,
-    val isAllDay: Boolean,
     val dtStartMillis: Long,
     val dtEndMillis: Long?,
     val duration: String?,
-    val timezone: String?,
-    val availability: Int,
-    val accessLevel: Int,
-    val location: String?,
-    val description: String?,
 )
-
-/**
- * Column values replaying a *modified* occurrence [snapshot] against the moved
- * series via `CONTENT_EXCEPTION_URI`. Like [buildOccurrenceExceptionValues] the
- * length travels as DURATION (the provider rejects DTEND on an exception). A
- * cancelled occurrence is written separately (ORIGINAL_INSTANCE_TIME +
- * STATUS_CANCELED) — this builder is only for the modified case.
- */
-internal fun buildCopiedExceptionValues(snapshot: ExceptionRowSnapshot): Map<String, Any?> =
-    buildMap {
-        put(CalendarContract.Events.ORIGINAL_INSTANCE_TIME, snapshot.originalInstanceMillis)
-        put(CalendarContract.Events.TITLE, snapshot.title)
-        put(CalendarContract.Events.ALL_DAY, if (snapshot.isAllDay) 1 else 0)
-        put(CalendarContract.Events.DTSTART, snapshot.dtStartMillis)
-        put(
-            CalendarContract.Events.DURATION,
-            snapshot.duration?.takeIf { it.isNotBlank() }
-                ?: rfc2445Duration(
-                    (snapshot.dtEndMillis ?: snapshot.dtStartMillis) - snapshot.dtStartMillis,
-                    snapshot.isAllDay,
-                ),
-        )
-        put(CalendarContract.Events.EVENT_TIMEZONE, snapshot.timezone ?: "UTC")
-        put(CalendarContract.Events.AVAILABILITY, snapshot.availability)
-        put(CalendarContract.Events.ACCESS_LEVEL, snapshot.accessLevel)
-        put(CalendarContract.Events.EVENT_LOCATION, snapshot.location?.ifEmpty { null })
-        put(CalendarContract.Events.DESCRIPTION, snapshot.description?.ifEmpty { null })
-        snapshot.status?.let { put(CalendarContract.Events.STATUS, it) }
-    }
 
 /**
  * Column values for a *cancelled*-occurrence exception row ("delete only this
@@ -466,9 +442,24 @@ internal fun buildOccurrenceExdateValues(
     duration: String?,
     timezone: String?,
     allDay: Int,
+): Map<String, Any?> = buildOccurrencesExdateValues(
+    existingExdate, listOf(occurrenceMillis), dtStartMillis, rrule, rdate, duration, timezone, allDay,
+)
+
+/** [buildOccurrenceExdateValues] excluding every one of [occurrences] in one write. */
+internal fun buildOccurrencesExdateValues(
+    existingExdate: String?,
+    occurrences: List<Long>,
+    dtStartMillis: Long,
+    rrule: String?,
+    rdate: String?,
+    duration: String?,
+    timezone: String?,
+    allDay: Int,
 ): Map<String, Any?> = mapOf(
-    CalendarContract.Events.EXDATE to
-        mergedExdate(existingExdate, occurrenceMillis, allDay != 0, timezone),
+    CalendarContract.Events.EXDATE to occurrences.fold(existingExdate) { exdate, millis ->
+        mergedExdate(exdate, millis, allDay != 0, timezone)
+    },
     CalendarContract.Events.DTSTART to dtStartMillis,
     CalendarContract.Events.RRULE to rrule,
     CalendarContract.Events.RDATE to rdate,
@@ -618,7 +609,7 @@ internal fun exdateAfter(
  * optionally behind the parameter prefix AOSP's `RecurrenceSet` puts in front of
  * a zoned one ([exdateListZone] reads that half).
  */
-private fun exdateStamps(exdate: String?): List<String> = exdate
+internal fun exdateStamps(exdate: String?): List<String> = exdate
     ?.withoutExdateParameters()
     ?.split(',')
     ?.map { it.trim() }
@@ -888,7 +879,7 @@ internal fun buildImportedEventValues(
  */
 private fun importDuration(startMillis: Long, endMillis: Long, isAllDay: Boolean): String {
     val span = (endMillis - startMillis).coerceAtLeast(0)
-    return if (isAllDay) "P${(span / 86_400_000L).coerceAtLeast(1)}D" else "P${span / 1_000L}S"
+    return rfc2445Duration(if (isAllDay) span.coerceAtLeast(MILLIS_PER_DAY) else span, isAllDay)
 }
 
 private fun EventStatus.toProviderStatus(): Int = when (this) {

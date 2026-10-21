@@ -5,13 +5,10 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -28,8 +25,12 @@ import de.jeanlucmakiola.calendula.ui.common.DurationPicker
 import de.jeanlucmakiola.calendula.ui.common.durationLabel
 import de.jeanlucmakiola.calendula.ui.common.eventFormFieldIcon
 import de.jeanlucmakiola.calendula.ui.common.eventFormFieldLabel
+import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
+import de.jeanlucmakiola.floret.components.ExpandIcon
+import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.GroupedSwitchRow
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.floret.identity.collapseExit
@@ -56,13 +57,15 @@ internal fun EventFormScreen(
         predictiveBack = true,
         visible = visible,
     ) {
-        SettingsHint(stringResource(R.string.settings_form_fields_hint))
+        GroupedHint(stringResource(R.string.settings_form_fields_hint))
         Spacer(Modifier.height(8.dp))
         val fields = EventFormField.entries
         fields.forEachIndexed { index, field ->
             val checked = field in state.defaultFormFields
-            GroupedRow(
+            GroupedSwitchRow(
                 title = stringResource(eventFormFieldLabel(field)),
+                checked = checked,
+                onCheckedChange = { viewModel.setFormFieldDefault(field, it) },
                 position = positionOf(index, fields.size),
                 // The same icon the field carries in the new-event form.
                 leading = {
@@ -72,20 +75,15 @@ internal fun EventFormScreen(
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 },
-                trailing = {
-                    Switch(
-                        checked = checked,
-                        onCheckedChange = { viewModel.setFormFieldDefault(field, it) },
-                    )
-                },
-                onClick = { viewModel.setFormFieldDefault(field, !checked) },
             )
         }
 
         // Auto-focus the title on a new event (#10), on by default.
         Spacer(Modifier.height(24.dp))
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_autofocus_title),
+            checked = state.autofocusEventTitle,
+            onCheckedChange = { viewModel.setAutofocusEventTitle(it) },
             summary = stringResource(R.string.settings_autofocus_title_hint),
             position = Position.Alone,
             leading = {
@@ -95,13 +93,6 @@ internal fun EventFormScreen(
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             },
-            trailing = {
-                Switch(
-                    checked = state.autofocusEventTitle,
-                    onCheckedChange = { viewModel.setAutofocusEventTitle(it) },
-                )
-            },
-            onClick = { viewModel.setAutofocusEventTitle(!state.autofocusEventTitle) },
         )
 
         // How long a new timed event opens (#54), globally and per calendar —
@@ -127,13 +118,7 @@ internal fun EventFormScreen(
                 // Expanded, the header opens the calendar run below it and the
                 // two read as one container (the shared expand pattern).
                 position = if (durationSectionExpanded) Position.Top else Position.Bottom,
-                trailing = {
-                    Icon(
-                        imageVector = if (durationSectionExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
+                trailing = { ExpandIcon(durationSectionExpanded) },
                 onClick = { durationSectionExpanded = !durationSectionExpanded },
             )
             AnimatedVisibility(
@@ -145,7 +130,7 @@ internal fun EventFormScreen(
                     durationCalendars.forEachIndexed { index, calendar ->
                         val override = state.perCalendarEventDuration[calendar.id]
                         GroupedRow(
-                            title = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
+                            title = calendar.displayName.orUnnamed(),
                             summary = override?.let { durationLabel(it) }
                                 ?: stringResource(
                                     R.string.settings_calendar_duration_inherits,
@@ -165,21 +150,12 @@ internal fun EventFormScreen(
         // Per-event colour on calendars that publish no colour set (some
         // CalDAV); off by default, since it may not survive their next sync.
         Spacer(Modifier.height(24.dp))
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_color_unsupported),
+            checked = state.allowColorOnUnsupportedCalendars,
+            onCheckedChange = { viewModel.setAllowColorOnUnsupportedCalendars(it) },
             summary = stringResource(R.string.settings_color_unsupported_hint),
             position = Position.Alone,
-            trailing = {
-                Switch(
-                    checked = state.allowColorOnUnsupportedCalendars,
-                    onCheckedChange = { viewModel.setAllowColorOnUnsupportedCalendars(it) },
-                )
-            },
-            onClick = {
-                viewModel.setAllowColorOnUnsupportedCalendars(
-                    !state.allowColorOnUnsupportedCalendars,
-                )
-            },
         )
     }
 

@@ -1,15 +1,13 @@
 package de.jeanlucmakiola.calendula.ui.common
 
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.timedEvent
 import de.jeanlucmakiola.calendula.ui.week.MINUTES_PER_DAY
 import de.jeanlucmakiola.calendula.ui.week.layoutDay
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.atTime
 import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
 import androidx.compose.foundation.shape.CornerSize
 import androidx.compose.ui.unit.dp
 import org.junit.jupiter.api.Test
@@ -25,11 +23,8 @@ class TimedBlockShapeTest {
     private val day2 = day1.plus(1, DateTimeUnit.DAY)
     private val day3 = day2.plus(1, DateTimeUnit.DAY)
 
-    private fun event(from: LocalDateTimeIsh, to: LocalDateTimeIsh) = EventInstance(
-        instanceId = 1L, eventId = 1L, calendarId = 1L, title = "E",
-        start = from.date.atTime(from.hour, 0).toInstant(zone),
-        end = to.date.atTime(to.hour, 0).toInstant(zone),
-        isAllDay = false, color = 0xFF112233.toInt(), location = null,
+    private fun event(from: LocalDateTimeIsh, to: LocalDateTimeIsh) = timedEvent(
+        from.date, from.hour, to.hour, zone = zone, title = "E", color = 0xFF112233.toInt(), endDate = to.date,
     )
 
     data class LocalDateTimeIsh(val date: LocalDate, val hour: Int)

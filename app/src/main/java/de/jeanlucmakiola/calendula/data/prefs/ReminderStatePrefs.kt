@@ -2,10 +2,8 @@ package de.jeanlucmakiola.calendula.data.prefs
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
-import androidx.datastore.preferences.core.edit
-import androidx.datastore.preferences.core.longPreferencesKey
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
+import de.jeanlucmakiola.floret.prefs.PrefStore
+import de.jeanlucmakiola.floret.prefs.nullableLongPref
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -20,17 +18,16 @@ import javax.inject.Singleton
  */
 @Singleton
 class ReminderStatePrefs @Inject constructor(
-    private val store: DataStore<Preferences>,
+    store: DataStore<Preferences>,
 ) {
+    private val prefs = PrefStore(store)
 
     /** The watermark, or `null` before the first scan has ever run. */
-    suspend fun lastScanMillis(): Long? = store.data.map { it[LAST_SCAN_KEY] }.first()
+    suspend fun lastScanMillis(): Long? = prefs.get(LAST_SCAN)
 
-    suspend fun setLastScanMillis(millis: Long) {
-        store.edit { prefs -> prefs[LAST_SCAN_KEY] = millis }
-    }
+    suspend fun setLastScanMillis(millis: Long) = prefs.set(LAST_SCAN, millis)
 
     private companion object {
-        val LAST_SCAN_KEY = longPreferencesKey("reminder_last_scan_millis")
+        val LAST_SCAN = nullableLongPref("reminder_last_scan_millis")
     }
 }

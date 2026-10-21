@@ -9,16 +9,16 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.data.backup.BackupScheduler
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.BackupStatus
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
+import de.jeanlucmakiola.floret.android.stateWhileSubscribed
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
@@ -26,7 +26,6 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
@@ -52,9 +51,8 @@ class CalendarsViewModel @Inject constructor(
         repository.calendars()
             .catch { emit(emptyList()) }
             .flowOn(io)
-            .stateIn(
+            .stateWhileSubscribed(
                 scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000L),
                 initialValue = emptyList(),
             )
 
@@ -68,9 +66,8 @@ class CalendarsViewModel @Inject constructor(
             .map { backupUiState(it) }
             .catch { emit(BackupUiState.Failure(FailureReason.ProviderUnavailable)) }
             .flowOn(io)
-            .stateIn(
+            .stateWhileSubscribed(
                 scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000L),
                 initialValue = BackupUiState.Loading,
             )
 
@@ -84,9 +81,8 @@ class CalendarsViewModel @Inject constructor(
         AutoBackupUiState(enabled, interval, folder, status)
     }
         .flowOn(io)
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = AutoBackupUiState(),
         )
 
@@ -103,9 +99,8 @@ class CalendarsViewModel @Inject constructor(
         if (!enabled) emptySet() else sources.filter { it.isManaged }.map { it.id }.toSet()
     }
         .flowOn(io)
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = emptySet(),
         )
 

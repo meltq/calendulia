@@ -1,8 +1,9 @@
 package de.jeanlucmakiola.calendula.ui.agenda
 
+import androidx.annotation.StringRes
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
@@ -10,6 +11,8 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Coffee
@@ -31,22 +34,25 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.isDeclined
 import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
+import de.jeanlucmakiola.calendula.ui.common.ViewMorphKey
 import de.jeanlucmakiola.calendula.ui.common.declinedTitle
 import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
-import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.ui.common.formatTimeOfDay
+import de.jeanlucmakiola.calendula.ui.common.morphEvent
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.Position
+import de.jeanlucmakiola.floret.components.positionOf
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
+import de.jeanlucmakiola.floret.identity.animateItemMotion
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.floret.locale.localizedDateFormatter
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
+import kotlinx.datetime.toJavaLocalDate
 import java.util.Locale
 
 // The agenda's row vocabulary, split out of AgendaScreen so the month view's
@@ -127,7 +133,7 @@ internal fun AgendaEventRow(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val soften = LocalSoftenColors.current
     val title = event.title.ifBlank { stringResource(R.string.event_untitled) }
     GroupedRow(
@@ -177,34 +183,74 @@ internal fun agendaTimeSummary(event: EventInstance, day: LocalDate, zone: TimeZ
         AgendaTimeLabel.AllDay -> stringResource(R.string.event_detail_all_day)
         is AgendaTimeLabel.Starts -> stringResource(
             R.string.agenda_span_starts,
-            formatTime(label.start, zone, is24Hour, locale),
+            formatTimeOfDay(label.start, zone, is24Hour, locale),
         )
         is AgendaTimeLabel.Ends -> stringResource(
             R.string.agenda_span_ends,
-            formatTime(label.end, zone, is24Hour, locale),
+            formatTimeOfDay(label.end, zone, is24Hour, locale),
         )
-        is AgendaTimeLabel.Range -> "${formatTime(label.start, zone, is24Hour, locale)} – " +
-            formatTime(label.end, zone, is24Hour, locale)
+        is AgendaTimeLabel.Range -> "${formatTimeOfDay(label.start, zone, is24Hour, locale)} – " +
+            formatTimeOfDay(label.end, zone, is24Hour, locale)
     }
 
     val location = event.location?.takeIf { it.isNotBlank() }
     return if (location != null) "$time · $location" else time
 }
 
-private fun formatTime(
-    instant: Instant,
-    zone: TimeZone,
-    is24Hour: Boolean,
-    locale: Locale,
-): String {
-    val t = instant.toLocalDateTime(zone).time
-    return formatTimeOfDay(t.hour, t.minute, is24Hour, locale)
-}
-
 private fun formatAgendaDate(date: LocalDate): String {
     val locale = Locale.getDefault()
-    val java = java.time.LocalDate.of(date.year, date.month.ordinal + 1, date.day)
+    val java = date.toJavaLocalDate()
     // Weekday + date in the locale's own field order (e.g. "Wed, Jun 17, 2026"
     // vs "Mi., 17. Juni 2026") rather than a hardcoded day-month-year layout.
     return localizedDateFormatter(locale, "EEEdMMMy").format(java)
+}
+
+/**
+ * The agenda's day-by-day list body: a sticky header per day, its events or a
+ * placeholder row for an event-less day, then a gap. Shared by the Agenda screen
+ * and the month view's split pane so both lists read the same.
+ */
+@OptIn(ExperimentalFoundationApi::class)
+internal fun LazyListScope.agendaDays(
+    days: List<AgendaDay>,
+    today: LocalDate,
+    zone: TimeZone,
+    @StringRes emptyText: Int,
+    onEmptyClick: (LocalDate) -> Unit,
+    dimmed: (EventInstance, LocalDate) -> Boolean,
+    onOpenDay: (LocalDate) -> Unit,
+    onEventClick: (EventInstance) -> Unit,
+) {
+    days.forEach { day ->
+        stickyHeader(key = "header-${day.date}") {
+            AgendaDayHeader(date = day.date, today = today, onOpenDay = onOpenDay)
+        }
+        if (day.events.isEmpty()) {
+            item(key = "placeholder-${day.date}") {
+                AgendaEmptyDayRow(
+                    text = stringResource(emptyText),
+                    onClick = { onEmptyClick(day.date) },
+                )
+            }
+        } else {
+            itemsIndexed(
+                items = day.events,
+                // Scope the key by day: a multi-day event appears under every
+                // day it spans, so its instanceId alone is not unique across
+                // the list (LazyColumn requires unique keys).
+                key = { _, event -> "${day.date}-${event.instanceId}" },
+            ) { index, event ->
+                AgendaEventRow(
+                    event = event,
+                    day = day.date,
+                    zone = zone,
+                    position = positionOf(index, day.events.size),
+                    dimmed = dimmed(event, day.date),
+                    modifier = animateItemMotion().morphEvent(ViewMorphKey.event(event, day.date)),
+                    onClick = { onEventClick(event) },
+                )
+            }
+        }
+        item(key = "gap-${day.date}") { Spacer(Modifier.height(8.dp)) }
+    }
 }

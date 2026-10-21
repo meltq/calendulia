@@ -19,30 +19,30 @@ import kotlinx.datetime.LocalDate
 fun realignRecurrence(rrule: String, oldStart: LocalDate, newStart: LocalDate): String? {
     if (oldStart == newStart) return rrule
     val prefix = if (rrule.startsWith("RRULE:")) "RRULE:" else ""
-    val parts = rrule.removePrefix("RRULE:").split(';').filter { it.isNotBlank() }
+    val parts = rruleParts(rrule)
     if (parts.isEmpty()) return null
+    var freq = false
     var weekly = false
+    var byDay = false
     val rebuilt = parts.map { part ->
-        val eq = part.indexOf('=')
-        if (eq <= 0) return null
-        val key = part.substring(0, eq).uppercase()
-        val value = part.substring(eq + 1).trim()
-        when (key) {
+        val value = part.value.trim()
+        when (part.key) {
             "FREQ" -> {
+                freq = true
                 weekly = value.equals("WEEKLY", ignoreCase = true)
-                part
+                part.raw
             }
             "BYDAY" -> {
+                byDay = true
                 val old = RRULE_DAY_CODES[oldStart.dayOfWeek] ?: return null
                 if (!value.equals(old, ignoreCase = true)) return null
                 "BYDAY=${RRULE_DAY_CODES.getValue(newStart.dayOfWeek)}"
             }
-            "INTERVAL", "COUNT", "UNTIL", "WKST" -> part
+            "INTERVAL", "COUNT", "UNTIL", "WKST" -> part.raw
             else -> return null
         }
     }
     // BYDAY is only simple on a weekly rule, matching parseSimpleRecurrence.
-    if (!weekly && parts.any { it.substringBefore('=').trim().uppercase() == "BYDAY" }) return null
-    if (parts.none { it.substringBefore('=').trim().uppercase() == "FREQ" }) return null
+    if (!freq || (byDay && !weekly)) return null
     return prefix + rebuilt.joinToString(";")
 }

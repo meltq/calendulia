@@ -1,10 +1,6 @@
 package de.jeanlucmakiola.calendula.domain
 
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
@@ -25,37 +21,27 @@ import kotlin.time.Instant
  * the extras lives in `MainActivity.insertFormOrNull`.
  */
 fun buildInsertEventForm(
-    beginMillis: Long?,
-    endMillis: Long?,
-    isAllDay: Boolean,
+    beginMillis: Long? = null,
+    endMillis: Long? = null,
+    isAllDay: Boolean = false,
     title: String?,
     description: String?,
-    location: String?,
-    rrule: String?,
+    location: String? = null,
+    rrule: String? = null,
     zone: TimeZone,
     now: Instant,
 ): EventForm {
     val (start, end) = if (isAllDay) {
-        // All-day provider times are UTC midnights with an exclusive end; show
-        // the last covered day and keep placeholder wall-clock times in case the
-        // user switches the event to timed (mirrors EventDetail.toEditForm).
         val startDate = beginMillis
             ?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date }
             ?: now.toLocalDateTime(zone).date
-        val endDate = endMillis
-            ?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date }
-            ?.let { exclusive -> maxOf(startDate, LocalDate.fromEpochDays(exclusive.toEpochDays() - 1)) }
-            ?: startDate
-        LocalDateTime(startDate, LocalTime(9, 0)) to LocalDateTime(endDate, LocalTime(10, 0))
+        val endExclusive = endMillis?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(TimeZone.UTC).date }
+        allDayFormTimes(startDate, endExclusive)
     } else {
-        val startTime = beginMillis
-            ?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(zone) }
-            ?: nextFullHour(now, zone)
-        val endTime = endMillis
-            ?.let { Instant.fromEpochMilliseconds(it).toLocalDateTime(zone) }
-            ?.takeIf { it >= startTime }
-            ?: (startTime.toInstant(zone) + 1.hours).toLocalDateTime(zone)
-        startTime to endTime
+        val startAt = beginMillis?.let(Instant::fromEpochMilliseconds) ?: nextFullHour(now)
+        val endAt = endMillis?.let(Instant::fromEpochMilliseconds)?.takeIf { it >= startAt }
+            ?: (startAt + 1.hours)
+        startAt.toFormTime(zone) to endAt.toFormTime(zone)
     }
     return EventForm(
         calendarId = null,
@@ -67,12 +53,38 @@ fun buildInsertEventForm(
         description = description.orEmpty(),
         // Bare RRULE value (Events.RRULE convention); tolerate a leading "RRULE:"
         // some callers include.
-        rrule = rrule?.removePrefix("RRULE:")?.takeIf { it.isNotBlank() },
+        rrule = rrule.normalizedRrule(),
     )
 }
 
-private fun nextFullHour(now: Instant, zone: TimeZone): LocalDateTime {
+/** The first full hour after [now]: may roll into the next day before midnight. */
+internal fun nextFullHour(now: Instant): Instant {
     val hourMillis = 3_600_000L
-    val rounded = (now.toEpochMilliseconds() / hourMillis + 1) * hourMillis
-    return Instant.fromEpochMilliseconds(rounded).toLocalDateTime(zone)
+    return Instant.fromEpochMilliseconds((now.toEpochMilliseconds() / hourMillis + 1) * hourMillis)
+}
+
+/** Title and description for text shared or selected into the app (#306). */
+data class SharedText(val title: String, val description: String)
+
+/**
+ * Split shared text into an event title and description: the share's subject
+ * becomes the title and the text the description. Without a subject the text's
+ * first non-blank line is the title and the rest the description. A title longer
+ * than [maxTitle] is cut, and the full text then stays in the description.
+ * Null when there is nothing to use.
+ */
+fun sharedTextOrNull(subject: String?, text: String?, maxTitle: Int = 255): SharedText? {
+    val body = text?.trim().orEmpty()
+    val given = subject?.trim()?.takeIf { it.isNotEmpty() }
+    val (title, rest) = if (given != null) {
+        given to body
+    } else {
+        val lines = body.lines()
+        val first = lines.firstOrNull()?.trim()?.takeIf { it.isNotEmpty() } ?: return null
+        first to lines.drop(1).joinToString("\n").trim()
+    }
+    if (title.length <= maxTitle) return SharedText(title, rest)
+    val cut = title.take(maxTitle).let { if (it.last().isHighSurrogate()) it.dropLast(1) else it }
+    val full = if (given != null) listOf(given, body).filter { it.isNotEmpty() }.joinToString("\n\n") else body
+    return SharedText(cut.trimEnd(), full)
 }

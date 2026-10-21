@@ -1,17 +1,17 @@
 package de.jeanlucmakiola.calendula.ui.month
 
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.allDayEvent
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.timedEvent
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.YearMonth
-import kotlinx.datetime.atTime
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
 import org.junit.jupiter.api.Test
 
 /**
@@ -32,32 +32,15 @@ class DayIndexTest {
 
     private fun timed(from: LocalDate, startHour: Int, to: LocalDate, endHour: Int): EventInstance {
         val id = ++nextId
-        return EventInstance(
-            instanceId = id,
-            eventId = id,
-            calendarId = 1L,
-            title = "T$id",
-            start = from.atTime(startHour, 0).toInstant(zone),
-            end = to.atTime(endHour, 0).toInstant(zone),
-            isAllDay = false,
-            color = 0xFF112233.toInt(),
-            location = null,
+        return timedEvent(
+            from, startHour, endHour, zone = zone, id = id, title = "T$id",
+            color = 0xFF112233.toInt(), endDate = to,
         )
     }
 
     private fun allDay(from: LocalDate, toInclusive: LocalDate): EventInstance {
         val id = ++nextId
-        return EventInstance(
-            instanceId = id,
-            eventId = id,
-            calendarId = 1L,
-            title = "A$id",
-            start = from.atTime(0, 0).toInstant(TimeZone.UTC),
-            end = toInclusive.plus(1, DateTimeUnit.DAY).atTime(0, 0).toInstant(TimeZone.UTC),
-            isAllDay = true,
-            color = 0xFF445566.toInt(),
-            location = null,
-        )
+        return allDayEvent(from, toInclusive, id = id, title = "A$id", color = 0xFF445566.toInt())
     }
 
     /** Every shape the layout distinguishes, plus the boundary cases around them. */

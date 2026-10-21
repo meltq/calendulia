@@ -1,14 +1,16 @@
 package de.jeanlucmakiola.calendula.ui.month
 
+import de.jeanlucmakiola.calendula.ui.common.startOfWeek
+import de.jeanlucmakiola.calendula.ui.common.dayRange
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.firstDayOfWeek
 import de.jeanlucmakiola.calendula.data.time.TodaySource
 import de.jeanlucmakiola.calendula.data.time.currentDate
+import de.jeanlucmakiola.calendula.data.time.stateFollowingDays
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.FailureReason
@@ -19,10 +21,11 @@ import de.jeanlucmakiola.calendula.domain.eventDisplayComparator
 import de.jeanlucmakiola.calendula.ui.week.coversDay
 import de.jeanlucmakiola.calendula.ui.week.layoutAllDay
 import de.jeanlucmakiola.calendula.ui.week.spansMultipleDays
+import de.jeanlucmakiola.floret.android.stateWhileSubscribed
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
@@ -33,22 +36,19 @@ import kotlinx.coroutines.flow.filterNot
 import kotlinx.coroutines.flow.map
 import kotlin.math.abs
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.YearMonth
-import kotlinx.datetime.atStartOfDayIn
-import kotlinx.datetime.atTime
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
 import javax.inject.Inject
+import kotlinx.datetime.yearMonth
 
 /** How many months either side of the requested one [MonthViewModel.month] keeps cached. */
 private const val MONTH_CACHE_SPAN = 2
@@ -69,53 +69,34 @@ class MonthViewModel @Inject constructor(
 
     /** Whether to fade events that have already finished (display concern only). */
     val dimCompletedEvents: StateFlow<Boolean> = settingsPrefs.dimCompletedEvents
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = false,
         )
 
     /** Whether to show the calendar-week number gutter (#25; display only). */
     val showWeekNumbers: StateFlow<Boolean> = settingsPrefs.showWeekNumbers
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = false,
         )
 
     /** How the grid is laid out and navigated (#38, #53). */
     val viewStyle: StateFlow<MonthViewStyle> = settingsPrefs.monthViewStyle
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = MonthViewStyle.Paged,
         )
 
     private val todayDate: LocalDate
         get() = currentDate()
 
-    private var lastToday = todayDate
-
     /** Today, kept current across midnight so a grid left open doesn't mark yesterday (#373). */
-    val today: StateFlow<LocalDate> = todaySource.today
-        .onEach { date ->
-            val old = lastToday
-            lastToday = date
-            if (old != date) followToday(old, date)
-        }
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), todayDate)
+    val today: StateFlow<LocalDate> =
+        todaySource.today.stateFollowingDays(viewModelScope, todayDate, ::followToday)
 
-    private val _month = MutableStateFlow(YearMonth(todayDate.year, todayDate.month))
+    private val _month = MutableStateFlow(todayDate.yearMonth)
     val month: StateFlow<YearMonth> = _month
-
-    /** The pager page the anchor month sits on, for the paged and split styles. */
-    val anchorPage: StateFlow<Int> = _month
-        .map { monthIndexOf(it) }
-        .stateIn(
-            scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
-            initialValue = monthIndexOf(_month.value),
-        )
 
     /**
      * The anchor month's state. Once loaded it never falls back to
@@ -133,9 +114,8 @@ class MonthViewModel @Inject constructor(
                 month(ym, ws).filterNot { it is MonthUiState.Loading }
             }
             .catch { emit(MonthUiState.Failure(FailureReason.ProviderUnavailable)) }
-            .stateIn(
+            .stateWhileSubscribed(
                 scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000L),
                 initialValue = MonthUiState.Loading,
             )
 
@@ -170,7 +150,8 @@ class MonthViewModel @Inject constructor(
     fun onPageSettled(page: Int) {
         if (monthIndexOf(_month.value) == page) return
         _month.value = yearMonthForIndex(page)
-        realignSelection()
+        // Moving the grid to another month restores its full agenda.
+        _selectedDate.value = null
     }
 
     // --- Continuous + Dense styles (#38) ----------------------------------
@@ -195,11 +176,11 @@ class MonthViewModel @Inject constructor(
 
     /** Last reported visible range, so a widening step can re-centre on it. */
     @Volatile
-    private var visibleMonths = monthIndexOf(YearMonth(todayDate.year, todayDate.month))
+    private var visibleMonths = monthIndexOf(todayDate.yearMonth)
         .let { it..it }
 
     private val _loadedMonths = MutableStateFlow(
-        monthIndexOf(YearMonth(todayDate.year, todayDate.month))
+        monthIndexOf(todayDate.yearMonth)
             .let { clampMonthWindow(it - INITIAL_PAD..it + INITIAL_PAD) },
     )
 
@@ -215,13 +196,11 @@ class MonthViewModel @Inject constructor(
                 // Widened to whole grid weeks at both ends: a month block still
                 // has to know about an event that starts in the boundary week's
                 // clipped-off days, or a bar running into the block would vanish.
-                val first = firstOfMonth(yearMonthForIndex(window.first)).startOfGridWeek(ws)
-                val last = firstOfMonth(yearMonthForIndex(window.last))
-                    .plus(1, DateTimeUnit.MONTH)
-                    .minus(1, DateTimeUnit.DAY)
-                    .startOfGridWeek(ws)
+                val first = yearMonthForIndex(window.first).firstDay.startOfWeek(ws)
+                val last = yearMonthForIndex(window.last).lastDay
+                    .startOfWeek(ws)
                     .plus(6, DateTimeUnit.DAY)
-                val range = first.atStartOfDayIn(zone)..last.atTime(23, 59, 59).toInstant(zone)
+                val range = dayRange(first, last, zone)
                 combine(
                     repository.calendars(),
                     repository.instances(range),
@@ -236,9 +215,8 @@ class MonthViewModel @Inject constructor(
             .onEach { if (it is ContinuousMonthUiState.Success) widenLoadedWindow() }
             .catch { emit(ContinuousMonthUiState.Failure(FailureReason.ProviderUnavailable)) }
             .flowOn(io)
-            .stateIn(
+            .stateWhileSubscribed(
                 scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000L),
                 initialValue = ContinuousMonthUiState.Loading,
             )
 
@@ -320,7 +298,7 @@ class MonthViewModel @Inject constructor(
      * silently list a date the grid isn't pointing at.
      */
     fun selectDate(date: LocalDate) {
-        val target = YearMonth(date.year, date.month)
+        val target = date.yearMonth
         _selectedDate.value = if (target == _month.value && _selectedDate.value == date) null else date
         if (target != _month.value) _month.value = target
     }
@@ -335,17 +313,12 @@ class MonthViewModel @Inject constructor(
         } else {
             val next = selected.plus(days, DateTimeUnit.DAY)
             _selectedDate.value = next
-            _month.value = YearMonth(next.year, next.month)
+            _month.value = next.yearMonth
         }
     }
 
-    /** Moving the grid to another month restores its full agenda. */
-    private fun realignSelection() {
-        _selectedDate.value = null
-    }
-
     fun goToToday() {
-        _month.value = YearMonth(todayDate.year, todayDate.month)
+        _month.value = todayDate.yearMonth
         _selectedDate.value = null
     }
 
@@ -356,8 +329,8 @@ class MonthViewModel @Inject constructor(
      */
     private fun followToday(old: LocalDate, new: LocalDate) {
         if (viewStyle.value.isScrolling) return
-        if (_month.value != YearMonth(old.year, old.month)) return
-        _month.value = YearMonth(new.year, new.month)
+        if (_month.value != old.yearMonth) return
+        _month.value = new.yearMonth
         _selectedDate.value = null
     }
 
@@ -377,7 +350,7 @@ class MonthViewModel @Inject constructor(
 
     /** Jump to the month containing [date] (drawer jump-to-date). */
     fun goToDate(date: LocalDate) {
-        _month.value = YearMonth(date.year, date.month)
+        _month.value = date.yearMonth
         _selectedDate.value = date
     }
 
@@ -427,7 +400,7 @@ internal fun layoutMonthWeeks(
     byDay: DayIndex,
     zone: TimeZone,
 ): List<MonthWeek> {
-    val gridStart = firstOfMonth(ym).startOfGridWeek(weekStart)
+    val gridStart = ym.firstDay.startOfWeek(weekStart)
     val weekCount = weekRowsInMonth(ym, weekStart)
 
     return (0 until weekCount).map { row ->
@@ -548,12 +521,8 @@ internal fun monthGridRange(
     weekStart: DayOfWeek,
     zone: TimeZone,
 ): ClosedRange<Instant> {
-    val firstOfMonth = LocalDate(ym.year, ym.month, 1)
-    val gridStart = firstOfMonth.startOfGridWeek(weekStart)
-    val gridEnd = gridStart.plus(41, DateTimeUnit.DAY)
-    val start = gridStart.atStartOfDayIn(zone)
-    val end = gridEnd.atTime(23, 59, 59).toInstant(zone)
-    return start..end
+    val gridStart = ym.firstDay.startOfWeek(weekStart)
+    return dayRange(gridStart, gridStart.plus(41, DateTimeUnit.DAY), zone)
 }
 
 /**
@@ -581,7 +550,7 @@ internal fun edgeForPad(pad: Int): Int = minOf(WINDOW_EDGE, pad - 1).coerceAtLea
  * the first of the visible month.
  */
 internal fun agendaStartForMonth(month: YearMonth, today: LocalDate): LocalDate =
-    if (YearMonth(today.year, today.month) == month) {
+    if (today.yearMonth == month) {
         today
     } else {
         LocalDate(month.year, month.month, 1)
@@ -649,8 +618,6 @@ internal fun clampMonthWindow(window: IntRange): IntRange {
     return window.first.coerceIn(0, last)..window.last.coerceIn(0, last)
 }
 
-internal fun firstOfMonth(ym: YearMonth): LocalDate = LocalDate(ym.year, ym.month, 1)
-
 /**
  * The Dense style addresses *weeks* by absolute index instead: it has no month
  * blocks to key by, and a row's identity has to survive the months around it
@@ -665,12 +632,12 @@ private val WEEK_INDEX_EPOCH = LocalDate(1900, 1, 1)
 private val WEEK_INDEX_END = LocalDate(2100, 12, 31)
 
 internal fun weekIndexOf(date: LocalDate, weekStart: DayOfWeek): Int {
-    val base = WEEK_INDEX_EPOCH.startOfGridWeek(weekStart)
-    return base.daysUntil(date.startOfGridWeek(weekStart)) / 7
+    val base = WEEK_INDEX_EPOCH.startOfWeek(weekStart)
+    return base.daysUntil(date.startOfWeek(weekStart)) / 7
 }
 
 internal fun weekStartForIndex(index: Int, weekStart: DayOfWeek): LocalDate =
-    WEEK_INDEX_EPOCH.startOfGridWeek(weekStart).plus(index * 7, DateTimeUnit.DAY)
+    WEEK_INDEX_EPOCH.startOfWeek(weekStart).plus(index * 7, DateTimeUnit.DAY)
 
 /** Total weeks the Dense grid scrolls through (1900 → 2100). */
 internal fun continuousWeekCount(weekStart: DayOfWeek): Int =
@@ -681,7 +648,7 @@ internal fun monthIndexForWeek(weekIndex: Int, weekStart: DayOfWeek): Int {
     // The row's midweek day: a boundary week is reported as whichever month owns
     // most of it, the same rule the title uses.
     val midweek = weekStartForIndex(weekIndex, weekStart).plus(3, DateTimeUnit.DAY)
-    return monthIndexOf(YearMonth(midweek.year, midweek.month))
+    return monthIndexOf(midweek.yearMonth)
 }
 
 /**
@@ -690,19 +657,16 @@ internal fun monthIndexForWeek(weekIndex: Int, weekStart: DayOfWeek): Int {
  * laid out too, rather than flickering as placeholders.
  */
 internal fun weekWindowFor(window: IntRange, weekStart: DayOfWeek): IntRange {
-    val first = weekIndexOf(firstOfMonth(yearMonthForIndex(window.first)), weekStart) - 1
-    val lastMonthEnd = firstOfMonth(yearMonthForIndex(window.last))
-        .plus(1, DateTimeUnit.MONTH)
-        .minus(1, DateTimeUnit.DAY)
+    val first = weekIndexOf(yearMonthForIndex(window.first).firstDay, weekStart) - 1
+    val lastMonthEnd = yearMonthForIndex(window.last).lastDay
     return first..(weekIndexOf(lastMonthEnd, weekStart) + 1)
 }
 
 /** How many week rows [ym] needs under [weekStart] — 4 (a non-leap February), 5 or 6. */
 internal fun weekRowsInMonth(ym: YearMonth, weekStart: DayOfWeek): Int {
-    val first = firstOfMonth(ym)
+    val first = ym.firstDay
     val leadOffset = ((first.dayOfWeek.ordinal - weekStart.ordinal) + 7) % 7
-    val daysInMonth = java.time.YearMonth.of(ym.year, ym.month.ordinal + 1).lengthOfMonth()
-    return (leadOffset + daysInMonth + 6) / 7
+    return (leadOffset + ym.numberOfDays + 6) / 7
 }
 
 /**
@@ -745,10 +709,4 @@ internal fun clipWeekToMonth(week: MonthWeek, month: YearMonth): MonthWeek {
         timedByDay = week.timedByDay.filterKeys { it in own },
         countByDay = week.countByDay.filterKeys { it in own },
     )
-}
-
-internal fun LocalDate.startOfGridWeek(weekStart: DayOfWeek): LocalDate {
-    // DayOfWeek.ordinal: MONDAY=0..SUNDAY=6 → identical to ISO ordering.
-    val offset = ((dayOfWeek.ordinal - weekStart.ordinal) + 7) % 7
-    return minus(offset, DateTimeUnit.DAY)
 }

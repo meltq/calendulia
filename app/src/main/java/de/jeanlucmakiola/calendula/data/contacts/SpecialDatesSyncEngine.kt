@@ -8,6 +8,7 @@ import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventForm
+import de.jeanlucmakiola.calendula.domain.FormTime
 import de.jeanlucmakiola.calendula.domain.RecurrenceFreq
 import de.jeanlucmakiola.calendula.domain.SimpleRecurrence
 import de.jeanlucmakiola.calendula.domain.contacts.ContactSpecialDate
@@ -212,8 +213,8 @@ class SpecialDatesSyncEngine @Inject constructor(
             calendarId = calendarId,
             title = title,
             isAllDay = true,
-            start = start,
-            end = start,
+            start = FormTime(start),
+            end = FormTime(start),
             reminders = reminderCtx.resolveAllDay(calendarId),
             availability = Availability.Free,
             rrule = YEARLY_RRULE,

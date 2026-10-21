@@ -9,6 +9,7 @@ class AnchorTodayTest {
 
     private val today = LocalDate(2026, 6, 17)
     private val tomorrow = LocalDate(2026, 6, 18)
+    private val yesterday = LocalDate(2026, 6, 16)
 
     @Test
     fun `disabled leaves the days untouched even when today is absent`() {
@@ -35,5 +36,19 @@ class AnchorTodayTest {
     fun `enabled is a no-op when today already has its own day`() {
         val days = listOf(AgendaDay(today, emptyList()), AgendaDay(tomorrow, emptyList()))
         assertThat(anchorTodayIfMissing(days, today, enabled = true)).isEqualTo(days)
+    }
+
+    @Test
+    fun `enabled slots today in after loaded past days`() {
+        val days = listOf(AgendaDay(yesterday, emptyList()), AgendaDay(tomorrow, emptyList()))
+        val result = anchorTodayIfMissing(days, today, enabled = true)
+        assertThat(result.map { it.date }).containsExactly(yesterday, today, tomorrow).inOrder()
+    }
+
+    @Test
+    fun `enabled appends today after only past days`() {
+        val days = listOf(AgendaDay(yesterday, emptyList()))
+        val result = anchorTodayIfMissing(days, today, enabled = true)
+        assertThat(result.map { it.date }).containsExactly(yesterday, today).inOrder()
     }
 }

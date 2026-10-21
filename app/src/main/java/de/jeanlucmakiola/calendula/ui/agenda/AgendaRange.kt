@@ -3,8 +3,9 @@ package de.jeanlucmakiola.calendula.ui.agenda
 import de.jeanlucmakiola.floret.locale.localizedDateFormatter
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
-import java.time.YearMonth
 import java.util.Locale
+import kotlinx.datetime.toJavaLocalDate
+import kotlinx.datetime.yearMonth
 
 /**
  * How far ahead the agenda (screen or widget) shows events, starting at today.
@@ -50,7 +51,7 @@ fun AgendaRange.dayCount(anchor: LocalDate, weekStart: DayOfWeek): Int = when (t
         DAYS_PER_WEEK - sinceWeekStart
     }
     AgendaRange.ThisMonth -> {
-        val daysInMonth = YearMonth.of(anchor.year, anchor.month.ordinal + 1).lengthOfMonth()
+        val daysInMonth = anchor.yearMonth.numberOfDays
         daysInMonth - anchor.day + 1
     }
     is AgendaRange.Custom -> days.coerceIn(AgendaRange.MIN_CUSTOM_DAYS, AgendaRange.MAX_CUSTOM_DAYS)
@@ -105,8 +106,8 @@ fun agendaRangeWindowSummary(
     locale: Locale,
     monthAsSpan: Boolean = false,
 ): String {
-    val javaStart = java.time.LocalDate.of(start.year, start.month.ordinal + 1, start.day)
-    val javaEnd = java.time.LocalDate.of(end.year, end.month.ordinal + 1, end.day)
+    val javaStart = start.toJavaLocalDate()
+    val javaEnd = end.toJavaLocalDate()
     val dayMonth = localizedDateFormatter(locale, "dMMM")
     val dayMonthYear = localizedDateFormatter(locale, "dMMMy")
     return when {

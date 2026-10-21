@@ -39,33 +39,55 @@ data class MonthWeek(
     val countByDay: Map<LocalDate, Int>,
 )
 
+/** One event seated in [lane] of a day; [bar] is a spanning bar rather than that day's own pill. */
+data class Seat(val lane: Int, val event: EventInstance, val bar: Boolean)
+
 /**
- * The events occupying each lane of [day] — column [col] of this week — in lane
- * order, capped at [laneCap] lanes.
+ * How one day of a week row is seated with [laneCap] lanes: what sits in each
+ * lane, top-most first with empty lanes left out, and what had no lane left.
+ */
+data class DaySeating(val seated: List<Seat>, val hidden: List<EventInstance>)
+
+/**
+ * The seating of column [col] with [laneCap] lanes — the one every reader of a
+ * row builds on: the bars and pills the paged grid draws, the split style's dots
+ * ([laneEvents]), the hit test ([chipAt]) and the overflow ([overflowEvents]).
  *
- * This is the same seating [spans]/[timedByDay] get when the paged grid draws a
- * week: bars keep the lane the row layout gave them, and the day's timed events
- * fill whatever slots are left, top-most first. Reading it here means the split
- * style's dots and the paged style's bars describe a day in the *same order*, so
- * dot _i_ and lane _i_ are the same event and one can morph into the other (#53).
+ * Bars keep the lane the row layout gave them, and the day's timed events fill
+ * whatever slots are left, top-most first, so a bar-free day isn't pushed down by
+ * a multi-day event that only sits on other days of the week. Overflow is the
+ * exact complement, bars before pills.
+ */
+fun MonthWeek.seating(col: Int, laneCap: Int): DaySeating {
+    val covering = spans.filter { col in it.startCol..it.endCol }
+    val byLane = arrayOfNulls<Seat>(laneCap.coerceAtLeast(0))
+    covering.forEach { span ->
+        if (span.lane < laneCap) byLane[span.lane] = Seat(span.lane, span.event, bar = true)
+    }
+    val timed = timedByDay[days[col]].orEmpty()
+    var pills = 0
+    for (lane in byLane.indices) {
+        if (byLane[lane] == null && pills < timed.size) byLane[lane] = Seat(lane, timed[pills++], bar = false)
+    }
+    return DaySeating(
+        seated = byLane.filterNotNull(),
+        hidden = covering.filter { it.lane >= laneCap }.map { it.event } + timed.drop(pills),
+    )
+}
+
+/**
+ * The events occupying each lane of column [col], in lane order, capped at
+ * [laneCap] lanes — the same [seating] the paged grid draws a week with. Reading
+ * it here means the split style's dots and the paged style's bars describe a day
+ * in the *same order*, so dot _i_ and lane _i_ are the same event and one can
+ * morph into the other (#53).
  *
  * Deriving the dots independently — by distinct colour, as they first were —
  * left dot _i_ standing for no particular event, and quietly merged two events
  * that shared a calendar into a single dot.
  */
-fun MonthWeek.laneEvents(col: Int, day: LocalDate, laneCap: Int): List<EventInstance> {
-    val byLane = arrayOfNulls<EventInstance>(laneCap)
-    spans.forEach { span ->
-        if (span.lane < laneCap && col in span.startCol..span.endCol) {
-            byLane[span.lane] = span.event
-        }
-    }
-    val free = (0 until laneCap).filter { byLane[it] == null }
-    timedByDay[day].orEmpty().take(free.size).forEachIndexed { i, event ->
-        byLane[free[i]] = event
-    }
-    return byLane.filterNotNull()
-}
+fun MonthWeek.laneEvents(col: Int, laneCap: Int): List<EventInstance> =
+    seating(col, laneCap).seated.map { it.event }
 
 /**
  * The event drawn in lane [lane] of column [col], or null for an empty slot.
@@ -74,14 +96,7 @@ fun MonthWeek.laneEvents(col: Int, day: LocalDate, laneCap: Int): List<EventInst
  */
 fun MonthWeek.chipAt(col: Int, lane: Int, laneCap: Int): EventInstance? {
     if (col !in days.indices || lane !in 0 until laneCap) return null
-    spanAt(col, lane)?.let { return it.event }
-    val occupied = spans
-        .filter { it.lane < laneCap && col in it.startCol..it.endCol }
-        .map { it.lane }
-        .toSet()
-    val free = (0 until laneCap).filter { it !in occupied }
-    val index = free.indexOf(lane).takeIf { it >= 0 } ?: return null
-    return timedByDay[days[col]].orEmpty().take(free.size).getOrNull(index)
+    return seating(col, laneCap).seated.firstOrNull { it.lane == lane }?.event
 }
 
 /**
@@ -98,19 +113,11 @@ fun MonthWeek.spanAt(col: Int, lane: Int): MonthSpan? =
     spans.firstOrNull { it.lane == lane && col in it.startCol..it.endCol }
 
 /**
- * The events on [day] that [laneEvents] had no lane left for — its exact
+ * The events in column [col] that [laneEvents] had no lane left for — its exact
  * complement, in the same bars-then-pills order. Returned as events rather than
  * a count because dimming is a per-event question (#79).
  */
-fun MonthWeek.overflowEvents(col: Int, day: LocalDate, laneCap: Int): List<EventInstance> {
-    val seatedLanes = spans.count { it.lane < laneCap && col in it.startCol..it.endCol }
-    return buildList {
-        spans.forEach { span ->
-            if (span.lane >= laneCap && col in span.startCol..span.endCol) add(span.event)
-        }
-        addAll(timedByDay[day].orEmpty().drop(laneCap - seatedLanes))
-    }
-}
+fun MonthWeek.overflowEvents(col: Int, laneCap: Int): List<EventInstance> = seating(col, laneCap).hidden
 
 /**
  * State for the continuous style (#38): a vertical stream of *self-contained*

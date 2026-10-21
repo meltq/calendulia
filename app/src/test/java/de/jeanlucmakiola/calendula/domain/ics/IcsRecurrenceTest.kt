@@ -19,6 +19,14 @@ class IcsRecurrenceTest {
     }
 
     @Test
+    fun `part names and the prefix are matched case-insensitively`() {
+        val result = sanitizeRrule("rrule:freq=weekly;byday=mo")
+
+        assertThat(result.rule).isEqualTo("FREQ=WEEKLY;BYDAY=MO")
+        assertThat(result.repaired).isFalse()
+    }
+
+    @Test
     fun `an empty list part is dropped`() {
         val bareByDay = sanitizeRrule("FREQ=WEEKLY;INTERVAL=1;BYDAY=")
         assertThat(bareByDay.rule).isEqualTo("FREQ=WEEKLY;INTERVAL=1")

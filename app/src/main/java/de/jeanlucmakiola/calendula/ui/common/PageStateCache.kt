@@ -1,10 +1,10 @@
 package de.jeanlucmakiola.calendula.ui.common
 
+import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.plus
@@ -45,7 +45,7 @@ class PageStateCache<K, S>(
         return entries.getOrPut(key) {
             val job = SupervisorJob(scope.coroutineContext[Job])
             Entry(
-                state = load(key).stateIn(scope + job, SharingStarted.WhileSubscribed(5_000L), initial),
+                state = load(key).stateWhileSubscribed(scope + job, initial),
                 job = job,
             )
         }.state

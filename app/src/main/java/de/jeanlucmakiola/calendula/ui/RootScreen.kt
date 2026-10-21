@@ -1,7 +1,5 @@
 package de.jeanlucmakiola.calendula.ui
 
-import android.Manifest
-import android.content.pm.PackageManager
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -20,11 +18,11 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesScheduler
 import de.jeanlucmakiola.calendula.data.contacts.hasContactsPermission
+import de.jeanlucmakiola.calendula.ui.common.canReadCalendar
 import de.jeanlucmakiola.calendula.ui.common.rememberCalendarFadeSpec
 import de.jeanlucmakiola.calendula.ui.onboarding.OnboardingStep
 import de.jeanlucmakiola.calendula.ui.onboarding.OnboardingSteps
@@ -43,26 +41,12 @@ private sealed interface RootTarget {
 
 @Composable
 fun RootScreen(
+    requests: ExternalRequests,
     modifier: Modifier = Modifier,
-    requestedDetailKey: LongArray? = null,
-    onDetailKeyConsumed: () -> Unit = {},
-    widgetNavRequest: WidgetNavRequest? = null,
-    onWidgetNavConsumed: () -> Unit = {},
-    requestedImportUri: android.net.Uri? = null,
-    onImportConsumed: () -> Unit = {},
-    requestedInsertForm: de.jeanlucmakiola.calendula.domain.EventForm? = null,
-    requestedInsertSource: de.jeanlucmakiola.calendula.ui.edit.ImportSource =
-        de.jeanlucmakiola.calendula.ui.edit.ImportSource.Insert,
-    onInsertConsumed: () -> Unit = {},
-    requestedEditKey: LongArray? = null,
-    onEditKeyConsumed: () -> Unit = {},
 ) {
     val context = LocalContext.current
     var hasPermission by remember {
-        mutableStateOf(
-            ContextCompat.checkSelfPermission(context, Manifest.permission.READ_CALENDAR)
-                == PackageManager.PERMISSION_GRANTED
-        )
+        mutableStateOf(context.canReadCalendar())
     }
 
     // A launch scan already covers the app coming up with the permission, so
@@ -73,9 +57,7 @@ fun RootScreen(
     DisposableEffect(lifecycle) {
         val obs = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
-                hasPermission = ContextCompat.checkSelfPermission(
-                    context, Manifest.permission.READ_CALENDAR
-                ) == PackageManager.PERMISSION_GRANTED
+                hasPermission = context.canReadCalendar()
                 // Refresh the contact special-dates mirror on foreground (the
                 // worker is debounced and no-ops when the feature is off). Gated
                 // on the permission so users without the opt-in never enqueue it.
@@ -145,18 +127,8 @@ fun RootScreen(
         when (shown) {
             RootTarget.Loading -> Unit
             RootTarget.App -> CalendarHost(
+                requests = requests,
                 modifier = modifier,
-                requestedDetailKey = requestedDetailKey,
-                onDetailKeyConsumed = onDetailKeyConsumed,
-                widgetNavRequest = widgetNavRequest,
-                onWidgetNavConsumed = onWidgetNavConsumed,
-                requestedImportUri = requestedImportUri,
-                onImportConsumed = onImportConsumed,
-                requestedInsertForm = requestedInsertForm,
-                requestedInsertSource = requestedInsertSource,
-                onInsertConsumed = onInsertConsumed,
-                requestedEditKey = requestedEditKey,
-                onEditKeyConsumed = onEditKeyConsumed,
             )
             // Both halves of a transition read their position out of the live
             // plan; the one the outgoing step was drawn with is already gone.

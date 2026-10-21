@@ -25,11 +25,7 @@ internal fun ColumnReader.toEventInstance(): EventInstance? {
     // string, so it belongs to the UI layer where it can be localised (#321).
     val title = getString(InstanceProjection.IDX_TITLE).orEmpty()
 
-    val color = if (isNull(InstanceProjection.IDX_EVENT_COLOR)) {
-        getInt(InstanceProjection.IDX_CALENDAR_COLOR)
-    } else {
-        getInt(InstanceProjection.IDX_EVENT_COLOR)
-    }
+    val color = getIntOrNull(InstanceProjection.IDX_EVENT_COLOR) ?: getInt(InstanceProjection.IDX_CALENDAR_COLOR)
 
     return EventInstance(
         instanceId = getLong(InstanceProjection.IDX_INSTANCE_ID),

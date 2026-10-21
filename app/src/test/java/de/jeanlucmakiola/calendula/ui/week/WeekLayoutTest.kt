@@ -1,7 +1,8 @@
 package de.jeanlucmakiola.calendula.ui.week
 
+import de.jeanlucmakiola.calendula.ui.common.startOfWeek
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.testEvent
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -30,16 +31,8 @@ class WeekLayoutTest {
         allDay: Boolean = false,
         id: Long = 1L,
         title: String = "E",
-    ) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = title,
-        start = start,
-        end = end,
-        isAllDay = allDay,
-        color = 0xFF112233.toInt(),
-        location = null,
+    ) = testEvent(
+        id = id, title = title, start = start, end = end, isAllDay = allDay, color = 0xFF112233.toInt(),
     )
 
     @Test
@@ -190,5 +183,121 @@ class WeekLayoutTest {
         assertThat(spans.all { it.lane == 0 }).isTrue()
     }
 
+    // Europe/Brussels falls back on 2026-10-25 (25 h) and springs forward on 2026-03-29 (23 h).
+    private val brussels = TimeZone.of("Europe/Brussels")
+
+    private fun brusselsEvent(date: LocalDate, from: Pair<Int, Int>, to: Pair<Int, Int>) = event(
+        date.atTime(from.first, from.second).toInstant(brussels),
+        date.atTime(to.first, to.second).toInstant(brussels),
+    )
+
+    @Test
+    fun `timed block sits at its wall-clock time on the fall-back day`() {
+        val day = LocalDate(2026, 10, 25)
+        // The event from #387: 13:45Z is 14:45 CET.
+        val ev = event(Instant.parse("2026-10-25T13:45:00Z"), Instant.parse("2026-10-25T15:45:00Z"))
+        val b = layoutDay(listOf(ev), day, brussels).single()
+        assertThat(b.startMin).isEqualTo(14 * 60 + 45)
+        assertThat(b.endMin).isEqualTo(16 * 60 + 45)
+    }
+
+    @Test
+    fun `timed block sits at its wall-clock time on the spring-forward day`() {
+        val day = LocalDate(2026, 3, 29)
+        val b = layoutDay(listOf(brusselsEvent(day, 14 to 45, 16 to 45)), day, brussels).single()
+        assertThat(b.startMin).isEqualTo(14 * 60 + 45)
+        assertThat(b.endMin).isEqualTo(16 * 60 + 45)
+    }
+
+    @Test
+    fun `late block on the fall-back day is not cut short`() {
+        val day = LocalDate(2026, 10, 25)
+        val b = layoutDay(listOf(brusselsEvent(day, 22 to 30, 23 to 59)), day, brussels).single()
+        assertThat(b.startMin).isEqualTo(22 * 60 + 30)
+        assertThat(b.endMin).isEqualTo(23 * 60 + 59)
+    }
+
+    @Test
+    fun `block running past midnight on the fall-back day reaches the day's end`() {
+        val day = LocalDate(2026, 10, 25)
+        val ev = event(
+            day.atTime(23, 0).toInstant(brussels),
+            day.plusDays(1).atTime(1, 0).toInstant(brussels),
+        )
+        val b = layoutDay(listOf(ev), day, brussels).single()
+        assertThat(b.startMin).isEqualTo(23 * 60)
+        assertThat(b.endMin).isEqualTo(MINUTES_PER_DAY)
+    }
+
+    @Test
+    fun `instant event on the fall-back day sits at its wall-clock time`() {
+        val day = LocalDate(2026, 10, 25)
+        val at = day.atTime(9, 0).toInstant(brussels)
+        val b = layoutDay(listOf(event(at, at)), day, brussels).single()
+        assertThat(b.startMin).isEqualTo(9 * 60)
+        assertThat(b.endMin).isEqualTo(9 * 60)
+    }
+
+    @Test
+    fun `block ending in the repeated fall-back hour is drawn to that hour's end`() {
+        val day = LocalDate(2026, 10, 25)
+        // 02:00 CEST to 02:00 CET: one real hour, the same wall-clock time at both ends.
+        val ev = event(Instant.parse("2026-10-25T00:00:00Z"), Instant.parse("2026-10-25T01:00:00Z"))
+        val b = layoutDay(listOf(ev), day, brussels).single()
+        assertThat(b.startMin).isEqualTo(2 * 60)
+        assertThat(b.endMin).isEqualTo(3 * 60)
+    }
+
+    @Test
+    fun `block ending in the repeated fall-back hour leaves the next hour free`() {
+        val day = LocalDate(2026, 10, 25)
+        // 02:15 CEST to 02:15 CET, then 03:00 CET: an hour apart in real time.
+        val repeat = event(Instant.parse("2026-10-25T00:15:00Z"), Instant.parse("2026-10-25T01:15:00Z"))
+        val next = event(Instant.parse("2026-10-25T02:00:00Z"), Instant.parse("2026-10-25T03:00:00Z"))
+        val blocks = layoutDay(listOf(repeat, next), day, brussels)
+        assertThat(blocks.map { it.startMin to it.endMin })
+            .containsExactly(2 * 60 + 15 to 3 * 60, 3 * 60 to 4 * 60)
+        assertThat(blocks.all { it.lane == 0 && it.laneCount == 1 }).isTrue()
+    }
+
+    @Test
+    fun `minutesPast reads wall clock either side of the day`() {
+        val day = LocalDate(2026, 10, 25)
+        assertThat(Instant.parse("2026-10-24T21:00:00Z").minutesPast(day, brussels)).isEqualTo(-60)
+        assertThat(Instant.parse("2026-10-25T13:45:00Z").minutesPast(day, brussels)).isEqualTo(14 * 60 + 45)
+        assertThat(Instant.parse("2026-10-25T23:30:00Z").minutesPast(day, brussels))
+            .isEqualTo(MINUTES_PER_DAY + 30)
+    }
+
+    @Test
+    fun `a block ending in the repeated fall-back hour is labelled with its own end`() {
+        val day = LocalDate(2026, 10, 25)
+        // 02:30 CEST to 02:30 CET: drawn to the repeated hour's end, but it ends at 02:30.
+        val ev = event(Instant.parse("2026-10-25T00:30:00Z"), Instant.parse("2026-10-25T01:30:00Z"))
+        val b = layoutDay(listOf(ev), day, brussels).single()
+        assertThat(b.endMin).isEqualTo(3 * 60)
+        assertThat(b.labelEndMin(day, brussels)).isEqualTo(2 * 60 + 30)
+    }
+
+    @Test
+    fun `an ordinary block is labelled with its drawn end`() {
+        val day = LocalDate(2026, 10, 25)
+        val b = layoutDay(listOf(brusselsEvent(day, 14 to 45, 16 to 45)), day, brussels).single()
+        assertThat(b.labelEndMin(day, brussels)).isEqualTo(b.endMin)
+    }
+
     private fun LocalDate.plusDays(n: Int): LocalDate = plus(n, DateTimeUnit.DAY)
+
+    @Test
+    fun `a longer run into the repeated fall-back hour is drawn no shorter`() {
+        val day = LocalDate(2026, 10, 25)
+        // 02:10 CEST to 02:05 CET (55 min) and to 02:20 CET (70 min): both to 03:00.
+        val shorter = event(Instant.parse("2026-10-25T00:10:00Z"), Instant.parse("2026-10-25T01:05:00Z"))
+        val longer = event(Instant.parse("2026-10-25T00:10:00Z"), Instant.parse("2026-10-25T01:20:00Z"), id = 2L)
+        assertThat(layoutDay(listOf(shorter), day, brussels).single().endMin).isEqualTo(3 * 60)
+        assertThat(layoutDay(listOf(longer), day, brussels).single().endMin).isEqualTo(3 * 60)
+        // A run that starts on the second pass reads its plain wall clock.
+        val second = event(Instant.parse("2026-10-25T01:10:00Z"), Instant.parse("2026-10-25T01:40:00Z"))
+        assertThat(layoutDay(listOf(second), day, brussels).single().endMin).isEqualTo(2 * 60 + 40)
+    }
 }

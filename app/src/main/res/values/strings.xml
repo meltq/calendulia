@@ -97,6 +97,14 @@
     <string name="event_move_occurrence_only">Moving the whole series would change which days it falls on, so only this event can move.</string>
     <!-- %1$s is the new date and time, e.g. "Fri, 7 Aug, 09:00". -->
     <string name="event_move_done">Moved to %1$s</string>
+    <string name="event_resize_done">Changed to %1$s</string>
+    <string name="event_resize_recurring_title">Change recurring event</string>
+    <string name="event_selection_actions">Event actions</string>
+    <string name="event_selection_hide">Hide event actions</string>
+    <string name="event_selection_close">Deselect event</string>
+    <string name="event_draft_create">Create event</string>
+    <string name="event_draft_discard">Discard new event</string>
+    <string name="event_action_load_failed">Couldn\'t open the event</string>
     <string name="event_move_undo">Undo</string>
     <string name="event_move_undone">Move undone</string>
     <string name="event_move_failed">Couldn\'t move the event</string>
@@ -110,7 +118,13 @@
     <!-- Event form (v1.2 create) -->
     <string name="event_edit_new_title">New event</string>
     <string name="event_edit_close">Close</string>
+    <string name="event_edit_more_actions">More actions</string>
+    <string name="event_edit_unsaved_title">Unsaved changes</string>
+    <string name="event_edit_unsaved_save">Save changes</string>
+    <string name="event_edit_unsaved_discard">Discard changes</string>
+    <string name="event_edit_unsaved_keep">Keep editing</string>
     <string name="event_edit_save">Save</string>
+    <string name="event_edit_create">Create</string>
     <string name="event_edit_title_hint">Add title</string>
     <!-- %1$s is the managing calendar's name, e.g. "Birthdays". -->
     <string name="event_edit_managed_hint">Managed by “%1$s” — the title, date and repeat are kept in sync from your contacts. Reminders, location and notes are yours to edit.</string>
@@ -441,6 +455,8 @@
     <string name="settings_theme_system">System</string>
     <string name="settings_theme_light">Light</string>
     <string name="settings_theme_dark">Dark</string>
+    <string name="settings_theme_black">Black</string>
+    <string name="settings_theme_black_summary">Dark with pure black backgrounds, for AMOLED screens</string>
     <string name="settings_theme_hint">Whether the app is light or dark. The choice applies immediately.</string>
     <!-- %1$s is the theme the system currently resolves to, e.g. "Dark". -->
     <string name="settings_theme_system_summary">Currently %1$s</string>
@@ -510,6 +526,11 @@
     <string name="settings_dim_completed_summary">Fade events that have already ended in month and week view</string>
     <string name="settings_drag_to_reschedule">Drag to reschedule</string>
     <string name="settings_drag_to_reschedule_summary">Move an event by dragging it to another day or time</string>
+    <string name="settings_events_header">Events</string>
+    <string name="settings_tap_opens">Tapping an event opens</string>
+    <string name="settings_tap_opens_details">Details</string>
+    <string name="settings_tap_opens_editor">Edit form</string>
+    <string name="settings_tap_opens_hint">Events you can\'t edit and reminder notifications always open the details.</string>
     <string name="settings_past_events">Past events</string>
     <string name="settings_past_events_show">Show</string>
     <string name="settings_past_events_dim">Dim</string>
@@ -829,6 +850,9 @@
     <!-- Launcher long-press shortcuts -->
     <string name="shortcut_new_event_short">New event</string>
     <string name="shortcut_new_event_long">Create a new event</string>
+
+    <!-- Text-selection menu entry -->
+    <string name="process_text_create_event">Create event</string>
 
     <!-- Quick Settings tile -->
     <string name="qs_tile_new_event_label">New event</string>

@@ -77,6 +77,11 @@ sealed interface SaveUiState {
     data object Gone : SaveUiState
     data object Saving : SaveUiState
     data object Saved : SaveUiState
+    /** The event was deleted from the form (#178). */
+    data object Deleted : SaveUiState
+    data object DeleteFailed : SaveUiState
+    /** WRITE_CALENDAR was revoked before a delete from the form. */
+    data object DeleteDenied : SaveUiState
     /** WRITE_CALENDAR was revoked between the tap and the provider call. */
     data object NeedsPermission : SaveUiState
     data object Failed : SaveUiState

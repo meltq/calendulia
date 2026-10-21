@@ -2,16 +2,15 @@ package de.jeanlucmakiola.calendula.data.contacts
 
 import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.provider.ContactsContract
 import android.provider.ContactsContract.CommonDataKinds.Event
 import android.util.Log
-import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.domain.contacts.ContactSpecialDate
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.domain.contacts.managedUid
 import de.jeanlucmakiola.calendula.domain.contacts.parseContactEventDate
+import de.jeanlucmakiola.floret.android.hasPermission
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -31,8 +30,7 @@ interface ContactSpecialDatesDataSource {
 
 /** Whether `READ_CONTACTS` is granted — the gate for every contacts read. */
 fun Context.hasContactsPermission(): Boolean =
-    ContextCompat.checkSelfPermission(this, Manifest.permission.READ_CONTACTS) ==
-        PackageManager.PERMISSION_GRANTED
+    hasPermission(Manifest.permission.READ_CONTACTS)
 
 /** Map a `ContactsContract` event `TYPE` to our calendar bucket. */
 internal fun specialDateTypeForRawEventType(type: Int): SpecialDateType = when (type) {

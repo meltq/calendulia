@@ -2,19 +2,18 @@ package de.jeanlucmakiola.calendula.data.reminders
 
 import android.Manifest
 import android.content.Context
-import android.content.pm.PackageManager
 import android.util.Log
-import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
 import de.jeanlucmakiola.calendula.data.calendar.withoutProviderDefaults
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.ReminderStatePrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.reminders.planReminders
 import de.jeanlucmakiola.calendula.domain.reminders.reminderQueryHorizon
 import de.jeanlucmakiola.calendula.domain.reminders.reminderWatermark
 import de.jeanlucmakiola.calendula.domain.reminders.scheduleReminders
+import de.jeanlucmakiola.floret.android.hasPermission
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
@@ -113,9 +112,7 @@ class ReminderScanner @Inject constructor(
         alarms.scheduleScan(schedule.nextAlarmMillis)
     }
 
-    private fun hasReadCalendar(): Boolean = ContextCompat.checkSelfPermission(
-        context, Manifest.permission.READ_CALENDAR,
-    ) == PackageManager.PERMISSION_GRANTED
+    private fun hasReadCalendar(): Boolean = context.hasPermission(Manifest.permission.READ_CALENDAR)
 
     /**
      * Re-scan when the provider changes, so a saved or deleted event re-arms the

@@ -1,14 +1,11 @@
 package de.jeanlucmakiola.calendula.ui.month
 
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.domain.EventInstance
-import kotlinx.datetime.DateTimeUnit
+import de.jeanlucmakiola.calendula.allDayEvent
+import de.jeanlucmakiola.calendula.timedEvent
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.atTime
-import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
 import org.junit.jupiter.api.Test
 import java.util.Locale
 
@@ -20,29 +17,10 @@ class MonthChipTimeTest {
     private val locale = Locale.UK
     private val day = LocalDate(2026, Month.SEPTEMBER, 2)
 
-    private fun timed(hour: Int, minute: Int) = EventInstance(
-        instanceId = 1L,
-        eventId = 1L,
-        calendarId = 1L,
-        title = "Standup",
-        start = day.atTime(hour, minute).toInstant(zone),
-        end = day.atTime(hour + 1, minute).toInstant(zone),
-        isAllDay = false,
-        color = 0,
-        location = null,
-    )
+    private fun timed(hour: Int, minute: Int) =
+        timedEvent(day, hour, zone = zone, title = "Standup", minute = minute)
 
-    private fun allDay() = EventInstance(
-        instanceId = 2L,
-        eventId = 2L,
-        calendarId = 1L,
-        title = "Holiday",
-        start = day.atTime(0, 0).toInstant(zone),
-        end = day.plus(1, DateTimeUnit.DAY).atTime(0, 0).toInstant(zone),
-        isAllDay = true,
-        color = 0,
-        location = null,
-    )
+    private fun allDay() = allDayEvent(day, id = 2L, title = "Holiday", zone = zone)
 
     @Test
     fun `a timed chip shows its start in the 24-hour convention`() {

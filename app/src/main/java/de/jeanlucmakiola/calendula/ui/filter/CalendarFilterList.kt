@@ -20,8 +20,10 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.FailureReason
+import de.jeanlucmakiola.calendula.ui.common.CalendarAccountGroup
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
-import de.jeanlucmakiola.calendula.ui.common.sourceAppName
+import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
+import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.positionOf
@@ -43,6 +45,7 @@ fun CalendarFilterList(
         is FilterUiState.Failure -> FilterMessage(s.reason, modifier)
         is FilterUiState.Success -> FilterList(
             groups = s.groups,
+            hidden = s.hidden,
             onSetVisible = viewModel::setVisible,
             modifier = modifier,
         )
@@ -56,23 +59,15 @@ fun CalendarFilterList(
  */
 @Composable
 private fun FilterList(
-    groups: List<AccountGroup>,
+    groups: List<CalendarAccountGroup>,
+    hidden: Set<Long>,
     onSetVisible: (Long, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         groups.forEach { group ->
-            val account = group.account.ifBlank { stringResource(R.string.calendar_unnamed) }
             Text(
-                text = if (group.ambiguous) {
-                    stringResource(
-                        R.string.calendars_account_from_source,
-                        account,
-                        sourceAppName(group.accountType),
-                    )
-                } else {
-                    account
-                },
+                text = accountGroupTitle(group),
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(
@@ -83,18 +78,19 @@ private fun FilterList(
                 ),
             )
             group.calendars.forEachIndexed { index, cal ->
+                val visible = cal.id !in hidden
                 GroupedRow(
-                    title = cal.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
+                    title = cal.displayName.orUnnamed(),
                     position = positionOf(index, group.calendars.size),
                     minHeight = 56.dp,
                     leading = { CalendarColorChip(cal.color) },
                     trailing = {
                         Checkbox(
-                            checked = cal.visible,
+                            checked = visible,
                             onCheckedChange = { onSetVisible(cal.id, it) },
                         )
                     },
-                    onClick = { onSetVisible(cal.id, !cal.visible) },
+                    onClick = { onSetVisible(cal.id, !visible) },
                 )
             }
         }

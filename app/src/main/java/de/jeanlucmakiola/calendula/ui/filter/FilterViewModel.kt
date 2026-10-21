@@ -4,20 +4,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
-import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.calendarListFailure
 import de.jeanlucmakiola.calendula.ui.common.groupByAccount
+import de.jeanlucmakiola.floret.android.stateWhileSubscribed
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -40,14 +38,13 @@ class FilterViewModel @Inject constructor(
             if (failure != null) {
                 FilterUiState.Failure(failure)
             } else {
-                FilterUiState.Success(groupCalendarsForFilter(enabled, hidden))
+                FilterUiState.Success(enabled.groupByAccount(), hidden)
             }
         }
             .catch { emit(FilterUiState.Failure(FailureReason.ProviderUnavailable)) }
             .flowOn(io)
-            .stateIn(
+            .stateWhileSubscribed(
                 scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000L),
                 initialValue = FilterUiState.Loading,
             )
 
@@ -61,28 +58,3 @@ class FilterViewModel @Inject constructor(
     }
 }
 
-/**
- * Group calendars under their owning account — by name *and* type, so two
- * accounts that merely share a name stay apart (#77) — preserving the
- * provider's order within each group and ordering groups by first appearance.
- * A calendar is "visible" when its id is *not* in [hidden].
- */
-internal fun groupCalendarsForFilter(
-    calendars: List<CalendarSource>,
-    hidden: Set<Long>,
-): List<AccountGroup> =
-    calendars.groupByAccount().map { group ->
-        AccountGroup(
-            account = group.label,
-            accountType = group.accountType,
-            ambiguous = group.ambiguous,
-            calendars = group.calendars.map { c ->
-                CalendarRow(
-                    id = c.id,
-                    displayName = c.displayName,
-                    color = c.color,
-                    visible = c.id !in hidden,
-                )
-            },
-        )
-    }

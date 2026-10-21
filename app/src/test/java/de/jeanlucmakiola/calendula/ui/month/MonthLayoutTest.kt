@@ -1,8 +1,10 @@
 package de.jeanlucmakiola.calendula.ui.month
 
+import de.jeanlucmakiola.calendula.ui.common.startOfWeek
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.allDayEvent
 import de.jeanlucmakiola.calendula.domain.EventResponse
+import de.jeanlucmakiola.calendula.timedEvent
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -33,29 +35,12 @@ class MonthLayoutTest {
         endHour: Int,
         id: Long = 1L,
         title: String = "E",
-    ) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = title,
-        start = at(date, startHour),
-        end = at(date, endHour),
-        isAllDay = false,
-        color = 0xFF112233.toInt(),
-        location = null,
-    )
+    ) = timedEvent(date, startHour, endHour, zone = zone, id = id, title = title, color = 0xFF112233.toInt())
 
     /** A timed event running from [date] 20:00 into the next day at [endHour]. */
-    private fun overnight(date: LocalDate, endHour: Int = 8) = EventInstance(
-        instanceId = 7L,
-        eventId = 7L,
-        calendarId = 1L,
-        title = "Night shift",
-        start = at(date, 20),
-        end = at(date.plus(1, DateTimeUnit.DAY), endHour),
-        isAllDay = false,
-        color = 0xFF112233.toInt(),
-        location = null,
+    private fun overnight(date: LocalDate, endHour: Int = 8) = timedEvent(
+        date, 20, endHour, zone = zone, id = 7L, title = "Night shift",
+        color = 0xFF112233.toInt(), endDate = date.plus(1, DateTimeUnit.DAY),
     )
 
     /** All-day events live at UTC midnights with an *exclusive* end. */
@@ -64,25 +49,15 @@ class MonthLayoutTest {
         toInclusive: LocalDate = from,
         id: Long = 100L,
         title: String = "A",
-    ) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = title,
-        start = from.atTime(0, 0).toInstant(TimeZone.UTC),
-        end = toInclusive.plus(1, DateTimeUnit.DAY).atTime(0, 0).toInstant(TimeZone.UTC),
-        isAllDay = true,
-        color = 0xFF445566.toInt(),
-        location = null,
-    )
+    ) = allDayEvent(from, toInclusive, id = id, title = title, color = 0xFF445566.toInt())
 
     @Test
-    fun `startOfGridWeek snaps back to the configured week start`() {
+    fun `startOfWeek snaps back to the configured week start`() {
         val wed = LocalDate(2026, 6, 10)
-        assertThat(wed.startOfGridWeek(DayOfWeek.MONDAY)).isEqualTo(jun8)
-        assertThat(jun8.startOfGridWeek(DayOfWeek.MONDAY)).isEqualTo(jun8)
+        assertThat(wed.startOfWeek(DayOfWeek.MONDAY)).isEqualTo(jun8)
+        assertThat(jun8.startOfWeek(DayOfWeek.MONDAY)).isEqualTo(jun8)
         // A Sunday-anchored week containing the 10th starts on the 7th.
-        assertThat(wed.startOfGridWeek(DayOfWeek.SUNDAY)).isEqualTo(LocalDate(2026, 6, 7))
+        assertThat(wed.startOfWeek(DayOfWeek.SUNDAY)).isEqualTo(LocalDate(2026, 6, 7))
     }
 
     @Test

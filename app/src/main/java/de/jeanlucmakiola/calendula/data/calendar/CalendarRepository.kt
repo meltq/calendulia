@@ -29,7 +29,7 @@ interface CalendarRepository {
 
     /**
      * The event-colour palette a calendar's account publishes; empty when it
-     * exposes none (see [CalendarDataSource.eventColorPalette]).
+     * exposes none (see [CalendarDataSource.publishedEventColors]).
      */
     suspend fun eventColorPalette(calendarId: Long): List<EventColorOption>
 

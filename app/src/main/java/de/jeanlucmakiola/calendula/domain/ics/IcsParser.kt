@@ -2,19 +2,17 @@ package de.jeanlucmakiola.calendula.domain.ics
 
 import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventStatus
-import kotlinx.datetime.LocalDate
+import de.jeanlucmakiola.calendula.domain.zoneOrNull
 import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.atStartOfDayIn
-import kotlinx.datetime.number
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.ceil
+import kotlin.time.Duration.Companion.days
+import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Instant
 
-/** Milliseconds in a calendar day; all-day times are UTC midnights, so this is exact. */
-private const val DAY_MILLIS = 86_400_000L
 private const val MINUTES_PER_DAY = 1_440
 
 /**
@@ -318,13 +316,9 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
         dtEnd: IcsDateTime?,
         duration: String?,
     ): Instant {
-        val explicit = dtEnd?.instant ?: duration?.let {
-            Instant.fromEpochMilliseconds(
-                start.instant.toEpochMilliseconds() + parseRfc2445DurationMillis(it),
-            )
-        }
+        val explicit = dtEnd?.instant ?: duration?.let { start.instant + parseRfc2445DurationMillis(it).milliseconds }
         if (!start.isAllDay) return explicit ?: start.instant
-        return explicit?.takeIf { it > start.instant } ?: start.instant.plusDays(1)
+        return explicit?.takeIf { it > start.instant } ?: (start.instant + 1.days)
     }
 
     /**
@@ -343,17 +337,17 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
      */
     private fun normalizeExDates(lines: List<IcsContentLine>, start: IcsDateTime): List<String> {
         if (lines.isEmpty()) return emptyList()
-        val startZone = runCatching { TimeZone.of(start.zoneId) }.getOrNull() ?: deviceZone
+        val startZone = zoneOrNull(start.zoneId) ?: deviceZone
         val startTime = start.instant.toLocalDateTime(startZone).time
         return lines
             .flatMap { line -> line.value.split(',').map { line to it.trim() } }
             .mapNotNull { (line, token) ->
                 when {
                     token.isEmpty() -> null
-                    start.isAllDay -> parseBasicDate(token.substringBefore('T'))?.let(::dayCode)
-                    token.contains('T') -> parseExDateTime(token, line, startZone)?.let(::utcStamp)
+                    start.isAllDay -> parseBasicDate(token.substringBefore('T'))?.toBasic()
+                    token.contains('T') -> parseExDateTime(token, line, startZone)?.toUtcBasic()
                     else -> parseBasicDate(token)
-                        ?.let { utcStamp(LocalDateTime(it, startTime).toInstant(startZone)) }
+                        ?.let { LocalDateTime(it, startTime).toInstant(startZone).toUtcBasic() }
                 }
             }
             .distinct()
@@ -373,7 +367,7 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
         val ldt = parseBasicDateTime(token.removeSuffix("Z")) ?: return null
         val zone = when {
             token.endsWith("Z") -> TimeZone.UTC
-            else -> line.params["TZID"]?.let { runCatching { TimeZone.of(it) }.getOrNull() }
+            else -> line.params["TZID"]?.let(::zoneOrNull)
                 ?: startZone
         }
         return ldt.toInstant(zone)
@@ -409,7 +403,7 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
         if (isUtc) return IcsDateTime(ldt.toInstant(TimeZone.UTC), isAllDay = false, zoneId = "UTC")
 
         val tzid = line.params["TZID"]
-        val resolved = tzid?.let { id -> runCatching { TimeZone.of(id) }.getOrNull()?.let { id to it } }
+        val resolved = tzid?.let { id -> zoneOrNull(id)?.let { id to it } }
         if (tzid != null && resolved == null) warnings.add(IcsParseWarning.UnknownTimezone)
         val (zoneId, zone) = resolved ?: (deviceZone.id to deviceZone)
         return IcsDateTime(ldt.toInstant(zone), isAllDay = false, zoneId = zoneId)
@@ -420,16 +414,6 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
     private companion object {
         fun IcsContentLine.isBegin(component: String) =
             name == "BEGIN" && value.trim().equals(component, true)
-
-        fun Instant.plusDays(days: Int): Instant =
-            Instant.fromEpochMilliseconds(toEpochMilliseconds() + days * DAY_MILLIS)
-
-        fun dayCode(date: LocalDate): String =
-            "%04d%02d%02d".format(date.year, date.month.number, date.day)
-
-        fun utcStamp(instant: Instant): String = with(instant.toLocalDateTime(TimeZone.UTC)) {
-            "%04d%02d%02dT%02d%02d%02dZ".format(year, month.number, day, hour, minute, second)
-        }
 
         /**
          * A single-valued `CATEGORIES`, which is what the Fossify family writes
@@ -449,59 +433,26 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
                 .takeIf { it.isNotEmpty() && !it.equals("null", true) }
         }
 
-        /** Index of the matching `END:<component>` at/after [from], or list end. */
         /**
          * Where an unterminated component's body has to stop: the next top-level
          * `VEVENT` / `VTODO` in `[from, end)`, or [end] when there is none. A
          * nested `VALARM` is part of the body and is not a boundary.
          */
-        fun indexOfNextComponent(lines: List<String>, from: Int, end: Int): Int {
-            var i = from
-            while (i < end) {
+        fun indexOfNextComponent(lines: List<String>, from: Int, end: Int): Int =
+            (from until end).firstOrNull { i ->
                 val line = parseContentLine(lines[i])
-                if (line != null && (line.isBegin("VEVENT") || line.isBegin("VTODO"))) {
-                    return i
-                }
-                i++
-            }
-            return end
-        }
+                line != null && (line.isBegin("VEVENT") || line.isBegin("VTODO"))
+            } ?: end
 
-        fun indexOfEnd(lines: List<String>, from: Int, component: String): Int {
-            var i = from
-            while (i < lines.size) {
+        /** Index of the matching `END:<component>` at/after [from], or list end. */
+        fun indexOfEnd(lines: List<String>, from: Int, component: String): Int =
+            (from until lines.size).firstOrNull { i ->
                 val line = parseContentLine(lines[i])
-                if (line != null && line.name == "END" &&
-                    line.value.trim().equals(component, true)
-                ) {
-                    return i
-                }
-                i++
-            }
-            return lines.size
-        }
+                line != null && line.name == "END" && line.value.trim().equals(component, true)
+            } ?: lines.size
 
-        fun mapIcsStatus(value: String): EventStatus = when (value.trim().uppercase()) {
-            "TENTATIVE" -> EventStatus.Tentative
-            "CANCELLED" -> EventStatus.Cancelled
-            else -> EventStatus.Confirmed
-        }
-
-        fun parseBasicDate(s: String): LocalDate? = runCatching {
-            LocalDate(s.substring(0, 4).toInt(), s.substring(4, 6).toInt(), s.substring(6, 8).toInt())
-        }.getOrNull()
-
-        fun parseBasicDateTime(s: String): LocalDateTime? = runCatching {
-            val date = LocalDate(
-                s.substring(0, 4).toInt(), s.substring(4, 6).toInt(), s.substring(6, 8).toInt(),
-            )
-            // Format is YYYYMMDD 'T' HHMMSS; seconds optional.
-            val time = LocalTime(
-                s.substring(9, 11).toInt(),
-                s.substring(11, 13).toInt(),
-                if (s.length >= 15) s.substring(13, 15).toInt() else 0,
-            )
-            LocalDateTime(date, time)
-        }.getOrNull()
+        fun mapIcsStatus(value: String): EventStatus =
+            EventStatus.entries.firstOrNull { it.name.equals(value.trim(), ignoreCase = true) }
+                ?: EventStatus.Confirmed
     }
 }

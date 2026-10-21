@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.week
 
+import de.jeanlucmakiola.calendula.ui.common.startOfWeek
 import com.google.common.truth.Truth.assertThat
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
@@ -15,34 +16,34 @@ class WeekPagingTest {
     @Test
     fun `a page and its week round-trip for every first day`() {
         DayOfWeek.entries.forEach { firstDay ->
-            val page = weekPageFor(sunday, firstDay)
-            val start = weekStartForPage(page, firstDay)
+            val page = DaysGrid.weeks(firstDay).pageFor(sunday)
+            val start = DaysGrid.weeks(firstDay).startForPage(page)
             assertThat(start).isEqualTo(sunday.startOfWeek(firstDay))
-            assertThat(weekPageFor(start, firstDay)).isEqualTo(page)
+            assertThat(DaysGrid.weeks(firstDay).pageFor(start)).isEqualTo(page)
         }
     }
 
     @Test
     fun `every day of a week maps to the same page`() {
         val start = sunday.startOfWeek(DayOfWeek.MONDAY)
-        val pages = (0..6).map { weekPageFor(start.plus(it, DateTimeUnit.DAY), DayOfWeek.MONDAY) }
+        val pages = (0..6).map { DaysGrid.weeks(DayOfWeek.MONDAY).pageFor(start.plus(it, DateTimeUnit.DAY)) }
         assertThat(pages.toSet()).hasSize(1)
     }
 
     @Test
     fun `adjacent pages are adjacent weeks`() {
-        val page = weekPageFor(sunday, DayOfWeek.SUNDAY)
-        assertThat(weekStartForPage(page + 1, DayOfWeek.SUNDAY))
+        val page = DaysGrid.weeks(DayOfWeek.SUNDAY).pageFor(sunday)
+        assertThat(DaysGrid.weeks(DayOfWeek.SUNDAY).startForPage(page + 1))
             .isEqualTo(LocalDate(2026, 10, 4))
-        assertThat(weekStartForPage(page - 1, DayOfWeek.SUNDAY))
+        assertThat(DaysGrid.weeks(DayOfWeek.SUNDAY).startForPage(page - 1))
             .isEqualTo(LocalDate(2026, 9, 20))
     }
 
     @Test
     fun `dates before the epoch page resolve too`() {
         val old = LocalDate(1990, 5, 16)
-        val page = weekPageFor(old, DayOfWeek.MONDAY)
-        assertThat(weekStartForPage(page, DayOfWeek.MONDAY)).isEqualTo(LocalDate(1990, 5, 14))
+        val page = DaysGrid.weeks(DayOfWeek.MONDAY).pageFor(old)
+        assertThat(DaysGrid.weeks(DayOfWeek.MONDAY).startForPage(page)).isEqualTo(LocalDate(1990, 5, 14))
     }
 
     @Test
@@ -68,14 +69,14 @@ class WeekPagingTest {
     @Test
     fun `a day page and its day round-trip`() {
         listOf(LocalDate(2026, 9, 27), LocalDate(1990, 5, 16), LocalDate(2100, 2, 28)).forEach { day ->
-            assertThat(DayGrid.startForPage(DayGrid.pageFor(day))).isEqualTo(day)
+            assertThat(DaysGrid.days.startForPage(DaysGrid.days.pageFor(day))).isEqualTo(day)
         }
     }
 
     @Test
     fun `adjacent day pages are adjacent days across a month end`() {
-        val page = DayGrid.pageFor(LocalDate(2026, 2, 28))
-        assertThat(DayGrid.startForPage(page + 1)).isEqualTo(LocalDate(2026, 3, 1))
-        assertThat(DayGrid.startForPage(page - 1)).isEqualTo(LocalDate(2026, 2, 27))
+        val page = DaysGrid.days.pageFor(LocalDate(2026, 2, 28))
+        assertThat(DaysGrid.days.startForPage(page + 1)).isEqualTo(LocalDate(2026, 3, 1))
+        assertThat(DaysGrid.days.startForPage(page - 1)).isEqualTo(LocalDate(2026, 2, 27))
     }
 }

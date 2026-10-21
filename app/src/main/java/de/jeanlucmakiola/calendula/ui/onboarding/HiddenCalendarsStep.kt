@@ -7,24 +7,23 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.hasVisibilitySwitch
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
+import de.jeanlucmakiola.calendula.ui.common.CalendarVisibilitySwitch
+import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.OnboardingPrimaryButton
 import de.jeanlucmakiola.floret.components.OnboardingScaffold
 import de.jeanlucmakiola.floret.components.OnboardingSpace
 import de.jeanlucmakiola.floret.components.Position
@@ -65,24 +64,17 @@ internal fun HiddenCalendarsStep(
         scrollingActions = true,
         hero = { IconHero(Icons.Filled.VisibilityOff) },
         actions = {
-            Button(
+            OnboardingPrimaryButton(
+                text = stringResource(
+                    if (anyVisible) {
+                        R.string.onboarding_view_continue_button
+                    } else {
+                        R.string.onboarding_hidden_switch_all_button
+                    },
+                ),
                 onClick = if (anyVisible) onFinished else onSwitchAllOn,
-                modifier = Modifier
-                    .padding(horizontal = GroupedListInset)
-                    .fillMaxWidth()
-                    .height(56.dp),
-            ) {
-                Text(
-                    text = stringResource(
-                        if (anyVisible) {
-                            R.string.onboarding_view_continue_button
-                        } else {
-                            R.string.onboarding_hidden_switch_all_button
-                        },
-                    ),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
+                modifier = Modifier.padding(horizontal = GroupedListInset),
+            )
             // Only while nothing is on: once something is, the step has been
             // answered and the one button left to press says so.
             if (!anyVisible) {
@@ -129,7 +121,7 @@ internal fun HiddenCalendarsStep(
         calendars.forEachIndexed { index, calendar ->
             val off = !calendar.isVisibleInSystem
             GroupedRow(
-                title = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
+                title = calendar.displayName.orUnnamed(),
                 summary = calendar.accountName.takeIf { it.isNotBlank() },
                 position = when {
                     calendars.size == 1 -> Position.Alone
@@ -140,8 +132,8 @@ internal fun HiddenCalendarsStep(
                 dimmed = off,
                 trailing = if (calendar.hasVisibilitySwitch) {
                     {
-                        CalendarSwitch(
-                            calendarName = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
+                        CalendarVisibilitySwitch(
+                            calendarName = calendar.displayName.orUnnamed(),
                             enabled = !off,
                             onToggle = { on -> onSetVisible(calendar.id, on) },
                         )
@@ -155,19 +147,4 @@ internal fun HiddenCalendarsStep(
 
         Spacer(Modifier.height(OnboardingSpace.md))
     }
-}
-
-/** The per-row switch, writing the device's own `Calendars.VISIBLE` as Settings does. */
-@Composable
-private fun CalendarSwitch(
-    calendarName: String,
-    enabled: Boolean,
-    onToggle: (Boolean) -> Unit,
-) {
-    val label = stringResource(R.string.calendars_visibility_a11y, calendarName)
-    Switch(
-        checked = enabled,
-        onCheckedChange = onToggle,
-        modifier = Modifier.semantics { contentDescription = label },
-    )
 }

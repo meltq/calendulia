@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.23.0] — 2026-10-21
+
+### Added
+- **Long press an event to select it.** In the day, 3-day and week views, a long press lifts the event and selects it. Keep your finger down and move to drag it straight away. A selected event has handles at its top and bottom: drag them to change when it starts or ends, in 15-minute steps and across midnight if you want. The bar at the top edits, duplicates, shares or deletes it, and tapping elsewhere or going back deselects it. The bar shows the new times while you move or resize. Read-only events can be selected but not moved or resized ([#141]).
+- **Long press an empty slot to draft an event.** In the day, 3-day and week views, a long press on free time drops a block of your default event length there. Move it while still holding, or let go and drag it or its handles into place, then tap the tick to open a new event at that time. The ✕, a tap elsewhere or going back throws the draft away ([#153]).
+- **Tap a phone number in an event to call it.** Phone numbers in an event's title, location and description are now links. Tapping one opens your phone app with the number filled in, ready to call. A conference dial-in like "+1 646 558 8656,,850123#" brings its meeting ID along. Meeting IDs and PINs on their own, dates, times and amounts stay plain text. Long-pressing a field copies it, even when you press on a link ([#339]).
+- **Formatted event descriptions read properly.** Descriptions from Outlook, Exchange and Google Calendar are often stored as HTML, which used to show up as a wall of tags. The event view now shows them as formatted text: bold, italics, lists and links work, table rows sit on one line each, and the fonts and colours the sender picked are left out so the text matches the app. Search matches the text you see. The edit form still shows the original, so saving an event never changes its formatting ([#271]).
+- **Scroll back to earlier days in the agenda.** Scroll up past today to see earlier days' events, loaded a month at a time. Past days follow the past-events setting: Dim fades them, and with Hide the agenda still starts at today ([#367]).
+- **Create an event from shared or selected text.** Share text to Calendula, or select text in another app and pick Create event from the selection menu, and the new-event form opens with it filled in. A shared subject becomes the title, otherwise the first line does, and the rest goes into the description. The event starts at the next full hour with your default length; Calendula doesn't try to read a date out of the text. If Calendula was opened just for this, saving or closing the form takes you back to the app you came from ([#306]).
+- **Tapping an event can open the edit form.** Settings → Views → Events → Tapping an event opens can now be set to Edit form instead of Details. Taps in the views and in search then go straight to the editor for events you can edit; read-only events, reminder notifications and widgets still open the details. The editor has Duplicate, Share and Delete in its menu, and going back with unsaved changes asks whether to save, discard or keep editing ([#178]).
+- **A black theme for AMOLED screens.** Settings → Appearance → Theme now has Black next to System, Light and Dark. It's the dark theme with pure black backgrounds, which saves battery on AMOLED screens and makes event colours stand out more. Day cells and the hour grid stay a shade above black so the grid lines still show, and sheets and menus still stand out from the page. It works with Material You colours too. The home-screen widgets aren't affected ([#181]).
+- **Donate through Liberapay.** Settings → Support development now offers Liberapay for recurring donations next to Ko-fi for one-off tips.
+- **More haptic feedback.** Swiping between days in the split month pane ticks, and dropping a moved or resized event gives a short buzz ([#116]).
+
+### Changed
+- **The editor says Create for a new event.** New events, duplicates, shared text, imported .ics files and long-press drafts show Create instead of Save, so a duplicate no longer looks like you're editing the original ([#141]).
+
+### Fixed
+- **Event colours follow the theme you picked in Calendula.** With the app set to Dark on a phone in light mode, or the other way round, events took their colours from the phone's setting, so they could come out too pale or too dark. They now match the app's theme. Starting the app with a theme set in Calendula also no longer flashes the phone's light or dark background first ([#181]).
+- **Events on the day the clocks change show at their real time.** In the day, 3-day and week views, events later on the day of a daylight saving change were drawn an hour off, so a 14:45 event showed at 15:45. They now sit at their own time. When the clocks go back, 02:00 to 03:00 happens twice: an event in that hour now stays in the right one when you move, resize or edit it, and the editor and event details add the zone, like CEST or CET, so you can tell the two apart ([#387]).
+- **The agenda always starts today.** Coming from the month or day view, the agenda used to start at the day you had open there, so "Next 30 days" could show the 1st to the 30th of the month. It now opens on today with your chosen range. Backing out of a day you opened from the agenda still returns you to where you were ([#367]).
+- **Multi-day events dim on the days already behind you.** With past events dimmed, an event running over several days stayed at full strength on its earlier days until it ended. Those days now dim in the agenda, month, week and day views ([#367]).
+- **Moving a recurring event to another calendar keeps the occurrences you changed.** Deleted occurrences used to come back after the move, and edited ones showed up twice. They now stay deleted or edited, and keep their colour.
+- **Sharing an .ics file to Calendula opens the import,** even when the email app adds a subject line as text.
+- **Rotating the phone no longer throws away an open import, duplicate or picker.**
+- **The repeat-until date picker opens on today.** Near midnight it used to open on yesterday or tomorrow.
+- **Tap ripples on week numbers, split-view day cells and the split-view handle stay inside their rounded shape** ([#413]).
+- **The export calendar picker previews the back gesture** like the other full-screen pickers.
+
 ## [2.22.5] — 2026-10-07
 
 ### Fixed
@@ -1848,4 +1877,15 @@ automatically, with zero telemetry and no internet permission.
 [#361]: https://codeberg.org/jlmakiola/calendula/issues/361
 [#363]: https://codeberg.org/jlmakiola/calendula/issues/363
 [#364]: https://codeberg.org/jlmakiola/calendula/issues/364
+[#367]: https://codeberg.org/jlmakiola/calendula/issues/367
 [#373]: https://codeberg.org/jlmakiola/calendula/issues/373
+[#141]: https://codeberg.org/jlmakiola/calendula/issues/141
+[#153]: https://codeberg.org/jlmakiola/calendula/issues/153
+[#339]: https://codeberg.org/jlmakiola/calendula/issues/339
+[#387]: https://codeberg.org/jlmakiola/calendula/issues/387
+[#271]: https://codeberg.org/jlmakiola/calendula/issues/271
+[#181]: https://codeberg.org/jlmakiola/calendula/issues/181
+[#306]: https://codeberg.org/jlmakiola/calendula/issues/306
+[#178]: https://codeberg.org/jlmakiola/calendula/issues/178
+[#116]: https://codeberg.org/jlmakiola/calendula/issues/116
+[#413]: https://codeberg.org/jlmakiola/calendula/issues/413

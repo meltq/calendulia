@@ -10,7 +10,6 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.data.backup.BackupScheduler
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.CalendarVisibilityReconciler
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
@@ -20,6 +19,8 @@ import de.jeanlucmakiola.calendula.domain.hasVisibilitySwitch
 import de.jeanlucmakiola.calendula.domain.orderedForManager
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
+import de.jeanlucmakiola.floret.android.stateWhileSubscribed
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
@@ -92,9 +93,8 @@ class OnboardingViewModel @Inject constructor(
                 list.catch { emit(null) }.flowOn(io)
             }
         }
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = null,
         )
 
@@ -166,15 +166,6 @@ class OnboardingViewModel @Inject constructor(
         hiddenTouched,
     ) { hidden, touched -> if (touched) null else hidden }
 
-    /** Both calendar steps' inputs: what each applies to, and whether it is answered. */
-    private val calendarsFlags: Flow<CalendarsFlags> = combine(
-        calendarsApplies,
-        prefs.onboardingCalendarsDone,
-        hiddenApplies,
-        prefs.onboardingHiddenCalendarsDone,
-        ::CalendarsFlags,
-    )
-
     /**
      * The calendars the hidden-calendars step lists, so the user can judge which
      * to switch on rather than take the app's word that there are some. Live: a
@@ -183,58 +174,44 @@ class OnboardingViewModel @Inject constructor(
      */
     val hiddenCalendars: StateFlow<List<CalendarSource>> = calendars
         .map { it.orEmpty().orderedForManager() }
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = emptyList(),
         )
 
-    private val flags: Flow<OnboardingFlags> = combine(
-        prefs.reminderOnboardingDone,
-        prefs.onboardingWizardArmed,
-        prefs.onboardingBackupDone,
-        prefs.onboardingViewDone,
-        prefs.onboardingMonthStyleDone,
-        ::OnboardingFlags,
-    )
-
-    /** The closing steps' own flags, and whether the notice applies at all. */
-    private val closingFlags: Flow<ClosingFlags> = combine(
-        calendarPrefs.visibilityNoticePending.map { it == true },
-        prefs.onboardingVisibilityDone,
-        prefs.onboardingDoneShown,
-        ::ClosingFlags,
-    )
+    /** What the two calendar steps apply to (#287). */
+    private val calendarStepsApply: Flow<Pair<Boolean?, Boolean?>> =
+        combine(calendarsApplies, hiddenApplies, ::Pair)
 
     val plan: StateFlow<OnboardingPlan?> =
         combine(
             hasPermission,
-            flags,
-            closingFlags,
+            prefs.onboardingProgress,
+            calendarPrefs.visibilityNoticePending.map { it == true },
             backupApplies,
-            calendarsFlags,
-        ) { granted, stored, closing, backup, calendars ->
+            calendarStepsApply,
+        ) { granted, progress, visibilityArmed, backup, (calendars, hidden) ->
+            val answered = progress.answered
             granted?.let {
                 onboardingPlan(
                     hasPermission = it,
-                    remindersDone = stored.remindersDone,
-                    wizardArmed = stored.wizardArmed,
-                    backupDone = stored.backupDone,
-                    viewDone = stored.viewDone,
-                    monthStyleDone = stored.monthStyleDone,
+                    remindersDone = OnboardingStep.Reminders in answered,
+                    wizardArmed = progress.wizardArmed,
+                    backupDone = OnboardingStep.Backup in answered,
+                    viewDone = OnboardingStep.View in answered,
+                    monthStyleDone = OnboardingStep.MonthStyle in answered,
                     backupApplies = backup,
-                    hiddenDone = calendars.hiddenDone,
-                    hiddenApplies = calendars.hiddenApplies,
-                    calendarsDone = calendars.done,
-                    calendarsApplies = calendars.applies,
-                    visibilityArmed = closing.visibilityArmed,
-                    visibilityDone = closing.visibilityDone,
-                    doneShown = closing.doneShown,
+                    hiddenDone = OnboardingStep.HiddenCalendars in answered,
+                    hiddenApplies = hidden,
+                    calendarsDone = OnboardingStep.Calendars in answered,
+                    calendarsApplies = calendars,
+                    visibilityArmed = visibilityArmed,
+                    visibilityDone = OnboardingStep.Visibility in answered,
+                    doneShown = OnboardingStep.Done in answered,
                 )
             }
-        }.stateIn(
+        }.stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = null,
         )
 
@@ -244,9 +221,8 @@ class OnboardingViewModel @Inject constructor(
         prefs.monthViewStyle,
         prefs.weekStart,
         ::ViewChoice,
-    ).stateIn(
+    ).stateWhileSubscribed(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000L),
         initialValue = null,
     )
 
@@ -261,7 +237,7 @@ class OnboardingViewModel @Inject constructor(
      * to a restarted process, leaving them the reminder step alone.
      */
     private suspend fun armWizardIfFresh() {
-        if (!prefs.reminderOnboardingDone.first()) prefs.armOnboardingWizard()
+        prefs.armOnboardingWizard()
     }
 
     /**
@@ -277,7 +253,7 @@ class OnboardingViewModel @Inject constructor(
     fun finishReminders(remindersEnabled: Boolean) {
         viewModelScope.launch {
             prefs.setRemindersEnabled(remindersEnabled)
-            prefs.setReminderOnboardingDone()
+            prefs.setOnboardingDone(OnboardingStep.Reminders)
             // Nothing else re-arms the scan: turning reminders off cancels the
             // alarm (#75).
             scanner.scan()
@@ -291,24 +267,13 @@ class OnboardingViewModel @Inject constructor(
      * returned to, which [OnboardingPlan.canGoBack] already refuses.
      */
     fun goBack() {
-        viewModelScope.launch {
-            when (plan.value?.previous) {
-                OnboardingStep.HiddenCalendars -> prefs.setOnboardingHiddenCalendarsDone(false)
-                OnboardingStep.Calendars -> prefs.setOnboardingCalendarsDone(false)
-                OnboardingStep.Reminders -> prefs.setReminderOnboardingDone(false)
-                OnboardingStep.Backup -> prefs.setOnboardingBackupDone(false)
-                OnboardingStep.View -> prefs.setOnboardingViewDone(false)
-                OnboardingStep.MonthStyle -> prefs.setOnboardingMonthStyleDone(false)
-                OnboardingStep.Visibility -> prefs.setOnboardingVisibilityDone(false)
-                OnboardingStep.Done -> prefs.setOnboardingDoneShown(false)
-                OnboardingStep.Permission, null -> Unit
-            }
-        }
+        val previous = plan.value?.previous ?: return
+        viewModelScope.launch { prefs.setOnboardingDone(previous, done = false) }
     }
 
     /** Close the backup step without setting anything up. */
     fun skipBackup() {
-        viewModelScope.launch { prefs.setOnboardingBackupDone() }
+        viewModelScope.launch { prefs.setOnboardingDone(OnboardingStep.Backup) }
     }
 
     /**
@@ -340,7 +305,7 @@ class OnboardingViewModel @Inject constructor(
     /** Close the calendar step once its confirmation has been read. */
     fun finishCalendars() {
         viewModelScope.launch {
-            prefs.setOnboardingCalendarsDone()
+            prefs.setOnboardingDone(OnboardingStep.Calendars)
             _creation.value = null
         }
     }
@@ -355,7 +320,7 @@ class OnboardingViewModel @Inject constructor(
      * choice, and so is going off to set up an account and coming back.
      */
     fun skipCalendars() {
-        viewModelScope.launch { prefs.setOnboardingCalendarsDone() }
+        viewModelScope.launch { prefs.setOnboardingDone(OnboardingStep.Calendars) }
     }
 
     /**
@@ -381,7 +346,7 @@ class OnboardingViewModel @Inject constructor(
             )
             // Immediate feedback: the first backup lands while onboarding runs.
             BackupScheduler.runNow(context)
-            prefs.setOnboardingBackupDone()
+            prefs.setOnboardingDone(OnboardingStep.Backup)
         }
     }
 
@@ -395,11 +360,11 @@ class OnboardingViewModel @Inject constructor(
 
     /** Close a picker step — the choice itself is saved as it is made. */
     fun finishView() {
-        viewModelScope.launch { prefs.setOnboardingViewDone() }
+        viewModelScope.launch { prefs.setOnboardingDone(OnboardingStep.View) }
     }
 
     fun finishMonthStyle() {
-        viewModelScope.launch { prefs.setOnboardingMonthStyleDone() }
+        viewModelScope.launch { prefs.setOnboardingDone(OnboardingStep.MonthStyle) }
     }
 
     /** Switch one listed calendar on or off, from the hidden-calendars step (#287). */
@@ -436,7 +401,7 @@ class OnboardingViewModel @Inject constructor(
     /** Close the hidden-calendars step, switched on or left as they were (#287). */
     fun finishHiddenCalendars() {
         viewModelScope.launch {
-            prefs.setOnboardingHiddenCalendarsDone()
+            prefs.setOnboardingDone(OnboardingStep.HiddenCalendars)
             // The error belongs to the attempt, not to the step: stepping back
             // into it later must not find a refusal nothing has asked for yet.
             _hiddenWriteFailed.value = false
@@ -451,7 +416,7 @@ class OnboardingViewModel @Inject constructor(
     /** Acknowledge the calendar-visibility notice (#75). */
     fun finishVisibility() {
         viewModelScope.launch {
-            prefs.setOnboardingVisibilityDone()
+            prefs.setOnboardingDone(OnboardingStep.Visibility)
             // Retiring the notice drops its step, so it waits until nothing
             // follows — the count must not fall on the way to a later screen.
             if (plan.value?.steps?.last() == OnboardingStep.Visibility) retireVisibilityNotice()
@@ -488,35 +453,11 @@ class OnboardingViewModel @Inject constructor(
     }
 }
 
-/** The stored answers the plan is derived from. */
-private data class OnboardingFlags(
-    val remindersDone: Boolean,
-    val wizardArmed: Boolean,
-    val backupDone: Boolean,
-    val viewDone: Boolean,
-    val monthStyleDone: Boolean,
-)
-
 /** How the calendar step's create attempt ended (#287). */
 sealed interface CalendarCreation {
     data class Created(val name: String) : CalendarCreation
     data object Failed : CalendarCreation
 }
-
-/** Both calendar steps' inputs (#287). */
-private data class CalendarsFlags(
-    val applies: Boolean?,
-    val done: Boolean,
-    val hiddenApplies: Boolean?,
-    val hiddenDone: Boolean,
-)
-
-/** The tail of the flow: the visibility notice and the closing screen. */
-private data class ClosingFlags(
-    val visibilityArmed: Boolean,
-    val visibilityDone: Boolean,
-    val doneShown: Boolean,
-)
 
 /** What the view step starts from, and renders its previews with. */
 data class ViewChoice(

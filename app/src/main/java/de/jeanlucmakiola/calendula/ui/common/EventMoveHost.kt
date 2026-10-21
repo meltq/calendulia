@@ -48,7 +48,12 @@ private val FAB_BAND = 88.dp
  * a pill on the FAB's band, leaving the calendar visible behind it.
  */
 @Composable
-fun EventMoveHost(viewModel: RescheduleViewModel, modifier: Modifier = Modifier) {
+fun EventMoveHost(
+    viewModel: RescheduleViewModel,
+    modifier: Modifier = Modifier,
+    actionFailure: String? = null,
+    onActionFailureShown: () -> Unit = {},
+) {
     val prompt by viewModel.scopePrompt.collectAsStateWithLifecycle()
     val outcome by viewModel.outcome.collectAsStateWithLifecycle()
     val undoTick by viewModel.undoStarted.collectAsStateWithLifecycle()
@@ -58,7 +63,9 @@ fun EventMoveHost(viewModel: RescheduleViewModel, modifier: Modifier = Modifier)
 
     prompt?.let { pending ->
         RecurringScopeDialog(
-            title = stringResource(R.string.event_move_recurring_title),
+            title = stringResource(
+                if (pending.resize) R.string.event_resize_recurring_title else R.string.event_move_recurring_title,
+            ),
             onSelect = viewModel::moveWithScope,
             onDismiss = viewModel::cancelScope,
             allowSeries = !pending.occurrenceOnly,
@@ -69,9 +76,17 @@ fun EventMoveHost(viewModel: RescheduleViewModel, modifier: Modifier = Modifier)
 
     val moved = outcome as? MoveOutcome.Moved
     val movedLabel = moved?.let { formatMovedTo(it.startMillis, it.isAllDay, use24Hour, locale) }
+    val resizedLabel = moved?.endMillis?.let { end ->
+        "$movedLabel–${formatTime(end, use24Hour, locale)}"
+    }
+    // A failed selection action (#141) shares the chip rather than stacking on it.
     val message = when (outcome) {
-        null -> null
-        is MoveOutcome.Moved -> stringResource(R.string.event_move_done, movedLabel.orEmpty())
+        null -> actionFailure
+        is MoveOutcome.Moved -> if (resizedLabel != null) {
+            stringResource(R.string.event_resize_done, resizedLabel)
+        } else {
+            stringResource(R.string.event_move_done, movedLabel.orEmpty())
+        }
         MoveOutcome.Undone -> stringResource(R.string.event_move_undone)
         MoveOutcome.WriteDenied -> stringResource(R.string.event_move_write_denied)
         MoveOutcome.Gone -> stringResource(R.string.event_move_gone)
@@ -96,6 +111,12 @@ fun EventMoveHost(viewModel: RescheduleViewModel, modifier: Modifier = Modifier)
         delay(if (outcome == MoveOutcome.Undone) UNDONE_CHIP_MILLIS else CHIP_MILLIS)
         viewModel.consumeOutcome()
     }
+    // A failure waits for the chip to be free, then has its own turn.
+    LaunchedEffect(actionFailure, outcome == null) {
+        if (actionFailure == null || outcome != null) return@LaunchedEffect
+        delay(CHIP_MILLIS)
+        onActionFailureShown()
+    }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
         val chipMaxWidth = maxWidth - FAB_BAND
@@ -113,7 +134,7 @@ fun EventMoveHost(viewModel: RescheduleViewModel, modifier: Modifier = Modifier)
             // write anyway, so offering it would be a button that does nothing.
             val undo = content.undo?.takeIf { !writeInFlight }
             SnackChip(
-                visible = outcome != null,
+                visible = outcome != null || actionFailure != null,
                 message = content.message,
                 maxWidth = chipMaxWidth,
                 actionLabel = stringResource(R.string.event_move_undo).takeIf { undo != null },
@@ -142,3 +163,7 @@ private fun formatMovedTo(
     return localizedDateFormatter(locale, skeleton)
         .format(Instant.ofEpochMilli(startMillis).atZone(zone))
 }
+
+/** "10:30" — the end of a resized event, read in the device zone like its start. */
+private fun formatTime(millis: Long, use24Hour: Boolean, locale: Locale): String =
+    timeOfDayFormatter(use24Hour, locale).format(Instant.ofEpochMilli(millis).atZone(ZoneId.systemDefault()))

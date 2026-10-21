@@ -8,16 +8,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import de.jeanlucmakiola.calendula.ui.common.ScaledViewPreview
 import de.jeanlucmakiola.calendula.ui.common.sampleMonthEvents
+import de.jeanlucmakiola.floret.components.ScaledViewPreview
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.YearMonth
 import kotlinx.datetime.plus
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
+import kotlinx.datetime.yearMonth
 
 /**
  * A live, scaled-down Month view in a given [MonthViewStyle], for the settings
@@ -51,7 +51,7 @@ internal fun MonthStylePreview(
                 state = sample.continuous,
                 listState = rememberLazyListState(
                     initialFirstVisibleItemIndex = itemIndexForMonth(
-                        monthIndexOf(YearMonth(today.year, today.month)),
+                        monthIndexOf(today.yearMonth),
                     ),
                 ),
                 showWeekNumbers = false,
@@ -109,7 +109,7 @@ private fun sampleMonthState(
     weekStart: DayOfWeek,
     zone: TimeZone,
 ): SampleMonth {
-    val ym = YearMonth(today.year, today.month)
+    val ym = today.yearMonth
     val first = LocalDate(ym.year, ym.month, 1)
     val events = sampleMonthEvents(first, today, zone)
 

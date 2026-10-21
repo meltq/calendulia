@@ -5,12 +5,10 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.content.pm.PackageManager
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.MainActivity
 import de.jeanlucmakiola.calendula.R
@@ -19,6 +17,7 @@ import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
+import de.jeanlucmakiola.floret.android.hasPermission
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.isoDayNumber
 import java.time.DayOfWeek
@@ -48,8 +47,7 @@ class ReminderNotifier @Inject constructor(
     /** False when the user declined `POST_NOTIFICATIONS` or muted the app. */
     fun canPost(): Boolean {
         val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
-            PackageManager.PERMISSION_GRANTED
+            context.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
         return granted && NotificationManagerCompat.from(context).areNotificationsEnabled()
     }
 
@@ -63,13 +61,9 @@ class ReminderNotifier @Inject constructor(
         calendarId in calendarPrefs.pendingDisabledCalendarIds.first() ||
             calendarDataSource.isCalendarVisible(calendarId) == false
 
-    /**
-     * Post [alert], unless its calendar is switched off. Returns whether the
-     * notification was put up, which the snooze re-show path uses to tell a
-     * silenced reminder from a delivered one.
-     */
-    suspend fun post(alert: ReminderAlert): Boolean {
-        if (isSilenced(alert.calendarId)) return false
+    /** Post [alert], unless its calendar is switched off. */
+    suspend fun post(alert: ReminderAlert) {
+        if (isSilenced(alert.calendarId)) return
         ensureChannel()
         val title = alert.title.ifBlank { context.getString(R.string.event_untitled) }
         val is24Hour = settingsPrefs.timeFormat.first()
@@ -122,8 +116,6 @@ class ReminderNotifier @Inject constructor(
             // POST_NOTIFICATIONS was revoked between canPost() and here.
             Log.w(TAG, "Could not post reminder for event ${alert.eventId}", e)
         }
-        // Handled either way — a retry hits the same revoked permission.
-        return true
     }
 
     /** Remove a posted reminder (snooze re-shows it later; dismiss is final). */

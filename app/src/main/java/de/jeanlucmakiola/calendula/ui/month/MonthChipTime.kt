@@ -7,7 +7,6 @@ import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.common.formatTimeOfDay
 import de.jeanlucmakiola.calendula.ui.common.rememberInlineTimeWidth
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import java.util.Locale
 
 /**
@@ -23,8 +22,7 @@ internal fun monthChipTime(
     locale: Locale,
 ): String? {
     if (event.isAllDay || continuesLeft) return null
-    val start = event.start.toLocalDateTime(zone).time
-    return formatTimeOfDay(start.hour, start.minute, is24Hour, locale)
+    return formatTimeOfDay(event.start, zone, is24Hour, locale)
 }
 
 /** The narrowest chip that may show a time — the text it needs, plus its chrome. */

@@ -1,9 +1,9 @@
 package de.jeanlucmakiola.calendula.domain.ics
 
 import de.jeanlucmakiola.calendula.domain.EventForm
-import kotlinx.datetime.LocalDate
-import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.LocalTime
+import de.jeanlucmakiola.calendula.domain.allDayFormTimes
+import de.jeanlucmakiola.calendula.domain.normalizedRrule
+import de.jeanlucmakiola.calendula.domain.toFormTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 
@@ -21,12 +21,9 @@ import kotlinx.datetime.toLocalDateTime
  */
 fun ParsedIcsEvent.toEventForm(zone: TimeZone): EventForm {
     val (start, end) = if (isAllDay) {
-        val startDate = this.start.toLocalDateTime(TimeZone.UTC).date
-        val endExclusive = this.end.toLocalDateTime(TimeZone.UTC).date
-        val endDate = maxOf(startDate, LocalDate.fromEpochDays(endExclusive.toEpochDays() - 1))
-        LocalDateTime(startDate, LocalTime(9, 0)) to LocalDateTime(endDate, LocalTime(10, 0))
+        allDayFormTimes(this.start.toLocalDateTime(TimeZone.UTC).date, this.end.toLocalDateTime(TimeZone.UTC).date)
     } else {
-        this.start.toLocalDateTime(zone) to this.end.toLocalDateTime(zone)
+        this.start.toFormTime(zone) to this.end.toFormTime(zone)
     }
     return EventForm(
         calendarId = null,
@@ -38,6 +35,6 @@ fun ParsedIcsEvent.toEventForm(zone: TimeZone): EventForm {
         description = description.orEmpty(),
         reminders = semanticReminderMinutes(),
         availability = availability,
-        rrule = recurrenceRule?.removePrefix("RRULE:")?.takeIf { it.isNotBlank() },
+        rrule = recurrenceRule.normalizedRrule(),
     )
 }

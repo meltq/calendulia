@@ -15,9 +15,7 @@ import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.Reminder
 import de.jeanlucmakiola.calendula.domain.ReminderMethod
 import de.jeanlucmakiola.calendula.domain.ics.parseRfc2445DurationMillis
-import java.time.Instant
 import java.time.ZoneId
-import java.time.ZoneOffset
 
 private const val TAG = "EventDetailMapper"
 
@@ -48,11 +46,8 @@ internal fun ColumnReader.toEventDetailCore(
     // — the same trap as the pre-1970 DTSTART bug above (issue #34): it would
     // surface as the generic error screen with no way to open the event and fix
     // it. Clamp to a zero-length event instead (matching SearchMapper).
-    val end = if (isNull(EventDetailProjection.IDX_DTEND)) {
-        begin + parseRfc2445DurationMillis(getString(EventDetailProjection.IDX_DURATION))
-    } else {
-        getLong(EventDetailProjection.IDX_DTEND).coerceAtLeast(begin)
-    }
+    val end = getLongOrNull(EventDetailProjection.IDX_DTEND)?.coerceAtLeast(begin)
+        ?: (begin + parseRfc2445DurationMillis(getString(EventDetailProjection.IDX_DURATION)))
 
     // Kept raw (no untitled fallback): the detail screen substitutes its own
     // localized placeholder, and the edit form must prefill the true value.
@@ -61,11 +56,7 @@ internal fun ColumnReader.toEventDetailCore(
     // The event's own colour (null = inherits the calendar's) is kept apart
     // from the resolved display colour: the edit form needs to tell the two
     // cases apart, while the instance carries the calendar fallback for display.
-    val eventColor = if (isNull(EventDetailProjection.IDX_EVENT_COLOR)) {
-        null
-    } else {
-        getInt(EventDetailProjection.IDX_EVENT_COLOR)
-    }
+    val eventColor = getIntOrNull(EventDetailProjection.IDX_EVENT_COLOR)
     val eventColorKey = getString(EventDetailProjection.IDX_EVENT_COLOR_KEY)
     val color = eventColor ?: getInt(EventDetailProjection.IDX_CALENDAR_COLOR)
 
@@ -88,7 +79,7 @@ internal fun ColumnReader.toEventDetailCore(
     // and detail screen speak. DTSTART is UTC midnight for all-day events, so the
     // event's date is its UTC date.
     val displayReminders = if (isAllDay) {
-        val startDate = Instant.ofEpochMilli(begin).atZone(ZoneOffset.UTC).toLocalDate()
+        val startDate = utcDate(begin)
         val zone = ZoneId.systemDefault()
         reminders.map {
             it.copy(
@@ -101,14 +92,6 @@ internal fun ColumnReader.toEventDetailCore(
         reminders
     }
 
-    // STATUS shares its 0 value with STATUS_TENTATIVE, so a missing column must
-    // be distinguished from a present 0 — an absent status means "just confirmed".
-    val status = if (isNull(EventDetailProjection.IDX_STATUS)) {
-        EventStatus.Confirmed
-    } else {
-        mapEventStatus(getInt(EventDetailProjection.IDX_STATUS))
-    }
-
     return EventDetail(
         instance = instance,
         description = getString(EventDetailProjection.IDX_DESCRIPTION),
@@ -116,7 +99,7 @@ internal fun ColumnReader.toEventDetailCore(
         attendees = attendees,
         rrule = getString(EventDetailProjection.IDX_RRULE),
         reminders = displayReminders,
-        status = status,
+        status = eventStatus(EventDetailProjection.IDX_STATUS),
         // BUSY and DEFAULT are both 0, so a null column folds into the same
         // default these mappers already return — no isNull guard needed.
         availability = mapAvailability(getInt(EventDetailProjection.IDX_AVAILABILITY)),

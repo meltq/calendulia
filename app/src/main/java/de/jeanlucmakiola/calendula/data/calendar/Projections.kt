@@ -1,6 +1,15 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
+import android.content.ContentUris
+import android.net.Uri
 import android.provider.CalendarContract
+
+/** The `Instances` table over the window [beginMillis]..[endMillis]. */
+internal fun instancesUri(beginMillis: Long, endMillis: Long): Uri =
+    CalendarContract.Instances.CONTENT_URI.buildUpon().apply {
+        ContentUris.appendId(this, beginMillis)
+        ContentUris.appendId(this, endMillis)
+    }.build()
 
 internal object CalendarProjection {
     val COLUMNS: Array<String> = arrayOf(
@@ -251,40 +260,26 @@ internal object MoveMasterProjection {
 
 /**
  * The exception rows of a recurring series (`ORIGINAL_ID` = the series), read to
- * replay them against a moved copy (see [ExceptionRowSnapshot]). Both modified
+ * carry them over to a moved copy (see [ExceptionRowSnapshot]). Both modified
  * occurrences and cancellations (`STATUS_CANCELED`) are read; the query filters
- * `DELETED = 0` so provider tombstones aren't replayed.
+ * `DELETED = 0` so provider tombstones aren't carried over.
  */
 internal object ExceptionProjection {
     val COLUMNS: Array<String> = arrayOf(
         CalendarContract.Events._ID,
         CalendarContract.Events.ORIGINAL_INSTANCE_TIME,
         CalendarContract.Events.STATUS,
-        CalendarContract.Events.TITLE,
-        CalendarContract.Events.ALL_DAY,
         CalendarContract.Events.DTSTART,
         CalendarContract.Events.DTEND,
         CalendarContract.Events.DURATION,
-        CalendarContract.Events.EVENT_TIMEZONE,
-        CalendarContract.Events.AVAILABILITY,
-        CalendarContract.Events.ACCESS_LEVEL,
-        CalendarContract.Events.EVENT_LOCATION,
-        CalendarContract.Events.DESCRIPTION,
     )
 
     const val IDX_ID = 0
     const val IDX_ORIGINAL_INSTANCE_TIME = 1
     const val IDX_STATUS = 2
-    const val IDX_TITLE = 3
-    const val IDX_ALL_DAY = 4
-    const val IDX_DTSTART = 5
-    const val IDX_DTEND = 6
-    const val IDX_DURATION = 7
-    const val IDX_EVENT_TIMEZONE = 8
-    const val IDX_AVAILABILITY = 9
-    const val IDX_ACCESS_LEVEL = 10
-    const val IDX_LOCATION = 11
-    const val IDX_DESCRIPTION = 12
+    const val IDX_DTSTART = 3
+    const val IDX_DTEND = 4
+    const val IDX_DURATION = 5
 }
 
 internal object AttendeeProjection {

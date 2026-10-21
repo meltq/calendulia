@@ -2,7 +2,6 @@ package de.jeanlucmakiola.calendula.data.calendar
 
 import de.jeanlucmakiola.floret.time.toKotlinInstantFromEpochMillis
 import de.jeanlucmakiola.calendula.domain.EventInstance
-import de.jeanlucmakiola.calendula.domain.ics.parseRfc2445DurationMillis
 
 /**
  * Map an Events-table row (a search hit) to an [EventInstance]. Unlike the
@@ -16,17 +15,11 @@ internal fun ColumnReader.toSearchResult(): EventInstance? {
     // long-running birthdays/anniversaries still surface in search.
     if (isNull(SearchProjection.IDX_DTSTART)) return null
     val dtStart = getLong(SearchProjection.IDX_DTSTART)
-    val end = when {
-        !isNull(SearchProjection.IDX_DTEND) -> getLong(SearchProjection.IDX_DTEND)
-        else -> dtStart + parseRfc2445DurationMillis(getString(SearchProjection.IDX_DURATION))
-    }.coerceAtLeast(dtStart)
+    val end = endMillis(dtStart, SearchProjection.IDX_DTEND, SearchProjection.IDX_DURATION)
+        .coerceAtLeast(dtStart)
 
     val title = getString(SearchProjection.IDX_TITLE).orEmpty()
-    val color = if (isNull(SearchProjection.IDX_EVENT_COLOR)) {
-        getInt(SearchProjection.IDX_CALENDAR_COLOR)
-    } else {
-        getInt(SearchProjection.IDX_EVENT_COLOR)
-    }
+    val color = getIntOrNull(SearchProjection.IDX_EVENT_COLOR) ?: getInt(SearchProjection.IDX_CALENDAR_COLOR)
     val eventId = getLong(SearchProjection.IDX_ID)
 
     return EventInstance(

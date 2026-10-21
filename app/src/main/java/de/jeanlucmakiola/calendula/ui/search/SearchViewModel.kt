@@ -4,17 +4,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.EventSearch
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
+import de.jeanlucmakiola.calendula.ui.common.deleteEvent
 import de.jeanlucmakiola.calendula.domain.SearchResults
+import de.jeanlucmakiola.floret.android.stateWhileSubscribed
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
@@ -25,7 +26,6 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.mapLatest
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.datetime.TimeZone
@@ -120,7 +120,7 @@ class SearchViewModel @Inject constructor(
         }
         .catch { emit(SearchUiState.Idle) }
         .flowOn(io)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000L), SearchUiState.Idle)
+        .stateWhileSubscribed(viewModelScope, SearchUiState.Idle)
 
     fun setQuery(value: String) {
         if (value != _query.value) _selection.value = emptySet()
@@ -197,15 +197,11 @@ class SearchViewModel @Inject constructor(
     }
 
     private suspend fun deleteOne(event: EventInstance, scope: RecurringWriteScope) {
-        val begin = event.start.toEpochMilliseconds()
-        when {
-            !event.isRecurring -> repository.deleteEvent(event.eventId)
-            scope == RecurringWriteScope.ThisEvent ->
-                repository.deleteOccurrence(event.eventId, begin)
-            scope == RecurringWriteScope.ThisAndFollowing ->
-                repository.deleteEventFromOccurrence(event.eventId, begin)
-            else -> repository.deleteEvent(event.eventId)
-        }
+        repository.deleteEvent(
+            eventId = event.eventId,
+            beginMillis = event.start.toEpochMilliseconds(),
+            scope = if (event.isRecurring) scope else RecurringWriteScope.AllEvents,
+        )
     }
 
     private suspend fun readOnlyCalendarIds(): Set<Long> =

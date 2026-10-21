@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.ui.onboarding
 
 import de.jeanlucmakiola.floret.components.BenefitRow
+import de.jeanlucmakiola.floret.components.OnboardingPrimaryButton
 import de.jeanlucmakiola.floret.components.OnboardingScaffold
 import de.jeanlucmakiola.floret.components.OnboardingSpace
 
@@ -14,15 +15,11 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.NotificationsActive
 import androidx.compose.material.icons.filled.ContentCopy
-import androidx.compose.material3.Button
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 
 /**
@@ -53,7 +50,8 @@ fun ReminderStep(
         topSpacing = OnboardingSpace.lg,
         hero = { IconHero(Icons.Filled.NotificationsActive) },
         actions = {
-            Button(
+            OnboardingPrimaryButton(
+                text = stringResource(R.string.reminder_onboarding_enable_button),
                 onClick = {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                         launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
@@ -61,13 +59,7 @@ fun ReminderStep(
                         onFinished(true)
                     }
                 },
-                modifier = Modifier.fillMaxWidth().height(56.dp),
-            ) {
-                Text(
-                    text = stringResource(R.string.reminder_onboarding_enable_button),
-                    style = MaterialTheme.typography.titleMedium,
-                )
-            }
+            )
             TextButton(
                 onClick = { onFinished(false) },
                 modifier = Modifier.fillMaxWidth(),
@@ -75,20 +67,9 @@ fun ReminderStep(
                 Text(stringResource(R.string.reminder_onboarding_skip_button))
             }
         },
+        headline = stringResource(R.string.reminder_onboarding_title),
+        supporting = stringResource(R.string.reminder_onboarding_body),
     ) {
-        Text(
-            text = stringResource(R.string.reminder_onboarding_title),
-            style = MaterialTheme.typography.headlineMedium,
-            textAlign = TextAlign.Center,
-        )
-        Spacer(Modifier.height(12.dp))
-        Text(
-            text = stringResource(R.string.reminder_onboarding_body),
-            style = MaterialTheme.typography.bodyLarge,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            textAlign = TextAlign.Center,
-        )
-
         Spacer(Modifier.height(OnboardingSpace.lg))
 
         BenefitRow(

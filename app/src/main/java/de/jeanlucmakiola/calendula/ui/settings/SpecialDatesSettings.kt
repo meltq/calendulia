@@ -1,7 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.settings
 
 import android.Manifest
-import android.content.Context
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -14,7 +13,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -34,9 +32,12 @@ import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.GroupedSwitchRow
 import de.jeanlucmakiola.floret.components.InlineTextField
 import de.jeanlucmakiola.floret.components.Position
+import de.jeanlucmakiola.floret.locale.relativeTimeAgo
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
+import de.jeanlucmakiola.floret.reminders.minutesOrEmpty
 
 // ---------------------------------------------------------------------------
 // Contact special dates (issue #15)
@@ -106,38 +107,26 @@ internal fun SpecialDatesScreen(
             Spacer(Modifier.height(16.dp))
         }
 
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_special_dates_enable),
+            checked = state.enabled,
+            onCheckedChange = { want -> if (want) requestOrEnable() else confirmDisableAll = true },
             summary = stringResource(R.string.settings_special_dates_enable_hint),
             position = Position.Alone,
-            trailing = {
-                Switch(
-                    checked = state.enabled,
-                    onCheckedChange = { want -> if (want) requestOrEnable() else confirmDisableAll = true },
-                )
-            },
-            onClick = { if (state.enabled) confirmDisableAll = true else requestOrEnable() },
         )
 
         if (state.enabled) {
             SpecialDateType.entries.forEachIndexed { index, type ->
                 Spacer(Modifier.height(if (index == 0) 24.dp else 16.dp))
                 val on = type in state.types
-                GroupedRow(
+                GroupedSwitchRow(
                     title = stringResource(specialDateTypeLabel(type)),
+                    checked = on,
+                    onCheckedChange = { want ->
+                        if (want) viewModel.setSpecialDateTypeEnabled(type, true)
+                        else confirmDisableType = type
+                    },
                     position = if (on) Position.Top else Position.Alone,
-                    trailing = {
-                        Switch(
-                            checked = on,
-                            onCheckedChange = { want ->
-                                if (want) viewModel.setSpecialDateTypeEnabled(type, true)
-                                else confirmDisableType = type
-                            },
-                        )
-                    },
-                    onClick = {
-                        if (on) confirmDisableType = type else viewModel.setSpecialDateTypeEnabled(type, true)
-                    },
                 )
                 if (on) {
                     GroupedRow(
@@ -148,7 +137,7 @@ internal fun SpecialDatesScreen(
                     )
                     GroupedRow(
                         title = stringResource(R.string.settings_special_dates_reminders),
-                        summary = reminderChoiceLabel(specialDatesReminderMinutes(state.reminderChoices[type])),
+                        summary = reminderChoiceLabel(state.reminderChoices[type]?.minutesOrEmpty().orEmpty()),
                         position = Position.Bottom,
                         onClick = { reminderPickerType = type },
                     )
@@ -156,21 +145,16 @@ internal fun SpecialDatesScreen(
             }
 
             Spacer(Modifier.height(24.dp))
-            GroupedRow(
+            GroupedSwitchRow(
                 title = stringResource(R.string.settings_special_dates_show_year),
+                checked = state.showYear,
+                onCheckedChange = viewModel::setSpecialDatesShowYear,
                 summary = stringResource(R.string.settings_special_dates_show_year_hint),
                 position = Position.Top,
-                trailing = {
-                    Switch(
-                        checked = state.showYear,
-                        onCheckedChange = viewModel::setSpecialDatesShowYear,
-                    )
-                },
-                onClick = { viewModel.setSpecialDatesShowYear(!state.showYear) },
             )
             GroupedRow(
                 title = stringResource(R.string.settings_special_dates_sync_now),
-                summary = specialDatesLastRunLabel(context, state.lastRun),
+                summary = specialDatesLastRunLabel(state.lastRun),
                 position = Position.Bottom,
                 onClick = viewModel::syncSpecialDatesNow,
             )
@@ -222,10 +206,6 @@ internal fun SpecialDatesScreen(
         )
     }
 }
-
-/** The lead-time list backing a managed calendar's reminder choice (for the summary label). */
-private fun specialDatesReminderMinutes(choice: ReminderOverride?): List<Int> =
-    (choice as? ReminderOverride.Minutes)?.minutes.orEmpty()
 
 @Composable
 private fun SpecialDatesDisableDialog(
@@ -305,16 +285,12 @@ private fun specialDateTypeLabel(type: SpecialDateType): Int = when (type) {
 }
 
 @Composable
-private fun specialDatesLastRunLabel(context: Context, lastRun: Long): String =
+private fun specialDatesLastRunLabel(lastRun: Long): String =
     if (lastRun <= 0L) {
         stringResource(R.string.settings_special_dates_never_synced)
     } else {
         stringResource(
             R.string.settings_special_dates_last_synced,
-            android.text.format.DateUtils.getRelativeTimeSpanString(
-                lastRun,
-                System.currentTimeMillis(),
-                android.text.format.DateUtils.MINUTE_IN_MILLIS,
-            ).toString(),
+            relativeTimeAgo(lastRun),
         )
     }

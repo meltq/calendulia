@@ -6,6 +6,7 @@ import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import android.provider.CalendarContract
+import android.provider.OpenableColumns
 import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -25,12 +26,19 @@ import androidx.core.content.IntentCompat
 import androidx.core.net.toUri
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
-import de.jeanlucmakiola.calendula.data.prefs.ThemeMode
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.floret.prefs.ThemeMode
+import de.jeanlucmakiola.floret.prefs.isDark
+import de.jeanlucmakiola.floret.prefs.isPureBlack
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.buildInsertEventForm
+import de.jeanlucmakiola.calendula.domain.sharedTextOrNull
+import de.jeanlucmakiola.calendula.ui.ExternalRequests
+import de.jeanlucmakiola.calendula.ui.InsertRequest
 import de.jeanlucmakiola.calendula.ui.RootScreen
 import de.jeanlucmakiola.calendula.ui.common.LocalShowHourGrid
 import de.jeanlucmakiola.calendula.ui.common.LocalMultiDayCount
@@ -50,8 +58,13 @@ import de.jeanlucmakiola.floret.crash.CrashReportDialog
 import de.jeanlucmakiola.floret.crash.CrashReporter
 import de.jeanlucmakiola.floret.crash.submitCrashReport
 import de.jeanlucmakiola.calendula.ui.theme.CalendulaTheme
+import de.jeanlucmakiola.calendula.ui.theme.WindowThemeCache
+import de.jeanlucmakiola.calendula.ui.theme.windowBackgroundRes
 import de.jeanlucmakiola.calendula.ui.theme.calendulaTypography
 import de.jeanlucmakiola.calendula.ui.theme.resolveFontFamily
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
@@ -59,41 +72,31 @@ import kotlin.time.Clock
 import kotlin.time.Instant
 import javax.inject.Inject
 
-/** A prefilled create form from an external launch, with the source it came from. */
-private data class InsertRequest(val form: EventForm, val source: ImportSource)
-
 @AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
 
     @Inject lateinit var calendarRepository: CalendarRepository
+    @Inject lateinit var settingsPrefs: SettingsPrefs
 
     // Which of light/dark the system bars are drawn for. The styles installed
     // in onCreate read this field live, so androidx's config-change replay
     // picks up the in-app override instead of the night resource qualifier.
     private var systemBarsDark = false
 
-    // The occurrence a reminder notification was tapped for (eventId, begin,
-    // end — the detail screen's key shape). singleTop + onNewIntent route a
-    // tap into the running activity; CalendarHost consumes and clears it.
-    private var requestedDetailKey by mutableStateOf<LongArray?>(null)
+    private val requests = ExternalRequests(
+        onExternalFormClosed = {
+            insertFormOpen = false
+            if (launchedForInsert) finish()
+        },
+    )
 
-    // A navigation a home-screen widget asked for (open a date / start a
-    // create). Consumed once by CalendarHost, same pattern as the detail key.
-    private var requestedNav by mutableStateOf<WidgetNavRequest?>(null)
+    // Whether such a form is still open. Only then does a recreation re-read the
+    // intent to bring it back; a saved or dismissed one stays closed.
+    private var insertFormOpen = false
 
-    // An .ics file opened/shared into the app (ACTION_VIEW/SEND). Consumed once
-    // by CalendarHost's import flow.
-    private var requestedImportUri by mutableStateOf<Uri?>(null)
-
-    // A prefilled new-event form from an external ACTION_INSERT launch (another
-    // app/widget asking us to create an event, issue #30). Consumed once by
-    // CalendarHost, which opens it in the create form for review.
-    private var requestedInsert by mutableStateOf<InsertRequest?>(null)
-
-    // An external "edit this event" (ACTION_EDIT on content://.../events/<id>):
-    // opens the occurrence in the edit form. Same occurrence-key shape as the
-    // detail channel; consumed once by CalendarHost.
-    private var requestedEditKey by mutableStateOf<LongArray?>(null)
+    // Started just for an external create, so closing its form returns to the
+    // app that asked instead of leaving the calendar on top of it.
+    private var launchedForInsert = false
 
     // A captured crash report awaiting the user's decision, surfaced as a dialog
     // over the calendar on the next launch (the single-crash path). A startup
@@ -115,9 +118,28 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        systemBarsDark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
+        val systemDark = resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK ==
             Configuration.UI_MODE_NIGHT_YES
+        // The stored theme only arrives after the first frame, so a Light, Dark
+        // or Black override starts from its last mirrored copy: the matching
+        // backdrop and bar icons instead of the night qualifier's (#181).
+        val cachedTheme = WindowThemeCache.read(this)
+        cachedTheme?.windowBackgroundRes()?.let { window.setBackgroundDrawableResource(it) }
+        systemBarsDark = (cachedTheme ?: ThemeMode.SYSTEM).isDark(systemDark)
         applyEdgeToEdge()
+        val appearance = MutableStateFlow(
+            Appearance(
+                themeMode = cachedTheme ?: ThemeMode.SYSTEM,
+                dynamicColor = WindowThemeCache.readDynamicColor(this),
+            ),
+        )
+        lifecycleScope.launch {
+            combine(settingsPrefs.themeMode, settingsPrefs.dynamicColor, ::Appearance).collect { stored ->
+                WindowThemeCache.write(this@MainActivity, stored.themeMode, stored.dynamicColor ?: true)
+                window.setBackgroundDrawableResource(stored.themeMode.windowBackgroundRes() ?: R.color.window_background)
+                appearance.value = stored
+            }
+        }
         // Android hands the intent that started the task back to onCreate every
         // time the activity is recreated — on a rotation, or on a restart after
         // the system reclaimed the process. Re-running a launch that opens one
@@ -128,27 +150,33 @@ class MainActivity : AppCompatActivity() {
         //
         // Only those channels are held back. An .ics import or a prefilled
         // create form keeps no saved state of its own, so re-reading the intent
-        // is what carries one through a recreation.
+        // is what carries one through a recreation — the create form only while
+        // it's still open.
         val replaying = savedInstanceState != null || intent.isRelaunch()
+        requests.replayed = savedInstanceState != null
         if (!replaying) {
-            requestedDetailKey = intent.detailKeyOrNull() ?: intent.viewEventKeyOrNull()
-            requestedEditKey = intent.editEventKeyOrNull()
+            requests.detailKey = intent.detailKeyOrNull() ?: intent.viewEventKeyOrNull()
+            requests.editKey = intent.editEventKeyOrNull()
         }
-        requestedNav = intent.navRequestOrNull()
+        requests.nav = intent.navRequestOrNull()
             ?.takeUnless { replaying && it is WidgetNavRequest.OpenEvent }
-        requestedImportUri = intent.importUriOrNull()
-        requestedInsert = intent.insertRequestOrNull()
+        requests.importUri = intent.importUriOrNull()
+        val insertOpenBefore = savedInstanceState?.getBoolean(KEY_INSERT_FORM_OPEN) == true
+        requests.insert = intent.createRequestOrNull()?.takeIf { !replaying || insertOpenBefore }
+        insertFormOpen = requests.insert != null
+        launchedForInsert = savedInstanceState?.getBoolean(KEY_LAUNCHED_FOR_INSERT)
+            ?: (requests.insert != null)
         if (CrashReporter.shouldPrompt(this)) pendingCrashReport = CrashReporter.pendingReport(this)
         setContent {
             // One activity-scoped SettingsViewModel drives both the theme here
             // and the Settings screen, so a theme change applies app-wide at once.
             val settingsViewModel: SettingsViewModel = hiltViewModel()
             val settings by settingsViewModel.state.collectAsStateWithLifecycle()
-            val darkTheme = when (settings.themeMode) {
-                ThemeMode.SYSTEM -> isSystemInDarkTheme()
-                ThemeMode.LIGHT -> false
-                ThemeMode.DARK -> true
-            }
+            // Seeded from the cache, so the first frame doesn't draw the default
+            // theme and palette before the stored choices arrive.
+            val shownAppearance by appearance.collectAsStateWithLifecycle()
+            val themeMode = shownAppearance.themeMode
+            val darkTheme = themeMode.isDark(isSystemInDarkTheme())
             // onCreate can only see the night resource qualifier, not the in-app
             // override — re-apply from the resolved theme so the bar icons follow
             // the app's light/dark choice.
@@ -186,7 +214,8 @@ class MainActivity : AppCompatActivity() {
             }
             CalendulaTheme(
                 darkTheme = darkTheme,
-                dynamicColor = settings.dynamicColor,
+                dynamicColor = shownAppearance.dynamicColor ?: settings.dynamicColor,
+                pureBlack = themeMode.isPureBlack,
                 typography = typography,
             ) {
                 Box(modifier = Modifier.fillMaxSize()) {
@@ -199,17 +228,7 @@ class MainActivity : AppCompatActivity() {
                     ) {
                         RootScreen(
                             modifier = Modifier.fillMaxSize(),
-                            requestedDetailKey = requestedDetailKey,
-                            onDetailKeyConsumed = { requestedDetailKey = null },
-                            widgetNavRequest = requestedNav,
-                            onWidgetNavConsumed = { requestedNav = null },
-                            requestedImportUri = requestedImportUri,
-                            onImportConsumed = { requestedImportUri = null },
-                            requestedInsertForm = requestedInsert?.form,
-                            requestedInsertSource = requestedInsert?.source ?: ImportSource.Insert,
-                            onInsertConsumed = { requestedInsert = null },
-                            requestedEditKey = requestedEditKey,
-                            onEditKeyConsumed = { requestedEditKey = null },
+                            requests = requests,
                         )
                     }
                     // A persistent corner marker so a debug build is never
@@ -261,13 +280,30 @@ class MainActivity : AppCompatActivity() {
         CrashReporter.markHealthy(this)
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(KEY_INSERT_FORM_OPEN, insertFormOpen)
+        outState.putBoolean(KEY_LAUNCHED_FOR_INSERT, launchedForInsert)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
-        (intent.detailKeyOrNull() ?: intent.viewEventKeyOrNull())?.let { requestedDetailKey = it }
-        intent.navRequestOrNull()?.let { requestedNav = it }
-        intent.importUriOrNull()?.let { requestedImportUri = it }
-        intent.insertRequestOrNull()?.let { requestedInsert = it }
-        intent.editEventKeyOrNull()?.let { requestedEditKey = it }
+        requests.replayed = false
+        (intent.detailKeyOrNull() ?: intent.viewEventKeyOrNull())?.let { requests.detailKey = it }
+        intent.navRequestOrNull()?.let { requests.nav = it }
+        intent.importUriOrNull()?.let { requests.importUri = it }
+        intent.createRequestOrNull()?.let {
+            requests.insert = it
+            insertFormOpen = true
+        }
+        intent.editEventKeyOrNull()?.let { requests.editKey = it }
+        // The user moved on into the app, so closing the create form no longer
+        // hands control back to the app that started it.
+        if (requests.detailKey != null || requests.nav != null || requests.importUri != null ||
+            requests.editKey != null
+        ) {
+            launchedForInsert = false
+        }
     }
 
     /**
@@ -288,7 +324,10 @@ class MainActivity : AppCompatActivity() {
     private fun Intent.importUriOrNull(): Uri? {
         val uri = when (action) {
             Intent.ACTION_VIEW -> data
-            Intent.ACTION_SEND -> IntentCompat.getParcelableExtra(this, Intent.EXTRA_STREAM, Uri::class.java)
+            // Shared text is a create (#306); a text/plain file is imported only
+            // when it is calendar data, e.g. an .ics attachment labelled text/plain.
+            Intent.ACTION_SEND -> sharedStreamOrNull()
+                ?.takeUnless { type == SHARED_TEXT_TYPE && !it.isCalendarFile() }
             else -> null
         } ?: return null
         // The calendar "view time" Uri (a date tap) is also ACTION_VIEW/content;
@@ -331,6 +370,53 @@ class MainActivity : AppCompatActivity() {
         // landing before the start — leaves the length to the setting.
         val namesEnd = beginMillis != null && endMillis != null && endMillis >= beginMillis
         return InsertRequest(form, if (namesEnd) ImportSource.Insert else ImportSource.InsertOpenEnded)
+    }
+
+    /** Any external request to create an event: shared text or an insert intent. */
+    private fun Intent.createRequestOrNull(): InsertRequest? = sharedTextRequestOrNull() ?: insertRequestOrNull()
+
+    /**
+     * Plain text shared into us (`ACTION_SEND`) or picked from a text-selection
+     * menu (`ACTION_PROCESS_TEXT`), as a new event at the default time (#306).
+     */
+    private fun Intent.sharedTextRequestOrNull(): InsertRequest? {
+        val shared = when (action) {
+            Intent.ACTION_SEND -> if (type == SHARED_TEXT_TYPE && sharedStreamOrNull()?.isCalendarFile() != true) {
+                sharedTextOrNull(
+                    subject = getCharSequenceExtra(Intent.EXTRA_SUBJECT)?.toString(),
+                    text = getCharSequenceExtra(Intent.EXTRA_TEXT)?.toString(),
+                )
+            } else {
+                null
+            }
+            Intent.ACTION_PROCESS_TEXT ->
+                sharedTextOrNull(subject = null, text = getCharSequenceExtra(Intent.EXTRA_PROCESS_TEXT)?.toString())
+            else -> null
+        } ?: return null
+        val form = buildInsertEventForm(
+            title = shared.title,
+            description = shared.description,
+            zone = TimeZone.currentSystemDefault(),
+            now = Clock.System.now(),
+        )
+        return InsertRequest(form, ImportSource.InsertOpenEnded)
+    }
+
+    private fun Intent.sharedStreamOrNull(): Uri? =
+        IntentCompat.getParcelableExtra(this, Intent.EXTRA_STREAM, Uri::class.java)
+
+    /** Whether a shared file is iCalendar/vCalendar data, by its resolved type or its name. */
+    private fun Uri.isCalendarFile(): Boolean {
+        val resolvedType = runCatching { contentResolver.getType(this) }.getOrNull()
+        if (resolvedType in CALENDAR_TYPES) return true
+        val name = when (scheme) {
+            "content" -> runCatching {
+                contentResolver.query(this, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
+            }.getOrNull()
+            else -> lastPathSegment
+        } ?: return false
+        return CALENDAR_EXTENSIONS.any { name.endsWith(it, ignoreCase = true) }
     }
 
     /** A Long extra's value, or null when the extra is absent. */
@@ -458,6 +544,11 @@ class MainActivity : AppCompatActivity() {
         // The calendar provider's authority/host. A date tap arrives as
         // ACTION_VIEW on content://com.android.calendar/time/<epochMillis>.
         private const val CALENDAR_PROVIDER_HOST = "com.android.calendar"
+        private const val SHARED_TEXT_TYPE = "text/plain"
+        private val CALENDAR_TYPES = setOf("text/calendar", "text/x-vcalendar", "application/ics")
+        private val CALENDAR_EXTENSIONS = listOf(".ics", ".vcs")
+        private const val KEY_INSERT_FORM_OPEN = "insert_form_open"
+        private const val KEY_LAUNCHED_FOR_INSERT = "launched_for_insert"
 
         private const val EXTRA_EVENT_ID = "de.jeanlucmakiola.calendula.extra.EVENT_ID"
         private const val EXTRA_BEGIN_MILLIS = "de.jeanlucmakiola.calendula.extra.BEGIN"
@@ -548,3 +639,6 @@ class MainActivity : AppCompatActivity() {
             }
     }
 }
+
+/** The theme choices the window needs before the settings screen's state loads. */
+private data class Appearance(val themeMode: ThemeMode, val dynamicColor: Boolean?)

@@ -1,30 +1,25 @@
 package de.jeanlucmakiola.calendula.ui.detail
 
 import android.content.ContextWrapper
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.data.calendar.CalendarRepositoryImpl
+import de.jeanlucmakiola.calendula.MainDispatcherExtension
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
-import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
-import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.data.time.FakeZoneSource
 import de.jeanlucmakiola.calendula.domain.CalendarSource
-import de.jeanlucmakiola.calendula.domain.EventDetail
-import de.jeanlucmakiola.calendula.domain.EventInstance
-import kotlinx.coroutines.CoroutineDispatcher
+import de.jeanlucmakiola.calendula.testDetail
+import de.jeanlucmakiola.calendula.testEvent
+import de.jeanlucmakiola.calendula.testPrefs
+import de.jeanlucmakiola.calendula.testRepository
+import de.jeanlucmakiola.calendula.testSettings
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.RegisterExtension
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.time.Instant
@@ -38,40 +33,31 @@ import kotlin.time.Instant
 @OptIn(ExperimentalCoroutinesApi::class)
 class EventDetailViewModelTest {
 
-    private val dispatcher = UnconfinedTestDispatcher()
-
-    @BeforeEach fun setUp() = Dispatchers.setMain(dispatcher)
-    @AfterEach fun tearDown() = Dispatchers.resetMain()
+    @JvmField @RegisterExtension
+    val mainDispatcher = MainDispatcherExtension()
+    private val dispatcher = mainDispatcher.dispatcher
 
     private val beginMillis = 1_781_164_800_000L
     private val endMillis = beginMillis + 3_600_000L
 
-    private fun detail(description: String?) = EventDetail(
-        instance = EventInstance(
-            instanceId = 42L, eventId = 42L, calendarId = 1L, title = "Standup",
+    private fun detail(description: String?) = testDetail(
+        instance = testEvent(
+            id = 42L, title = "Standup",
             start = Instant.fromEpochMilliseconds(beginMillis),
             end = Instant.fromEpochMilliseconds(endMillis),
-            isAllDay = false, color = 0xFF000000.toInt(), location = null,
+            color = 0xFF000000.toInt(),
         ),
-        description = description, organizer = null, attendees = emptyList(), rrule = null,
+        description = description,
     )
 
     private fun viewModel(tempDir: Path, fake: FakeCalendarDataSource): EventDetailViewModel {
-        val prefs = CalendarPrefs(
-            PreferenceDataStoreFactory.create(
-                scope = CoroutineScope(dispatcher),
-                produceFile = { tempDir.resolve("detail_prefs.preferences_pb").toFile() },
-            ),
+        val repo = testRepository(
+            fake, tempDir, dispatcher,
+            prefs = testPrefs(tempDir, CoroutineScope(dispatcher)),
+            settings = testSettings(tempDir, CoroutineScope(dispatcher)),
         )
-        val settings = SettingsPrefs(
-            PreferenceDataStoreFactory.create(
-                scope = CoroutineScope(dispatcher),
-                produceFile = { tempDir.resolve("detail_settings.preferences_pb").toFile() },
-            ),
-        )
-        val repo = CalendarRepositoryImpl(fake, prefs, settings, dispatcher as CoroutineDispatcher)
         // Only `shareUri()` touches the exporter, and nothing here shares.
-        return EventDetailViewModel(repo, IcsExporter(ContextWrapper(null)), dispatcher)
+        return EventDetailViewModel(repo, IcsExporter(ContextWrapper(null)), dispatcher, FakeZoneSource())
     }
 
     private fun fakeSource(description: () -> String?) = FakeCalendarDataSource().apply {

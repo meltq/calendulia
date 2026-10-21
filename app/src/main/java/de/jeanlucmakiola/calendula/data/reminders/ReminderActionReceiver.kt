@@ -6,11 +6,8 @@ import android.content.Intent
 import androidx.core.net.toUri
 import dagger.hilt.android.AndroidEntryPoint
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
+import de.jeanlucmakiola.floret.android.goAsync
 import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 /**
@@ -44,27 +41,17 @@ class ReminderActionReceiver : BroadcastReceiver() {
                 // Cancel now so the notification doesn't linger until the alarm;
                 // the snooze delay read is the only async work.
                 notifier.cancel(alert)
-                val pendingResult = goAsync()
-                CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-                    try {
-                        val minutes = settingsPrefs.snoozeMinutes.first()
-                        val triggerAt = System.currentTimeMillis() + minutes * 60_000L
-                        scheduler.schedule(alert, triggerAt)
-                    } finally {
-                        pendingResult.finish()
-                    }
+                goAsync {
+                    val minutes = settingsPrefs.snoozeMinutes.first()
+                    val triggerAt = System.currentTimeMillis() + minutes * 60_000L
+                    scheduler.schedule(alert, triggerAt)
                 }
             }
 
             ACTION_SHOW -> {
-                val pendingResult = goAsync()
-                CoroutineScope(SupervisorJob() + Dispatchers.IO).launch {
-                    try {
-                        if (settingsPrefs.remindersEnabled.first() && notifier.canPost()) {
-                            notifier.post(alert)
-                        }
-                    } finally {
-                        pendingResult.finish()
+                goAsync {
+                    if (settingsPrefs.remindersEnabled.first() && notifier.canPost()) {
+                        notifier.post(alert)
                     }
                 }
             }

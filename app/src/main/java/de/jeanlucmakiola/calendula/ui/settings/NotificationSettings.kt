@@ -3,7 +3,6 @@ package de.jeanlucmakiola.calendula.ui.settings
 import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
@@ -15,11 +14,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.ExpandLess
-import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Switch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -30,7 +26,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -42,13 +37,18 @@ import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.calendula.ui.common.durationLabel
+import de.jeanlucmakiola.calendula.ui.common.orUnnamed
+import de.jeanlucmakiola.floret.android.hasPermission
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
+import de.jeanlucmakiola.floret.components.ExpandIcon
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.GroupedSwitchRow
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.SelectedCheck
 import de.jeanlucmakiola.floret.identity.collapseExit
 import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
+import de.jeanlucmakiola.floret.reminders.minutesOrEmpty
 import de.jeanlucmakiola.floret.reminders.reminderOverrideFor
 import kotlinx.datetime.LocalTime
 
@@ -73,9 +73,7 @@ internal fun NotificationsScreen(
         viewModel.setRemindersEnabled(enabled)
         val needsPermission = enabled &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(
-                context, Manifest.permission.POST_NOTIFICATIONS,
-            ) != PackageManager.PERMISSION_GRANTED
+            !context.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
         if (needsPermission) {
             launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
@@ -95,14 +93,12 @@ internal fun NotificationsScreen(
         predictiveBack = true,
         visible = visible,
     ) {
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_reminders),
+            checked = state.remindersEnabled,
+            onCheckedChange = toggleReminders,
             summary = stringResource(R.string.settings_reminders_hint),
             position = Position.Top,
-            trailing = {
-                Switch(checked = state.remindersEnabled, onCheckedChange = toggleReminders)
-            },
-            onClick = { toggleReminders(!state.remindersEnabled) },
         )
         GroupedRow(
             title = stringResource(R.string.settings_default_reminder),
@@ -162,13 +158,7 @@ internal fun NotificationsScreen(
                 title = stringResource(R.string.settings_calendar_reminders_title),
                 summary = stringResource(R.string.settings_calendar_reminders_hint),
                 position = Position.Alone,
-                trailing = {
-                    Icon(
-                        imageVector = if (calendarSectionExpanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
+                trailing = { ExpandIcon(calendarSectionExpanded) },
                 onClick = { calendarSectionExpanded = !calendarSectionExpanded },
             )
             AnimatedVisibility(
@@ -183,7 +173,7 @@ internal fun NotificationsScreen(
                         // own section — link there instead.
                         if (calendar.id in state.managedCalendarIds) {
                             GroupedRow(
-                                title = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
+                                title = calendar.displayName.orUnnamed(),
                                 summary = stringResource(R.string.settings_calendar_reminders_managed_hint),
                                 position = Position.Alone,
                                 leading = { CalendarColorChip(calendar.color) },
@@ -200,16 +190,10 @@ internal fun NotificationsScreen(
                         }
                         val expanded = calendar.id in expandedCalendars
                         GroupedRow(
-                            title = calendar.displayName.ifBlank { stringResource(R.string.calendar_unnamed) },
+                            title = calendar.displayName.orUnnamed(),
                             position = if (expanded) Position.Top else Position.Alone,
                             leading = { CalendarColorChip(calendar.color) },
-                            trailing = {
-                                Icon(
-                                    imageVector = if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                                    contentDescription = null,
-                                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                )
-                            },
+                            trailing = { ExpandIcon(expanded) },
                             onClick = {
                                 expandedCalendars = if (expanded) {
                                     expandedCalendars - calendar.id
@@ -263,7 +247,7 @@ internal fun NotificationsScreen(
             presets = REMINDER_PRESETS,
             selected = state.defaultReminderMinutes.toReminderChoice(),
             allowInherit = false,
-            onSelect = { viewModel.setDefaultReminderMinutes(it.toMinutesList()) },
+            onSelect = { viewModel.setDefaultReminderMinutes(it.minutesOrEmpty()) },
             onDismiss = { showDefaultReminder = false },
         )
     }
@@ -273,7 +257,7 @@ internal fun NotificationsScreen(
             presets = ALLDAY_REMINDER_PRESETS,
             selected = state.defaultAllDayReminderMinutes.toReminderChoice(),
             allowInherit = false,
-            onSelect = { viewModel.setDefaultAllDayReminderMinutes(it.toMinutesList()) },
+            onSelect = { viewModel.setDefaultAllDayReminderMinutes(it.minutesOrEmpty()) },
             onDismiss = { showAllDayReminder = false },
             leadTimeSummary = allDayFiringTimeSummary(state.allDayReminderTimeMinutes),
         )
@@ -331,10 +315,6 @@ private data class OverrideTarget(val calendarId: Long, val isAllDay: Boolean)
 /** A global default (empty = none) as a picker choice for selection highlighting. */
 private fun List<Int>.toReminderChoice(): ReminderOverride =
     if (isEmpty()) ReminderOverride.None else ReminderOverride.Minutes(this)
-
-/** A picked choice as global-default minutes (Inherit isn't offered for globals). */
-private fun ReminderOverride.toMinutesList(): List<Int> =
-    (this as? ReminderOverride.Minutes)?.minutes ?: emptyList()
 
 /** Row summary for a calendar: its override, or the inherited global default. */
 @Composable

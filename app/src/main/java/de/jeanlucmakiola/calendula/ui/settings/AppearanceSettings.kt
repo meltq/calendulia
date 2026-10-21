@@ -49,20 +49,20 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.appname.LauncherName
-import de.jeanlucmakiola.calendula.data.prefs.ThemeMode
+import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.domain.FontRole
-import de.jeanlucmakiola.calendula.ui.common.PickerDescription
 import de.jeanlucmakiola.calendula.ui.theme.BundledFont
 import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
 import de.jeanlucmakiola.calendula.ui.theme.FONT_SYSTEM_TOKEN
 import de.jeanlucmakiola.calendula.ui.theme.resolveFontFamily
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.FullScreenPicker
+import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.GroupedSwitchRow
 import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
-import de.jeanlucmakiola.floret.components.SelectedCheck
 import de.jeanlucmakiola.floret.components.positionOf
 
 /**
@@ -127,17 +127,12 @@ internal fun AppearanceScreen(
                 null
             },
         )
-        GroupedRow(
+        GroupedSwitchRow(
             title = stringResource(R.string.settings_soften_colors),
+            checked = state.softenColors,
+            onCheckedChange = viewModel::setSoftenColors,
             summary = stringResource(R.string.settings_soften_colors_summary),
             position = Position.Bottom,
-            trailing = {
-                Switch(
-                    checked = state.softenColors,
-                    onCheckedChange = viewModel::setSoftenColors,
-                )
-            },
-            onClick = { viewModel.setSoftenColors(!state.softenColors) },
         )
 
         Spacer(Modifier.height(16.dp))
@@ -209,19 +204,19 @@ internal fun AppearanceScreen(
         val systemDark = isSystemInDarkTheme()
         OptionPicker(
             title = stringResource(R.string.settings_theme),
-            header = { PickerDescription(stringResource(R.string.settings_theme_hint)) },
+            header = { GroupedHint(stringResource(R.string.settings_theme_hint), verticalPadding = 8.dp) },
             predictiveBack = true,
             options = ThemeMode.entries,
             selected = state.themeMode,
             label = { themeLabel(it) },
             summary = { mode ->
-                if (mode == ThemeMode.SYSTEM) {
-                    stringResource(
+                when (mode) {
+                    ThemeMode.SYSTEM -> stringResource(
                         R.string.settings_theme_system_summary,
                         themeLabel(if (systemDark) ThemeMode.DARK else ThemeMode.LIGHT),
                     )
-                } else {
-                    null
+                    ThemeMode.BLACK -> stringResource(R.string.settings_theme_black_summary)
+                    ThemeMode.LIGHT, ThemeMode.DARK -> null
                 }
             },
             onSelect = viewModel::setThemeMode,
@@ -258,6 +253,7 @@ private fun themeLabel(mode: ThemeMode): String = stringResource(
         ThemeMode.SYSTEM -> R.string.settings_theme_system
         ThemeMode.LIGHT -> R.string.settings_theme_light
         ThemeMode.DARK -> R.string.settings_theme_dark
+        ThemeMode.BLACK -> R.string.settings_theme_black
     },
 )
 
@@ -406,7 +402,7 @@ private fun FontOptionRow(
     GroupedRow(
         title = label,
         position = position,
-        selected = selected,
+        checked = selected,
         leading = {
             if (preview != null) {
                 Text(
@@ -417,11 +413,6 @@ private fun FontOptionRow(
             } else if (leadingIcon != null) {
                 Icon(imageVector = leadingIcon, contentDescription = null)
             }
-        },
-        trailing = if (selected) {
-            { SelectedCheck() }
-        } else {
-            null
         },
         onClick = onClick,
     )

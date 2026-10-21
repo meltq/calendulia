@@ -3,10 +3,12 @@ package de.jeanlucmakiola.calendula.ui.common
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.LineHeightStyle
 import androidx.compose.ui.unit.Dp
+import de.jeanlucmakiola.calendula.R
 
 /**
  * The calendar surfaces' line-height treatment. Material wraps an 11sp glyph in
@@ -55,3 +57,7 @@ fun rememberTrimmedLineHeight(style: TextStyle): Dp {
         with(density) { measurer.measure(LINE_SAMPLE, style.trimmedLines()).size.height.toDp() }
     }
 }
+
+/** A calendar or account name, or the "unnamed" label when it is blank. */
+@Composable
+fun String.orUnnamed(): String = ifBlank { stringResource(R.string.calendar_unnamed) }

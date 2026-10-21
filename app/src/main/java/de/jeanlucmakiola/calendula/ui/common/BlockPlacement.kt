@@ -278,12 +278,23 @@ data class BlockPlacement(val xFraction: Float, val widthFraction: Float, val y:
  * A pinch-zoom rewrites the hour height every pointer frame, and the gutter and
  * grid lines follow it instantly — so the tween stands down for the gesture
  * rather than leaving the blocks trailing the ruler they are measured against.
+ * A [landing] block, under a dropped copy, moves without the spring's bounce.
  */
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-fun animatedBlockPlacement(xFraction: Float, widthFraction: Float, y: Dp, height: Dp): BlockPlacement {
+fun animatedBlockPlacement(
+    xFraction: Float,
+    widthFraction: Float,
+    y: Dp,
+    height: Dp,
+    landing: Boolean = false,
+): BlockPlacement {
     val still = rememberReduceMotion() || LocalTimelineZoom.current.isPinching
-    val dpSpec: FiniteAnimationSpec<Dp> = if (still) snap() else MaterialTheme.motionScheme.fastSpatialSpec()
+    val dpSpec: FiniteAnimationSpec<Dp> = when {
+        still -> snap()
+        landing -> MaterialTheme.motionScheme.fastEffectsSpec()
+        else -> MaterialTheme.motionScheme.fastSpatialSpec()
+    }
     val shareSpec: FiniteAnimationSpec<Float> = if (still) snap() else MaterialTheme.motionScheme.fastSpatialSpec()
     val animatedX by animateFloatAsState(xFraction, shareSpec, label = "block-x")
     val animatedWidth by animateFloatAsState(widthFraction, shareSpec, label = "block-width")

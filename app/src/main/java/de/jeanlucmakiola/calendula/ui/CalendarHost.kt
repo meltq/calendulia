@@ -4,8 +4,10 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.ExperimentalSharedTransitionApi
 import androidx.compose.animation.SharedTransitionLayout
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.SeekableTransitionState
 import androidx.compose.animation.core.rememberTransition
 import androidx.compose.animation.fadeIn
@@ -19,6 +21,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.material3.rememberDrawerState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
@@ -27,9 +30,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import de.jeanlucmakiola.calendula.ui.common.rememberHeld
 import de.jeanlucmakiola.calendula.ui.common.screen
 import de.jeanlucmakiola.calendula.ui.common.ViewScreen
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -37,6 +43,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaScreen
@@ -55,7 +62,13 @@ import de.jeanlucmakiola.floret.identity.fadeThrough
 import de.jeanlucmakiola.floret.identity.predictiveBackExit
 import de.jeanlucmakiola.floret.identity.rememberReduceMotion
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.EventActionsViewModel
 import de.jeanlucmakiola.calendula.ui.common.EventMoveHost
+import de.jeanlucmakiola.calendula.ui.common.EventSelectionHost
+import de.jeanlucmakiola.calendula.ui.common.eventActionFailureMessage
+import de.jeanlucmakiola.calendula.ui.common.rememberFabSelection
+import de.jeanlucmakiola.calendula.ui.common.canWriteCalendar
+import de.jeanlucmakiola.calendula.ui.common.rememberWriteAction
 import de.jeanlucmakiola.calendula.ui.common.EventMoveScope
 import de.jeanlucmakiola.calendula.ui.common.LocalEventMove
 import de.jeanlucmakiola.calendula.ui.common.LocalManageCalendars
@@ -76,6 +89,7 @@ import de.jeanlucmakiola.calendula.ui.common.rememberCalendarSlideSpec
 import de.jeanlucmakiola.calendula.ui.common.selectView
 import de.jeanlucmakiola.calendula.ui.common.viewBaseStack
 import de.jeanlucmakiola.calendula.ui.detail.EventDetailScreen
+import de.jeanlucmakiola.calendula.ui.edit.EventEditViewModel
 import de.jeanlucmakiola.calendula.ui.edit.EventEditScreen
 import de.jeanlucmakiola.calendula.ui.edit.ImportSource
 import de.jeanlucmakiola.calendula.ui.imports.ImportScreen
@@ -90,7 +104,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toLocalDateTime
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Holds the top-level view back stack (spec M1) and swaps between the calendar
@@ -106,28 +120,18 @@ import kotlin.time.Clock
  * view remains. So back from a widget-opened screen returns to that widget's
  * view, then home; and back through pill switches walks the views in reverse.
  *
- * [requestedDetailKey] is an externally requested occurrence (a tapped
- * reminder notification routed through MainActivity): it opens the detail
- * overlay exactly like an event tap and is cleared via [onDetailKeyConsumed]
- * so a later recomposition can't re-open it. (A widget event tap instead arrives
- * as [WidgetNavRequest.OpenEvent], which also roots the back stack in the
- * widget's view.)
+ * [requests] carries what notifications, widgets and other apps asked to
+ * open. A tapped reminder's occurrence opens the detail overlay exactly like an
+ * event tap; each request is cleared once acted on so a later recomposition
+ * can't re-open it. (A widget event tap instead arrives as
+ * [WidgetNavRequest.OpenEvent], which also roots the back stack in the widget's
+ * view.)
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun CalendarHost(
+    requests: ExternalRequests,
     modifier: Modifier = Modifier,
-    requestedDetailKey: LongArray? = null,
-    onDetailKeyConsumed: () -> Unit = {},
-    widgetNavRequest: WidgetNavRequest? = null,
-    onWidgetNavConsumed: () -> Unit = {},
-    requestedImportUri: android.net.Uri? = null,
-    onImportConsumed: () -> Unit = {},
-    requestedInsertForm: EventForm? = null,
-    requestedInsertSource: ImportSource = ImportSource.Insert,
-    onInsertConsumed: () -> Unit = {},
-    requestedEditKey: LongArray? = null,
-    onEditKeyConsumed: () -> Unit = {},
     viewModel: CalendarHostViewModel = hiltViewModel(),
 ) {
     // Wait for the persisted default view before seeding the stack, so the app
@@ -146,10 +150,13 @@ fun CalendarHost(
         mutableStateOf(listOf(defaultView))
     }
     var navigationVersion by remember { mutableIntStateOf(0) }
+    // True after backing out of a day opened from the view now shown, so the
+    // agenda returns to where it was instead of today (#367).
+    var returnedFromDay by remember { mutableStateOf(false) }
     val view = viewStack.last()
     // The date every view opens on and carries along (#184); tapping a day
     // anywhere focuses it and opens the day view there.
-    val focus = rememberSaveable(saver = ViewFocusSaver) { ViewFocus(localToday()) }
+    val focus = rememberSaveable(saver = ViewFocusSaver) { ViewFocus(currentDate()) }
     // A focus still on yesterday follows the date over, so the next view opened
     // doesn't land on the old day (#373); one moved elsewhere stays put.
     val today = viewModel.today.collectAsStateWithLifecycle().value
@@ -163,6 +170,7 @@ fun CalendarHost(
     val switchScope = rememberCoroutineScope()
     val switchTo: ((List<CalendarView>) -> List<CalendarView>) -> Unit = { move ->
         navigationVersion++
+        returnedFromDay = false
         viewStack = move(viewStack)
     }
     val onSelectView: (CalendarView) -> Unit = { target -> switchTo { it.selectView(target) } }
@@ -179,27 +187,17 @@ fun CalendarHost(
     // it overlays whichever calendar view is active. We forward the tapped
     // occurrence's own times (eventId + begin + end, packed as a saveable
     // long[]) so recurring events show the correct date, not the series start.
-    // [heldKey] keeps the last shown key alive through the slide-out (when
-    // [detailKey] is cleared); it is set in the tap callback — never a [0,0,0]
-    // placeholder — so the destination never loads a bogus id=0 on first frame.
+    // Like every overlay below, it draws its last key through the slide-out
+    // ([rememberHeld]) rather than a placeholder.
     var detailKey by rememberSaveable { mutableStateOf<LongArray?>(null) }
-    var heldKey by remember { mutableStateOf<LongArray?>(null) }
-    val onEventClick: (EventInstance) -> Unit = { event ->
-        val key = longArrayOf(
-            event.eventId,
-            event.start.toEpochMilliseconds(),
-            event.end.toEpochMilliseconds(),
-        )
-        heldKey = key
-        detailKey = key
-    }
+    val onOpenDetail: (EventInstance) -> Unit = { event -> detailKey = event.occurrenceKey() }
 
     // A tapped reminder notification asks for a specific occurrence.
+    val requestedDetailKey = requests.detailKey
     LaunchedEffect(requestedDetailKey) {
         if (requestedDetailKey != null) {
-            heldKey = requestedDetailKey
             detailKey = requestedDetailKey
-            onDetailKeyConsumed()
+            requests.detailKey = null
         }
     }
 
@@ -223,19 +221,17 @@ fun CalendarHost(
     // calendar list rather than by preferences. Reached from both.
     var showBackup by rememberSaveable { mutableStateOf(false) }
 
-    // Event form (v1.2 create) — same held-key pattern as the detail screen:
-    // [heldCreateIso] keeps the prefill date alive through the slide-out.
-    // [createStartMinutes] is the tapped slot's start (minutes from midnight)
-    // when the form is opened from a day/week grid tap; null from the FAB.
-    var createDateIso by rememberSaveable { mutableStateOf<String?>(null) }
-    var heldCreateIso by remember { mutableStateOf<String?>(null) }
-    var createStartMinutes by rememberSaveable { mutableStateOf<Int?>(null) }
-    var heldCreateMinutes by remember { mutableStateOf<Int?>(null) }
-    val onCreateEvent: (LocalDate, Int?) -> Unit = { date, startMinutes ->
-        heldCreateIso = date.toString()
-        createDateIso = date.toString()
-        heldCreateMinutes = startMinutes
-        createStartMinutes = startMinutes
+    // Event form (v1.2 create), opened on a date, a tapped slot or a drafted block.
+    var createRequest by rememberSaveable(stateSaver = createRequestSaver) {
+        mutableStateOf<CreateRequest?>(null)
+    }
+    fun openCreate(dateIso: String, startMinutes: Int? = null, draftMillis: LongArray? = null) {
+        createRequest = CreateRequest(dateIso, startMinutes, draftMillis)
+    }
+    val onCreateEvent: (LocalDate, Int?) -> Unit = { date, startMinutes -> openCreate(date.toString(), startMinutes) }
+    val onCreateDraft: (Instant, Instant) -> Unit = { start, end ->
+        val date = start.toLocalDateTime(TimeZone.currentSystemDefault()).date
+        openCreate(date.toString(), draftMillis = longArrayOf(start.toEpochMilliseconds(), end.toEpochMilliseconds()))
     }
 
     // Edit form (v1.3) — reuses the detail screen's occurrence key; for
@@ -245,21 +241,57 @@ fun CalendarHost(
     // falling back to the auto-refreshing calendar is the only honest
     // destination.
     var editKey by rememberSaveable { mutableStateOf<LongArray?>(null) }
-    var heldEditKey by remember { mutableStateOf<LongArray?>(null) }
 
     // An opened/received .ics file. [ImportScreen] parses it and either opens
     // the prefilled create form (one event → [importForm]) or its own bulk
     // picker (many). A plain conditional overlay (no slide) — it's transient.
-    var importUri by remember { mutableStateOf<android.net.Uri?>(null) }
-    var importForm by remember { mutableStateOf<EventForm?>(null) }
+    var importUri by rememberSaveable { mutableStateOf<android.net.Uri?>(null) }
+    val importViewModel: EventEditViewModel = hiltViewModel(key = "import")
+    // Saved as "open"; a recreation takes the form back from the ViewModel, which
+    // still holds the user's edits.
+    var importForm by rememberSaveable(
+        stateSaver = Saver<EventForm?, Boolean>(
+            save = { it != null },
+            restore = { open -> if (open) importViewModel.currentForm() else null },
+        ),
+    ) { mutableStateOf<EventForm?>(null) }
     // Which channel filled [importForm]: an .ics file (prompt to apply the default
     // reminder) or an ACTION_INSERT intent (apply it automatically) — #49.
-    var importFormSource by remember { mutableStateOf(ImportSource.File) }
+    var importFormSource by rememberSaveable { mutableStateOf(ImportSource.File) }
+    // Bumped per open, so even an equal prefill starts a fresh form.
+    var importFormId by rememberSaveable { mutableIntStateOf(0) }
+    // Whether [importForm] came from an external create request (#30, #306);
+    // closing it then hands control back to whoever asked.
+    var importFromRequest by rememberSaveable { mutableStateOf(false) }
+    // A second external request that arrived while a prefilled form was open:
+    // it waits behind that form's unsaved-changes prompt, then opens.
+    var pendingInsert by remember { mutableStateOf<Pair<EventForm, ImportSource>?>(null) }
+    val createViewModel: EventEditViewModel = hiltViewModel(key = "create")
+    val editViewModel: EventEditViewModel = hiltViewModel(key = "edit")
+    fun openImportForm(form: EventForm, source: ImportSource, fromRequest: Boolean = false) {
+        importFormSource = source
+        importForm = form
+        importFormId++
+        importFromRequest = fromRequest
+    }
+    fun closeImportForm() {
+        val next = pendingInsert
+        pendingInsert = null
+        if (next != null) {
+            openImportForm(next.first, next.second, fromRequest = true)
+        } else {
+            importForm = null
+            if (importFromRequest) {
+                importFromRequest = false
+                requests.onExternalFormClosed()
+            }
+        }
+    }
     // A restore (in-app "Restore from .ics" button) always runs the full import
     // flow — picker + summary — even for a single-event file, because the intent
     // is "restore a backup", not "add this one event". An externally opened .ics
     // keeps routing a single event straight into the prefilled create form.
-    var importForceMany by remember { mutableStateOf(false) }
+    var importForceMany by rememberSaveable { mutableStateOf(false) }
     // Where a restore came from, so closing the import puts it back: the import
     // overlays are declared under Backup & restore and the manager, so starting
     // one has to close them — without this, finishing a restore drops you on the
@@ -270,81 +302,113 @@ fun CalendarHost(
     // what tells it a *re-import of the same file* is new work and not the run
     // it already finished; a rotation keeps the number and keeps the result.
     var importSession by rememberSaveable { mutableStateOf(0) }
+    // A recreation re-reads the launch intent; when the import it carries came
+    // back with the saved state, that replay is the same work, not a new one.
+    fun isReplayOfRestoredImport(): Boolean {
+        val replay = requests.replayed && (importUri != null || importForm != null)
+        requests.replayed = false
+        return replay
+    }
+    val requestedImportUri = requests.importUri
     LaunchedEffect(requestedImportUri) {
         if (requestedImportUri != null) {
+            if (isReplayOfRestoredImport()) {
+                requests.importUri = null
+                return@LaunchedEffect
+            }
             importUri = requestedImportUri
             importForceMany = false
             importSession++
-            onImportConsumed()
+            requests.importUri = null
         }
     }
     // An external ACTION_INSERT launch (another app/widget creating an event,
     // issue #30) arrives already prefilled — open it in the same create form the
     // single-event .ics path uses. [importForm] is the topmost overlay, so it
     // reveals on top of whatever was open without extra dismissal.
-    LaunchedEffect(requestedInsertForm) {
-        if (requestedInsertForm != null) {
-            importFormSource = requestedInsertSource
-            importForm = requestedInsertForm
-            onInsertConsumed()
+    val requestedInsert = requests.insert
+    LaunchedEffect(requestedInsert) {
+        if (requestedInsert != null) {
+            if (isReplayOfRestoredImport()) {
+                requests.insert = null
+                return@LaunchedEffect
+            }
+            if (importForm == null) {
+                openImportForm(requestedInsert.form, requestedInsert.source, fromRequest = true)
+            } else {
+                pendingInsert = requestedInsert.form to requestedInsert.source
+            }
+            requests.insert = null
         }
     }
 
     // Close every overlay that can sit over the calendar, so an externally
     // requested destination (a widget/shortcut/QS-tile launch) is revealed on
-    // top instead of underneath whatever the user had open.
-    fun dismissCoveringOverlays() {
+    // top instead of underneath whatever the user had open. The create form,
+    // declared under the edit form, can stay for an edit to open over it.
+    fun dismissCoveringOverlays(keepCreate: Boolean = false) {
         showSettings = false
+        showSearch = false
         showCalendars = false
         showBackup = false
         detailKey = null
         editKey = null
+        if (!keepCreate) createRequest = null
         importUri = null
         importForm = null
+        if (importFromRequest) {
+            importFromRequest = false
+            requests.onExternalFormClosed()
+        }
+        pendingInsert = null
+        importViewModel.reset()
     }
 
     // An external "edit this event" (ACTION_EDIT, e.g. an assistant/task app or
     // widget) opens the occurrence straight in the edit form. Drop any covering
     // overlay first — the edit overlay sits below Settings/import in the Box, so
-    // without this it would open hidden underneath them. Same held-key pattern as
-    // a detail-screen "Edit" tap; a saved edit just returns to the calendar.
+    // without this it would open hidden underneath them. A saved edit just
+    // returns to the calendar.
+    val requestedEditKey = requests.editKey
     LaunchedEffect(requestedEditKey) {
         if (requestedEditKey != null) {
-            dismissCoveringOverlays()
-            heldEditKey = requestedEditKey
+            // An open edit form stays on screen, so it starts over here rather
+            // than once it has slid away.
+            if (editKey != null) editViewModel.reset()
+            dismissCoveringOverlays(keepCreate = true)
             editKey = requestedEditKey
-            onEditKeyConsumed()
+            requests.editKey = null
         }
     }
 
     // A home-screen widget launch asks to open a date (→ day view), open an
     // event's detail, or start a create. Handled once and cleared, mirroring
-    // [requestedDetailKey]. Date/event opens root the stack in the widget's own
+    // the detail request. Date/event opens root the stack in the widget's own
     // view so backing out returns there (then home), not to the default.
+    val widgetNavRequest = requests.nav
     LaunchedEffect(widgetNavRequest) {
-        if (widgetNavRequest != null) navigationVersion++
+        if (widgetNavRequest != null) {
+            navigationVersion++
+            returnedFromDay = false
+        }
         when (val req = widgetNavRequest) {
             is WidgetNavRequest.OpenDate -> {
                 // Drill the day view in over the widget's view: drop any overlay
                 // that would cover it, so the open doesn't land under Settings/form.
                 dismissCoveringOverlays()
-                createDateIso = null
                 focus.navigateTo(LocalDate.parse(req.dateIso))
                 // No widget source (an external date tap) roots over the default
                 // home view, so backing out of the day returns home then exits.
                 viewStack = viewBaseStack(defaultView, req.source ?: defaultView).drillToDay()
-                onWidgetNavConsumed()
+                requests.nav = null
             }
             is WidgetNavRequest.OpenEvent -> {
                 // Root the stack in the widget's view, then open the occurrence
                 // detail over it (same key shape as a tapped event / reminder).
                 dismissCoveringOverlays()
-                createDateIso = null
                 viewStack = viewBaseStack(defaultView, req.source)
-                val key = longArrayOf(req.eventId, req.beginMillis, req.endMillis)
-                heldKey = key
-                detailKey = key
-                onWidgetNavConsumed()
+                detailKey = longArrayOf(req.eventId, req.beginMillis, req.endMillis)
+                requests.nav = null
             }
             is WidgetNavRequest.OpenView -> {
                 // A widget header tap: land on a top-level view with no date
@@ -352,24 +416,19 @@ fun CalendarHost(
                 // the stack on the target (null → the default home) over the
                 // default home — so backing out returns to the default, then exits.
                 dismissCoveringOverlays()
-                createDateIso = null
-                focus.navigateTo(localToday())
+                focus.navigateTo(currentDate())
                 viewStack = viewBaseStack(defaultView, req.view ?: defaultView)
-                onWidgetNavConsumed()
+                requests.nav = null
             }
             is WidgetNavRequest.Create -> {
                 // External "new event" entries (QS tile / launcher shortcut /
                 // widget) must land on top of whatever is open — the form overlay
                 // sits below Settings/calendars in the Box, so without this it
                 // would open hidden underneath them.
+                if (createRequest != null) createViewModel.reset()
                 dismissCoveringOverlays()
-                val iso = req.dateIso ?: Clock.System.now()
-                    .toLocalDateTime(TimeZone.currentSystemDefault()).date.toString()
-                heldCreateIso = iso
-                createDateIso = iso
-                heldCreateMinutes = null
-                createStartMinutes = null
-                onWidgetNavConsumed()
+                openCreate(req.dateIso ?: currentDate().toString())
+                requests.nav = null
             }
             null -> {}
         }
@@ -379,14 +438,44 @@ fun CalendarHost(
     // survives view switches; the calendar surfaces read it out of LocalEventMove.
     val reschedule: RescheduleViewModel = hiltViewModel()
     val movableCalendarIds by reschedule.movableCalendarIds.collectAsStateWithLifecycle()
-    val onEditEvent: (EventInstance) -> Unit = { event ->
-        val key = longArrayOf(
-            event.eventId,
-            event.start.toEpochMilliseconds(),
-            event.end.toEpochMilliseconds(),
-        )
-        heldEditKey = key
-        editKey = key
+    val eventActions: EventActionsViewModel = hiltViewModel()
+    val moveOutcome by reschedule.outcome.collectAsStateWithLifecycle()
+    val selectionFailure by eventActions.failure.collectAsStateWithLifecycle()
+    val onEditEvent: (EventInstance) -> Unit = { event -> editKey = event.occurrenceKey() }
+    // A tap opens the edit form instead of the detail screen when the user chose
+    // so (#178) — only for events whose calendar takes writes. Both are read at
+    // tap time, so a tap before they've loaded still routes right.
+    val tapScope = rememberCoroutineScope()
+    val tapContext = LocalContext.current
+    // A refused write upgrade is asked once; later taps just open the details.
+    var tapWriteRefused by rememberSaveable { mutableStateOf(false) }
+    // The tap waiting on the WRITE_CALENDAR prompt, saved so a rotation keeps it.
+    var tapAwaitingWrite by rememberSaveable { mutableStateOf<LongArray?>(null) }
+    val editAwaitingTap = rememberWriteAction(
+        onDenied = {
+            tapAwaitingWrite?.let { key ->
+                tapWriteRefused = true
+                detailKey = key
+            }
+            tapAwaitingWrite = null
+        },
+    ) {
+        tapAwaitingWrite?.let { editKey = it }
+        tapAwaitingWrite = null
+    }
+    val onEventClick: (EventInstance) -> Unit = { event ->
+        tapScope.launch {
+            val toEditor = viewModel.tapOpensEditor() && eventActions.canModify(event.calendarId)
+            when {
+                !toEditor -> onOpenDetail(event)
+                tapContext.canWriteCalendar() -> onEditEvent(event)
+                tapWriteRefused -> onOpenDetail(event)
+                else -> {
+                    tapAwaitingWrite = event.occurrenceKey()
+                    editAwaitingTap()
+                }
+            }
+        }
     }
     // Off by preference (#173) switches off the gesture, not the scope: blocks
     // register no drag, while the edit form and its TalkBack action stay put.
@@ -403,15 +492,10 @@ fun CalendarHost(
         )
     }
 
-    val slideSpec = rememberCalendarSlideSpec()
-    // Overlays leave from the predictive-back preview (#184): shrinking on from
-    // where the gesture let go instead of snapping back and sliding off.
-    val overlayExit = predictiveBackExit()
-
     // Base-level back: pop the view stack while no overlay covers it (each overlay
     // owns its own BackHandler and takes precedence). Disabled at the home view,
     // so back there falls through to the system and exits the app.
-    val anyOverlayVisible = showSearch || detailKey != null || createDateIso != null ||
+    val anyOverlayVisible = showSearch || detailKey != null || createRequest != null ||
         editKey != null || showSettings || showCalendars || showBackup ||
         importUri != null || importForm != null
     // The view switch runs on a seekable transition, so a back gesture can scrub
@@ -424,11 +508,14 @@ fun CalendarHost(
     if (reduceMotion) {
         BackHandler(enabled = viewBackEnabled) {
             navigationVersion++
+            returnedFromDay = viewStack.last() == CalendarView.Day
             viewStack = viewStack.dropLast(1)
         }
     } else {
         PredictiveBackHandler(enabled = viewBackEnabled) { events ->
             val previous = viewStack[viewStack.size - 2]
+            // Set before the seek, which already composes the previous view.
+            returnedFromDay = viewStack.last() == CalendarView.Day
             try {
                 events.collect { viewTransition.seekTo(it.progress, targetState = previous) }
                 navigationVersion++
@@ -517,7 +604,24 @@ fun CalendarHost(
                     showTodayButton = todayInToolbar,
                 )
             },
-            floatingActionButton = { CalendarFab(chromeHost, todayInToolbar) },
+            floatingActionButton = {
+                // While an event is selected the FAB is its action bar's toggle (#141).
+                val fabSelection = rememberFabSelection(
+                    host = chromeHost,
+                    viewModel = eventActions,
+                    onEdit = onEditEvent,
+                    onDuplicate = { form ->
+                        // A fresh event, like a duplicate from the detail screen (#52).
+                        openImportForm(form, ImportSource.Insert)
+                    },
+                    chipShown = moveOutcome != null || selectionFailure != null,
+                    onDismissChip = {
+                        reschedule.consumeOutcome()
+                        eventActions.consumeFailure()
+                    },
+                )
+                CalendarFab(chromeHost, todayInToolbar, fabSelection)
+            },
         ) { innerPadding ->
         SharedTransitionLayout(
             Modifier
@@ -548,6 +652,7 @@ fun CalendarHost(
                     onOpenDay = onOpenDay,
                     onEventClick = onEventClick,
                     onCreateEvent = onCreateEvent,
+                    onCreateDraft = onCreateDraft,
                 )
                 ViewScreen.Month -> MonthScreen(
                     onOpenDay = onOpenDay,
@@ -560,6 +665,7 @@ fun CalendarHost(
                     onEventClick = onEventClick,
                     onCreateEvent = onCreateEvent,
                     quickSwitchViews = quickSwitchViews,
+                    restorePosition = returnedFromDay,
                 )
             }
             }
@@ -571,15 +677,19 @@ fun CalendarHost(
 
         // Scope prompt + confirmation/undo snackbar for a dropped event, declared
         // right after the calendar views so later overlays cover it.
-        EventMoveHost(reschedule, modifier = Modifier.fillMaxSize())
+        EventMoveHost(
+            reschedule,
+            modifier = Modifier.fillMaxSize(),
+            actionFailure = eventActionFailureMessage(selectionFailure),
+            onActionFailureShown = eventActions::consumeFailure,
+        )
+
+        // The delete prompt and failure chip of a selected event's actions (#141).
+        EventSelectionHost(host = chromeHost, viewModel = eventActions)
 
         // Search overlay — below detail/edit in the Box so a tapped result's
         // detail screen draws on top, and closing it returns to the results.
-        AnimatedVisibility(
-            visible = showSearch,
-            enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
-            exit = overlayExit,
-        ) {
+        SlideOverlay(visible = showSearch) {
             SearchScreen(
                 onBack = { showSearch = false },
                 onEventClick = onEventClick,
@@ -587,29 +697,20 @@ fun CalendarHost(
             )
         }
 
-        // Prefer the live key; fall back to the held one only while sliding out.
-        val activeKey = detailKey ?: heldKey
-        AnimatedVisibility(
-            visible = detailKey != null,
-            enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
-            exit = overlayExit,
-        ) {
-            activeKey?.let { key ->
+        val shownDetailKey = rememberHeld(detailKey)
+        SlideOverlay(visible = detailKey != null) {
+            shownDetailKey?.let { key ->
                 EventDetailScreen(
                     eventId = key[0],
                     beginMillis = key[1],
                     endMillis = key[2],
                     onBack = { detailKey = null },
-                    onEdit = {
-                        heldEditKey = key
-                        editKey = key
-                    },
+                    onEdit = { editKey = key },
                     onDuplicate = { form ->
                         // Reuse the prefilled-create overlay: a duplicate is a
                         // fresh event, so it applies the default reminder like an
                         // in-app new event (#52).
-                        importFormSource = ImportSource.Insert
-                        importForm = form
+                        openImportForm(form, ImportSource.Insert)
                         detailKey = null
                     },
                     visible = detailKey != null,
@@ -618,30 +719,28 @@ fun CalendarHost(
         }
 
         // Event form (v1.2) — full-screen destination, slides over the calendar.
-        AnimatedVisibility(
-            visible = createDateIso != null,
-            enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
-            exit = overlayExit,
-        ) {
-            (createDateIso ?: heldCreateIso)?.let { iso ->
-                EventEditScreen(
-                    initialDateIso = iso,
-                    initialStartMinutes = createStartMinutes ?: heldCreateMinutes,
-                    onClose = { createDateIso = null },
-                    onSaved = { createDateIso = null },
-                    onManageCalendars = { showCalendars = true },
-                    visible = createDateIso != null,
-                )
+        val shownCreate = rememberHeld(createRequest)
+        SlideOverlay(visible = createRequest != null, onHidden = createViewModel::reset) {
+            shownCreate?.let { create ->
+                key(create) {
+                    EventEditScreen(
+                        initialDateIso = create.dateIso,
+                        initialStartMinutes = create.startMinutes,
+                        initialDraft = create.draftMillis,
+                        onClose = { createRequest = null },
+                        onSaved = { createRequest = null },
+                        onManageCalendars = { showCalendars = true },
+                        visible = createRequest != null,
+                        viewModel = createViewModel,
+                    )
+                }
             }
         }
 
         // Edit form (v1.3) — slides over the detail screen.
-        AnimatedVisibility(
-            visible = editKey != null,
-            enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
-            exit = overlayExit,
-        ) {
-            (editKey ?: heldEditKey)?.let { key ->
+        val shownEditKey = rememberHeld(editKey)
+        SlideOverlay(visible = editKey != null, onHidden = editViewModel::reset) {
+            shownEditKey?.let { key ->
                 EventEditScreen(
                     initialDateIso = null,
                     editKey = key,
@@ -651,17 +750,23 @@ fun CalendarHost(
                         detailKey = null
                     },
                     onManageCalendars = { showCalendars = true },
+                    onDuplicate = { form ->
+                        openImportForm(form, ImportSource.Insert)
+                    },
+                    // Opened straight from a tap (#178) there's no detail screen
+                    // below to show why, so open it.
+                    onLoadFailed = {
+                        editKey = null
+                        if (detailKey == null) detailKey = key
+                    },
                     visible = editKey != null,
+                    viewModel = editViewModel,
                 )
             }
         }
 
         // Settings (M4) — full-screen destination, slides over the calendar.
-        AnimatedVisibility(
-            visible = showSettings,
-            enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
-            exit = overlayExit,
-        ) {
+        SlideOverlay(visible = showSettings) {
             SettingsScreen(
                 onBack = { showSettings = false },
                 onManageCalendars = { showCalendars = true },
@@ -697,29 +802,29 @@ fun CalendarHost(
                     importUri = null
                     calendarsAfterImport = false
                     backupAfterImport = false
-                    importFormSource = ImportSource.File
-                    importForm = form
+                    openImportForm(form, ImportSource.File)
                 },
             )
         }
         importForm?.let { form ->
-            EventEditScreen(
-                initialDateIso = null,
-                initialForm = form,
-                initialFormSource = importFormSource,
-                onClose = { importForm = null },
-                onSaved = { importForm = null },
-                onManageCalendars = { showCalendars = true },
-            )
+            key(importFormId) {
+                EventEditScreen(
+                    initialDateIso = null,
+                    initialForm = form,
+                    initialFormSource = importFormSource,
+                    onClose = ::closeImportForm,
+                    onSaved = ::closeImportForm,
+                    onManageCalendars = { showCalendars = true },
+                    leaveRequested = pendingInsert != null,
+                    onLeaveDeclined = { pendingInsert = null },
+                    viewModel = importViewModel,
+                )
+            }
         }
 
         // Declared last so it covers every overlay that can open it: Settings,
         // both event forms, and the .ics import picker (#76).
-        AnimatedVisibility(
-            visible = showCalendars,
-            enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
-            exit = overlayExit,
-        ) {
+        SlideOverlay(visible = showCalendars) {
             CalendarsScreen(
                 onBack = { showCalendars = false },
                 onOpenBackup = { showBackup = true },
@@ -728,11 +833,7 @@ fun CalendarHost(
         }
 
         // Backup & restore — over the manager, since the manager links into it.
-        AnimatedVisibility(
-            visible = showBackup,
-            enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
-            exit = overlayExit,
-        ) {
+        SlideOverlay(visible = showBackup) {
             // Settings can open this screen without the manager underneath, so
             // its failure states' "Manage calendars" way out has to open the
             // manager rather than just pop — popping alone lands on Settings
@@ -771,5 +872,48 @@ private val viewStackSaver = listSaver<List<CalendarView>, Int>(
     restore = { ordinals -> ordinals.map { CalendarView.entries[it] } },
 )
 
-private fun localToday(): LocalDate =
-    Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+/**
+ * An overlay's slide-in from the end edge, leaving from the predictive-back
+ * preview (#184): shrinking on from where the gesture let go instead of
+ * snapping back and sliding off.
+ */
+@Composable
+private fun SlideOverlay(
+    visible: Boolean,
+    onHidden: () -> Unit = {},
+    content: @Composable AnimatedVisibilityScope.() -> Unit,
+) {
+    val state = remember { MutableTransitionState(visible) }
+    state.targetState = visible
+    val hidden = state.isIdle && !state.currentState
+    LaunchedEffect(hidden) {
+        if (hidden) onHidden()
+    }
+    AnimatedVisibility(
+        visibleState = state,
+        enter = slideInHorizontally(rememberCalendarSlideSpec()) { it } + fadeIn(),
+        exit = predictiveBackExit(),
+        content = content,
+    )
+}
+
+/** The detail and edit overlays' key for one occurrence: eventId, begin, end. */
+private fun EventInstance.occurrenceKey(): LongArray =
+    longArrayOf(eventId, start.toEpochMilliseconds(), end.toEpochMilliseconds())
+
+/**
+ * A create-form open: its date, plus the tapped slot's start (minutes from
+ * midnight) from a day/week grid tap, or a drafted block's start and end (#153)
+ * as epoch millis. Instants rather than minutes into a day, so the form opens at
+ * the times drawn even across a DST change (#387).
+ */
+private class CreateRequest(
+    val dateIso: String,
+    val startMinutes: Int?,
+    val draftMillis: LongArray?,
+)
+
+private val createRequestSaver = Saver<CreateRequest?, List<Any?>>(
+    save = { request -> request?.let { listOf(it.dateIso, it.startMinutes, it.draftMillis) } },
+    restore = { CreateRequest(it[0] as String, it[1] as Int?, it[2] as LongArray?) },
+)

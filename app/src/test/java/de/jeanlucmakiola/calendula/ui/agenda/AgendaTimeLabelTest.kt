@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.ui.agenda
 
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.testEvent
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.TimeZone
@@ -16,17 +17,8 @@ class AgendaTimeLabelTest {
     private fun at(y: Int, mo: Int, d: Int, h: Int = 0, min: Int = 0): Instant =
         LocalDateTime(y, mo, d, h, min).toInstant(zone)
 
-    private fun event(start: Instant, end: Instant, isAllDay: Boolean = false) = EventInstance(
-        instanceId = 1,
-        eventId = 1,
-        calendarId = 1,
-        title = "e",
-        start = start,
-        end = end,
-        isAllDay = isAllDay,
-        color = 0,
-        location = null,
-    )
+    private fun event(start: Instant, end: Instant, isAllDay: Boolean = false) =
+        testEvent(title = "e", start = start, end = end, isAllDay = isAllDay)
 
     private fun labelOn(y: Int, mo: Int, d: Int, event: EventInstance) =
         agendaTimeLabel(event, LocalDate(y, mo, d), zone)

@@ -2,14 +2,16 @@ package de.jeanlucmakiola.calendula.ui.common
 
 import android.content.ClipData
 import android.os.Build
-import androidx.compose.foundation.combinedClickable
-import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.ClipEntry
 import androidx.compose.ui.platform.LocalClipboard
@@ -67,9 +69,12 @@ fun rememberFieldCopier(snackbarHostState: SnackbarHostState): FieldCopier {
  *
  * [onTap] carries a field's existing tap action through, announced as
  * [onTapLabel]; a field without one stays unclickable rather than growing a
- * ripple that leads nowhere, and gets its long press announced through semantics instead. That branch merges the
- * node it sits on, so a screen reader lands on the field itself and finds the
- * action there — a bare container is never focused.
+ * ripple that leads nowhere. The long press is announced through semantics,
+ * merging the node it sits on, so a screen reader lands on the field itself
+ * and finds the action there — a bare container is never focused.
+ *
+ * The press is caught ahead of the field's children, so a long press on a
+ * link inside the text copies too instead of leaving that stretch dead.
  */
 @Composable
 fun Modifier.copyOnLongPress(
@@ -80,27 +85,45 @@ fun Modifier.copyOnLongPress(
     onTapLabel: String? = null,
 ): Modifier {
     val actionLabel = stringResource(R.string.field_copy_action)
-    return if (onTap != null) {
-        combinedClickable(
-            onClick = onTap,
-            onClickLabel = onTapLabel,
-            onLongClickLabel = actionLabel,
-            onLongClick = { copy(label, text) },
-        )
-    } else {
-        val haptics = LocalHapticFeedback.current
-        pointerInput(label, text, copy) {
-            detectTapGestures(
-                onLongPress = {
-                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
-                    copy(label, text)
-                },
-            )
-        }.semantics(mergeDescendants = true) {
+    val haptics = LocalHapticFeedback.current
+    return longPressAheadOfChildren(label, text, copy) {
+        haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+        copy(label, text)
+    }
+        .then(if (onTap != null) Modifier.clickable(onClickLabel = onTapLabel, onClick = onTap) else Modifier)
+        .semantics(mergeDescendants = true) {
             onLongClick(actionLabel) {
                 copy(label, text)
                 true
             }
         }
-    }
 }
+
+/**
+ * Run [onLongPress] once a press has held still for the long-press timeout,
+ * watching on the initial pass — before the children see the events — and
+ * then swallow the rest of that press, so neither a link under the finger nor
+ * a tap handler fires on release.
+ */
+private fun Modifier.longPressAheadOfChildren(vararg keys: Any?, onLongPress: () -> Unit): Modifier =
+    pointerInput(*keys) {
+        awaitEachGesture {
+            val down = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+            val endedEarly = withTimeoutOrNull(viewConfiguration.longPressTimeoutMillis) {
+                while (true) {
+                    val change = awaitPointerEvent(PointerEventPass.Initial).changes
+                        .firstOrNull { it.id == down.id }
+                    val moved = change != null &&
+                        (change.position - down.position).getDistance() > viewConfiguration.touchSlop
+                    if (change == null || !change.pressed || moved) break
+                }
+                true
+            }
+            if (endedEarly != null) return@awaitEachGesture
+            onLongPress()
+            do {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                event.changes.forEach { it.consume() }
+            } while (event.changes.any { it.pressed })
+        }
+    }

@@ -4,19 +4,11 @@ import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.os.Build
 import androidx.core.content.getSystemService
 import dagger.hilt.android.qualifiers.ApplicationContext
+import de.jeanlucmakiola.floret.android.setWakeup
 import javax.inject.Inject
 import javax.inject.Singleton
-
-/**
- * True on API < 31 (no restriction), and on 31+ when the exact-alarm capability
- * is held — auto-granted via `USE_EXACT_ALARM` on API 33+ (Calendula is a
- * calendar app), user-revocable on 31–32.
- */
-internal fun AlarmManager.canScheduleExactCompat(): Boolean =
-    Build.VERSION.SDK_INT < Build.VERSION_CODES.S || canScheduleExactAlarms()
 
 /**
  * Holds the app's own wake-up for the next reminder (#75). Exactly one alarm
@@ -31,16 +23,7 @@ class ReminderAlarmScheduler @Inject constructor(
 
     fun scheduleScan(triggerAtMillis: Long) {
         val alarmManager = context.getSystemService<AlarmManager>() ?: return
-        val pendingIntent = scanPendingIntent(PendingIntent.FLAG_UPDATE_CURRENT)
-        if (alarmManager.canScheduleExactCompat()) {
-            alarmManager.setExactAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent,
-            )
-        } else {
-            alarmManager.setAndAllowWhileIdle(
-                AlarmManager.RTC_WAKEUP, triggerAtMillis, pendingIntent,
-            )
-        }
+        alarmManager.setWakeup(triggerAtMillis, scanPendingIntent(PendingIntent.FLAG_UPDATE_CURRENT))
     }
 
     /** Drop the pending wake-up — reminders are off, or there is nothing to wait for. */

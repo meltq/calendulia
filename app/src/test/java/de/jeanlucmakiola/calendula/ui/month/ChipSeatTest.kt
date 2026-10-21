@@ -2,12 +2,10 @@ package de.jeanlucmakiola.calendula.ui.month
 
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.timedEvent
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.atTime
 import kotlinx.datetime.plus
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toInstant
 import org.junit.jupiter.api.Test
 
 /**
@@ -19,17 +17,8 @@ class ChipSeatTest {
     private val monday = LocalDate(2026, 6, 8)
     private val days = (0..6).map { monday.plus(it, DateTimeUnit.DAY) }
 
-    private fun event(id: Long, title: String = "E") = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = title,
-        start = monday.atTime(9, 0).toInstant(TimeZone.UTC),
-        end = monday.atTime(10, 0).toInstant(TimeZone.UTC),
-        isAllDay = false,
-        color = 0xFF112233.toInt(),
-        location = null,
-    )
+    private fun event(id: Long, title: String = "E") =
+        timedEvent(monday, 9, id = id, title = title, color = 0xFF112233.toInt())
 
     /**
      * A grid holding [seated] in lane 0 as one bar across [cols], and nothing

@@ -4,12 +4,10 @@ import android.content.Context
 import android.content.Intent
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -22,7 +20,6 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.formatMinuteOfDay
 import de.jeanlucmakiola.calendula.ui.common.reminderLeadTimeLabel
-import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.locale.currentLocale
 
 /**
@@ -61,36 +58,6 @@ internal fun CategoryIcon(icon: ImageVector, accent: ChipAccent) {
             modifier = Modifier.size(22.dp),
         )
     }
-}
-
-/**
- * A small primary-coloured group label, matching the Calendars settings screen.
- * Inset to [GroupedListInset] so it shares the cards' left margin.
- */
-@Composable
-internal fun SectionHeader(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(
-            start = GroupedListInset,
-            end = GroupedListInset,
-            top = 16.dp,
-            bottom = 4.dp,
-        ),
-    )
-}
-
-/** Muted supporting text under a [SectionHeader], matching the form-fields hint. */
-@Composable
-internal fun SettingsHint(text: String) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.bodyMedium,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(horizontal = GroupedListInset, vertical = 4.dp),
-    )
 }
 
 internal fun openUrl(context: Context, url: String) {

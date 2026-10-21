@@ -8,14 +8,12 @@ import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
-import de.jeanlucmakiola.calendula.ui.common.PickerDescription
-import de.jeanlucmakiola.calendula.ui.common.ViewPreviewFrame
 import de.jeanlucmakiola.calendula.ui.month.MonthStylePreview
 import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
 import de.jeanlucmakiola.floret.components.FullScreenPicker
-import de.jeanlucmakiola.floret.components.GroupedRow
-import de.jeanlucmakiola.floret.components.SelectedCheck
-import de.jeanlucmakiola.floret.components.positionOf
+import de.jeanlucmakiola.floret.components.GroupedHint
+import de.jeanlucmakiola.floret.components.OptionRows
+import de.jeanlucmakiola.floret.components.ViewPreviewFrame
 import de.jeanlucmakiola.floret.locale.currentLocale
 
 /**
@@ -51,29 +49,23 @@ internal fun WeekStartPicker(
                 height = PREVIEW_HEIGHT,
             )
         }
-        PickerDescription(stringResource(R.string.settings_week_start_hint))
-        options.forEachIndexed { index, option ->
-            val isSelected = option == selected
-            GroupedRow(
-                title = weekStartLabel(option),
-                summary = if (option == WeekStartPref.Auto) {
+        GroupedHint(stringResource(R.string.settings_week_start_hint), verticalPadding = 8.dp)
+        OptionRows(
+            options = options,
+            selected = selected,
+            label = { weekStartLabel(it) },
+            onSelect = onSelect,
+            summary = { option ->
+                if (option == WeekStartPref.Auto) {
                     stringResource(
                         R.string.settings_week_start_auto_summary,
                         weekStartLabel(WeekStartPref.Day(option.resolveFirstDay(locale))),
                     )
                 } else {
                     null
-                },
-                position = positionOf(index, options.size),
-                selected = isSelected,
-                trailing = if (isSelected) {
-                    { SelectedCheck() }
-                } else {
-                    null
-                },
-                onClick = { onSelect(option) },
-            )
-        }
+                }
+            },
+        )
     }
 }
 

@@ -4,6 +4,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -131,6 +132,10 @@ class MonthDragController {
      * grid behind it still shows the old day until the query re-reads.
      */
     var settling: MonthChipDrag? by mutableStateOf(null)
+        private set
+
+    /** How many real drops this controller has handed back. */
+    var drops by mutableIntStateOf(0)
         private set
 
     /**
@@ -291,6 +296,7 @@ class MonthDragController {
         settledGhost = true
         undoable = settling
         settledAbandonedMark = abandonedTicks?.value ?: 0
+        drops++
         return MonthChipDrop(landed.event, landed.grabDate, target)
     }
 

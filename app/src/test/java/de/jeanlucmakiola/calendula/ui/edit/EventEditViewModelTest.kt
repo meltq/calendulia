@@ -1,34 +1,41 @@
 package de.jeanlucmakiola.calendula.ui.edit
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.datastore.preferences.core.Preferences
+import android.content.ContextWrapper
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.data.calendar.CalendarRepositoryImpl
+import de.jeanlucmakiola.calendula.MainDispatcherExtension
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
+import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
+import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.data.time.FakeZoneSource
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
-import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.domain.FormTime
+import de.jeanlucmakiola.calendula.domain.startInstant
+import de.jeanlucmakiola.calendula.domain.problems
+import de.jeanlucmakiola.calendula.domain.endInstant
+import de.jeanlucmakiola.calendula.testDetail
+import de.jeanlucmakiola.calendula.testEvent
+import de.jeanlucmakiola.calendula.testPrefs
+import de.jeanlucmakiola.calendula.testRepository
+import de.jeanlucmakiola.calendula.testSettings
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
-import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
-import kotlinx.coroutines.test.setMain
-import kotlinx.coroutines.Dispatchers
+import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
+import kotlinx.datetime.TimeZone
 import org.junit.jupiter.api.Test
+import org.junit.jupiter.api.extension.RegisterExtension
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 import kotlin.time.Instant
@@ -41,10 +48,9 @@ import kotlin.time.Instant
 @OptIn(ExperimentalCoroutinesApi::class)
 class EventEditViewModelTest {
 
-    private val dispatcher = UnconfinedTestDispatcher()
-
-    @BeforeEach fun setUp() = Dispatchers.setMain(dispatcher)
-    @AfterEach fun tearDown() = Dispatchers.resetMain()
+    @JvmField @RegisterExtension
+    val mainDispatcher = MainDispatcherExtension()
+    private val dispatcher = mainDispatcher.dispatcher
 
     private val beginMillis = 1_781_164_800_000L
     private val endMillis = beginMillis + 3_600_000L
@@ -59,32 +65,27 @@ class EventEditViewModelTest {
         syncsEvents = syncsEvents,
     )
 
-    private fun detail(calendarId: Long, rrule: String? = null): EventDetail = EventDetail(
-        instance = EventInstance(
-            instanceId = 42L, eventId = 42L, calendarId = calendarId, title = "Standup",
-            start = Instant.fromEpochMilliseconds(beginMillis),
-            end = Instant.fromEpochMilliseconds(endMillis),
-            isAllDay = false, color = 0xFF000000.toInt(), location = null,
+    private fun detail(
+        calendarId: Long,
+        rrule: String? = null,
+        start: Instant = Instant.fromEpochMilliseconds(beginMillis),
+        end: Instant = Instant.fromEpochMilliseconds(endMillis),
+    ): EventDetail = testDetail(
+        instance = testEvent(
+            id = 42L, calendarId = calendarId, title = "Standup",
+            start = start,
+            end = end,
+            color = 0xFF000000.toInt(),
         ),
-        description = null, organizer = null, attendees = emptyList(), rrule = rrule,
+        rrule = rrule,
     )
 
     // Pin the DataStore's scope to the test dispatcher so a settings write (e.g.
     // last-used calendar) completes under advanceUntilIdle instead of on a real
     // IO thread the virtual clock can't observe.
-    private fun prefs(tempDir: Path): CalendarPrefs = CalendarPrefs(
-        PreferenceDataStoreFactory.create(
-            scope = CoroutineScope(dispatcher),
-            produceFile = { tempDir.resolve("vm_prefs.preferences_pb").toFile() },
-        ),
-    )
+    private fun prefs(tempDir: Path): CalendarPrefs = testPrefs(tempDir, CoroutineScope(dispatcher))
 
-    private fun settings(tempDir: Path): SettingsPrefs = SettingsPrefs(
-        PreferenceDataStoreFactory.create(
-            scope = CoroutineScope(dispatcher),
-            produceFile = { tempDir.resolve("vm_settings.preferences_pb").toFile() },
-        ),
-    )
+    private fun settings(tempDir: Path): SettingsPrefs = testSettings(tempDir, CoroutineScope(dispatcher))
 
     private fun viewModel(
         tempDir: Path,
@@ -92,10 +93,15 @@ class EventEditViewModelTest {
         // Passed in by the tests that need to seed a setting first; a second
         // DataStore on the same file would clash, so it is built only once.
         s: SettingsPrefs = settings(tempDir),
+        zones: FakeZoneSource = FakeZoneSource(),
+        // A queued dispatcher here holds provider reads and writes until the test
+        // advances, so it can close the form while one is in flight.
+        io: CoroutineDispatcher = dispatcher,
     ): EventEditViewModel {
         val p = prefs(tempDir)
-        val repo = CalendarRepositoryImpl(fake, p, s, dispatcher as CoroutineDispatcher)
-        return EventEditViewModel(repo, p, s, dispatcher)
+        val repo = testRepository(fake, tempDir, io, p, s)
+        // Only `shareUri()` touches the exporter, and nothing here shares.
+        return EventEditViewModel(repo, p, s, IcsExporter(ContextWrapper(null)), dispatcher, zones)
     }
 
     /** Keep [EventEditViewModel.state] hot so it computes while the test drives it. */
@@ -221,12 +227,12 @@ class EventEditViewModelTest {
         advanceUntilIdle()
 
         // Calendar 1 has no length of its own, so it inherits the global 30 min.
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 9, 30))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 9, 30))
 
         vm.setCalendar(2L)
         advanceUntilIdle()
 
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 17, 0))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 17, 0))
         job.cancel()
     }
 
@@ -246,7 +252,7 @@ class EventEditViewModelTest {
         vm.setCalendar(2L)
         advanceUntilIdle()
 
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 10, 15))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 10, 15))
         job.cancel()
     }
 
@@ -267,7 +273,7 @@ class EventEditViewModelTest {
         advanceUntilIdle()
 
         // The file owns the length; a calendar switch must not restretch it.
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 11, 30))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 11, 30))
         job.cancel()
     }
 
@@ -288,15 +294,15 @@ class EventEditViewModelTest {
         )
         advanceUntilIdle()
 
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 9, 30))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 9, 30))
         job.cancel()
     }
 
     private fun importedForm(end: LocalDateTime) = EventForm(
         calendarId = null,
         title = "Imported",
-        start = LocalDateTime(2030, 1, 15, 9, 0),
-        end = end,
+        start = FormTime(LocalDateTime(2030, 1, 15, 9, 0)),
+        end = FormTime(end),
     )
 
     @Test
@@ -316,7 +322,7 @@ class EventEditViewModelTest {
         advanceUntilIdle()
 
         // Dates carry no length: the times stay where the form put them.
-        assertThat(vm.state.value?.form?.end).isEqualTo(LocalDateTime(2030, 1, 15, 10, 0))
+        assertThat(vm.state.value?.form?.end?.dateTime).isEqualTo(LocalDateTime(2030, 1, 15, 10, 0))
         job.cancel()
     }
 
@@ -406,5 +412,311 @@ class EventEditViewModelTest {
         val new = "a".repeat(254) + "😀"
 
         assertThat(capLength(new, "")).isEqualTo("a".repeat(254))
+    }
+
+    @Test
+    fun `an edit counts as unsaved only while it differs from the loaded event`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L) }
+        }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+
+        vm.setTitle("Retro")
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isTrue()
+
+        vm.setTitle("Standup")
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+        job.cancel()
+    }
+
+    @Test
+    fun `a new form holding only its defaults has nothing to lose`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openNew(LocalDate(2026, 10, 12), startMinutes = 9 * 60)
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+
+        vm.setTitle("Lunch")
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isTrue()
+
+        vm.setTitle("")
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+        job.cancel()
+    }
+
+    @Test
+    fun `deleting from the form removes the event and reports it`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L) }
+        }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        vm.delete(RecurringWriteScope.AllEvents)
+        advanceUntilIdle()
+
+        assertThat(fake.deletedEventIds).containsExactly(42L)
+        assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.Deleted)
+        job.cancel()
+    }
+
+    @Test
+    fun `deleting an event that is already gone counts as deleted`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L) }
+        }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        fake.writeError = NoSuchEventException(42L)
+        vm.delete(RecurringWriteScope.AllEvents)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.Deleted)
+        job.cancel()
+    }
+
+    @Test
+    fun `a delete without write access reports it as a delete`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L) }
+        }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        fake.writeError = SecurityException()
+        vm.delete(RecurringWriteScope.AllEvents)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.DeleteDenied)
+        job.cancel()
+    }
+
+    @Test
+    fun `a blank rrule does not make the edited event recurring`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L, rrule = "") }
+        }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+
+        assertThat(vm.editedEventRecurs()).isFalse()
+        job.cancel()
+    }
+
+    @Test
+    fun `accepting the default reminders for an import counts as a change`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val s = settings(tempDir)
+        s.setDefaultReminderMinutes(listOf(15))
+        val vm = viewModel(tempDir, fake, s)
+        val job = activate(vm)
+
+        vm.openImported(importedForm(end = LocalDateTime(2030, 1, 15, 10, 0)), ImportSource.File)
+        advanceUntilIdle()
+        assertThat(vm.importReminderPrompt.value).isNotNull()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+
+        vm.applyImportedReminderDefault()
+        advanceUntilIdle()
+        assertThat(vm.hasUnsavedChanges.value).isTrue()
+        job.cancel()
+    }
+
+    @Test
+    fun `a drafted block opens at its own instants across the fall-back hour`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val vm = viewModel(tempDir, fake, zones = FakeZoneSource(berlin))
+        val job = activate(vm)
+
+        // An hour from 02:30 CEST ends at 02:30 CET, the same wall clock.
+        vm.openDraft(Instant.parse("2026-10-25T00:30:00Z"), Instant.parse("2026-10-25T01:30:00Z"))
+        advanceUntilIdle()
+
+        val form = vm.state.value!!.form!!
+        assertThat(form.startInstant(berlin)).isEqualTo(Instant.parse("2026-10-25T00:30:00Z"))
+        assertThat(form.endInstant(berlin)).isEqualTo(Instant.parse("2026-10-25T01:30:00Z"))
+        assertThat(form.problems(berlin)).isEmpty()
+        job.cancel()
+    }
+
+    @Test
+    fun `a drafted block on the second pass stays on it at its length`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val s = settings(tempDir)
+        s.setCalendarEventDuration(1L, 480)
+        val vm = viewModel(tempDir, fake, s, FakeZoneSource(berlin))
+        val job = activate(vm)
+
+        // 02:30 CET to 03:00 CET: the default length mustn't stretch it.
+        vm.openDraft(Instant.parse("2026-10-25T01:30:00Z"), Instant.parse("2026-10-25T02:00:00Z"))
+        advanceUntilIdle()
+
+        val form = vm.state.value!!.form!!
+        assertThat(form.startInstant(berlin)).isEqualTo(Instant.parse("2026-10-25T01:30:00Z"))
+        assertThat(form.endInstant(berlin)).isEqualTo(Instant.parse("2026-10-25T02:00:00Z"))
+        job.cancel()
+    }
+
+    @Test
+    fun `a time picked in the repeated hour and back keeps the opened pass`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        // Opened at 02:30 CET (the second pass) to 03:30, its start moved away and back.
+        val begin = Instant.parse("2026-10-25T01:30:00Z")
+        val end = Instant.parse("2026-10-25T02:30:00Z")
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L, start = begin, end = end) }
+        }
+        val vm = viewModel(tempDir, fake, zones = FakeZoneSource(berlin))
+        val job = activate(vm)
+        vm.openForEdit(eventId = 1L, beginMillis = begin.toEpochMilliseconds(), endMillis = end.toEpochMilliseconds())
+        advanceUntilIdle()
+        val opened = vm.state.value!!.form!!
+
+        vm.setStartTime(LocalTime(4, 0))
+        vm.setStartTime(LocalTime(2, 30))
+
+        assertThat(vm.state.value!!.form).isEqualTo(opened)
+        job.cancel()
+    }
+
+    private val berlin = TimeZone.of("Europe/Berlin")
+
+    @Test
+    fun `all-day on and off keeps a second-pass event where it was`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val begin = Instant.parse("2026-10-25T01:30:00Z")
+        val end = Instant.parse("2026-10-25T02:30:00Z")
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L, start = begin, end = end) }
+        }
+        val vm = viewModel(tempDir, fake, zones = FakeZoneSource(berlin))
+        val job = activate(vm)
+        vm.openForEdit(eventId = 1L, beginMillis = begin.toEpochMilliseconds(), endMillis = end.toEpochMilliseconds())
+        advanceUntilIdle()
+        val opened = vm.state.value!!.form!!
+
+        vm.setAllDay(true)
+        vm.setAllDay(false)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value!!.form).isEqualTo(opened)
+        job.cancel()
+    }
+
+    @Test
+    fun `a load abandoned by closing the form never lands on the next one`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { id ->
+                val base = detail(calendarId = 1L)
+                base.copy(instance = base.instance.copy(eventId = id, title = "Event $id"))
+            }
+        }
+        val vm = viewModel(tempDir, fake, io = StandardTestDispatcher(testScheduler))
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 1L, beginMillis = beginMillis, endMillis = endMillis)
+        vm.reset()
+        advanceUntilIdle()
+        vm.openForEdit(eventId = 2L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.form?.title).isEqualTo("Event 2")
+        job.cancel()
+    }
+
+    @Test
+    fun `a failed load abandoned by closing the form doesn't close the next one`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { null }
+        }
+        val vm = viewModel(tempDir, fake, io = StandardTestDispatcher(testScheduler))
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 1L, beginMillis = beginMillis, endMillis = endMillis)
+        vm.reset()
+        advanceUntilIdle()
+        vm.openNew(LocalDate(2026, 10, 12), startMinutes = 9 * 60)
+        advanceUntilIdle()
+
+        assertThat(vm.loadFailed.value).isFalse()
+        job.cancel()
+    }
+
+    @Test
+    fun `a delete still running when the form closes doesn't report to the next one`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = { detail(calendarId = 1L) }
+        }
+        val vm = viewModel(tempDir, fake, io = StandardTestDispatcher(testScheduler))
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        vm.delete(RecurringWriteScope.AllEvents)
+        vm.reset()
+        vm.openNew(LocalDate(2026, 10, 12), startMinutes = 9 * 60)
+        advanceUntilIdle()
+
+        assertThat(fake.deletedEventIds).containsExactly(42L)
+        assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.Idle)
+        job.cancel()
     }
 }

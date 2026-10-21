@@ -61,14 +61,14 @@ import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.FullScreenPicker
 import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
-import de.jeanlucmakiola.floret.components.OptionPicker
+import de.jeanlucmakiola.floret.components.GroupedSectionHeader
+import de.jeanlucmakiola.floret.components.LanguagePickerRow
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.crash.CrashReportDialog
 import de.jeanlucmakiola.floret.crash.CrashReporter
 import de.jeanlucmakiola.floret.crash.openIssueTracker
 import de.jeanlucmakiola.floret.crash.submitCrashReport
 import de.jeanlucmakiola.floret.identity.predictiveBackExit
-import de.jeanlucmakiola.floret.locale.AppLanguage
 
 /** The settings sub-screens reached from the hub's category rows. */
 private enum class SettingsSection {
@@ -193,7 +193,7 @@ private fun SettingsHub(
 
         // Each group cycles its chip accents so no two rows in it look alike
         // (see [ChipAccent]).
-        SectionHeader(stringResource(R.string.settings_group_look))
+        GroupedSectionHeader(stringResource(R.string.settings_group_look))
         GroupedRow(
             title = stringResource(R.string.settings_section_appearance),
             summary = stringResource(R.string.settings_appearance_subtitle),
@@ -224,7 +224,7 @@ private fun SettingsHub(
         )
 
         Spacer(Modifier.height(8.dp))
-        SectionHeader(stringResource(R.string.settings_group_data))
+        GroupedSectionHeader(stringResource(R.string.settings_group_data))
         GroupedRow(
             title = stringResource(R.string.settings_section_calendars),
             summary = stringResource(R.string.settings_manage_calendars_hint),
@@ -250,7 +250,7 @@ private fun SettingsHub(
         )
 
         Spacer(Modifier.height(8.dp))
-        SectionHeader(stringResource(R.string.settings_group_app))
+        GroupedSectionHeader(stringResource(R.string.settings_group_app))
         GroupedRow(
             title = stringResource(R.string.settings_section_widgets),
             summary = stringResource(R.string.settings_widgets_subtitle),
@@ -258,13 +258,33 @@ private fun SettingsHub(
             leading = { CategoryIcon(Icons.Default.Widgets, ChipAccent.Tertiary) },
             onClick = { onOpenSection(SettingsSection.Widgets) },
         )
-        LanguageRow(position = Position.Middle)
+        LanguagePickerRow(
+            position = Position.Middle,
+            title = stringResource(R.string.settings_language),
+            autoLabel = stringResource(R.string.settings_language_auto),
+            localesConfig = R.xml.locales_config,
+            predictiveBack = true,
+            // Invite contributions right where users pick their language.
+            header = {
+                val context = LocalContext.current
+                val translateUrl = stringResource(R.string.about_translate_url)
+                GroupedRow(
+                    title = stringResource(R.string.settings_translate),
+                    summary = stringResource(R.string.settings_translate_hint),
+                    position = Position.Alone,
+                    leading = { CategoryIcon(Icons.Default.Translate, ChipAccent.Neutral) },
+                    onClick = { openUrl(context, translateUrl) },
+                )
+                Spacer(Modifier.height(16.dp))
+            },
+            leading = { CategoryIcon(Icons.Default.Language, ChipAccent.Secondary) },
+        )
         ReportProblemRow(position = Position.Bottom)
 
         // Source, licence and privacy sit at the bottom as reference material
         // rather than inside the About card.
         Spacer(Modifier.height(8.dp))
-        SectionHeader(stringResource(R.string.settings_group_about))
+        GroupedSectionHeader(stringResource(R.string.settings_group_about))
         AboutLinkRow(
             label = stringResource(R.string.settings_about_source),
             url = stringResource(R.string.about_source_url),
@@ -329,58 +349,6 @@ private fun ReportProblemRow(position: Position) {
         )
     }
 }
-
-@Composable
-private fun LanguageRow(position: Position) {
-    val context = LocalContext.current
-    val supported = remember { AppLanguage.supportedTags(context, R.xml.locales_config) }
-    // Setting a locale recreates the activity; mirror the choice locally so the
-    // row updates instantly even before the recreation lands.
-    var current by remember { mutableStateOf(AppLanguage.currentTag(supported)) }
-    var showDialog by remember { mutableStateOf(false) }
-
-    // null = follow the system; the rest are BCP-47 tags from locales_config.xml.
-    val options = remember(supported) { listOf<String?>(null) + supported }
-
-    GroupedRow(
-        title = stringResource(R.string.settings_language),
-        summary = languageLabel(current),
-        position = position,
-        leading = { CategoryIcon(Icons.Default.Language, ChipAccent.Secondary) },
-        onClick = { showDialog = true },
-    )
-
-    if (showDialog) {
-        OptionPicker(
-            title = stringResource(R.string.settings_language),
-            predictiveBack = true,
-            options = options,
-            selected = current,
-            label = { languageLabel(it) },
-            onSelect = {
-                current = it
-                AppLanguage.apply(it)
-            },
-            onDismiss = { showDialog = false },
-            // Invite contributions right where users pick their language.
-            header = {
-                val translateUrl = stringResource(R.string.about_translate_url)
-                GroupedRow(
-                    title = stringResource(R.string.settings_translate),
-                    summary = stringResource(R.string.settings_translate_hint),
-                    position = Position.Alone,
-                    leading = { CategoryIcon(Icons.Default.Translate, ChipAccent.Neutral) },
-                    onClick = { openUrl(context, translateUrl) },
-                )
-                Spacer(Modifier.height(16.dp))
-            },
-        )
-    }
-}
-
-@Composable
-private fun languageLabel(tag: String?): String =
-    if (tag == null) stringResource(R.string.settings_language_auto) else AppLanguage.displayName(tag)
 
 @Composable
 private fun AboutCard() {

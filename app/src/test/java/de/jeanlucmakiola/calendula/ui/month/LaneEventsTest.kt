@@ -1,16 +1,14 @@
 package de.jeanlucmakiola.calendula.ui.month
 
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.allDayEvent
 import de.jeanlucmakiola.calendula.domain.EventInstance
-import kotlinx.datetime.DateTimeUnit
+import de.jeanlucmakiola.calendula.timedEvent
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.YearMonth
-import kotlinx.datetime.atTime
-import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
 import org.junit.jupiter.api.Test
 
 /**
@@ -27,29 +25,10 @@ class LaneEventsTest {
         layoutMonthWeeks(jul26, DayOfWeek.MONDAY, events, zone)[1]
 
     private fun allDay(from: LocalDate, toInclusive: LocalDate, id: Long, color: Int = BLUE) =
-        EventInstance(
-            instanceId = id,
-            eventId = id,
-            calendarId = 1L,
-            title = "A$id",
-            start = from.atTime(0, 0).toInstant(zone),
-            end = toInclusive.plus(1, DateTimeUnit.DAY).atTime(0, 0).toInstant(zone),
-            isAllDay = true,
-            color = color,
-            location = null,
-        )
+        allDayEvent(from, toInclusive, id = id, title = "A$id", color = color, zone = zone)
 
-    private fun timed(date: LocalDate, hour: Int, id: Long, color: Int = RED) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = "T$id",
-        start = date.atTime(hour, 0).toInstant(zone),
-        end = date.atTime(hour + 1, 0).toInstant(zone),
-        isAllDay = false,
-        color = color,
-        location = null,
-    )
+    private fun timed(date: LocalDate, hour: Int, id: Long, color: Int = RED) =
+        timedEvent(date, hour, zone = zone, id = id, title = "T$id", color = color)
 
     @Test
     fun `a bar keeps its lane and the day's timed events fill what's left`() {
@@ -58,7 +37,7 @@ class LaneEventsTest {
         val week = rowOfJuly6(listOf(bar, meeting))
 
         // Jul 7 is column 1 of a Monday-anchored row starting Jul 6.
-        assertThat(week.laneEvents(col = 1, day = LocalDate(2026, 7, 7), laneCap = 3))
+        assertThat(week.laneEvents(col = 1, laneCap = 3))
             .containsExactly(bar, meeting)
             .inOrder()
     }
@@ -69,7 +48,7 @@ class LaneEventsTest {
         val monday = timed(LocalDate(2026, 7, 6), hour = 9, id = 2L)
         val week = rowOfJuly6(listOf(bar, monday))
 
-        assertThat(week.laneEvents(col = 0, day = LocalDate(2026, 7, 6), laneCap = 3))
+        assertThat(week.laneEvents(col = 0, laneCap = 3))
             .containsExactly(monday)
     }
 
@@ -79,10 +58,9 @@ class LaneEventsTest {
         val week = rowOfJuly6(listOf(bar))
 
         (1..3).forEach { col ->
-            val day = LocalDate(2026, 7, 6 + col)
-            assertThat(week.laneEvents(col, day, laneCap = 3)).containsExactly(bar)
+            assertThat(week.laneEvents(col, laneCap = 3)).containsExactly(bar)
         }
-        assertThat(week.laneEvents(col = 4, day = LocalDate(2026, 7, 10), laneCap = 3)).isEmpty()
+        assertThat(week.laneEvents(col = 4, laneCap = 3)).isEmpty()
     }
 
     /** The bug the colour-gathered dots had: one dot for two events on one calendar. */
@@ -92,7 +70,7 @@ class LaneEventsTest {
         val second = timed(LocalDate(2026, 7, 6), hour = 14, id = 2L, color = RED)
         val week = rowOfJuly6(listOf(first, second))
 
-        assertThat(week.laneEvents(col = 0, day = LocalDate(2026, 7, 6), laneCap = 3))
+        assertThat(week.laneEvents(col = 0, laneCap = 3))
             .containsExactly(first, second)
             .inOrder()
     }
@@ -102,7 +80,7 @@ class LaneEventsTest {
         val events = (0 until 5).map { timed(LocalDate(2026, 7, 6), hour = 8 + it, id = it + 1L) }
         val week = rowOfJuly6(events)
 
-        val seated = week.laneEvents(col = 0, day = LocalDate(2026, 7, 6), laneCap = 3)
+        val seated = week.laneEvents(col = 0, laneCap = 3)
         assertThat(seated).hasSize(3)
         assertThat(seated).containsExactlyElementsIn(events.take(3)).inOrder()
         assertThat(week.countByDay[LocalDate(2026, 7, 6)]!! - seated.size).isEqualTo(2)
@@ -116,7 +94,7 @@ class LaneEventsTest {
         }
         val week = rowOfJuly6(bars)
 
-        val seated = week.laneEvents(col = 0, day = LocalDate(2026, 7, 6), laneCap = 3)
+        val seated = week.laneEvents(col = 0, laneCap = 3)
         assertThat(seated).hasSize(3)
         assertThat(week.spans.filter { it.lane >= 3 }.map { it.event })
             .containsNoneIn(seated)
@@ -126,14 +104,13 @@ class LaneEventsTest {
     fun `overflow is exactly what seating left behind`() {
         val events = (0 until 5).map { timed(LocalDate(2026, 7, 6), hour = 8 + it, id = it + 1L) }
         val week = rowOfJuly6(events)
-        val day = LocalDate(2026, 7, 6)
 
-        val seated = week.laneEvents(col = 0, day = day, laneCap = 3)
-        val overflow = week.overflowEvents(col = 0, day = day, laneCap = 3)
+        val seated = week.laneEvents(col = 0, laneCap = 3)
+        val overflow = week.overflowEvents(col = 0, laneCap = 3)
 
         assertThat(overflow).containsExactlyElementsIn(events.drop(3)).inOrder()
         assertThat(seated + overflow).containsExactlyElementsIn(events)
-        assertThat(seated.size + overflow.size).isEqualTo(week.countByDay[day])
+        assertThat(seated.size + overflow.size).isEqualTo(week.countByDay[LocalDate(2026, 7, 6)])
     }
 
     @Test
@@ -145,8 +122,7 @@ class LaneEventsTest {
         val parked = week.spans.filter { it.lane >= 3 }.map { it.event }
 
         (0..2).forEach { col ->
-            val day = LocalDate(2026, 7, 6 + col)
-            assertThat(week.overflowEvents(col, day, laneCap = 3))
+            assertThat(week.overflowEvents(col, laneCap = 3))
                 .containsExactlyElementsIn(parked)
         }
     }
@@ -155,7 +131,7 @@ class LaneEventsTest {
     fun `a day that fits has no overflow`() {
         val week = rowOfJuly6(listOf(timed(LocalDate(2026, 7, 6), hour = 9, id = 1L)))
 
-        assertThat(week.overflowEvents(col = 0, day = LocalDate(2026, 7, 6), laneCap = 3)).isEmpty()
+        assertThat(week.overflowEvents(col = 0, laneCap = 3)).isEmpty()
     }
 
     private companion object {

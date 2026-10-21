@@ -1,11 +1,11 @@
 package de.jeanlucmakiola.calendula.data.prefs
 
+import de.jeanlucmakiola.calendula.testDataStore
+import de.jeanlucmakiola.calendula.testSettings
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 
-import androidx.datastore.core.DataStore
-import androidx.datastore.preferences.core.PreferenceDataStoreFactory
-import androidx.datastore.preferences.core.Preferences
 import androidx.compose.ui.unit.dp
+import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
@@ -17,6 +17,8 @@ import de.jeanlucmakiola.calendula.ui.common.QuickSwitchConfig
 import de.jeanlucmakiola.calendula.ui.common.TimelineHours
 import de.jeanlucmakiola.calendula.ui.common.TimelineScale
 import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
+import de.jeanlucmakiola.calendula.ui.onboarding.OnboardingStep
+import de.jeanlucmakiola.floret.prefs.ThemeMode
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.DayOfWeek
@@ -27,14 +29,9 @@ import java.util.Locale
 
 class SettingsPrefsTest {
 
-    private fun newDataStore(tempDir: Path): DataStore<Preferences> =
-        PreferenceDataStoreFactory.create(
-            produceFile = { tempDir.resolve("settings_test.preferences_pb").toFile() },
-        )
-
     @Test
     fun `defaults are system theme, dynamic colour on, auto week start`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.themeMode.first()).isEqualTo(ThemeMode.SYSTEM)
         assertThat(prefs.dynamicColor.first()).isTrue()
         assertThat(prefs.weekStart.first()).isEqualTo(WeekStartPref.Auto)
@@ -42,32 +39,39 @@ class SettingsPrefsTest {
 
     @Test
     fun `theme mode round-trips`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setThemeMode(ThemeMode.DARK)
         assertThat(prefs.themeMode.first()).isEqualTo(ThemeMode.DARK)
     }
 
     @Test
+    fun `black theme mode round-trips`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        prefs.setThemeMode(ThemeMode.BLACK)
+        assertThat(prefs.themeMode.first()).isEqualTo(ThemeMode.BLACK)
+    }
+
+    @Test
     fun `dynamic colour round-trips`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setDynamicColor(false)
         assertThat(prefs.dynamicColor.first()).isFalse()
     }
 
     @Test
     fun `week start round-trips any day`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setWeekStart(WeekStartPref.Day(DayOfWeek.SATURDAY))
         assertThat(prefs.weekStart.first()).isEqualTo(WeekStartPref.Day(DayOfWeek.SATURDAY))
     }
 
     @Test
     fun `legacy MONDAY week-start value migrates to Day`(@TempDir tempDir: Path) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         store.updateData { p ->
             val m = p.toMutablePreferences()
-            m[SettingsPrefs.WEEK_START_KEY] = "MONDAY"
+            m[stringPreferencesKey("week_start")] = "MONDAY"
             m
         }
         assertThat(prefs.weekStart.first()).isEqualTo(WeekStartPref.Day(DayOfWeek.MONDAY))
@@ -75,11 +79,11 @@ class SettingsPrefsTest {
 
     @Test
     fun `garbage week-start value falls back to Auto`(@TempDir tempDir: Path) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         store.updateData { p ->
             val m = p.toMutablePreferences()
-            m[SettingsPrefs.WEEK_START_KEY] = "FUNDAY"
+            m[stringPreferencesKey("week_start")] = "FUNDAY"
             m
         }
         assertThat(prefs.weekStart.first()).isEqualTo(WeekStartPref.Auto)
@@ -87,7 +91,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `time format defaults to auto and round-trips`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.timeFormat.first()).isEqualTo(TimeFormatPref.AUTO)
         prefs.setTimeFormat(TimeFormatPref.TWELVE_HOUR)
         assertThat(prefs.timeFormat.first()).isEqualTo(TimeFormatPref.TWELVE_HOUR)
@@ -95,7 +99,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `hour lines default off and round-trips`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.showHourGrid.first()).isFalse()
         prefs.setShowHourGrid(true)
         assertThat(prefs.showHourGrid.first()).isTrue()
@@ -105,7 +109,7 @@ class SettingsPrefsTest {
     fun `timeline scale defaults to regular and round-trips`(@TempDir tempDir: Path) = runTest {
         // Regular is the historical 56dp scale — an existing install that never
         // opened the setting must keep the timeline it had (#56).
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.timelineScale.first()).isEqualTo(TimelineScale.Regular)
         prefs.setTimelineScale(TimelineScale.FitDay)
         assertThat(prefs.timelineScale.first()).isEqualTo(TimelineScale.FitDay)
@@ -115,7 +119,7 @@ class SettingsPrefsTest {
     fun `a pinched timeline height round-trips`(@TempDir tempDir: Path) = runTest {
         // The pinch settles on a height between the presets, so the preference
         // has to store the number, not just a named step (#56).
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         val pinched = TimelineScale.custom(63.5f.dp)
         prefs.setTimelineScale(pinched)
         assertThat(prefs.timelineScale.first()).isEqualTo(pinched)
@@ -128,7 +132,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `visible hours default off and round-trip`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.timelineHours.first()).isEqualTo(TimelineHours(enabled = false, 7, 22))
         prefs.setTimelineHours(TimelineHours(enabled = true, 6, 20))
         assertThat(prefs.timelineHours.first()).isEqualTo(TimelineHours(enabled = true, 6, 20))
@@ -139,14 +143,14 @@ class SettingsPrefsTest {
 
     @Test
     fun `visible hours are stored valid`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setTimelineHours(TimelineHours(enabled = true, 23, 22))
         assertThat(prefs.timelineHours.first()).isEqualTo(TimelineHours(enabled = true, 20, 22))
     }
 
     @Test
     fun `week numbers default off and round-trips`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.showWeekNumbers.first()).isFalse()
         prefs.setShowWeekNumbers(true)
         assertThat(prefs.showWeekNumbers.first()).isTrue()
@@ -154,7 +158,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `autofocus event title defaults on and round-trips`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.autofocusEventTitle.first()).isTrue()
         prefs.setAutofocusEventTitle(false)
         assertThat(prefs.autofocusEventTitle.first()).isFalse()
@@ -162,7 +166,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `agenda ranges default to month and round-trip independently`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.agendaScreenRange.first()).isEqualTo(AgendaRange.Month)
         assertThat(prefs.agendaWidgetRange.first()).isEqualTo(AgendaRange.Month)
 
@@ -174,7 +178,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `month view style defaults to paged and round-trips`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.monthViewStyle.first()).isEqualTo(MonthViewStyle.Paged)
 
         prefs.setMonthViewStyle(MonthViewStyle.Split)
@@ -186,11 +190,11 @@ class SettingsPrefsTest {
 
     @Test
     fun `garbage stored month view style falls back to paged`(@TempDir tempDir: Path) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         store.updateData { p ->
             val m = p.toMutablePreferences()
-            m[SettingsPrefs.MONTH_VIEW_STYLE_KEY] = "Carousel"
+            m[stringPreferencesKey("month_view_style")] = "Carousel"
             m
         }
         assertThat(prefs.monthViewStyle.first()).isEqualTo(MonthViewStyle.Paged)
@@ -198,11 +202,11 @@ class SettingsPrefsTest {
 
     @Test
     fun `garbage stored enum falls back to default`(@TempDir tempDir: Path) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         store.updateData { p ->
             val m = p.toMutablePreferences()
-            m[SettingsPrefs.THEME_MODE_KEY] = "PLAID"
+            m[stringPreferencesKey("theme_mode")] = "PLAID"
             m
         }
         assertThat(prefs.themeMode.first()).isEqualTo(ThemeMode.SYSTEM)
@@ -210,7 +214,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `form fields default to location and description`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.defaultFormFields.first()).containsExactly(
             EventFormField.Location,
             EventFormField.Description,
@@ -219,7 +223,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `form field toggle round-trips`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setFormFieldDefault(EventFormField.Reminders, enabled = true)
         prefs.setFormFieldDefault(EventFormField.Location, enabled = false)
         assertThat(prefs.defaultFormFields.first()).containsExactly(
@@ -230,14 +234,14 @@ class SettingsPrefsTest {
 
     @Test
     fun `disabling every form field persists as none, not factory default`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         EventFormField.entries.forEach { prefs.setFormFieldDefault(it, enabled = false) }
         assertThat(prefs.defaultFormFields.first()).isEmpty()
     }
 
     @Test
     fun `quick-switch defaults to every view enabled in default order`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         val config = prefs.quickSwitchConfig.first()
         assertThat(config.order).containsExactlyElementsIn(IMPLEMENTED_VIEWS).inOrder()
         assertThat(config.enabled).containsExactlyElementsIn(IMPLEMENTED_VIEWS)
@@ -246,12 +250,12 @@ class SettingsPrefsTest {
 
     @Test
     fun `quick-switch config round-trips order and disabled views`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         val config = QuickSwitchConfig(
             order = listOf(CalendarView.Agenda, CalendarView.Month, CalendarView.Week, CalendarView.Day),
             enabled = setOf(CalendarView.Agenda, CalendarView.Month),
         )
-        prefs.setQuickSwitchConfig(config)
+        prefs.updateQuickSwitch { config }
         val loaded = prefs.quickSwitchConfig.first()
         assertThat(loaded.order).containsExactly(
             CalendarView.Agenda, CalendarView.Month, CalendarView.Week,
@@ -263,12 +267,12 @@ class SettingsPrefsTest {
 
     @Test
     fun `quick-switch parse appends missing views enabled and drops unknowns`(@TempDir tempDir: Path) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         // Only Day (disabled) and Week stored, plus a bogus name; Month & Agenda absent.
         store.updateData { p ->
             val m = p.toMutablePreferences()
-            m[SettingsPrefs.QUICK_SWITCH_VIEWS_KEY] = "!Day,Week,Hologram"
+            m[stringPreferencesKey("quick_switch_views")] = "!Day,Week,Hologram"
             m
         }
         val config = prefs.quickSwitchConfig.first()
@@ -285,7 +289,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `updateQuickSwitch transforms the stored value, so intents compose`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         // A toggle then a reorder, each expressed against the *stored* config —
         // the reorder must not resurrect the just-disabled view (the stale-UI-
         // snapshot race this API exists to prevent).
@@ -304,7 +308,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `drawer order defaults to the implemented order and round-trips`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.drawerViewOrder.first()).containsExactlyElementsIn(IMPLEMENTED_VIEWS).inOrder()
         prefs.setDrawerViewOrder(
             listOf(CalendarView.Agenda, CalendarView.Day, CalendarView.Week, CalendarView.Month),
@@ -317,11 +321,11 @@ class SettingsPrefsTest {
 
     @Test
     fun `drawer order parse appends missing views and drops unknowns`(@TempDir tempDir: Path) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         store.updateData { p ->
             val m = p.toMutablePreferences()
-            m[SettingsPrefs.DRAWER_VIEW_ORDER_KEY] = "Agenda,Nope,Week"
+            m[stringPreferencesKey("drawer_view_order")] = "Agenda,Nope,Week"
             m
         }
         assertThat(prefs.drawerViewOrder.first()).containsExactly(
@@ -332,11 +336,11 @@ class SettingsPrefsTest {
 
     @Test
     fun `unknown stored form-field names are dropped`(@TempDir tempDir: Path) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         store.updateData { p ->
             val m = p.toMutablePreferences()
-            m[SettingsPrefs.FORM_FIELDS_KEY] = "Location,Hologram"
+            m[stringPreferencesKey("event_form_default_fields")] = "Location,Hologram"
             m
         }
         assertThat(prefs.defaultFormFields.first()).containsExactly(EventFormField.Location)
@@ -344,60 +348,71 @@ class SettingsPrefsTest {
 
     @Test
     fun `reminders default to enabled, onboarding to not done`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.remindersEnabled.first()).isTrue()
-        assertThat(prefs.reminderOnboardingDone.first()).isFalse()
+        assertThat(prefs.onboardingProgress.first().answered).isEmpty()
     }
 
     @Test
     fun `reminders toggle round-trips`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setRemindersEnabled(false)
         assertThat(prefs.remindersEnabled.first()).isFalse()
     }
 
     @Test
     fun `reminder onboarding completes one-way`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
-        prefs.setReminderOnboardingDone()
-        assertThat(prefs.reminderOnboardingDone.first()).isTrue()
+        val prefs = testSettings(tempDir)
+        prefs.setOnboardingDone(OnboardingStep.Reminders)
+        assertThat(prefs.onboardingProgress.first().answered).containsExactly(OnboardingStep.Reminders)
+    }
+
+    @Test
+    fun `a step's answer can be cleared again`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        prefs.setOnboardingDone(OnboardingStep.Backup)
+        prefs.setOnboardingDone(OnboardingStep.View)
+
+        prefs.setOnboardingDone(OnboardingStep.Backup, done = false)
+
+        assertThat(prefs.onboardingProgress.first().answered).containsExactly(OnboardingStep.View)
     }
 
     @Test
     fun `the wizard arms on a first run`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.armOnboardingWizard()
-        assertThat(prefs.onboardingWizardArmed.first()).isTrue()
+        assertThat(prefs.onboardingProgress.first().wizardArmed).isTrue()
     }
 
     @Test
     fun `the wizard does not arm once the reminder step is answered`(@TempDir tempDir: Path) = runTest {
         // An existing install re-granting the permission is not re-onboarded.
-        val prefs = SettingsPrefs(newDataStore(tempDir))
-        prefs.setReminderOnboardingDone()
+        val prefs = testSettings(tempDir)
+        prefs.setOnboardingDone(OnboardingStep.Reminders)
         prefs.armOnboardingWizard()
-        assertThat(prefs.onboardingWizardArmed.first()).isFalse()
+        assertThat(prefs.onboardingProgress.first().wizardArmed).isFalse()
     }
 
     @Test
     fun `closing the wizard disarms it`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.armOnboardingWizard()
 
         prefs.finishOnboardingWizard()
-        assertThat(prefs.onboardingDoneShown.first()).isTrue()
-        assertThat(prefs.onboardingWizardArmed.first()).isFalse()
+        assertThat(prefs.onboardingProgress.first().answered).containsExactly(OnboardingStep.Done)
+        assertThat(prefs.onboardingProgress.first().wizardArmed).isFalse()
     }
 
     @Test
     fun `default reminder is empty until set`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.defaultReminderMinutes.first()).isEmpty()
     }
 
     @Test
     fun `default reminder round-trips none, single, and multiple lead times`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setDefaultReminderMinutes(listOf(30))
         assertThat(prefs.defaultReminderMinutes.first()).containsExactly(30)
         // Several lead times persist, normalised to distinct ascending order.
@@ -409,12 +424,12 @@ class SettingsPrefsTest {
 
     @Test
     fun `legacy single-value default reminder parses as a one-element list`(@TempDir tempDir: Path) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         // The pre-multi-reminder format stored a bare integer string.
         store.updateData { p ->
             val m = p.toMutablePreferences()
-            m[SettingsPrefs.DEFAULT_REMINDER_KEY] = "30"
+            m[stringPreferencesKey("default_reminder_minutes")] = "30"
             m
         }
         assertThat(prefs.defaultReminderMinutes.first()).containsExactly(30)
@@ -422,11 +437,11 @@ class SettingsPrefsTest {
 
     @Test
     fun `garbage stored default reminder reads as empty`(@TempDir tempDir: Path) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         store.updateData { p ->
             val m = p.toMutablePreferences()
-            m[SettingsPrefs.DEFAULT_REMINDER_KEY] = "soon"
+            m[stringPreferencesKey("default_reminder_minutes")] = "soon"
             m
         }
         assertThat(prefs.defaultReminderMinutes.first()).isEmpty()
@@ -434,7 +449,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `per-calendar override round-trips minutes, none, and inherit`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.perCalendarReminderOverride.first()).isEmpty()
 
         prefs.setCalendarReminderOverride(7L, ReminderOverride.Minutes(listOf(15, 10_080)))
@@ -455,7 +470,7 @@ class SettingsPrefsTest {
     fun `garbage per-calendar override values drop the entry, the none sentinel stays explicit`(
         @TempDir tempDir: Path,
     ) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         // Only "none" deliberately means an explicit no-reminder override; a
         // value with no valid minutes is garbage and must drop its entry so the
@@ -463,7 +478,7 @@ class SettingsPrefsTest {
         // reminders. Partially-valid values keep their salvageable minutes.
         store.updateData { p ->
             val m = p.toMutablePreferences()
-            m[SettingsPrefs.CALENDAR_REMINDER_OVERRIDE_KEY] = "5=none;7=abc;8=;9=30,abc;11=15"
+            m[stringPreferencesKey("per_calendar_reminder_override")] = "5=none;7=abc;8=;9=30,abc;11=15"
             m
         }
         assertThat(prefs.perCalendarReminderOverride.first()).containsExactly(
@@ -473,7 +488,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `all-day default round-trips, including none`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.defaultAllDayReminderMinutes.first()).isEmpty()
         prefs.setDefaultAllDayReminderMinutes(listOf(1_440))
         assertThat(prefs.defaultAllDayReminderMinutes.first()).containsExactly(1_440)
@@ -483,7 +498,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `per-calendar all-day override round-trips independently of the timed one`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setCalendarReminderOverride(7L, ReminderOverride.Minutes(listOf(15)))
         prefs.setCalendarAllDayReminderOverride(7L, ReminderOverride.Minutes(listOf(1_440)))
         assertThat(prefs.perCalendarReminderOverride.first()).containsExactly(7L, listOf(15))
@@ -520,7 +535,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `all-day reminder time defaults to 9am`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.allDayReminderTimeMinutes.first()).isEqualTo(540)
     }
 
@@ -528,7 +543,7 @@ class SettingsPrefsTest {
     fun `all-day reminder time round-trips and clamps to a valid minute-of-day`(
         @TempDir tempDir: Path,
     ) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setAllDayReminderTimeMinutes(8 * 60 + 30)
         assertThat(prefs.allDayReminderTimeMinutes.first()).isEqualTo(510)
         prefs.setAllDayReminderTimeMinutes(5_000)
@@ -539,7 +554,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `snooze duration defaults to 10 minutes`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.snoozeMinutes.first()).isEqualTo(10)
     }
 
@@ -547,7 +562,7 @@ class SettingsPrefsTest {
     fun `snooze duration round-trips and clamps to at least one minute`(
         @TempDir tempDir: Path,
     ) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setSnoozeMinutes(30)
         assertThat(prefs.snoozeMinutes.first()).isEqualTo(30)
         prefs.setSnoozeMinutes(0)
@@ -558,7 +573,7 @@ class SettingsPrefsTest {
     fun `event duration defaults to an hour and clamps to a sane span`(
         @TempDir tempDir: Path,
     ) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.defaultEventDurationMinutes.first()).isEqualTo(60)
         prefs.setDefaultEventDurationMinutes(480)
         assertThat(prefs.defaultEventDurationMinutes.first()).isEqualTo(480)
@@ -572,7 +587,7 @@ class SettingsPrefsTest {
     fun `per-calendar duration round-trips and clears back to inherit`(
         @TempDir tempDir: Path,
     ) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.perCalendarEventDuration.first()).isEmpty()
         prefs.setCalendarEventDuration(7L, 480)
         prefs.setCalendarEventDuration(9L, 30)
@@ -585,12 +600,12 @@ class SettingsPrefsTest {
     fun `garbage per-calendar duration entries are dropped, the rest survive`(
         @TempDir tempDir: Path,
     ) = runTest {
-        val store = newDataStore(tempDir)
+        val store = testDataStore(tempDir, "test_settings")
         val prefs = SettingsPrefs(store)
         store.updateData { p ->
             val m = p.toMutablePreferences()
             // A bad id, a non-numeric length, one out of range, and a good entry.
-            m[SettingsPrefs.CALENDAR_EVENT_DURATION_KEY] = "x=60;7=soon;8=99999;9=45"
+            m[stringPreferencesKey("per_calendar_event_duration")] = "x=60;7=soon;8=99999;9=45"
             m
         }
         assertThat(prefs.perCalendarEventDuration.first()).containsExactly(9L, 45)
@@ -606,7 +621,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `custom-font stamps default to zero and bump per role independently`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         // Existing installs have no stamp key — that must read as 0.
         assertThat(prefs.brandFontStamp.first()).isEqualTo(0)
         assertThat(prefs.plainFontStamp.first()).isEqualTo(0)
@@ -633,7 +648,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `special dates feature is off with all types on by default`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.specialDatesEnabled.first()).isFalse()
         assertThat(prefs.specialDatesTypes.first()).isEqualTo(SpecialDateType.entries.toSet())
         assertThat(prefs.specialDatesCalendars.first()).isEmpty()
@@ -643,7 +658,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `special date type toggles round-trip`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setSpecialDateTypeEnabled(SpecialDateType.Anniversary, false)
         assertThat(prefs.specialDatesTypes.first())
             .isEqualTo(setOf(SpecialDateType.Birthday, SpecialDateType.Custom))
@@ -651,7 +666,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `managed calendar ids round-trip and drive managedCalendarIds`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         prefs.setSpecialDatesCalendarId(SpecialDateType.Birthday, 7L)
         prefs.setSpecialDatesCalendarId(SpecialDateType.Anniversary, 9L)
         assertThat(prefs.specialDatesCalendars.first())
@@ -665,7 +680,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `title template round-trips per type`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.specialDatesTitleTemplates.first()[SpecialDateType.Birthday]).isEmpty()
         prefs.setSpecialDatesTitleTemplate(SpecialDateType.Birthday, "{name}'s birthday")
         assertThat(prefs.specialDatesTitleTemplates.first()[SpecialDateType.Birthday])
@@ -674,7 +689,7 @@ class SettingsPrefsTest {
 
     @Test
     fun `sync status records run and stalled reason`(@TempDir tempDir: Path) = runTest {
-        val prefs = SettingsPrefs(newDataStore(tempDir))
+        val prefs = testSettings(tempDir)
         assertThat(prefs.specialDatesStatus.first())
             .isEqualTo(SpecialDatesStatus(lastRun = 0L, stalled = null))
 

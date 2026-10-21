@@ -1,16 +1,14 @@
 package de.jeanlucmakiola.calendula.ui.month
 
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.allDayEvent
 import de.jeanlucmakiola.calendula.domain.EventInstance
-import kotlinx.datetime.DateTimeUnit
+import de.jeanlucmakiola.calendula.timedEvent
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.YearMonth
-import kotlinx.datetime.atTime
-import kotlinx.datetime.plus
-import kotlinx.datetime.toInstant
 import org.junit.jupiter.api.Test
 
 /**
@@ -22,29 +20,11 @@ class ClipWeekToMonthTest {
     private val zone = TimeZone.UTC
     private val jul26 = YearMonth(2026, Month.JULY)
 
-    private fun allDay(from: LocalDate, toInclusive: LocalDate, id: Long = 1L) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = "A",
-        start = from.atTime(0, 0).toInstant(TimeZone.UTC),
-        end = toInclusive.plus(1, DateTimeUnit.DAY).atTime(0, 0).toInstant(TimeZone.UTC),
-        isAllDay = true,
-        color = 0xFF445566.toInt(),
-        location = null,
-    )
+    private fun allDay(from: LocalDate, toInclusive: LocalDate, id: Long = 1L) =
+        allDayEvent(from, toInclusive, id = id, title = "A", color = 0xFF445566.toInt())
 
-    private fun timed(date: LocalDate, hour: Int, id: Long = 2L) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = "T",
-        start = date.atTime(hour, 0).toInstant(zone),
-        end = date.atTime(hour + 1, 0).toInstant(zone),
-        isAllDay = false,
-        color = 0xFF112233.toInt(),
-        location = null,
-    )
+    private fun timed(date: LocalDate, hour: Int, id: Long = 2L) =
+        timedEvent(date, hour, zone = zone, id = id, title = "T", color = 0xFF112233.toInt())
 
     /** July 2026 starts on a Wednesday, so its first Monday-anchored row is Jun 29 – Jul 5. */
     private fun firstRowOfJuly(events: List<EventInstance>) =

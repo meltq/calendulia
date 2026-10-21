@@ -1,23 +1,19 @@
 package de.jeanlucmakiola.calendula.ui.common
 
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.testEvent
 import kotlinx.datetime.LocalDate
 import org.junit.jupiter.api.Test
 import kotlin.time.Instant
 
 class ViewMorphKeyTest {
 
-    private fun instance(instanceId: Long, eventId: Long = 7, startMillis: Long = 1_000L) = EventInstance(
-        instanceId = instanceId,
+    private fun instance(instanceId: Long, eventId: Long = 7, startMillis: Long = 1_000L) = testEvent(
+        id = instanceId,
         eventId = eventId,
-        calendarId = 1,
         title = "Standup",
         start = Instant.fromEpochMilliseconds(startMillis),
         end = Instant.fromEpochMilliseconds(startMillis + 3_600_000L),
-        isAllDay = false,
-        color = 0,
-        location = null,
     )
 
     private val day = LocalDate(2026, 9, 25)

@@ -1,19 +1,13 @@
 package de.jeanlucmakiola.calendula.ui.detail
 
-import android.Manifest
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
@@ -22,7 +16,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -41,7 +34,6 @@ import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Repeat
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,7 +43,6 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
@@ -65,19 +56,21 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
-import androidx.core.content.ContextCompat
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.LinkAnnotation
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextLinkStyles
 import androidx.compose.ui.text.buildAnnotatedString
+import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.BaselineShift
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
@@ -90,24 +83,30 @@ import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.EventStatus
-import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
-import de.jeanlucmakiola.calendula.domain.Reminder
+import de.jeanlucmakiola.calendula.domain.InlineStyle
+import de.jeanlucmakiola.calendula.domain.RichText
 import de.jeanlucmakiola.calendula.domain.TimeZoneOption
 import de.jeanlucmakiola.calendula.domain.timeZoneOptionOf
 import de.jeanlucmakiola.calendula.domain.zoneDescriptor
+import de.jeanlucmakiola.calendula.domain.zoneOrNull
+import de.jeanlucmakiola.calendula.ui.common.orUnnamed
+import de.jeanlucmakiola.floret.components.IconInfoCard
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.predictiveBack
 import de.jeanlucmakiola.calendula.ui.common.CalendarFailure
+import de.jeanlucmakiola.calendula.ui.common.DeleteEventDialog
+import de.jeanlucmakiola.calendula.ui.common.rememberWriteAction
+import de.jeanlucmakiola.calendula.ui.common.sendEventShare
 import de.jeanlucmakiola.calendula.ui.common.FieldCopier
 import de.jeanlucmakiola.calendula.ui.common.copyOnLongPress
 import de.jeanlucmakiola.calendula.ui.common.rememberFieldCopier
 import de.jeanlucmakiola.calendula.ui.common.icuTimeZoneRegion
 import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
-import de.jeanlucmakiola.calendula.ui.common.eventFill
-import de.jeanlucmakiola.floret.components.OptionCard
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.timeOfDayFormatter
+import de.jeanlucmakiola.calendula.ui.common.withRepeatedHourZone
 import de.jeanlucmakiola.calendula.ui.common.recurrenceText
 import de.jeanlucmakiola.calendula.ui.common.reminderLeadTimeLabel
 import kotlinx.coroutines.launch
@@ -162,50 +161,19 @@ fun EventDetailScreen(
     val onShareClick = {
         scope.launch {
             val uri = viewModel.shareUri()
-            val sent = uri != null && runCatching {
-                val send = Intent(Intent.ACTION_SEND).apply {
-                    type = "text/calendar"
-                    putExtra(Intent.EXTRA_STREAM, uri)
-                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                }
-                context.startActivity(Intent.createChooser(send, shareChooserTitle))
-            }.isSuccess
+            val sent = uri != null && context.sendEventShare(uri, shareChooserTitle)
             if (!sent) snackbarHostState.showSnackbar(shareFailedMessage)
         }
         Unit
     }
 
     // v1.0 installs only hold READ_CALENDAR; the first write asks for the
-    // upgrade in place. Granting continues straight into the tapped action —
-    // edit, delete, or duplicate — held here until the result comes back.
-    var pendingWrite by remember { mutableStateOf<(() -> Unit)?>(null) }
-    val writePermissionLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.RequestPermission(),
-    ) { granted ->
-        if (granted) pendingWrite?.invoke()
-        pendingWrite = null
-    }
-    val hasWritePermission = {
-        ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.WRITE_CALENDAR,
-        ) == PackageManager.PERMISSION_GRANTED
-    }
-    val requireWrite: (() -> Unit) -> Unit = { action ->
-        if (hasWritePermission()) {
-            action()
-        } else {
-            pendingWrite = action
-            writePermissionLauncher.launch(Manifest.permission.WRITE_CALENDAR)
-        }
-    }
-    val onDeleteClick = { requireWrite { showDeleteDialog = true } }
-    val onEditClick = { requireWrite(onEdit) }
+    // upgrade in place and continues straight into the tapped action.
+    val onDeleteClick = rememberWriteAction { showDeleteDialog = true }
+    val onEditClick = rememberWriteAction(action = onEdit)
     // Duplicate reads the loaded detail into a create form and hands it up; the
     // create still needs WRITE_CALENDAR even when the source is read-only.
-    val onDuplicateClick = {
-        requireWrite { viewModel.duplicateForm()?.let(onDuplicate) }
-    }
+    val onDuplicateClick = rememberWriteAction { viewModel.duplicateForm()?.let(onDuplicate) }
 
     val deleteFailedMessage = stringResource(R.string.event_delete_failed)
     val writeDeniedMessage = stringResource(R.string.event_delete_write_denied)
@@ -322,70 +290,6 @@ fun EventDetailScreen(
     }
 }
 
-/**
- * Delete confirmation. Recurring events choose between cancelling just the
- * tapped occurrence (default), truncating the series from it onwards, and
- * removing the whole series.
- */
-@Composable
-private fun DeleteEventDialog(
-    isRecurring: Boolean,
-    onConfirm: (RecurringWriteScope) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    var scope by rememberSaveable { mutableStateOf(RecurringWriteScope.ThisEvent) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = {
-            Text(
-                stringResource(
-                    if (isRecurring) R.string.event_delete_recurring_title
-                    else R.string.event_delete_title,
-                ),
-            )
-        },
-        text = {
-            if (isRecurring) {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OptionCard(
-                        label = stringResource(R.string.event_delete_option_occurrence),
-                        onClick = { scope = RecurringWriteScope.ThisEvent },
-                        selected = scope == RecurringWriteScope.ThisEvent,
-                    )
-                    OptionCard(
-                        label = stringResource(R.string.event_delete_option_following),
-                        onClick = { scope = RecurringWriteScope.ThisAndFollowing },
-                        selected = scope == RecurringWriteScope.ThisAndFollowing,
-                    )
-                    OptionCard(
-                        label = stringResource(R.string.event_delete_option_series),
-                        onClick = { scope = RecurringWriteScope.AllEvents },
-                        selected = scope == RecurringWriteScope.AllEvents,
-                    )
-                }
-            } else {
-                Text(stringResource(R.string.event_delete_body))
-            }
-        },
-        confirmButton = {
-            TextButton(
-                onClick = { onConfirm(if (isRecurring) scope else RecurringWriteScope.AllEvents) },
-            ) {
-                Text(
-                    text = stringResource(R.string.event_detail_delete),
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.dialog_cancel))
-            }
-        },
-    )
-}
-
-
 @Composable
 private fun EventDetailContent(
     state: EventDetailUiState.Success,
@@ -394,8 +298,8 @@ private fun EventDetailContent(
 ) {
     val detail = state.detail
     val instance = detail.instance
-    val dark = isSystemInDarkTheme()
-    val locale = currentDetailLocale()
+    val dark = LocalFloretDarkTheme.current
+    val locale = currentLocale()
     val accent = eventAccent(instance.color, dark, LocalSoftenColors.current)
 
     Column(
@@ -409,15 +313,26 @@ private fun EventDetailContent(
         // cancelled event strikes through its title.
         Row(verticalAlignment = Alignment.Top) {
             val titleLabel = stringResource(R.string.event_detail_title)
+            val titleDecoration = if (detail.status == EventStatus.Cancelled) {
+                TextDecoration.LineThrough
+            } else {
+                null
+            }
             Text(
-                text = instance.title.ifBlank { stringResource(R.string.event_untitled) },
+                // A phone number in the title ("Call Anna 0151 …") dials too.
+                text = if (instance.title.isBlank()) {
+                    AnnotatedString(stringResource(R.string.event_untitled))
+                } else {
+                    linkify(
+                        instance.title,
+                        state.phoneLinks.title,
+                        MaterialTheme.colorScheme.primary,
+                        titleDecoration,
+                    )
+                },
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.SemiBold,
-                textDecoration = if (detail.status == EventStatus.Cancelled) {
-                    TextDecoration.LineThrough
-                } else {
-                    null
-                },
+                textDecoration = titleDecoration,
                 modifier = Modifier
                     .weight(1f)
                     .then(
@@ -464,8 +379,8 @@ private fun EventDetailContent(
         val gap = 12.dp
 
         // "When" — date/all-day plus the time range.
-        val (whenPrimary, whenSecondary) = formatWhen(instance, TimeZone.currentSystemDefault(), locale)
-        DetailCard(icon = Icons.Default.Schedule, iconContentDescription = null) {
+        val (whenPrimary, whenSecondary) = rememberWhen(instance, TimeZone.currentSystemDefault(), locale)
+        IconInfoCard(icon = Icons.Default.Schedule, iconContentDescription = null) {
             Text(text = whenPrimary, style = MaterialTheme.typography.titleMedium)
             if (whenSecondary != null) {
                 Spacer(Modifier.height(2.dp))
@@ -490,7 +405,7 @@ private fun EventDetailContent(
         }
         foreignZone?.let { zoneOption ->
             Spacer(Modifier.height(gap))
-            DetailCard(
+            IconInfoCard(
                 icon = Icons.Default.Public,
                 iconContentDescription = stringResource(R.string.event_detail_timezone),
             ) {
@@ -503,8 +418,8 @@ private fun EventDetailContent(
                 // — which a cross-zone event easily does — carries the whole span
                 // in the primary instead, so fall back to it. If the zone can't be
                 // read back at all, drop to just the abbreviation + offset.
-                val originalTime = runCatching { TimeZone.of(zoneOption.id) }.getOrNull()
-                    ?.let { formatWhen(instance, it, locale) }
+                val originalTime = zoneOrNull(zoneOption.id)
+                    ?.let { rememberWhen(instance, it, locale) }
                     ?.let { (primary, secondary) -> secondary ?: primary }
                 Spacer(Modifier.height(2.dp))
                 Text(
@@ -522,29 +437,30 @@ private fun EventDetailContent(
         // Calendar — icon tinted in the calendar colour conveys identity, so no
         // separate colour dot is needed.
         Spacer(Modifier.height(gap))
-        DetailCard(
+        IconInfoCard(
             icon = Icons.Default.CalendarMonth,
             iconTint = accent,
             iconContentDescription = stringResource(R.string.event_detail_calendar),
         ) {
             Text(
-                text = state.calendarName?.ifBlank { stringResource(R.string.calendar_unnamed) }
+                text = state.calendarName?.orUnnamed()
                     ?: stringResource(R.string.event_detail_calendar_unknown),
                 style = MaterialTheme.typography.titleMedium,
             )
         }
 
-        // Location (conditional). URLs open in the browser, the rest in maps.
+        // Location (conditional). URLs open in the browser, phone numbers in the
+        // dialer, the rest in maps.
         instance.location?.takeIf { it.isNotBlank() }?.let { location ->
             val context = LocalContext.current
             val locationLabel = stringResource(R.string.event_detail_location)
             Spacer(Modifier.height(gap))
-            DetailCard(
+            IconInfoCard(
                 icon = Icons.Default.Place,
                 iconContentDescription = locationLabel,
             ) {
                 Text(
-                    text = linkifyUrls(location, MaterialTheme.colorScheme.primary),
+                    text = linkify(location, state.phoneLinks.location, MaterialTheme.colorScheme.primary),
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier
@@ -561,20 +477,21 @@ private fun EventDetailContent(
             }
         }
 
-        // Description (conditional). URLs are auto-linked.
-        detail.description?.takeIf { it.isNotBlank() }?.let { description ->
+        // Description (conditional). HTML is rendered (#271); URLs and phone
+        // numbers are auto-linked.
+        state.description?.let { description ->
             val descriptionLabel = stringResource(R.string.event_detail_description)
             Spacer(Modifier.height(gap))
-            DetailCard(
+            IconInfoCard(
                 icon = Icons.AutoMirrored.Filled.Notes,
                 iconContentDescription = descriptionLabel,
                 // The gesture sits on the card so the icon and padding answer
                 // it too: every linkified URL owns the pointer over its own
                 // glyphs, which leaves the text itself a patchy target.
-                modifier = Modifier.copyOnLongPress(descriptionLabel, description, copyField),
+                modifier = Modifier.copyOnLongPress(descriptionLabel, description.copyText(), copyField),
             ) {
                 Text(
-                    text = linkifyUrls(description, MaterialTheme.colorScheme.primary),
+                    text = linkify(description, state.phoneLinks.description, MaterialTheme.colorScheme.primary),
                     style = MaterialTheme.typography.bodyMedium,
                 )
             }
@@ -584,7 +501,7 @@ private fun EventDetailContent(
         // each attendee with their role and reply.
         detail.attendees.takeIf { it.isNotEmpty() }?.let { attendees ->
             Spacer(Modifier.height(gap))
-            DetailCard(
+            IconInfoCard(
                 icon = Icons.Default.People,
                 iconContentDescription = stringResource(R.string.event_detail_attendees),
             ) {
@@ -606,7 +523,7 @@ private fun EventDetailContent(
         // Reminders (conditional) — list each lead time before the event.
         detail.reminders.takeIf { it.isNotEmpty() }?.let { reminders ->
             Spacer(Modifier.height(gap))
-            DetailCard(
+            IconInfoCard(
                 icon = Icons.Default.Notifications,
                 iconContentDescription = stringResource(R.string.event_detail_reminders),
             ) {
@@ -615,7 +532,7 @@ private fun EventDetailContent(
                     .sortedBy { it.minutes }
                     .forEach { reminder ->
                         Text(
-                            text = reminderLeadText(reminder),
+                            text = reminderLeadTimeLabel(reminder.minutes),
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.padding(vertical = 2.dp),
                         )
@@ -626,7 +543,7 @@ private fun EventDetailContent(
         // Recurrence (conditional) — humanised from the RRULE.
         detail.rrule?.takeIf { it.isNotBlank() }?.let { rrule ->
             Spacer(Modifier.height(gap))
-            DetailCard(
+            IconInfoCard(
                 icon = Icons.Default.Repeat,
                 iconContentDescription = stringResource(R.string.event_detail_recurrence),
             ) {
@@ -635,36 +552,6 @@ private fun EventDetailContent(
                     style = MaterialTheme.typography.titleMedium,
                 )
             }
-        }
-    }
-}
-
-/** One info card: tonal container, leading icon in the gutter, value to the right. */
-@Composable
-private fun DetailCard(
-    icon: ImageVector,
-    iconContentDescription: String?,
-    modifier: Modifier = Modifier,
-    iconTint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = RoundedCornerShape(16.dp),
-        modifier = modifier.fillMaxWidth(),
-    ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = iconContentDescription,
-                tint = iconTint,
-                modifier = Modifier.size(24.dp),
-            )
-            Spacer(Modifier.width(16.dp))
-            Column(modifier = Modifier.weight(1f), content = content)
         }
     }
 }
@@ -792,11 +679,6 @@ private fun SkeletonBar(widthFraction: Float, height: Dp) {
 
 // --- helpers -------------------------------------------------------------
 
-// Observable locale read (shared helper) — avoids NonObservableLocale /
-// LocalContextConfigurationRead lint by going through LocalConfiguration.
-@Composable
-private fun currentDetailLocale(): Locale = currentLocale()
-
 private fun attendeeStatusLabel(status: AttendeeStatus): Int = when (status) {
     AttendeeStatus.Accepted -> R.string.event_attendee_accepted
     AttendeeStatus.Declined -> R.string.event_attendee_declined
@@ -815,10 +697,6 @@ private fun attendeeRoleLabel(attendee: Attendee): Int? = when {
     attendee.type == AttendeeType.Resource -> R.string.event_attendee_resource
     else -> null
 }
-
-/** Humanise a reminder's lead time, e.g. "10 minutes before" / "At time of event". */
-@Composable
-private fun reminderLeadText(reminder: Reminder): String = reminderLeadTimeLabel(reminder.minutes)
 
 /**
  * [tz] resolved as a [TimeZoneOption], but only when the event is timed and
@@ -847,25 +725,84 @@ private fun foreignTimeZone(
     )
 }
 
-/** Wrap http(s) URLs in [text] as links tinted [linkColor] that open in the browser. */
+/**
+ * Wrap http(s) URLs in [text] as links that open in the browser, and its
+ * [phoneLinks] as links that open the dialer, both tinted [linkColor]. A
+ * link's underline joins [textDecoration] rather than replacing it, so a
+ * cancelled title stays struck through across its links.
+ */
 @Composable
-private fun linkifyUrls(text: String, linkColor: Color): AnnotatedString {
+private fun linkify(
+    text: String,
+    phoneLinks: List<PhoneLink>,
+    linkColor: Color,
+    textDecoration: TextDecoration? = null,
+): AnnotatedString = linkify(RichText(text), phoneLinks, linkColor, textDecoration)
+
+/**
+ * [linkify] for text rendered from HTML: its own formatting and `<a href>`
+ * links come along, and a URL or number already inside one isn't linked again.
+ */
+@Composable
+private fun linkify(
+    text: RichText,
+    phoneLinks: List<PhoneLink>,
+    linkColor: Color,
+    textDecoration: TextDecoration? = null,
+): AnnotatedString {
     val context = LocalContext.current
-    return remember(text, linkColor, context) {
-        val styles = TextLinkStyles(
-            style = SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline),
-        )
+    return remember(text, phoneLinks, linkColor, textDecoration, context) {
+        // Decorations go on separately so overlapping ones add up: a span's
+        // textDecoration replaces whatever sits under it.
+        val styles = TextLinkStyles(style = SpanStyle(color = linkColor))
+        val decorations = mutableListOf<Triple<Int, Int, TextDecoration>>()
+        textDecoration?.let { decorations += Triple(0, text.text.length, it) }
+        for (range in text.styles) {
+            when (range.style) {
+                InlineStyle.Underline -> decorations += Triple(range.start, range.end, TextDecoration.Underline)
+                InlineStyle.Strikethrough -> decorations += Triple(range.start, range.end, TextDecoration.LineThrough)
+                else -> Unit
+            }
+        }
+        fun linked(start: Int, end: Int) = text.links.any { start < it.end && it.start < end }
         buildAnnotatedString {
-            append(text)
-            for (link in findWebLinks(text)) {
-                addLink(
-                    LinkAnnotation.Url(link.url, styles) { openWebLink(context, link.url) },
-                    link.start,
-                    link.end,
-                )
+            append(text.text)
+            for (range in text.styles) range.style.toSpanStyle()?.let { addStyle(it, range.start, range.end) }
+            fun link(url: String, start: Int, end: Int, onClick: () -> Unit) {
+                addLink(LinkAnnotation.Url(url, styles) { onClick() }, start, end)
+                decorations += Triple(start, end, TextDecoration.Underline)
+            }
+            for (link in text.links) {
+                if (link.url.startsWith("tel:")) {
+                    link(link.url, link.start, link.end) { dial(context, Uri.decode(link.url.substring(4))) }
+                } else {
+                    link(link.url, link.start, link.end) { openWebLink(context, link.url) }
+                }
+            }
+            for (link in findWebLinks(text.text)) {
+                if (linked(link.start, link.end)) continue
+                link(link.url, link.start, link.end) { openWebLink(context, link.url) }
+            }
+            for (link in phoneLinks) {
+                if (linked(link.start, link.end)) continue
+                link("tel:${link.number}", link.start, link.end) { dial(context, link.number) }
+            }
+            val bounds = decorations.flatMap { listOf(it.first, it.second) }.distinct().sorted()
+            for ((start, end) in bounds.zipWithNext()) {
+                val covering = decorations.filter { it.first <= start && end <= it.second }.map { it.third }.distinct()
+                if (covering.isNotEmpty()) addStyle(SpanStyle(textDecoration = TextDecoration.combine(covering)), start, end)
             }
         }
     }
+}
+
+private fun InlineStyle.toSpanStyle(): SpanStyle? = when (this) {
+    InlineStyle.Bold -> SpanStyle(fontWeight = FontWeight.Bold)
+    InlineStyle.Italic -> SpanStyle(fontStyle = FontStyle.Italic)
+    InlineStyle.Superscript -> SpanStyle(baselineShift = BaselineShift.Superscript, fontSize = 0.75.em)
+    InlineStyle.Subscript -> SpanStyle(baselineShift = BaselineShift.Subscript, fontSize = 0.75.em)
+    InlineStyle.Monospace -> SpanStyle(fontFamily = FontFamily.Monospace)
+    InlineStyle.Underline, InlineStyle.Strikethrough -> null
 }
 
 /**
@@ -874,18 +811,28 @@ private fun linkifyUrls(text: String, linkColor: Color): AnnotatedString {
  * single primary line spanning both ends.
  */
 @Composable
+private fun rememberWhen(instance: EventInstance, zone: TimeZone, locale: Locale): Pair<String, String?> {
+    val use24Hour = LocalUse24HourFormat.current
+    val allDayLabel = stringResource(R.string.event_detail_all_day)
+    // Remembered: a time in the repeated hour looks up its zone abbreviation (#387).
+    return remember(instance, zone, locale, use24Hour, allDayLabel) {
+        formatWhen(instance, zone, locale, use24Hour, allDayLabel)
+    }
+}
+
 private fun formatWhen(
     instance: EventInstance,
     zone: TimeZone,
     locale: Locale,
+    use24Hour: Boolean,
+    allDayLabel: String,
 ): Pair<String, String?> {
     val zid = ZoneId.of(zone.id)
     val dateFull = DateTimeFormatter.ofLocalizedDate(FormatStyle.FULL).withLocale(locale)
     val dateMedium = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale)
-    val timeShort = timeOfDayFormatter(LocalUse24HourFormat.current, locale)
+    val timeShort = timeOfDayFormatter(use24Hour, locale)
 
     val startLdt = instance.start.toJavaLocalDateTime(zid)
-    val allDayLabel = stringResource(R.string.event_detail_all_day)
 
     if (instance.isAllDay) {
         // All-day events live at UTC midnights with an exclusive end. Resolve
@@ -905,12 +852,13 @@ private fun formatWhen(
     }
 
     val endLdt = instance.end.toJavaLocalDateTime(zid)
+    val startTime = withRepeatedHourZone(timeShort.format(startLdt), instance.start, zone, locale)
+    val endTime = withRepeatedHourZone(timeShort.format(endLdt), instance.end, zone, locale)
     return if (startLdt.toLocalDate() == endLdt.toLocalDate()) {
-        dateFull.format(startLdt.toLocalDate()) to
-            "${timeShort.format(startLdt)} – ${timeShort.format(endLdt)}"
+        dateFull.format(startLdt.toLocalDate()) to "$startTime – $endTime"
     } else {
-        val start = "${dateMedium.format(startLdt.toLocalDate())} ${timeShort.format(startLdt)}"
-        val end = "${dateMedium.format(endLdt.toLocalDate())} ${timeShort.format(endLdt)}"
+        val start = "${dateMedium.format(startLdt.toLocalDate())} $startTime"
+        val end = "${dateMedium.format(endLdt.toLocalDate())} $endTime"
         "$start – $end" to null
     }
 }
@@ -920,7 +868,15 @@ private fun Instant.toJavaLocalDateTime(zid: ZoneId): java.time.LocalDateTime =
 
 /** Open [url] in a browsable app, or say so when none can take it. */
 private fun openWebLink(context: Context, url: String) {
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE)
+    startOrSayNoApp(context, Intent(Intent.ACTION_VIEW, Uri.parse(url)).addCategory(Intent.CATEGORY_BROWSABLE))
+}
+
+/** Open the dialer with [number] filled in, or say so when none can take it. */
+private fun dial(context: Context, number: String) {
+    startOrSayNoApp(context, Intent(Intent.ACTION_DIAL, Uri.fromParts("tel", number, null)))
+}
+
+private fun startOrSayNoApp(context: Context, intent: Intent) {
     if (runCatching { context.startActivity(intent) }.isFailure) {
         Toast.makeText(context, R.string.link_open_failed, Toast.LENGTH_SHORT).show()
     }

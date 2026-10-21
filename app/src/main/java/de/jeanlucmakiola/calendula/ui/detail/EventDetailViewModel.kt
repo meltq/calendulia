@@ -6,20 +6,23 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
-import de.jeanlucmakiola.calendula.data.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
+import de.jeanlucmakiola.calendula.data.time.ZoneSource
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
-import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
-import de.jeanlucmakiola.calendula.domain.ics.toShareIcsEvent
-import de.jeanlucmakiola.calendula.domain.toEditForm
+import de.jeanlucmakiola.calendula.domain.atOccurrence
+import de.jeanlucmakiola.calendula.domain.descriptionRichText
+import de.jeanlucmakiola.calendula.domain.toDuplicateForm
+import de.jeanlucmakiola.calendula.ui.common.DeleteOutcome
+import de.jeanlucmakiola.calendula.ui.common.tryDeleteEvent
+import de.jeanlucmakiola.calendula.ui.common.stageEventShare
+import de.jeanlucmakiola.floret.android.stateWhileSubscribed
+import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.withContext
-import kotlin.time.Clock
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
@@ -28,11 +31,8 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
-import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
-import kotlinx.datetime.TimeZone
 import kotlin.coroutines.cancellation.CancellationException
-import kotlin.time.Instant
 import javax.inject.Inject
 
 /**
@@ -45,6 +45,7 @@ class EventDetailViewModel @Inject constructor(
     private val repository: CalendarRepository,
     private val icsExporter: IcsExporter,
     @IoDispatcher private val io: CoroutineDispatcher,
+    private val zoneSource: ZoneSource,
 ) : ViewModel() {
 
     private val _target = MutableStateFlow<Target?>(null)
@@ -75,9 +76,8 @@ class EventDetailViewModel @Inject constructor(
                 }
             }
             .flowOn(io)
-            .stateIn(
+            .stateWhileSubscribed(
                 scope = viewModelScope,
-                started = SharingStarted.WhileSubscribed(5_000L),
                 initialValue = EventDetailUiState.Loading,
             )
 
@@ -112,22 +112,11 @@ class EventDetailViewModel @Inject constructor(
         if (_deleteState.value == DeleteUiState.Deleting) return
         viewModelScope.launch {
             _deleteState.value = DeleteUiState.Deleting
-            _deleteState.value = try {
-                when (scope) {
-                    RecurringWriteScope.AllEvents ->
-                        repository.deleteEvent(target.eventId)
-                    RecurringWriteScope.ThisEvent ->
-                        repository.deleteOccurrence(target.eventId, target.beginMillis)
-                    RecurringWriteScope.ThisAndFollowing ->
-                        repository.deleteEventFromOccurrence(target.eventId, target.beginMillis)
-                }
-                DeleteUiState.Deleted
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: SecurityException) {
-                DeleteUiState.NeedsPermission
-            } catch (e: Exception) {
-                DeleteUiState.Failed
+            _deleteState.value = when (repository.tryDeleteEvent(target.eventId, target.beginMillis, scope)) {
+                // Already gone is what a delete wants anyway.
+                DeleteOutcome.Deleted, DeleteOutcome.Gone -> DeleteUiState.Deleted
+                DeleteOutcome.NeedsPermission -> DeleteUiState.NeedsPermission
+                DeleteOutcome.Failed -> DeleteUiState.Failed
             }
         }
     }
@@ -144,66 +133,46 @@ class EventDetailViewModel @Inject constructor(
      */
     suspend fun shareUri(): Uri? {
         val detail = (state.value as? EventDetailUiState.Success)?.detail ?: return null
-        return runCatching {
-            withContext(io) {
-                val ics = IcsWriter().writeCalendar(
-                    events = listOf(detail.toShareIcsEvent()),
-                    dtStamp = Clock.System.now(),
-                )
-                icsExporter.stageShareFile(shareFileName(detail.instance.title), ics)
-            }
-        }.getOrNull()
+        return withContext(io) { icsExporter.stageEventShare(detail) }
     }
 
     /**
-     * Build a create form seeded from the open event so the user can save a
-     * copy as a new, independent event (#52). Returns null when nothing is
-     * loaded.
-     *
-     * The recurrence is dropped — a duplicate is a single event; anyone who
-     * wants a series can re-add one in the edit form that opens. The source
-     * calendar is kept only when it's writable, otherwise the id is cleared so
-     * the create resolves to the last-used/first-writable calendar — which lets
-     * a read-only event (a WebCal subscription, a birthday) be copied into an
-     * editable calendar. The occurrence's own times carry over unchanged.
+     * A create form seeded from the open event, to save a copy as a new event
+     * (#52) — see [toDuplicateForm]. Null when nothing is loaded.
      */
     fun duplicateForm(): EventForm? {
         val loaded = state.value as? EventDetailUiState.Success ?: return null
-        val detail = loaded.detail
-        return detail.toEditForm(
-            beginMillis = detail.instance.start.toEpochMilliseconds(),
-            endMillis = detail.instance.end.toEpochMilliseconds(),
-            zone = TimeZone.currentSystemDefault(),
-        ).copy(
-            rrule = null,
-            calendarId = detail.instance.calendarId.takeIf { loaded.canModify },
-        )
+        return loaded.detail.toDuplicateForm(loaded.canModify, zoneSource.current())
     }
 
     private suspend fun loadDetail(target: Target): EventDetailUiState = try {
         val detail = repository.eventDetail(target.eventId)
-        // The Events row holds the series start; replace it with this
-        // occurrence's time so recurring events render correctly. An external
-        // "open event" that names no occurrence ([NO_OCCURRENCE_TIME] — e.g. a
-        // bare content://.../events/<id> VIEW intent, issue #48) keeps the row's
-        // own DTSTART/DTEND instead of overriding it to the epoch.
+        // An external "open event" that names no occurrence ([NO_OCCURRENCE_TIME] —
+        // e.g. a bare content://.../events/<id> VIEW intent, issue #48) keeps the
+        // row's own DTSTART/DTEND instead of overriding it to the epoch.
         val corrected = if (target.beginMillis == NO_OCCURRENCE_TIME) {
             detail
         } else {
-            detail.copy(
-                instance = detail.instance.copy(
-                    start = Instant.fromEpochMilliseconds(target.beginMillis),
-                    end = Instant.fromEpochMilliseconds(target.endMillis),
-                ),
-            )
+            detail.atOccurrence(target.beginMillis, target.endMillis)
         }
         val calendar = repository.calendars().first()
             .firstOrNull { it.id == corrected.instance.calendarId }
+        val description = corrected.description
+            ?.let(::descriptionRichText)
+            ?.takeIf { it.text.isNotBlank() }
         EventDetailUiState.Success(
             detail = corrected,
             calendarName = calendar?.displayName,
             canModify = calendar?.canModifyContents == true,
             isManaged = calendar?.isManaged == true,
+            // Found here, off the main thread and once per load: the platform
+            // matcher loads its metadata on first use.
+            phoneLinks = findEventPhoneLinks(
+                title = corrected.instance.title,
+                location = corrected.instance.location,
+                description = description?.text,
+            ),
+            description = description,
         )
     } catch (e: CancellationException) {
         throw e
@@ -227,14 +196,4 @@ class EventDetailViewModel @Inject constructor(
          */
         const val NO_OCCURRENCE_TIME: Long = Long.MIN_VALUE
     }
-}
-
-/** A filesystem-safe `.ics` file name from an event title (or a fallback). */
-private fun shareFileName(title: String): String {
-    val base = title.trim()
-        .replace(Regex("""[^\p{L}\p{Nd} _-]"""), "")
-        .replace(' ', '_')
-        .take(40)
-        .ifBlank { "event" }
-    return "$base.ics"
 }

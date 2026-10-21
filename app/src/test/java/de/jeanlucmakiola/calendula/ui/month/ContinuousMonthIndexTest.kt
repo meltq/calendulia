@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.month
 
+import de.jeanlucmakiola.calendula.ui.common.startOfWeek
 import com.google.common.truth.Truth.assertThat
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
@@ -120,8 +121,8 @@ class ContinuousMonthIndexTest {
             val weeks = weekWindowFor(window, ws)
             window.forEach { index ->
                 val ym = yearMonthForIndex(index)
-                val first = weekIndexOf(firstOfMonth(ym), ws)
-                val last = weekIndexOf(firstOfMonth(yearMonthForIndex(index + 1)).minus(1, DateTimeUnit.DAY), ws)
+                val first = weekIndexOf(ym.firstDay, ws)
+                val last = weekIndexOf(yearMonthForIndex(index + 1).firstDay.minus(1, DateTimeUnit.DAY), ws)
                 assertThat(weeks.contains(first)).isTrue()
                 assertThat(weeks.contains(last)).isTrue()
             }
@@ -152,7 +153,7 @@ class ContinuousMonthIndexTest {
         val wed = LocalDate(2026, 6, 10)
         DayOfWeek.entries.forEach { ws ->
             val index = weekIndexOf(wed, ws)
-            assertThat(weekStartForIndex(index, ws)).isEqualTo(wed.startOfGridWeek(ws))
+            assertThat(weekStartForIndex(index, ws)).isEqualTo(wed.startOfWeek(ws))
             assertThat(weekIndexOf(LocalDate(1900, 1, 1), ws)).isAtLeast(0)
             assertThat(index).isLessThan(continuousWeekCount(ws))
             assertThat(weekIndexOf(LocalDate(2100, 12, 31), ws))
@@ -161,8 +162,8 @@ class ContinuousMonthIndexTest {
     }
 
     @Test
-    fun `firstOfMonth is the 1st`() {
-        assertThat(firstOfMonth(jun26)).isEqualTo(LocalDate(2026, 6, 1))
+    fun `firstDay is the 1st`() {
+        assertThat(jun26.firstDay).isEqualTo(LocalDate(2026, 6, 1))
     }
 
     @Test

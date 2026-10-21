@@ -1,11 +1,10 @@
 package de.jeanlucmakiola.calendula.ui.week
 
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.testEvent
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.plus
-import kotlin.time.Instant
 import org.junit.jupiter.api.Test
 
 /** The timeline's columns, standing still and mid view switch (#184). */
@@ -93,15 +92,5 @@ class ColumnGeometryTest {
         )
     }
 
-    private fun event(id: Long) = EventInstance(
-        instanceId = id,
-        eventId = id,
-        calendarId = 1L,
-        title = "Event",
-        start = Instant.fromEpochMilliseconds(0),
-        end = Instant.fromEpochMilliseconds(0),
-        isAllDay = true,
-        color = 0xFF000000.toInt(),
-        location = null,
-    )
+    private fun event(id: Long) = testEvent(id = id, isAllDay = true, color = 0xFF000000.toInt())
 }

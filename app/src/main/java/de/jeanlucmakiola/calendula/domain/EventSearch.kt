@@ -1,8 +1,8 @@
 package de.jeanlucmakiola.calendula.domain
 
 import kotlinx.datetime.DateTimeUnit
-import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.YearMonth
 import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.number
 import kotlinx.datetime.plus
@@ -101,19 +101,13 @@ object EventSearch {
 
         val today = todayStart.toLocalDateTime(zone).date
         val matched = candidates.mapNotNull { candidate -> match(candidate, tokens, now, zone) }
-        val upcoming = { m: Matched -> m.event.spanLastDay(zone) >= today }
-        val order = compareBy<Matched> { if (upcoming(it)) 0 else 1 }
-            .thenComparator { a, b ->
-                // What is left reads forwards; what is behind us reads backwards
-                // from today, nearest first.
-                if (upcoming(a)) {
-                    a.event.dayStart(zone).compareTo(b.event.dayStart(zone))
-                } else {
-                    b.event.dayStart(zone).compareTo(a.event.dayStart(zone))
-                }
-            }
+        val (upcoming, past) = matched.partition { it.event.spanLastDay(zone) >= today }
+        // What is left reads forwards; what is behind us reads backwards from
+        // today, nearest first.
+        val ordered = upcoming.sortedBy { it.event.dayStart(zone) } +
+            past.sortedByDescending { it.event.dayStart(zone) }
 
-        val (inDescriptions, dated) = matched.sortedWith(order).partition { it.descriptionOnly }
+        val (inDescriptions, dated) = ordered.partition { it.descriptionOnly }
         return SearchResults(
             months = groupByMonth(dated, zone, todayStart),
             inDescriptions = inDescriptions.map { it.hit },
@@ -126,32 +120,17 @@ object EventSearch {
         zone: TimeZone,
         todayStart: Instant,
     ): List<SearchMonth> {
-        val currentKey = monthKey(todayStart.toLocalDateTime(zone).date)
-        return dated
-            .groupBy { monthKey(it.event.spanFirstDay(zone)) }
-            .entries
-            .sortedWith(
-                compareBy<Map.Entry<Int, List<Matched>>> {
-                    when {
-                        it.key == currentKey -> 0
-                        it.key > currentKey -> 1
-                        else -> 2
-                    }
-                }.thenComparator { a, b ->
-                    if (a.key > currentKey) a.key.compareTo(b.key) else b.key.compareTo(a.key)
-                },
+        val current = todayStart.toLocalDateTime(zone).date.let { YearMonth(it.year, it.month) }
+        val groups = dated.groupBy { m -> m.event.spanFirstDay(zone).let { YearMonth(it.year, it.month) } }
+        val (behind, ahead) = groups.keys.partition { it < current }
+        return (ahead.sorted() + behind.sortedDescending()).map { month ->
+            SearchMonth(
+                year = month.year,
+                monthNumber = month.month.number,
+                hits = groups.getValue(month).map { it.hit },
             )
-            .map { (key, entries) ->
-                SearchMonth(
-                    year = key / 12,
-                    monthNumber = key % 12 + 1,
-                    hits = entries.map { it.hit },
-                )
-            }
+        }
     }
-
-    /** Year and month as one comparable number. */
-    private fun monthKey(date: LocalDate): Int = date.year * 12 + (date.month.number - 1)
 
     private fun match(
         candidate: SearchCandidate,
@@ -162,16 +141,20 @@ object EventSearch {
         val title = candidate.title?.takeIf { it.isNotBlank() }
         val location = candidate.event.location?.takeIf { it.isNotBlank() }
         // Collapsed so a multi-line description matches the way it is drawn.
-        val description = candidate.description
+        val rich = candidate.description?.let(::descriptionRichText)
+        val description = rich?.text
             ?.replace(WHITESPACE, " ")
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
+        // A link's address isn't in the drawn text, but "zoom.us" should still find the invite.
+        val linkUrls = rich?.links.orEmpty().map { it.url }
 
         // Mid-word counts: "termin" has to keep finding "Zahnarzttermin".
         val present = { token: String ->
             title?.contains(token, ignoreCase = true) == true ||
                 location?.contains(token, ignoreCase = true) == true ||
-                description?.contains(token, ignoreCase = true) == true
+                description?.contains(token, ignoreCase = true) == true ||
+                linkUrls.any { it.contains(token, ignoreCase = true) }
         }
         if (!tokens.all(present)) return null
 

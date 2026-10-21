@@ -1,11 +1,10 @@
 package de.jeanlucmakiola.calendula.ui.common
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.MutatePriority
-import androidx.compose.foundation.background
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -19,7 +18,10 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -27,6 +29,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.LayoutCoordinates
@@ -35,14 +38,25 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalViewConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.domain.instantIn
+import de.jeanlucmakiola.calendula.domain.repeatedHourOffsetAt
+import de.jeanlucmakiola.calendula.domain.repicked
+import de.jeanlucmakiola.calendula.domain.toFormTime
+import de.jeanlucmakiola.calendula.domain.resolveIn
 import de.jeanlucmakiola.calendula.ui.week.MINUTES_PER_DAY
 import de.jeanlucmakiola.calendula.ui.week.TimedBlock
+import de.jeanlucmakiola.calendula.ui.week.minutesPast
+import de.jeanlucmakiola.calendula.ui.week.wallClockEndMinutes
+import de.jeanlucmakiola.calendula.ui.week.wallClockMinutes
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.rememberReduceMotion
 import de.jeanlucmakiola.floret.locale.currentLocale
 import kotlinx.coroutines.delay
@@ -50,13 +64,15 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.atStartOfDayIn
+import kotlinx.datetime.UtcOffset
 import kotlinx.datetime.plus
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.math.roundToInt
+import kotlin.time.Duration
+import kotlin.time.Duration.Companion.minutes
 import kotlin.time.Instant
 
 /** Start granularity a dragged block snaps to, matching the big calendar apps. */
@@ -97,10 +113,27 @@ data class TimelineDrag(
      * drop lands, so it is dropped once the gesture ends ([finish]).
      */
     val edgeOnly: Boolean = false,
+    /**
+     * The minute of its day the gutter badge names — the top edge, or for a
+     * bottom-edge resize the end being dragged (#141).
+     */
+    val markerMin: Int = startMin,
 ) {
-    /** What the snap haptics key off: one tick per changed slot, not per frame. */
-    val slot: Pair<LocalDate, Int> get() = date to startMin
+    /**
+     * What the snap haptics key off: one tick per changed slot, not per frame.
+     * Carries the length, which is all a bottom-edge resize changes.
+     */
+    val slot: Triple<LocalDate, Int, Int> get() = Triple(date, startMin, eventSpanMin)
 }
+
+/** The event a long press left selected (#141). */
+data class TimelineSelection(
+    val event: EventInstance,
+    /** Set from a move or resize of it until the grid shows where it landed. */
+    val moved: Boolean = false,
+    /** Selected by letting go of a lifted block, which then keeps that lift as it is. */
+    val fromLift: Boolean = false,
+)
 
 /**
  * One day column's share of a dragged event, ready to draw. Both halves of an
@@ -248,6 +281,142 @@ data class TimelineDrop(
     val clipOffsetMin: Int = 0,
 )
 
+/** The id a drafted block's stand-in event carries, which no provider row has (#153). */
+private const val DRAFT_ID = Long.MIN_VALUE
+
+/** Whether this is the stand-in for a block drafted on an empty slot, not a real event. */
+val EventInstance.isDraft: Boolean get() = instanceId == DRAFT_ID
+
+/** A drafted block's stand-in event, [minutes] long from [start]. */
+fun draftEvent(title: String, color: Int, start: Instant, minutes: Int): EventInstance = EventInstance(
+    instanceId = DRAFT_ID,
+    eventId = DRAFT_ID,
+    calendarId = DRAFT_ID,
+    title = title,
+    start = start,
+    end = start + minutes.minutes,
+    isAllDay = false,
+    color = color,
+    location = null,
+)
+
+/** Where a long press [minutes] down the column starts its draft, snapped down to the slot. */
+internal fun draftStartMin(minutes: Float): Int =
+    (minutes / DRAG_SNAP_MINUTES).toInt().times(DRAG_SNAP_MINUTES)
+        .coerceIn(0, MINUTES_PER_DAY - DRAG_SNAP_MINUTES)
+
+/** The part of [draft] on [date] as a full-width block, or null if none of it falls there. */
+internal fun draftBlock(draft: EventInstance, date: LocalDate, zone: TimeZone): TimedBlock? {
+    // Clipped to the day the way the grid lays out events, so it's drawn the same across a DST change (#387).
+    // The end is exclusive, so a draft ending at midnight belongs to the day before.
+    val start = maxOf(draft.start, date.atStartOfDayIn(zone))
+    val end = minOf(draft.end, date.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone))
+    if (end <= start) return null
+    val startMin = wallClockMinutes(start, date, zone)
+    val endMin = wallClockEndMinutes(startMin, start, end, date, zone).coerceAtMost(MINUTES_PER_DAY)
+    return TimedBlock(draft, startMin, endMin, lane = 0, laneCount = 1)
+}
+
+/** Which end of an event a resize handle moves (#141). */
+enum class ResizeEdge { Top, Bottom }
+
+/** Where a finished resize asks its event to begin and end. */
+data class TimelineResizeDrop(val event: EventInstance, val start: Instant, val end: Instant)
+
+/**
+ * [event] resized by its [edge] to the span [startMin]..+[spanMin] from [date]'s
+ * midnight. Only the held edge moves. The other keeps its own instant rather than
+ * a round trip through the grid, where an end in the fall-back hour's repeat is
+ * drawn to that hour's end, not at its own time (#387). In a repeated hour, the
+ * held edge takes the pass that matches the direction it was dragged from where
+ * it was drawn (see [repicked]). An end takes a pass the grid draws at the drop
+ * point, so the block settles under the finger.
+ */
+internal fun resizedDrop(
+    event: EventInstance,
+    edge: ResizeEdge?,
+    date: LocalDate,
+    startMin: Int,
+    spanMin: Int,
+    zone: TimeZone,
+): TimelineResizeDrop {
+    val drawn = wallClockSpan(event, zone)
+    return TimelineResizeDrop(
+        event = event,
+        start = if (edge == ResizeEdge.Top) {
+            event.start.toFormTime(zone).repicked(
+                wallClockTime(date, startMin),
+                zone,
+                shownAt = wallClockTime(drawn.day, drawn.startMin),
+                notAfter = event.end,
+            ).instantIn(zone)
+        } else {
+            event.start
+        },
+        end = if (edge == ResizeEdge.Bottom) {
+            val picked = wallClockTime(date, startMin + spanMin)
+            val pickedMin = (picked.date.toEpochDays() - drawn.day.toEpochDays()).toInt() * MINUTES_PER_DAY +
+                picked.time.toSecondOfDay() / 60
+            event.end.toFormTime(zone).repicked(
+                picked,
+                zone,
+                shownAt = wallClockTime(drawn.day, drawn.endMin),
+                notBefore = event.start,
+                drawable = { wallClockEndMinutes(drawn.startMin, event.start, it, drawn.day, zone) == pickedMin },
+            ).instantIn(zone)
+        } else {
+            event.end
+        },
+    )
+}
+
+/**
+ * The span after dragging [edge] to [edgeMin] in day [edgeDay], in minutes from the
+ * start day's midnight. Snapped, and at least one snap step long.
+ */
+internal fun resizedSpan(
+    edge: ResizeEdge,
+    startMin: Int,
+    endMin: Int,
+    edgeMin: Float,
+    edgeDay: Int? = null,
+): Pair<Int, Int> {
+    // An edge dragged into a day past the other end changes nothing.
+    if (edgeDay != null) {
+        val endDay = (endMin - 1).floorDiv(MINUTES_PER_DAY).coerceAtLeast(0)
+        val wrongWay = when (edge) {
+            ResizeEdge.Top -> edgeDay > endDay
+            ResizeEdge.Bottom -> edgeDay < startMin.floorDiv(MINUTES_PER_DAY)
+        }
+        if (wrongWay) return startMin to endMin
+    }
+    val snapped = snapToSlot(edgeMin)
+    return when (edge) {
+        ResizeEdge.Top -> minOf(snapped, endMin - DRAG_SNAP_MINUTES) to endMin
+        ResizeEdge.Bottom -> startMin to maxOf(snapped, startMin + DRAG_SNAP_MINUTES)
+    }
+}
+
+/** [minutes] rounded to the nearest [DRAG_SNAP_MINUTES] slot. */
+internal fun snapToSlot(minutes: Float): Int = (minutes / DRAG_SNAP_MINUTES).roundToInt() * DRAG_SNAP_MINUTES
+
+/** [minutes] snapped, kept at [held] until three quarters of a step away. */
+internal fun stickySnap(minutes: Float, held: Int?): Int {
+    if (held != null && kotlin.math.abs(minutes - held) < DRAG_SNAP_MINUTES * 0.75f) return held
+    return snapToSlot(minutes)
+}
+
+/** How far past its column's side the finger has to go before a resize changes day. */
+private const val COLUMN_HYSTERESIS = 0.25f
+
+/** The column under [position], kept at [held] until [COLUMN_HYSTERESIS] into another. */
+internal fun stickyColumn(position: Float, held: Int?, lastIndex: Int): Int {
+    val under = position.toInt().coerceIn(0, lastIndex)
+    if (held == null) return under
+    val stays = position >= held - COLUMN_HYSTERESIS && position < held + 1 + COLUMN_HYSTERESIS
+    return if (stays) held else under
+}
+
 /**
  * The timeline's live geometry, republished on every layout. Plain fields rather
  * than snapshot state: it changes on every scroll frame, and the drag loop reads
@@ -302,6 +471,10 @@ class TimelineDragController {
     var settling: TimelineDrag? by mutableStateOf(null)
         private set
 
+    /** How many real drops this controller has handed back. */
+    var drops by mutableIntStateOf(0)
+        private set
+
     /**
      * Which block is lifted, and whether anything is. Separate snapshot state
      * from [drag], which changes every frame, so blocks that only need "am I the
@@ -320,9 +493,91 @@ class TimelineDragController {
      */
     private var settledOrigin: Pair<Long, Instant>? by mutableStateOf(null)
 
+    /** How long a block drafted on an empty slot starts out, in minutes (#153). */
+    var draftMinutes: Int = SettingsPrefs.DEFAULT_EVENT_DURATION
+
+    /** The selected event, if any — see [TimelineSelection]. */
+    var selection: TimelineSelection? by mutableStateOf(null)
+        private set
+
+    fun select(event: EventInstance, moved: Boolean = false, fromLift: Boolean = false) {
+        if (selection?.event?.instanceId != event.instanceId) selectionCovered = false
+        selection = TimelineSelection(event, moved, fromLift)
+    }
+
+    fun deselect() {
+        if (selection?.event?.isDraft == true && settling?.event?.isDraft == true) release()
+        selection = null
+        selectionCovered = false
+    }
+
+    /** The events of the blocks on screen that show the selection; none for a while ends it. */
+    val selectedCandidates = mutableStateListOf<EventInstance>()
+
+    fun noteSelectedBlock(event: EventInstance, shown: Boolean) {
+        if (shown) selectedCandidates.add(event) else selectedCandidates.remove(event)
+    }
+
+    /**
+     * Once a move of the selected event has settled, point the selection at the
+     * row it landed as. A new event id wins: a single moved occurrence is written
+     * as an exception, and another occurrence of its series may share its time.
+     */
+    fun settleMovedSelection() {
+        val current = selection?.takeIf { it.moved } ?: return
+        if (isDragging || settling != null) return
+        val landed = selectedCandidates.filter { it.instanceId != current.event.instanceId }
+        // Only the original row left: the move was abandoned, and it still stands.
+        val chosen = landed.firstOrNull { it.eventId != current.event.eventId }
+            ?: landed.firstOrNull() ?: selectedCandidates.firstOrNull() ?: return
+        selection = current.copy(event = chosen, moved = false)
+    }
+
+    /** Whether the selected block's bottom sits where the action bar would cover it. */
+    var selectionCovered: Boolean by mutableStateOf(false)
+        private set
+
+    /**
+     * Whether [block] is the selected event: by instance, by series and start, and
+     * just after a move by title and times, since a moved occurrence gets new ids.
+     */
+    fun isSelected(block: TimedBlock): Boolean {
+        val current = selection ?: return false
+        val selected = current.event
+        val event = block.event
+        return event.instanceId == selected.instanceId ||
+            (event.eventId == selected.eventId && event.start == selected.start) ||
+            (
+                current.moved &&
+                    event.calendarId == selected.calendarId &&
+                    event.title.isNotBlank() &&
+                    event.title == selected.title &&
+                    event.start == selected.start &&
+                    event.end == selected.end
+                )
+    }
+
+    /** Point the selection at [block]'s event, so the bar acts on the row now there. */
+    fun adoptSelection(block: TimedBlock) {
+        val current = selection?.takeIf { !it.moved } ?: return
+        if (current.event != block.event) selection = current.copy(event = block.event)
+    }
+
     /** Whether a finger is on a block right now — [settling] is not dragging. */
     var isDragging: Boolean by mutableStateOf(false)
         private set
+
+    /** Whether the finger has moved since the pickup; only then may the view auto-scroll. */
+    var pointerMoved: Boolean by mutableStateOf(false)
+        private set
+
+    /** Touch slop, past which the finger counts as having moved. */
+    var slopPx: Float = 0f
+
+    private var pickupPointer = Offset.Zero
+
+    /** The end a settling resize asked for, which the grid has to show before it settles. */
+    private var settledEnd: Instant? = null
 
     /**
      * Whether the grid itself now draws the settled drop at its landing slot.
@@ -330,6 +585,10 @@ class TimelineDragController {
      * flashes back to full opacity in its old slot.
      */
     var settledOnGrid: Boolean by mutableStateOf(false)
+        private set
+
+    /** Whether the settling drop is the selected event, whose block lands still lifted. */
+    var settlingSelected: Boolean = false
         private set
 
     /**
@@ -353,6 +612,10 @@ class TimelineDragController {
      * finger is on; this is what turns where it lands back into an event start.
      */
     private var clipOffsetMin = 0
+    private var dragZone: TimeZone? = null
+    private var dragDuration = Duration.ZERO
+    /** The dragged event's pass of a repeated hour, worked out once per drag (#387). */
+    private var dragKept: UtcOffset? = null
 
     /** What the picked-up block drew its title over — see [TimelineDrag.titleLines]. */
     private var titleLines = 0
@@ -361,44 +624,73 @@ class TimelineDragController {
      * The slot the block already occupied when it was picked up — not the same
      * as its start, since the target snaps to the grid (09:07 lifts to 09:00).
      */
-    private var originSlot: Pair<LocalDate, Int>? = null
+    private var originSlot: Triple<LocalDate, Int, Int>? = null
+
+    /** The resize in progress, or null for a plain drag (#141). */
+    private var resize: ResizeSession? = null
 
     fun begin(
         block: TimedBlock,
         clipOffsetMin: Int,
+        zone: TimeZone,
         titleLines: Int,
         pointerInRoot: Offset,
         blockInRoot: Offset,
     ) {
+        // The selected event keeps its selection through a drag; any other ends it.
+        if (!isSelected(block)) deselect()
         source = block
         this.clipOffsetMin = clipOffsetMin
+        dragZone = zone
+        dragDuration = (block.event.end - block.event.start).coerceAtLeast(Duration.ZERO)
+        dragKept = zone.repeatedHourOffsetAt(block.event.start)
         this.titleLines = titleLines
         settling = null
         isDragging = true
         liftedInstanceId = block.event.instanceId
         grab = pointerInRoot - blockInRoot
         pointer = pointerInRoot
+        pickupPointer = pointerInRoot
+        pointerMoved = false
         originSlot = null
         recompute()
         originSlot = drag?.slot
     }
 
+    /**
+     * Draft a block on an empty slot and lift it at once (#153). It is selected
+     * from the start, so it keeps its handles and bar once the finger lets go.
+     */
+    fun beginDraft(block: TimedBlock, zone: TimeZone, pointerInRoot: Offset, blockInRoot: Offset) {
+        deselect()
+        select(block.event)
+        begin(block, clipOffsetMin = 0, zone, titleLines = 1, pointerInRoot = pointerInRoot, blockInRoot = blockInRoot)
+    }
+
     fun move(pointerInRoot: Offset) {
         pointer = pointerInRoot
+        if (!pointerMoved && (pointerInRoot - pickupPointer).getDistance() > slopPx) pointerMoved = true
         recompute()
     }
 
     fun cancel() {
+        resize = null
         source = null
         clipOffsetMin = 0
+        dragZone = null
+        dragDuration = Duration.ZERO
+        dragKept = null
         titleLines = 0
         isDragging = false
+        pointerMoved = false
         liftedInstanceId = null
         originSlot = null
         drag = null
         settling = null
         settledOnGrid = false
         settledOrigin = null
+        settledEnd = null
+        settlingSelected = false
     }
 
     /**
@@ -429,8 +721,11 @@ class TimelineDragController {
         val offset = (date.toEpochDays() - landed.date.toEpochDays()).toInt()
         val slice = dragSlices(landed.eventStartMin, landed.eventSpanMin, offset..offset)
             .firstOrNull() ?: return
+        val end = settledEnd
         settledOnGrid = blocks.any { block ->
             block.startMin == slice.startMin &&
+                // A resize may keep its start, so its end has to have landed too.
+                (end == null || block.event.end == end) &&
                 (
                     block.event.eventId == landed.event.eventId ||
                         (
@@ -452,6 +747,15 @@ class TimelineDragController {
         val clipOffset = clipOffsetMin
         cancel()
         if (landed == null || landed.slot == origin) return null
+        // A draft dropped on a day off screen would vanish, so it stays where it was (#153).
+        if (landed.edgeOnly && landed.event.isDraft) return null
+        settle(landed)
+        return TimelineDrop(landed.event, landed.date, landed.startMin, clipOffset)
+    }
+
+    /** Keep [landed]'s copy on the target as [settling] until [release]; [end] is a resize's. */
+    private fun settle(landed: TimelineDrag, end: Instant? = null) {
+        settlingSelected = selection?.event?.instanceId == landed.event.instanceId
         // An edge piece is a hint for the finger, not a preview of the landing
         // slot: the event belongs to a day this timeline has no column for, so
         // [noteGrid] can never seat it and it would sit at the top of today for
@@ -460,7 +764,139 @@ class TimelineDragController {
         liftedInstanceId = landed.event.instanceId
         settledOrigin = landed.event.eventId to landed.event.start
         settledAbandonedMark = abandonedTicks?.value ?: 0
-        return TimelineDrop(landed.event, landed.date, landed.startMin, clipOffset)
+        settledEnd = end
+        drops++
+    }
+
+    /**
+     * Grab one edge of [block] to resize it (#141). The edge follows the finger
+     * across days as a drag does; the other stays where it is.
+     */
+    fun beginResize(
+        block: TimedBlock,
+        edge: ResizeEdge,
+        zone: TimeZone,
+        titleLines: Int,
+        pointerInRoot: Offset,
+    ) {
+        val span = wallClockSpan(block.event, zone)
+        val session = ResizeSession(edge, span.day, span.startMin, span.endMin)
+        source = block
+        resize = session
+        clipOffsetMin = 0
+        this.titleLines = titleLines
+        settling = null
+        isDragging = true
+        pointerMoved = true
+        liftedInstanceId = block.event.instanceId
+        pointer = pointerInRoot
+        // Measured from the edge's own column: the handle overhangs into the next.
+        val edgeDay = if (edge == ResizeEdge.Top) 0 else (session.endMin - 1).floorDiv(MINUTES_PER_DAY).coerceAtLeast(0)
+        val edgeIndex = geometry.days.indexOf(span.day.plus(edgeDay, DateTimeUnit.DAY))
+        session.column = edgeIndex.takeIf { it >= 0 }
+            ?.let { column(it) }
+        session.grabMin = (pointerResizeMinutes(session) ?: 0f) -
+            if (edge == ResizeEdge.Top) session.startMin else session.endMin
+        originSlot = null
+        recompute()
+        originSlot = drag?.slot
+    }
+
+    /** The slot the gesture would land on, changing once per snap rather than per frame. */
+    private val landingSlot by derivedStateOf { drag?.slot }
+
+    /**
+     * The dragged event at the times letting go now would give it, worked out as
+     * [finish] and [finishResize] do. Null while it is still on its own slot (#141).
+     */
+    fun preview(zone: TimeZone): EventInstance? {
+        val (date, startMin, spanMin) = landingSlot?.takeIf { it != originSlot } ?: return null
+        val event = source?.event ?: return null
+        val edge = resize?.edge
+        if (edge != null) {
+            val drop = resizedDrop(event, edge, date, startMin, spanMin, zone)
+            return event.copy(start = drop.start, end = drop.end)
+        }
+        val start = TimelineDrop(event, date, startMin, clipOffsetMin).startInstant(zone)
+        return event.copy(start = start, end = start + dragDuration)
+    }
+
+    /**
+     * End a resize, handing back the event's new span — null when it never
+     * resolved or came back to the length it started at. Settles as [finish] does.
+     */
+    fun finishResize(zone: TimeZone): TimelineResizeDrop? {
+        val landed = drag
+        val origin = originSlot
+        val edge = resize?.edge
+        cancel()
+        if (landed == null || landed.slot == origin) return null
+        val drop = resizedDrop(landed.event, edge, landed.date, landed.eventStartMin, landed.eventSpanMin, zone)
+        settle(landed, end = drop.end)
+        return drop
+    }
+
+    /**
+     * Where the finger is, in minutes from the resized event's start day —
+     * past 1440 in a later column, negative in an earlier one.
+     */
+    private fun pointerResizeMinutes(session: ResizeSession): Float? {
+        val grid = geometry.grid?.takeIf { it.isAttached } ?: return null
+        val hourPx = geometry.hourPx
+        val columnPx = geometry.columnWidthPx
+        val days = geometry.days
+        if (hourPx <= 0f || columnPx <= 0f || days.isEmpty()) return null
+        val origin = grid.positionInRoot()
+        val held = stickyColumn(
+            position = (pointer.x - origin.x) / columnPx,
+            held = session.column,
+            lastIndex = days.lastIndex,
+        )
+        session.column = held
+        val dayOffset = (days[column(held)].toEpochDays() - session.day.toEpochDays()).toInt()
+        session.edgeDay = dayOffset
+        return dayOffset * MINUTES_PER_DAY + (pointer.y - origin.y) / hourPx * 60f
+    }
+
+    private fun recomputeResize(session: ResizeSession) {
+        val block = source ?: return
+        val edge = session.edge
+        val day = session.day
+        val raw = pointerResizeMinutes(session) ?: return
+        val slot = stickySnap(raw - session.grabMin, session.slot)
+        session.slot = slot
+        val (start, end) = resizedSpan(edge, session.startMin, session.endMin, slot.toFloat(), session.edgeDay)
+        val days = geometry.days
+        val origin = geometry.grid?.takeIf { it.isAttached }?.positionInRoot() ?: return
+        // Which column the start day sits in, possibly off either end of the view.
+        val startIndex = (day.toEpochDays() - days.first().toEpochDays()).toInt()
+        val visible = -startIndex..days.lastIndex - startIndex
+        val slices = dragSlices(start, end - start, within = visible)
+        drag = TimelineDrag(
+            event = block.event,
+            date = day,
+            startMin = start,
+            eventStartMin = start,
+            eventSpanMin = end - start,
+            titleLines = titleLines,
+            pieces = pieces(slices, startIndex, origin),
+            edgeOnly = slices.isEmpty(),
+            markerMin = if (edge == ResizeEdge.Top) {
+                start.mod(MINUTES_PER_DAY)
+            } else {
+                end - (end - 1).floorDiv(MINUTES_PER_DAY) * MINUTES_PER_DAY
+            },
+        )
+    }
+
+    /** Note whether the action bar would cover the selected block's bottom handle (#141). */
+    fun noteSelectedBottom(block: LayoutCoordinates, extraPx: Float, clearancePx: Float) {
+        val viewport = geometry.viewport?.takeIf { it.isAttached } ?: return
+        if (!block.isAttached) return
+        val port = viewport.boundsInRoot()
+        val bottom = block.positionInRoot().y + block.size.height + extraPx
+        val covered = bottom > port.bottom - clearancePx
+        if (covered != selectionCovered) selectionCovered = covered
     }
 
     /**
@@ -477,6 +913,8 @@ class TimelineDragController {
     fun release() {
         settling = null
         settledOnGrid = false
+        settledEnd = null
+        settlingSelected = false
         handOver()
     }
 
@@ -486,6 +924,10 @@ class TimelineDragController {
      * no move events while auto-scroll walks the content underneath it.
      */
     fun recompute() {
+        resize?.let {
+            recomputeResize(it)
+            return
+        }
         val block = source ?: return
         val grid = geometry.grid?.takeIf { it.isAttached } ?: return
         val hourPx = geometry.hourPx
@@ -495,14 +937,22 @@ class TimelineDragController {
 
         val origin = grid.positionInRoot()
         val rawMinutes = (pointer.y - grab.y - origin.y) / hourPx * 60f
-        val snapped = (rawMinutes / DRAG_SNAP_MINUTES).roundToInt() * DRAG_SNAP_MINUTES
-        val eventSpan = (block.event.end - block.event.start).inWholeMinutes.toInt()
-            .coerceAtLeast(0)
-        val floor = dragFloorMin(clipOffsetMin, eventSpan)
-        val startMin = snapped.coerceIn(floor, MINUTES_PER_DAY - DRAG_SNAP_MINUTES)
-        val eventStartMin = startMin - clipOffsetMin
-        val column = ((pointer.x - origin.x) / columnPx).toInt().coerceIn(0, days.lastIndex)
-        val dayIndex = if (geometry.isRtl) days.lastIndex - column else column
+        val snapped = snapToSlot(rawMinutes)
+        val zone = dragZone ?: return
+        val dayIndex = column(((pointer.x - origin.x) / columnPx).toInt().coerceIn(0, days.lastIndex))
+        val target = days[dayIndex]
+        val keep = dragKept
+        // Measured where it would land: the drop keeps the real duration, which in
+        // wall clock gains or loses the hour of a DST change it crosses (#387).
+        val floor = dragFloorMin(
+            clipOffsetMin,
+            wallClockSpanMinutes(target, snapped - clipOffsetMin, dragDuration, zone, keep),
+        )
+        val held = snapped.coerceIn(floor, MINUTES_PER_DAY - DRAG_SNAP_MINUTES) - clipOffsetMin
+        // A start in the spring-forward gap lands an hour on; show it there.
+        val eventStartMin = wallClockInstant(target, held, zone, keep).minutesPast(target, zone)
+        val startMin = (eventStartMin + clipOffsetMin).coerceAtMost(MINUTES_PER_DAY - DRAG_SNAP_MINUTES)
+        val eventSpan = wallClockSpanMinutes(target, eventStartMin, dragDuration, zone, keep)
         val visible = -dayIndex..days.lastIndex - dayIndex
         val onGrid = dragSlices(eventStartMin, eventSpan, within = visible)
         val slices = onGrid.ifEmpty {
@@ -517,27 +967,33 @@ class TimelineDragController {
             titleLines = titleLines,
             // Bounded to the columns this timeline actually shows: a day it
             // doesn't has no piece to draw. The write is unaffected.
-            pieces = slices
-                .map { slice ->
-                    val day = dayIndex + slice.dayOffset
-                    val col = if (geometry.isRtl) days.lastIndex - day else day
-                    val bounds = dragPieceBounds(slice, hourPx, geometry.blockInsetPx)
-                    TimelineDragPiece(
-                        topLeftInRoot = Offset(
-                            x = origin.x + col * columnPx,
-                            y = origin.y + bounds.top,
-                        ),
-                        sizePx = IntSize(
-                            (columnPx - geometry.columnGapPx).roundToInt(),
-                            bounds.height.roundToInt(),
-                        ),
-                        continuesBefore = slice.continuesBefore,
-                        continuesAfter = slice.continuesAfter,
-                    )
-                },
+            pieces = pieces(slices, dayIndex, origin),
             edgeOnly = onGrid.isEmpty(),
         )
     }
+
+    /** [slices] as floating pieces, the first slice's day being [dayIndex] in the shown days. */
+    private fun pieces(slices: List<DragSlice>, dayIndex: Int, origin: Offset): List<TimelineDragPiece> {
+        val columnPx = geometry.columnWidthPx
+        return slices.map { slice ->
+            val bounds = dragPieceBounds(slice, geometry.hourPx, geometry.blockInsetPx)
+            TimelineDragPiece(
+                topLeftInRoot = Offset(
+                    x = origin.x + column(dayIndex + slice.dayOffset) * columnPx,
+                    y = origin.y + bounds.top,
+                ),
+                sizePx = IntSize(
+                    (columnPx - geometry.columnGapPx).roundToInt(),
+                    bounds.height.roundToInt(),
+                ),
+                continuesBefore = slice.continuesBefore,
+                continuesAfter = slice.continuesAfter,
+            )
+        }
+    }
+
+    /** The on-screen column of a day index, and back: right-to-left lays the days out mirrored. */
+    private fun column(index: Int): Int = if (geometry.isRtl) geometry.days.lastIndex - index else index
 
     /**
      * Hold the scroll for the whole drag and nudge it once per frame while the
@@ -571,12 +1027,34 @@ class TimelineDragController {
     }
 }
 
+/** One resize gesture (#141): the edge it drags, and the edges as minutes from [day]'s midnight. */
+private class ResizeSession(
+    val edge: ResizeEdge,
+    /** The day the resized event starts on. */
+    val day: LocalDate,
+    val startMin: Int,
+    val endMin: Int,
+) {
+    /** How far the finger sits past the edge it grabbed, so the edge doesn't jump to it. */
+    var grabMin = 0f
+
+    /** The column the resized edge is in, held until the finger is well into another. */
+    var column: Int? = null
+
+    /** The slot the resized edge sits on, held against a finger trembling between two. */
+    var slot: Int? = null
+
+    /** The day, counted from the event's start day, the finger is resizing in. */
+    var edgeDay = 0
+}
+
 @Composable
 fun rememberTimelineDragController(): TimelineDragController {
     val controller = remember { TimelineDragController() }
     val density = LocalDensity.current
     controller.geometry.edgePx = with(density) { AUTO_SCROLL_EDGE.toPx() }
     controller.geometry.stepPx = with(density) { AUTO_SCROLL_STEP.toPx() }
+    controller.slopPx = LocalViewConfiguration.current.touchSlop
     controller.abandonedTicks = LocalEventMove.current?.abandoned
     return controller
 }
@@ -589,10 +1067,7 @@ fun rememberTimelineDragController(): TimelineDragController {
  * so the offset has to come back off at the drop (#253).
  */
 fun TimedBlock.clipOffsetMinutes(day: LocalDate, zone: TimeZone): Int {
-    val start = event.start.toLocalDateTime(zone)
-    val days = (day.toEpochDays() - start.date.toEpochDays()).toInt()
-    val minutes = days * MINUTES_PER_DAY + startMin - start.time.toSecondOfDay() / 60
-    return minutes.coerceAtLeast(0)
+    return (startMin - event.start.minutesPast(day, zone)).coerceAtLeast(0)
 }
 
 /**
@@ -613,15 +1088,58 @@ fun TimedBlock.continuesAfter(day: LocalDate, zone: TimeZone): Boolean =
  * of its own; `toInstant` resolves it forward by the missing hour, and the block
  * visibly settles there.
  */
-fun TimelineDrop.startInstant(zone: TimeZone): Instant {
-    // Wall clock throughout, and past this day at either end: a block's top edge
-    // can be dragged above its midnight and a tail's below the next one, so the
-    // start is resolved as a day plus a minute of it rather than as an offset
-    // from an instant — which would shift by an hour across a DST boundary.
-    val fromMidnight = startMin - clipOffsetMin
-    val day = date.plus(fromMidnight.floorDiv(MINUTES_PER_DAY), DateTimeUnit.DAY)
-    val minute = fromMidnight.mod(MINUTES_PER_DAY)
-    return LocalDateTime(day, LocalTime(minute / 60, minute % 60)).toInstant(zone)
+fun TimelineDrop.startInstant(zone: TimeZone): Instant =
+    wallClockInstant(date, startMin - clipOffsetMin, zone, kept = zone.repeatedHourOffsetAt(event.start))
+
+/**
+ * The wall-clock minutes an event lasting [duration] covers when it starts
+ * [startMin] past [date]'s midnight in [zone] — its real length, give or take a
+ * DST change in between (#387).
+ */
+internal fun wallClockSpanMinutes(
+    date: LocalDate,
+    startMin: Int,
+    duration: Duration,
+    zone: TimeZone,
+    kept: UtcOffset? = null,
+): Int {
+    val start = wallClockInstant(date, startMin, zone, kept)
+    return wallClockEndMinutes(startMin, start, start + duration, date, zone) - startMin
+}
+
+/**
+ * [minutes] past [date]'s midnight, either way past it, as wall clock in [zone]
+ * (DST-safe). A time the fall-back hour repeats lands on its earlier pass, unless
+ * [kept] is its later one: an event there stays on it (#387). Pass
+ * [repeatedHourOffsetAt] of the event's time, which is null outside the hour —
+ * such an instant says nothing about which pass the grid slot means, so a drop
+ * never depends on the season the event came from.
+ */
+fun wallClockInstant(date: LocalDate, minutes: Int, zone: TimeZone, kept: UtcOffset? = null): Instant =
+    wallClockTime(date, minutes).resolveIn(zone, kept)
+
+/** The wall-clock time [minutes] past [date]'s midnight, on a later day past 1440. */
+fun wallClockTime(date: LocalDate, minutes: Int): LocalDateTime {
+    val day = date.plus(minutes.floorDiv(MINUTES_PER_DAY), DateTimeUnit.DAY)
+    val minute = minutes.mod(MINUTES_PER_DAY)
+    return LocalDateTime(day, LocalTime(minute / 60, minute % 60))
+}
+
+/** An event's span as wall-clock minutes from its start day's midnight. */
+data class WallClockSpan(val day: LocalDate, val startMin: Int, val endMin: Int)
+
+/**
+ * [event]'s [WallClockSpan], its end past 1440 when it ends on a later day
+ * (DST-safe). One ending in the fall-back hour's repeat ends where that hour does.
+ */
+fun wallClockSpan(event: EventInstance, zone: TimeZone): WallClockSpan {
+    val start = event.start.toLocalDateTime(zone)
+    val startMin = start.time.toSecondOfDay() / 60
+    return WallClockSpan(
+        start.date,
+        startMin,
+        wallClockEndMinutes(startMin, event.start, event.end, start.date, zone),
+    )
 }
 
 /**
@@ -651,7 +1169,7 @@ const val SETTLE_FADE_MILLIS: Int = 250
 fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier = Modifier) {
     var origin by remember { mutableStateOf(Offset.Zero) }
     val density = LocalDensity.current
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     val use24Hour = LocalUse24HourFormat.current
     val locale = currentLocale()
     val reduceMotion = rememberReduceMotion()
@@ -659,9 +1177,11 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
 
     // Both live here rather than beside the controller: they read [drag], which
     // changes every frame, and this composable is the one that is meant to.
-    DragSnapHaptics(controller.drag?.slot)
-    LaunchedEffect(controller.isDragging) {
-        if (controller.isDragging) controller.autoScroll()
+    DragSnapHaptics(controller.drag?.slot, controller.drops)
+    // Only once the finger has moved: a long press held near an edge must not
+    // scroll the drop target out from under a finger that only means to select.
+    LaunchedEffect(controller.isDragging && controller.pointerMoved) {
+        if (controller.isDragging && controller.pointerMoved) controller.autoScroll()
     }
     // Hold the landed copy until the write is done — including the time a
     // recurring drop's scope dialog is up — and then until the grid draws the
@@ -693,7 +1213,8 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
         // Landed: the copy sinks back to the grid's own plane while the write runs.
         val landed = controller.drag == null
         val lift by animateFloatAsState(
-            targetValue = if (landed || reduceMotion) 0f else 1f,
+            // A selected event's block is lifted too: sinking first made it shrink, then grow back.
+            targetValue = if (reduceMotion || (landed && !controller.settlingSelected)) 0f else 1f,
             label = "drag-lift",
         )
         val copyAlpha by animateFloatAsState(
@@ -870,7 +1391,7 @@ private fun DragCopy(
                 Text(
                     text = label,
                     // As the block it lifted off sets its own time (#219).
-                    style = MaterialTheme.typography.labelSmall.asEventTime(),
+                    style = rememberPackedLines(MaterialTheme.typography.labelSmall.asEventTime()),
                     maxLines = timeMaxLines,
                     overflow = overflow.overflow,
                     softWrap = overflow.softWrap,
@@ -879,4 +1400,31 @@ private fun DragCopy(
             }
         }
     }
+}
+
+/** How far a selected block is lifted, 0 to 1 (#141); [snap] takes it over at once. */
+@Composable
+fun selectionLift(selected: Boolean, snap: Boolean = false): Float {
+    val reduceMotion = rememberReduceMotion()
+    val spec = MaterialTheme.motionScheme.fastSpatialSpec<Float>()
+    val raise = remember { Animatable(if (selected) 1f else 0f) }
+    LaunchedEffect(selected) {
+        val target = if (selected) 1f else 0f
+        if (reduceMotion || (selected && snap)) raise.snapTo(target) else raise.animateTo(target, spec)
+    }
+    // The effect runs a frame late, and that frame would show the block unlifted.
+    return if (selected && snap) 1f else raise.value
+}
+
+/**
+ * A selected block raised off the grid, the way a dragged copy is: scaled from
+ * its top edge so the text doesn't creep, with a shadow in the block's shape.
+ */
+fun Modifier.selectionLift(raise: Float, shape: Shape): Modifier = graphicsLayer {
+    transformOrigin = TransformOrigin(0.5f, 0f)
+    scaleX = 1f + 0.02f * raise
+    scaleY = 1f + 0.02f * raise
+    shadowElevation = 6.dp.toPx() * raise
+    this.shape = shape
+    clip = false
 }

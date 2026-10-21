@@ -4,7 +4,6 @@ import android.Manifest
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.net.Uri
 import android.provider.ContactsContract
 import android.util.Patterns
@@ -13,7 +12,6 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ColumnScope
@@ -31,11 +29,25 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Notes
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import de.jeanlucmakiola.calendula.ui.common.orUnnamed
+import de.jeanlucmakiola.floret.components.IconInfoCard
+import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
+import kotlinx.coroutines.launch
+import de.jeanlucmakiola.calendula.ui.common.sendEventShare
+import de.jeanlucmakiola.calendula.ui.common.canWriteCalendar
+import de.jeanlucmakiola.calendula.ui.common.rememberWriteAction
+import de.jeanlucmakiola.calendula.ui.common.DeleteEventDialog
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Close
@@ -76,18 +88,14 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
@@ -106,7 +114,6 @@ import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
@@ -116,14 +123,16 @@ import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventAttendee
 import de.jeanlucmakiola.calendula.domain.EventColorOption
 import de.jeanlucmakiola.calendula.domain.EventForm
+import de.jeanlucmakiola.calendula.domain.startInstant
+import de.jeanlucmakiola.calendula.domain.endInstant
+import de.jeanlucmakiola.calendula.domain.resolvedZone
+import de.jeanlucmakiola.calendula.domain.isPinnedAwayFrom
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.zoneDescriptor
 import de.jeanlucmakiola.calendula.domain.timeZoneOptionOf
-import de.jeanlucmakiola.calendula.domain.timesIn
 import de.jeanlucmakiola.calendula.domain.EventFormProblem
 import de.jeanlucmakiola.calendula.domain.RecurrenceEnd
 import de.jeanlucmakiola.calendula.domain.RecurrenceFreq
-import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.SimpleRecurrence
 import de.jeanlucmakiola.calendula.domain.parseSimpleRecurrence
 import de.jeanlucmakiola.calendula.domain.toRRule
@@ -148,12 +157,10 @@ import de.jeanlucmakiola.calendula.ui.common.eventFormFieldLabel
 import de.jeanlucmakiola.floret.components.FullScreenPicker
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSurface
-import de.jeanlucmakiola.calendula.ui.common.MILLIS_PER_DAY
 import de.jeanlucmakiola.floret.components.InlineTextField
 import de.jeanlucmakiola.floret.components.OptionCard
 import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
-import de.jeanlucmakiola.floret.components.SelectedCheck
 import de.jeanlucmakiola.floret.components.groupedShape as floretGroupedShape
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
@@ -161,7 +168,9 @@ import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.floret.reminders.ReminderUnit
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
+import de.jeanlucmakiola.calendula.ui.common.formatTimeOfDay
 import de.jeanlucmakiola.calendula.ui.common.timeOfDayFormatter
+import de.jeanlucmakiola.calendula.ui.common.withRepeatedHourZone
 import de.jeanlucmakiola.calendula.ui.common.reminderLeadTimeLabel
 import de.jeanlucmakiola.calendula.ui.common.reminderUnitLabel
 import de.jeanlucmakiola.calendula.ui.common.nextOccurrencesText
@@ -169,12 +178,10 @@ import de.jeanlucmakiola.calendula.ui.common.recurrenceText
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
-import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.toJavaDayOfWeek
 import kotlinx.datetime.toJavaLocalDate
-import kotlinx.datetime.toInstant
 import kotlinx.datetime.toJavaLocalTime
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.toJavaInstant
@@ -184,6 +191,7 @@ import java.time.format.FormatStyle
 import java.time.format.TextStyle as JavaTextStyle
 import java.util.Locale
 import kotlin.time.Clock
+import kotlin.time.Instant
 
 /**
  * Full-screen event form: create (v1.2, from the FAB's anchor date) and edit
@@ -192,6 +200,10 @@ import kotlin.time.Clock
  * first asks how far the change reaches (this occurrence / this and
  * following / whole series) — then closes. The calendar picker offers only
  * writable calendars; when editing, the calendar is fixed.
+ *
+ * Leaving with unsaved changes asks to save, discard or keep editing (#178).
+ * While editing, the overflow menu offers Duplicate (the form as it stands,
+ * handed to [onDuplicate] as a new event), Share and Delete.
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -201,13 +213,21 @@ fun EventEditScreen(
     onSaved: () -> Unit,
     editKey: LongArray? = null,
     initialStartMinutes: Int? = null,
+    initialDraft: LongArray? = null,
     initialForm: EventForm? = null,
     initialFormSource: ImportSource = ImportSource.File,
     onManageCalendars: (() -> Unit)? = null,
+    onDuplicate: ((EventForm) -> Unit)? = null,
+    onDeleted: () -> Unit = onSaved,
+    onLoadFailed: () -> Unit = onClose,
+    leaveRequested: Boolean = false,
+    onLeaveDeclined: () -> Unit = {},
     visible: Boolean = true,
     viewModel: EventEditViewModel = hiltViewModel(),
 ) {
-    LaunchedEffect(initialDateIso, editKey, initialForm) {
+    // Keyed on every input that decides the form, so a second draft or slot on
+    // the same day opens its own form even when the composition is kept alive.
+    LaunchedEffect(initialDateIso, editKey, initialForm, initialDraft, initialStartMinutes) {
         when {
             // A prefilled open: a single-event .ics for review, or an external
             // ACTION_INSERT intent. The source drives how reminders are seeded.
@@ -217,9 +237,14 @@ fun EventEditScreen(
                 beginMillis = editKey[1],
                 endMillis = editKey[2],
             )
+            // A block drafted on the timeline (#153): its own start and end.
+            initialDraft != null -> viewModel.openDraft(
+                start = Instant.fromEpochMilliseconds(initialDraft[0]),
+                end = Instant.fromEpochMilliseconds(initialDraft[1]),
+            )
             else -> {
                 val date = initialDateIso?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
-                    ?: Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date
+                    ?: Clock.System.now().toLocalDateTime(viewModel.zone.value).date
                 viewModel.openNew(date, initialStartMinutes)
             }
         }
@@ -235,40 +260,88 @@ fun EventEditScreen(
         viewModel.reset()
         onClose()
     }
-    // The event vanished between the detail screen and the edit tap — fall
-    // back to the detail screen, which shows its own failure state.
+    val hasUnsavedChanges by viewModel.hasUnsavedChanges.collectAsStateWithLifecycle()
+    var showLeavePrompt by rememberSaveable { mutableStateOf(false) }
+    var showDeleteDialog by rememberSaveable { mutableStateOf(false) }
+    // A running save or delete can't be called back, so leaving waits for it;
+    // its result then closes the form or reports why it didn't.
+    val requestClose = {
+        when {
+            state?.saveState == SaveUiState.Saving -> Unit
+            hasUnsavedChanges -> showLeavePrompt = true
+            else -> close()
+        }
+    }
+    // Something else wants this form's place, e.g. a second share (#306).
+    LaunchedEffect(leaveRequested) {
+        if (leaveRequested) requestClose()
+    }
+    // The event vanished before the form could load it — fall back to the
+    // detail screen, which shows its own failure state.
     LaunchedEffect(loadFailed) {
-        if (loadFailed) close()
+        if (loadFailed) {
+            viewModel.reset()
+            onLoadFailed()
+        }
     }
 
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Contextual WRITE_CALENDAR upgrade for v1.0 installs, like delete.
-    val writePermissionLauncher = rememberLauncherForActivityResult(
+    val scope = rememberCoroutineScope()
+    // Save keeps its own launcher: its result calls straight into the ViewModel,
+    // so a save waiting on the permission dialog survives a rotation.
+    val savePermissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { granted ->
         if (granted) viewModel.save()
     }
     val onSaveClick = {
-        val granted = ContextCompat.checkSelfPermission(
-            context,
-            Manifest.permission.WRITE_CALENDAR,
-        ) == PackageManager.PERMISSION_GRANTED
-        if (granted) {
+        if (context.canWriteCalendar()) {
             viewModel.save()
         } else {
-            writePermissionLauncher.launch(Manifest.permission.WRITE_CALENDAR)
+            savePermissionLauncher.launch(Manifest.permission.WRITE_CALENDAR)
         }
     }
+    val shareFailedMessage = stringResource(R.string.event_share_failed)
+    val shareChooserTitle = stringResource(R.string.event_share_chooser_title)
+    val onShareClick: () -> Unit = {
+        scope.launch {
+            val uri = viewModel.shareUri()
+            val sent = uri != null && context.sendEventShare(uri, shareChooserTitle)
+            if (!sent) snackbarHostState.showSnackbar(shareFailedMessage)
+        }
+    }
+    // The copy opens over this form; a form with nothing to lose steps aside.
+    val onDuplicateClick = rememberWriteAction {
+        viewModel.duplicateForm()?.let { form ->
+            onDuplicate?.invoke(form)
+            if (!hasUnsavedChanges) close()
+        }
+    }
+    val onDeleteClick = rememberWriteAction { showDeleteDialog = true }
 
     val saveFailedMessage = stringResource(R.string.event_edit_save_failed)
     val writeDeniedMessage = stringResource(R.string.event_edit_write_denied)
+    val deleteFailedMessage = stringResource(R.string.event_delete_failed)
+    val deleteDeniedMessage = stringResource(R.string.event_delete_write_denied)
     LaunchedEffect(state?.saveState) {
         when (state?.saveState) {
             SaveUiState.Saved -> {
                 viewModel.reset()
                 onSaved()
+            }
+            SaveUiState.Deleted -> {
+                viewModel.reset()
+                onDeleted()
+            }
+            SaveUiState.DeleteFailed -> {
+                viewModel.consumeSaveResult()
+                snackbarHostState.showSnackbar(deleteFailedMessage, duration = SnackbarDuration.Long)
+            }
+            SaveUiState.DeleteDenied -> {
+                viewModel.consumeSaveResult()
+                snackbarHostState.showSnackbar(deleteDeniedMessage, duration = SnackbarDuration.Long)
             }
             // A failed save leaves the form looking unchanged, so the snackbar is
             // the only sign anything happened — long rather than the default
@@ -286,8 +359,11 @@ fun EventEditScreen(
         }
     }
 
+    // From the inputs, not the loaded state, so the label never flips mid-load.
+    val opensForEdit = initialForm == null && editKey != null
+
     Scaffold(
-        modifier = Modifier.predictiveBack(onBack = close, visible = visible),
+        modifier = Modifier.predictiveBack(onBack = requestClose, visible = visible),
         snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             TopAppBar(
@@ -295,7 +371,7 @@ fun EventEditScreen(
                 // matching the detail screen's bare top bar.
                 title = {},
                 navigationIcon = {
-                    IconButton(onClick = close) {
+                    IconButton(onClick = requestClose) {
                         Icon(
                             imageVector = Icons.Default.Close,
                             contentDescription = stringResource(R.string.event_edit_close),
@@ -303,12 +379,25 @@ fun EventEditScreen(
                     }
                 },
                 actions = {
+                    if (state?.isEditing == true) {
+                        EditActionsMenu(
+                            canDelete = state?.isManaged == false,
+                            canDuplicate = onDuplicate != null,
+                            onDuplicate = onDuplicateClick,
+                            onShare = onShareClick,
+                            onDelete = onDeleteClick,
+                        )
+                    }
                     Button(
                         onClick = onSaveClick,
                         enabled = state != null && state?.saveState != SaveUiState.Saving,
                         modifier = Modifier.padding(end = 12.dp),
                     ) {
-                        Text(stringResource(R.string.event_edit_save))
+                        Text(
+                            stringResource(
+                                if (opensForEdit) R.string.event_edit_save else R.string.event_edit_create,
+                            ),
+                        )
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -329,11 +418,43 @@ fun EventEditScreen(
         }
     }
 
+    if (showLeavePrompt) {
+        UnsavedChangesDialog(
+            onSave = {
+                showLeavePrompt = false
+                onSaveClick()
+            },
+            onDiscard = {
+                showLeavePrompt = false
+                close()
+            },
+            onDismiss = {
+                showLeavePrompt = false
+                if (leaveRequested) onLeaveDeclined()
+            },
+        )
+    }
+
+    val recurs = viewModel.editedEventRecurs()
+    if (showDeleteDialog && recurs != null) {
+        DeleteEventDialog(
+            isRecurring = recurs,
+            onConfirm = { deleteScope ->
+                showDeleteDialog = false
+                viewModel.delete(deleteScope)
+            },
+            onDismiss = { showDeleteDialog = false },
+        )
+    }
+
     if (state?.saveState == SaveUiState.AwaitingScope) {
-        SaveScopeDialog(
-            recurrenceChanged = state?.recurrenceChanged == true,
+        // A changed rule rules out the single occurrence — an exception row
+        // can't carry its own rule.
+        RecurringScopeDialog(
+            title = stringResource(R.string.event_edit_recurring_title),
             onSelect = viewModel::saveWithScope,
             onDismiss = viewModel::consumeSaveResult,
+            allowOccurrence = state?.recurrenceChanged != true,
         )
     }
 
@@ -371,6 +492,90 @@ fun EventEditScreen(
             onKeep = viewModel::dismissImportedReminderPrompt,
         )
     }
+}
+
+/** Duplicate, Share and Delete for the event being edited, behind an overflow button. */
+@Composable
+private fun EditActionsMenu(
+    canDelete: Boolean,
+    canDuplicate: Boolean,
+    onDuplicate: () -> Unit,
+    onShare: () -> Unit,
+    onDelete: () -> Unit,
+) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        IconButton(onClick = { open = true }) {
+            Icon(
+                imageVector = Icons.Default.MoreVert,
+                contentDescription = stringResource(R.string.event_edit_more_actions),
+            )
+        }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            if (canDuplicate) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.event_detail_duplicate)) },
+                    leadingIcon = { Icon(Icons.Default.ContentCopy, contentDescription = null) },
+                    onClick = {
+                        open = false
+                        onDuplicate()
+                    },
+                )
+            }
+            DropdownMenuItem(
+                text = { Text(stringResource(R.string.event_detail_share)) },
+                leadingIcon = { Icon(Icons.Default.Share, contentDescription = null) },
+                onClick = {
+                    open = false
+                    onShare()
+                },
+            )
+            // Managed special-dates events have no delete, as on the detail screen.
+            if (canDelete) {
+                DropdownMenuItem(
+                    text = { Text(stringResource(R.string.event_detail_delete)) },
+                    leadingIcon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                    onClick = {
+                        open = false
+                        onDelete()
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Asked when leaving the form with unsaved changes (#178). Dismissing keeps
+ * editing; a form with nothing changed closes without asking.
+ */
+@Composable
+private fun UnsavedChangesDialog(
+    onSave: () -> Unit,
+    onDiscard: () -> Unit,
+    onDismiss: () -> Unit,
+) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.event_edit_unsaved_title)) },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                OptionCard(
+                    label = stringResource(R.string.event_edit_unsaved_save),
+                    onClick = onSave,
+                )
+                OptionCard(
+                    label = stringResource(R.string.event_edit_unsaved_discard),
+                    onClick = onDiscard,
+                )
+            }
+        },
+        confirmButton = {
+            TextButton(onClick = onDismiss) {
+                Text(stringResource(R.string.event_edit_unsaved_keep))
+            }
+        },
+    )
 }
 
 /**
@@ -450,27 +655,46 @@ private fun SaveConflictDialog(
     }
 }
 
-/**
- * Scope choice when saving a dirty recurring event: one tap writes just the
- * tapped occurrence, it and everything after (series split), or the whole
- * series. A changed recurrence rule rules out the single occurrence — an
- * exception row can't carry its own rule.
- */
-@Composable
-private fun SaveScopeDialog(
-    recurrenceChanged: Boolean,
-    onSelect: (RecurringWriteScope) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    RecurringScopeDialog(
-        title = stringResource(R.string.event_edit_recurring_title),
-        onSelect = onSelect,
-        onDismiss = onDismiss,
-        allowOccurrence = !recurrenceChanged,
-    )
-}
-
 private enum class PickerTarget { StartDate, StartTime, EndDate, EndTime }
+
+/** A picker card's value over its label, with the drop-down arrow when it opens a picker. */
+@Composable
+private fun PickerCardBody(
+    title: String,
+    subtitle: String,
+    showArrow: Boolean = true,
+    extra: @Composable ColumnScope.() -> Unit = {},
+) = PickerCardBody(AnnotatedString(title), subtitle, showArrow, extra)
+
+@Composable
+private fun PickerCardBody(
+    title: AnnotatedString,
+    subtitle: String,
+    showArrow: Boolean = true,
+    extra: @Composable ColumnScope.() -> Unit = {},
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth(),
+    ) {
+        Column(modifier = Modifier.weight(1f)) {
+            Text(text = title, style = MaterialTheme.typography.titleMedium)
+            Text(
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            extra()
+        }
+        if (showArrow) {
+            Icon(
+                imageVector = Icons.Default.ArrowDropDown,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
 
 /**
  * Wrapper for an optional form section: fields added via "more fields"
@@ -491,6 +715,9 @@ private fun OptionalFormSection(
     }
 }
 
+/** The one full-screen picker the form has open, if any. */
+private enum class EditSheet { Calendar, Reminder, Recurrence, Visibility, Color, Timezone, Field }
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun EventEditContent(
@@ -501,24 +728,15 @@ private fun EventEditContent(
 ) {
     val form = state.form
     val locale = currentLocale()
+    val deviceZone by viewModel.zone.collectAsStateWithLifecycle()
     val firstDayOfWeek by viewModel.firstDayOfWeek.collectAsStateWithLifecycle()
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     // The title, date and recurrence are managed by the special-dates sync, so
     // they're locked here; everything else (reminders, location, notes) is the
     // user's to edit.
     val locked = state.isManaged
-    // Read in the form's own window, not the picker's: the focused field lives
-    // here, so this is the controller that can put its keyboard away.
-    val focusManager = LocalFocusManager.current
-    val keyboardController = LocalSoftwareKeyboardController.current
     var picker by remember { mutableStateOf<PickerTarget?>(null) }
-    var showCalendarPicker by rememberSaveable { mutableStateOf(false) }
-    var showReminderPicker by rememberSaveable { mutableStateOf(false) }
-    var showRecurrencePicker by rememberSaveable { mutableStateOf(false) }
-    var showVisibilityPicker by rememberSaveable { mutableStateOf(false) }
-    var showColorPicker by rememberSaveable { mutableStateOf(false) }
-    var showTimezonePicker by rememberSaveable { mutableStateOf(false) }
-    var showFieldPicker by rememberSaveable { mutableStateOf(false) }
+    var sheet by rememberSaveable { mutableStateOf<EditSheet?>(null) }
 
     // Pick a guest from contacts: a one-shot system picker returning the chosen
     // email row (email + display name). No READ_CONTACTS — the result Intent
@@ -559,17 +777,6 @@ private fun EventEditContent(
         ?: MaterialTheme.colorScheme.primary
     val gap = 12.dp
 
-    // Issue #10: on a fresh create form (setting on, nothing typed yet) focus the
-    // title and raise the keyboard so the user can type straight away. Keyed on
-    // Unit so it runs once per open — not on every keystroke — and guarded so
-    // editing or an imported/prefilled form never grabs focus.
-    val titleFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(Unit) {
-        if (state.autofocusTitle && !state.isEditing && form.title.isBlank()) {
-            runCatching { titleFocusRequester.requestFocus() }
-        }
-    }
-
     // Per-event colour applicability for the resolved calendar:
     //  - palette calendars (Google, …) and local calendars always support it;
     //  - synced calendars with no palette only when the user opted in, and even
@@ -589,129 +796,22 @@ private fun EventEditContent(
             .verticalScroll(rememberScrollState())
             .padding(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 40.dp),
     ) {
-        // Title: borderless headline, mirroring the detail screen's title +
-        // accent bar instead of a boxed Material text field. Multi-line so long
-        // titles wrap instead of scrolling off one line (#33); newlines are
-        // stripped in setTitle, so this stays a single logical line — the Enter
-        // key just has no effect.
-        InlineField(
-            value = form.title,
-            onValueChange = viewModel::setTitle,
-            placeholder = stringResource(R.string.event_edit_title_hint),
-            textStyle = MaterialTheme.typography.headlineMedium
-                .copy(fontWeight = FontWeight.SemiBold),
-            singleLine = false,
-            enabled = !locked,
-            modifier = Modifier
-                .fillMaxWidth()
-                // Ease the height change as the title wraps to another line
-                // instead of letting the accent bar + cards below jump.
-                .animateContentSizeMotion()
-                .padding(vertical = 4.dp)
-                .focusRequester(titleFocusRequester),
+        TitleSection(
+            state = state,
+            onTitleChange = viewModel::setTitle,
+            accent = accent,
+            calendarName = selectedCalendar?.displayName,
         )
-        FieldLengthCounter(
-            length = form.title.length,
-            max = MAX_SINGLE_LINE_FIELD,
-            modifier = Modifier.fillMaxWidth(),
-        )
-        Spacer(Modifier.height(10.dp))
-        Box(
-            modifier = Modifier
-                .width(48.dp)
-                .height(3.dp)
-                .background(accent, RoundedCornerShape(2.dp)),
-        )
-        if (locked) {
-            Spacer(Modifier.height(10.dp))
-            Text(
-                text = stringResource(
-                    R.string.event_edit_managed_hint,
-                    selectedCalendar?.displayName
-                        ?.ifBlank { stringResource(R.string.calendar_unnamed) }
-                        .orEmpty(),
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
 
         Spacer(Modifier.height(20.dp))
 
-        // "When" card: the icon centres on the all-day row (header); the
-        // start/end rows continue below in the same text column.
-        EditCard(
-            icon = Icons.Default.Schedule,
-            iconContentDescription = null,
-            header = {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(
-                        text = stringResource(R.string.event_detail_all_day),
-                        style = MaterialTheme.typography.titleMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Switch(
-                        checked = form.isAllDay,
-                        onCheckedChange = viewModel::setAllDay,
-                        enabled = !locked,
-                    )
-                }
-            },
-        ) {
-            Spacer(Modifier.height(4.dp))
-            ScheduleRow(
-                label = stringResource(R.string.event_edit_starts),
-                dateTime = form.start,
-                isAllDay = form.isAllDay,
-                locale = locale,
-                onDateClick = { picker = PickerTarget.StartDate },
-                onTimeClick = { picker = PickerTarget.StartTime },
-                enabled = !locked,
-            )
-            ScheduleRow(
-                label = stringResource(R.string.event_edit_ends),
-                dateTime = form.end,
-                isAllDay = form.isAllDay,
-                locale = locale,
-                onDateClick = { picker = PickerTarget.EndDate },
-                onTimeClick = { picker = PickerTarget.EndTime },
-                isError = EventFormProblem.EndBeforeStart in state.problems,
-                enabled = !locked,
-            )
-            if (EventFormProblem.EndBeforeStart in state.problems) {
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = stringResource(R.string.event_edit_error_end_before_start),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.error,
-                )
-            }
-            // The rows above edit a pinned event in *its own* zone, which is the
-            // time it was set at — but that says nothing about when it lands for
-            // whoever is reading it. Spell the local equivalent out rather than
-            // leaving the user to do the offset arithmetic. Absent (null) unless
-            // the event is pinned somewhere other than here.
-            // Keyed rather than recomputed: this sits in the same Column as the
-            // title field, so it would otherwise re-parse the zone on every
-            // keystroke.
-            val localTimes = remember(form.timezone, form.start, form.end, form.isAllDay) {
-                form.timesIn(TimeZone.currentSystemDefault())
-            }
-            localTimes?.let { (localStart, localEnd) ->
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = stringResource(
-                        R.string.event_edit_timezone_local_time,
-                        formatTimeRange(localStart, localEnd, locale),
-                    ),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        WhenCard(
+            state = state,
+            deviceZone = deviceZone,
+            locale = locale,
+            onAllDayChange = viewModel::setAllDay,
+            onPick = { picker = it },
+        )
 
         Spacer(Modifier.height(gap))
 
@@ -719,160 +819,47 @@ private fun EventEditContent(
         // different one while editing *moves* the event (copy+delete on save,
         // since CALENDAR_ID can't be updated in place). Managed special-dates
         // events stay locked: the contact sync owns their calendar.
-        EditCard(
-            icon = Icons.Default.CalendarMonth,
-            iconContentDescription = stringResource(R.string.event_detail_calendar),
-            iconTint = accent,
-            onClick = { showCalendarPicker = true }
+        CalendarCard(
+            calendar = selectedCalendar,
+            accent = accent,
+            onClick = { sheet = EditSheet.Calendar }
                 .takeIf { state.calendars.isNotEmpty() && !state.isManaged },
-        ) {
-            Text(
-                text = selectedCalendar?.displayName
-                    ?.ifBlank { stringResource(R.string.calendar_unnamed) }
-                    ?: stringResource(R.string.event_edit_error_no_calendar),
-                style = MaterialTheme.typography.titleMedium,
-                color = if (selectedCalendar == null) {
-                    MaterialTheme.colorScheme.error
-                } else {
-                    Color.Unspecified
-                },
-            )
-            selectedCalendar?.accountName?.takeIf { it.isNotBlank() }?.let { account ->
-                Text(
-                    text = account,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
+        )
 
         // Optional sections: which ones render by default is a setting; the
         // rest unfold behind the "more fields" button below.
         OptionalFormSection(visible = EventFormField.Timezone in state.visibleFields) {
             Spacer(Modifier.height(gap))
-            EditCard(
-                icon = Icons.Default.Public,
-                iconContentDescription = null,
-                onClick = { showTimezonePicker = true },
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    // Resolved at the event's own start, not at "now": the
-                    // abbreviation and offset shown ("CEST · GMT+02:00") must be
-                    // the ones that apply when the event actually happens.
-                    val pinned = remember(form.timezone, form.start, locale) {
-                        form.timezone
-                            ?.let { id -> runCatching { id to TimeZone.of(id) }.getOrNull() }
-                            ?.let { (id, zone) ->
-                                timeZoneOptionOf(
-                                    id,
-                                    locale,
-                                    at = form.start.toInstant(zone).toJavaInstant(),
-                                    regionOf = ::icuTimeZoneRegion,
-                                )
-                            }
-                    }
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = pinned?.label
-                                ?: stringResource(R.string.event_edit_timezone_device),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            text = pinned?.let { zoneDescriptor(it) }
-                                ?: stringResource(R.string.event_edit_timezone_device_summary),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            TimezoneCard(form = form, locale = locale, onClick = { sheet = EditSheet.Timezone })
         }
 
         OptionalFormSection(visible = EventFormField.Location in state.visibleFields) {
             Spacer(Modifier.height(gap))
-            EditCard(
-                icon = Icons.Default.Place,
-                iconContentDescription = stringResource(R.string.event_detail_location),
-                iconAtTop = true,
-            ) {
-                Row(verticalAlignment = Alignment.Top) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        InlineField(
-                            value = form.location,
-                            onValueChange = viewModel::setLocation,
-                            placeholder = stringResource(R.string.event_detail_location),
-                            // A location is as often a meeting URL as an address,
-                            // and "Zoom.us/j/123" reads wrong (#146).
-                            capitalization = KeyboardCapitalization.None,
-                            // Multi-line so a long address or meeting URL wraps and
-                            // the card grows instead of scrolling off one line
-                            // (#273). The field holds no newlines of its own, so
-                            // the IME's action key closes the keyboard rather than
-                            // inserting a break setLocation would only fold away.
-                            singleLine = false,
-                            imeAction = ImeAction.Done,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .animateContentSizeMotion()
-                                .padding(vertical = 4.dp),
-                        )
-                        FieldLengthCounter(
-                            length = form.location.length,
-                            max = MAX_SINGLE_LINE_FIELD,
+            LocationCard(
+                location = form.location,
+                onLocationChange = viewModel::setLocation,
+                onPickContact = {
+                    runCatching {
+                        pickContactAddress.launch(
+                            Intent(
+                                Intent.ACTION_PICK,
+                                ContactsContract.CommonDataKinds.StructuredPostal.CONTENT_URI,
+                            ),
                         )
                     }
-                    // The box is exactly one text line tall, so the button
-                    // centres on the first line without making a single-line
-                    // card taller than its text; requiredSize keeps the
-                    // button's own 40dp ripple.
-                    Box(
-                        modifier = Modifier.height(firstLineHeight()),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        IconButton(
-                            onClick = {
-                                runCatching {
-                                    pickContactAddress.launch(
-                                        Intent(
-                                            Intent.ACTION_PICK,
-                                            ContactsContract.CommonDataKinds.StructuredPostal
-                                                .CONTENT_URI,
-                                        ),
-                                    )
-                                }
-                            },
-                            modifier = Modifier.requiredSize(40.dp),
-                        ) {
-                            Icon(
-                                imageVector = Icons.Default.Contacts,
-                                contentDescription = stringResource(
-                                    R.string.event_edit_location_from_contacts,
-                                ),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                modifier = Modifier.size(22.dp),
-                            )
-                        }
-                    }
-                }
-            }
+                },
+            )
         }
 
         OptionalFormSection(visible = EventFormField.Description in state.visibleFields) {
             Spacer(Modifier.height(gap))
-            EditCard(
+            IconInfoCard(
                 icon = Icons.AutoMirrored.Filled.Notes,
                 iconContentDescription = stringResource(R.string.event_detail_description),
-                iconAtTop = true,
+                iconAlignment = Alignment.Top,
+                iconTopPadding = ((firstLineHeight() - 24.dp) / 2).coerceAtLeast(0.dp),
             ) {
-                InlineField(
+                InlineTextField(
                     value = form.description,
                     onValueChange = viewModel::setDescription,
                     placeholder = stringResource(R.string.event_detail_description),
@@ -884,206 +871,58 @@ private fun EventEditContent(
 
         OptionalFormSection(visible = EventFormField.Reminders in state.visibleFields) {
             Spacer(Modifier.height(gap))
-            // A grouped list like guests: each reminder is its own tonal card
-            // with connected corners, the last row being "Add reminder".
-            val reminders = form.reminders
-            val rows = reminders.size + 1
-            reminders.forEachIndexed { index, minutes ->
-                GroupedItemCard(
-                    position = positionOf(index, rows),
-                    icon = Icons.Default.Notifications,
-                    title = reminderLabel(minutes),
-                    removeContentDescription = stringResource(R.string.event_edit_remove_reminder),
-                    onRemove = { viewModel.removeReminder(minutes) },
-                )
-            }
-            AddActionCard(
-                label = stringResource(R.string.event_edit_add_reminder),
-                position = positionOf(reminders.size, rows),
-                onClick = { showReminderPicker = true },
+            RemindersSection(
+                reminders = form.reminders,
+                onRemove = viewModel::removeReminder,
+                onAdd = { sheet = EditSheet.Reminder },
             )
         }
 
         OptionalFormSection(visible = EventFormField.Recurrence in state.visibleFields) {
             Spacer(Modifier.height(gap))
-            EditCard(
-                icon = Icons.Default.Repeat,
-                iconContentDescription = null,
-                onClick = if (locked) null else ({ showRecurrencePicker = true }),
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = form.rrule?.let { recurrenceText(it, locale) }
-                                ?: AnnotatedString(stringResource(R.string.event_edit_recurrence_none)),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            text = stringResource(R.string.event_detail_recurrence),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                if (EventFormProblem.RecurrenceEndsBeforeStart in state.problems) {
-                    Spacer(Modifier.height(2.dp))
-                    Text(
-                        text = stringResource(R.string.event_edit_error_recurrence_ends_before_start),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
+            RecurrenceCard(
+                state = state,
+                locale = locale,
+                onClick = if (locked) null else ({ sheet = EditSheet.Recurrence }),
+            )
         }
 
         OptionalFormSection(visible = EventFormField.Availability in state.visibleFields) {
             Spacer(Modifier.height(gap))
-            EditCard(
-                icon = Icons.Default.EventAvailable,
-                iconContentDescription = null,
-                header = {
-                    Text(
-                        text = stringResource(R.string.event_edit_availability),
-                        style = MaterialTheme.typography.titleMedium,
-                    )
-                },
-            ) {
-                Spacer(Modifier.height(8.dp))
-                SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-                    SegmentedButton(
-                        selected = form.availability == Availability.Busy,
-                        onClick = { viewModel.setAvailability(Availability.Busy) },
-                        shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-                    ) { Text(stringResource(R.string.event_availability_busy)) }
-                    SegmentedButton(
-                        selected = form.availability == Availability.Free,
-                        onClick = { viewModel.setAvailability(Availability.Free) },
-                        shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-                    ) { Text(stringResource(R.string.event_availability_free)) }
-                }
-            }
+            AvailabilityCard(availability = form.availability, onSelect = viewModel::setAvailability)
         }
 
         OptionalFormSection(visible = EventFormField.Visibility in state.visibleFields) {
             Spacer(Modifier.height(gap))
-            EditCard(
+            IconInfoCard(
                 icon = Icons.Default.Lock,
                 iconContentDescription = null,
-                onClick = { showVisibilityPicker = true },
+                onClick = { sheet = EditSheet.Visibility },
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(accessLevelLabel(form.accessLevel)),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            text = stringResource(R.string.event_edit_visibility),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                    Icon(
-                        imageVector = Icons.Default.ArrowDropDown,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
+                PickerCardBody(
+                    title = stringResource(accessLevelLabel(form.accessLevel)),
+                    subtitle = stringResource(R.string.event_edit_visibility),
+                )
             }
         }
 
         OptionalFormSection(visible = EventFormField.Color in state.visibleFields) {
             Spacer(Modifier.height(gap))
-            // The swatch the event will paint with: its own colour, else the
-            // calendar's. The Palette icon takes that colour as a preview.
-            val swatch = form.color ?: selectedCalendar?.color
-            EditCard(
-                icon = Icons.Default.Palette,
-                iconContentDescription = stringResource(R.string.event_edit_color),
-                iconTint = if (colorSupported && swatch != null) {
-                    eventFill(swatch, dark, soften)
-                } else {
-                    MaterialTheme.colorScheme.onSurfaceVariant
-                },
-                onClick = { showColorPicker = true }.takeIf { colorSupported },
-            ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text(
-                            text = stringResource(
-                                when {
-                                    !colorSupported -> R.string.event_edit_color_unsupported
-                                    form.color != null -> R.string.event_edit_color_custom
-                                    else -> R.string.event_edit_color_default
-                                },
-                            ),
-                            style = MaterialTheme.typography.titleMedium,
-                        )
-                        Text(
-                            text = stringResource(
-                                if (colorSupported) {
-                                    R.string.event_edit_color
-                                } else {
-                                    R.string.event_edit_color_unsupported_hint
-                                },
-                            ),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                        if (colorSyncRisk) {
-                            Spacer(Modifier.height(2.dp))
-                            Text(
-                                text = stringResource(R.string.event_edit_color_sync_warning),
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                    if (colorSupported) {
-                        Icon(
-                            imageVector = Icons.Default.ArrowDropDown,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
-            }
+            ColorCard(
+                color = form.color,
+                calendarColor = selectedCalendar?.color,
+                supported = colorSupported,
+                syncRisk = colorSyncRisk,
+                onClick = { sheet = EditSheet.Color }.takeIf { colorSupported },
+            )
         }
 
         OptionalFormSection(visible = EventFormField.Attendees in state.visibleFields) {
             Spacer(Modifier.height(gap))
-            // Guests are an inline grouped list: each is a tonal card with a
-            // role toggle + remove, and the trailing card is an inline email
-            // field — type an address, press Done, it commits. Below sits an
-            // honest note — Calendula never sends invitations, so whether a
-            // guest is notified is the calendar backend's call.
-            val guests = form.attendees
-            val rows = guests.size + 1
-            guests.forEachIndexed { index, attendee ->
-                GuestCard(
-                    attendee = attendee,
-                    position = positionOf(index, rows),
-                    onToggleOptional = { viewModel.setAttendeeOptional(attendee, it) },
-                    onRemove = { viewModel.removeAttendee(attendee) },
-                )
-            }
-            AddGuestInlineCard(
-                position = positionOf(guests.size, rows),
-                onAdd = { viewModel.addAttendee(it) },
+            GuestsSection(
+                guests = form.attendees,
+                isLocalCalendar = isLocalCalendar,
+                viewModel = viewModel,
                 onPickContact = {
                     runCatching {
                         pickContact.launch(
@@ -1095,25 +934,12 @@ private fun EventEditContent(
                     }
                 },
             )
-            Spacer(Modifier.height(8.dp))
-            Text(
-                text = stringResource(
-                    if (isLocalCalendar) {
-                        R.string.event_edit_attendees_note_local
-                    } else {
-                        R.string.event_edit_attendees_note_synced
-                    },
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(horizontal = 4.dp),
-            )
         }
 
         OptionalFormSection(visible = state.hiddenFields.isNotEmpty()) {
             Spacer(Modifier.height(20.dp))
             TextButton(
-                onClick = { showFieldPicker = true },
+                onClick = { sheet = EditSheet.Field },
                 modifier = Modifier.align(Alignment.CenterHorizontally),
             ) {
                 Icon(
@@ -1151,112 +977,564 @@ private fun EventEditContent(
         null -> Unit
     }
 
-    // A full-screen picker is a change of place, so the keyboard shouldn't
-    // follow it. The field keeps its text; only focus and the IME go.
-    LaunchedEffect(showCalendarPicker) {
-        if (showCalendarPicker) {
-            focusManager.clearFocus(force = true)
-            keyboardController?.hide()
-        }
-    }
-
-    if (showCalendarPicker) {
-        CalendarPicker(
-            calendars = state.calendars,
-            selectedId = form.calendarId,
-            onSelect = {
-                viewModel.setCalendar(it)
-                showCalendarPicker = false
-            },
-            // Close the picker first: it is a Compose Dialog in its own window,
-            // always above the activity's content, so the manager would
-            // otherwise open behind it and the tap would look dead.
-            onManageCalendars = onManageCalendars?.let { openManager ->
-                {
-                    showCalendarPicker = false
-                    openManager()
-                }
-            },
-            onDismiss = { showCalendarPicker = false },
+    sheet?.let { open ->
+        EditSheetHost(
+            sheet = open,
+            state = state,
+            viewModel = viewModel,
+            firstDayOfWeek = firstDayOfWeek,
+            colorSyncRisk = colorSyncRisk,
+            onManageCalendars = onManageCalendars,
+            onClose = { sheet = null },
         )
     }
+}
 
-    if (showReminderPicker) {
-        ReminderPickerDialog(
+/**
+ * The borderless title over the accent bar, mirroring the detail screen's title
+ * instead of a boxed Material text field. Locked events say which calendar owns
+ * them.
+ */
+@Composable
+private fun TitleSection(
+    state: EventEditUiState,
+    onTitleChange: (String) -> Unit,
+    accent: Color,
+    calendarName: String?,
+) {
+    val form = state.form
+    // Issue #10: on a fresh create form (setting on, nothing typed yet) focus the
+    // title and raise the keyboard so the user can type straight away. Keyed on
+    // Unit so it runs once per open — not on every keystroke — and guarded so
+    // editing or an imported/prefilled form never grabs focus.
+    val titleFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        if (state.autofocusTitle && !state.isEditing && form.title.isBlank()) {
+            runCatching { titleFocusRequester.requestFocus() }
+        }
+    }
+    // Multi-line so long titles wrap instead of scrolling off one line (#33);
+    // newlines are stripped in setTitle, so this stays a single logical line —
+    // the Enter key just has no effect.
+    InlineTextField(
+        value = form.title,
+        onValueChange = onTitleChange,
+        placeholder = stringResource(R.string.event_edit_title_hint),
+        textStyle = MaterialTheme.typography.headlineMedium
+            .copy(fontWeight = FontWeight.SemiBold),
+        singleLine = false,
+        enabled = !state.isManaged,
+        modifier = Modifier
+            .fillMaxWidth()
+            // Ease the height change as the title wraps to another line
+            // instead of letting the accent bar + cards below jump.
+            .animateContentSizeMotion()
+            .padding(vertical = 4.dp)
+            .focusRequester(titleFocusRequester),
+    )
+    FieldLengthCounter(
+        length = form.title.length,
+        max = MAX_SINGLE_LINE_FIELD,
+        modifier = Modifier.fillMaxWidth(),
+    )
+    Spacer(Modifier.height(10.dp))
+    Box(
+        modifier = Modifier
+            .width(48.dp)
+            .height(3.dp)
+            .background(accent, RoundedCornerShape(2.dp)),
+    )
+    if (state.isManaged) {
+        Spacer(Modifier.height(10.dp))
+        Text(
+            text = stringResource(
+                R.string.event_edit_managed_hint,
+                calendarName?.orUnnamed().orEmpty(),
+            ),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
+}
+
+/**
+ * "When" card: the icon centres on the all-day row (header); the start/end rows
+ * continue below in the same text column.
+ */
+@Composable
+private fun WhenCard(
+    state: EventEditUiState,
+    deviceZone: TimeZone,
+    locale: Locale,
+    onAllDayChange: (Boolean) -> Unit,
+    onPick: (PickerTarget) -> Unit,
+) {
+    val form = state.form
+    val locked = state.isManaged
+    IconInfoCard(
+        icon = Icons.Default.Schedule,
+        iconContentDescription = null,
+        header = {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth(),
+            ) {
+                Text(
+                    text = stringResource(R.string.event_detail_all_day),
+                    style = MaterialTheme.typography.titleMedium,
+                    modifier = Modifier.weight(1f),
+                )
+                Switch(
+                    checked = form.isAllDay,
+                    onCheckedChange = onAllDayChange,
+                    enabled = !locked,
+                )
+            }
+        },
+    ) {
+        Spacer(Modifier.height(4.dp))
+        val formZone = remember(form.timezone, deviceZone) { form.resolvedZone(deviceZone) }
+        val startAt = remember(form.start, formZone) { form.startInstant(formZone) }
+        val endAt = remember(form.end, formZone) { form.endInstant(formZone) }
+        ScheduleRow(
+            label = stringResource(R.string.event_edit_starts),
+            dateTime = form.start.dateTime,
+            instant = startAt,
+            zone = formZone,
+            isAllDay = form.isAllDay,
+            locale = locale,
+            onDateClick = { onPick(PickerTarget.StartDate) },
+            onTimeClick = { onPick(PickerTarget.StartTime) },
+            enabled = !locked,
+        )
+        ScheduleRow(
+            label = stringResource(R.string.event_edit_ends),
+            dateTime = form.end.dateTime,
+            instant = endAt,
+            zone = formZone,
+            isAllDay = form.isAllDay,
+            locale = locale,
+            onDateClick = { onPick(PickerTarget.EndDate) },
+            onTimeClick = { onPick(PickerTarget.EndTime) },
+            isError = EventFormProblem.EndBeforeStart in state.problems,
+            enabled = !locked,
+        )
+        if (EventFormProblem.EndBeforeStart in state.problems) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.event_edit_error_end_before_start),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+        // A pinned event's local equivalent, shown only when pinned elsewhere.
+        val pinnedAway = remember(form.timezone, form.isAllDay, deviceZone) {
+            form.isPinnedAwayFrom(deviceZone)
+        }
+        if (pinnedAway) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = stringResource(
+                    R.string.event_edit_timezone_local_time,
+                    formatTimeRange(startAt, endAt, deviceZone, locale),
+                ),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CalendarCard(calendar: CalendarSource?, accent: Color, onClick: (() -> Unit)?) {
+    IconInfoCard(
+        icon = Icons.Default.CalendarMonth,
+        iconContentDescription = stringResource(R.string.event_detail_calendar),
+        iconTint = accent,
+        onClick = onClick,
+    ) {
+        Text(
+            text = calendar?.displayName
+                ?.orUnnamed()
+                ?: stringResource(R.string.event_edit_error_no_calendar),
+            style = MaterialTheme.typography.titleMedium,
+            color = if (calendar == null) {
+                MaterialTheme.colorScheme.error
+            } else {
+                Color.Unspecified
+            },
+        )
+        calendar?.accountName?.takeIf { it.isNotBlank() }?.let { account ->
+            Text(
+                text = account,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
+private fun TimezoneCard(form: EventForm, locale: Locale, onClick: () -> Unit) {
+    IconInfoCard(
+        icon = Icons.Default.Public,
+        iconContentDescription = null,
+        onClick = onClick,
+    ) {
+        // Resolved at the event's own start, not at "now": the
+        // abbreviation and offset shown ("CEST · GMT+02:00") must be
+        // the ones that apply when the event actually happens.
+        val pinned = remember(form.timezone, form.start, locale) {
+            form.timezone
+                ?.let { id -> runCatching { id to TimeZone.of(id) }.getOrNull() }
+                ?.let { (id, zone) ->
+                    timeZoneOptionOf(
+                        id,
+                        locale,
+                        at = form.startInstant(zone).toJavaInstant(),
+                        regionOf = ::icuTimeZoneRegion,
+                    )
+                }
+        }
+        PickerCardBody(
+            title = pinned?.label ?: stringResource(R.string.event_edit_timezone_device),
+            subtitle = pinned?.let { zoneDescriptor(it) }
+                ?: stringResource(R.string.event_edit_timezone_device_summary),
+        )
+    }
+}
+
+@Composable
+private fun LocationCard(
+    location: String,
+    onLocationChange: (String) -> Unit,
+    onPickContact: () -> Unit,
+) {
+    IconInfoCard(
+        icon = Icons.Default.Place,
+        iconContentDescription = stringResource(R.string.event_detail_location),
+        iconAlignment = Alignment.Top,
+        iconTopPadding = ((firstLineHeight() - 24.dp) / 2).coerceAtLeast(0.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Top) {
+            Column(modifier = Modifier.weight(1f)) {
+                InlineTextField(
+                    value = location,
+                    onValueChange = onLocationChange,
+                    placeholder = stringResource(R.string.event_detail_location),
+                    // A location is as often a meeting URL as an address,
+                    // and "Zoom.us/j/123" reads wrong (#146).
+                    capitalization = KeyboardCapitalization.None,
+                    // Multi-line so a long address or meeting URL wraps and
+                    // the card grows instead of scrolling off one line
+                    // (#273). The field holds no newlines of its own, so
+                    // the IME's action key closes the keyboard rather than
+                    // inserting a break setLocation would only fold away.
+                    singleLine = false,
+                    imeAction = ImeAction.Done,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .animateContentSizeMotion()
+                        .padding(vertical = 4.dp),
+                )
+                FieldLengthCounter(
+                    length = location.length,
+                    max = MAX_SINGLE_LINE_FIELD,
+                )
+            }
+            // The box is exactly one text line tall, so the button
+            // centres on the first line without making a single-line
+            // card taller than its text; requiredSize keeps the
+            // button's own 40dp ripple.
+            Box(
+                modifier = Modifier.height(firstLineHeight()),
+                contentAlignment = Alignment.Center,
+            ) {
+                IconButton(
+                    onClick = onPickContact,
+                    modifier = Modifier.requiredSize(40.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Contacts,
+                        contentDescription = stringResource(
+                            R.string.event_edit_location_from_contacts,
+                        ),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(22.dp),
+                    )
+                }
+            }
+        }
+    }
+}
+
+/**
+ * A grouped list like guests: each reminder is its own tonal card with
+ * connected corners, the last row being "Add reminder".
+ */
+@Composable
+private fun RemindersSection(reminders: List<Int>, onRemove: (Int) -> Unit, onAdd: () -> Unit) {
+    val rows = reminders.size + 1
+    reminders.forEachIndexed { index, minutes ->
+        GroupedItemCard(
+            position = positionOf(index, rows),
+            icon = Icons.Default.Notifications,
+            title = reminderLeadTimeLabel(minutes),
+            removeContentDescription = stringResource(R.string.event_edit_remove_reminder),
+            onRemove = { onRemove(minutes) },
+        )
+    }
+    AddActionCard(
+        label = stringResource(R.string.event_edit_add_reminder),
+        position = positionOf(reminders.size, rows),
+        onClick = onAdd,
+    )
+}
+
+@Composable
+private fun RecurrenceCard(state: EventEditUiState, locale: Locale, onClick: (() -> Unit)?) {
+    IconInfoCard(
+        icon = Icons.Default.Repeat,
+        iconContentDescription = null,
+        onClick = onClick,
+    ) {
+        PickerCardBody(
+            title = state.form.rrule?.let { recurrenceText(it, locale) }
+                ?: AnnotatedString(stringResource(R.string.event_edit_recurrence_none)),
+            subtitle = stringResource(R.string.event_detail_recurrence),
+        )
+        if (EventFormProblem.RecurrenceEndsBeforeStart in state.problems) {
+            Spacer(Modifier.height(2.dp))
+            Text(
+                text = stringResource(R.string.event_edit_error_recurrence_ends_before_start),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.error,
+            )
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AvailabilityCard(availability: Availability, onSelect: (Availability) -> Unit) {
+    IconInfoCard(
+        icon = Icons.Default.EventAvailable,
+        iconContentDescription = null,
+        header = {
+            Text(
+                text = stringResource(R.string.event_edit_availability),
+                style = MaterialTheme.typography.titleMedium,
+            )
+        },
+    ) {
+        Spacer(Modifier.height(8.dp))
+        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
+            SegmentedButton(
+                selected = availability == Availability.Busy,
+                onClick = { onSelect(Availability.Busy) },
+                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
+            ) { Text(stringResource(R.string.event_availability_busy)) }
+            SegmentedButton(
+                selected = availability == Availability.Free,
+                onClick = { onSelect(Availability.Free) },
+                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
+            ) { Text(stringResource(R.string.event_availability_free)) }
+        }
+    }
+}
+
+/**
+ * The swatch the event will paint with: its own [color], else the calendar's.
+ * The Palette icon takes that colour as a preview.
+ */
+@Composable
+private fun ColorCard(
+    color: Int?,
+    calendarColor: Int?,
+    supported: Boolean,
+    syncRisk: Boolean,
+    onClick: (() -> Unit)?,
+) {
+    val swatch = color ?: calendarColor
+    IconInfoCard(
+        icon = Icons.Default.Palette,
+        iconContentDescription = stringResource(R.string.event_edit_color),
+        iconTint = if (supported && swatch != null) {
+            eventFill(swatch, LocalFloretDarkTheme.current, LocalSoftenColors.current)
+        } else {
+            MaterialTheme.colorScheme.onSurfaceVariant
+        },
+        onClick = onClick,
+    ) {
+        PickerCardBody(
+            title = stringResource(
+                when {
+                    !supported -> R.string.event_edit_color_unsupported
+                    color != null -> R.string.event_edit_color_custom
+                    else -> R.string.event_edit_color_default
+                },
+            ),
+            subtitle = stringResource(
+                if (supported) R.string.event_edit_color else R.string.event_edit_color_unsupported_hint,
+            ),
+            showArrow = supported,
+        ) {
+            if (syncRisk) {
+                Spacer(Modifier.height(2.dp))
+                Text(
+                    text = stringResource(R.string.event_edit_color_sync_warning),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+        }
+    }
+}
+
+/**
+ * Guests are an inline grouped list: each is a tonal card with a role toggle +
+ * remove, and the trailing card is an inline email field — type an address,
+ * press Done, it commits. Below sits an honest note — Calendula never sends
+ * invitations, so whether a guest is notified is the calendar backend's call.
+ */
+@Composable
+private fun GuestsSection(
+    guests: List<EventAttendee>,
+    isLocalCalendar: Boolean,
+    viewModel: EventEditViewModel,
+    onPickContact: () -> Unit,
+) {
+    val rows = guests.size + 1
+    guests.forEachIndexed { index, attendee ->
+        GuestCard(
+            attendee = attendee,
+            position = positionOf(index, rows),
+            onToggleOptional = { viewModel.setAttendeeOptional(attendee, it) },
+            onRemove = { viewModel.removeAttendee(attendee) },
+        )
+    }
+    AddGuestInlineCard(
+        position = positionOf(guests.size, rows),
+        onAdd = { viewModel.addAttendee(it) },
+        onPickContact = onPickContact,
+    )
+    Spacer(Modifier.height(8.dp))
+    Text(
+        text = stringResource(
+            if (isLocalCalendar) {
+                R.string.event_edit_attendees_note_local
+            } else {
+                R.string.event_edit_attendees_note_synced
+            },
+        ),
+        style = MaterialTheme.typography.bodySmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(horizontal = 4.dp),
+    )
+}
+
+/** The open [sheet]; each one closes itself through [onClose] once it has applied its pick. */
+@Composable
+private fun EditSheetHost(
+    sheet: EditSheet,
+    state: EventEditUiState,
+    viewModel: EventEditViewModel,
+    firstDayOfWeek: DayOfWeek,
+    colorSyncRisk: Boolean,
+    onManageCalendars: (() -> Unit)?,
+    onClose: () -> Unit,
+) {
+    val form = state.form
+    // Read in the form's own window, not the picker's: the focused field lives
+    // there, so this is the controller that can put its keyboard away.
+    val focusManager = LocalFocusManager.current
+    val keyboardController = LocalSoftwareKeyboardController.current
+    when (sheet) {
+        EditSheet.Calendar -> {
+            // A full-screen picker is a change of place, so the keyboard shouldn't
+            // follow it. The field keeps its text; only focus and the IME go.
+            LaunchedEffect(Unit) {
+                focusManager.clearFocus(force = true)
+                keyboardController?.hide()
+            }
+            CalendarPicker(
+                calendars = state.calendars,
+                selectedId = form.calendarId,
+                onSelect = {
+                    viewModel.setCalendar(it)
+                    onClose()
+                },
+                // Close the picker first: it is a Compose Dialog in its own window,
+                // always above the activity's content, so the manager would
+                // otherwise open behind it and the tap would look dead.
+                onManageCalendars = onManageCalendars?.let { openManager ->
+                    {
+                        onClose()
+                        openManager()
+                    }
+                },
+                onDismiss = onClose,
+            )
+        }
+        EditSheet.Reminder -> ReminderPickerDialog(
             alreadyChosen = form.reminders,
             onSelect = { minutes ->
                 viewModel.addReminder(minutes)
-                showReminderPicker = false
+                onClose()
             },
-            onDismiss = { showReminderPicker = false },
+            onDismiss = onClose,
         )
-    }
-
-
-    if (showRecurrencePicker) {
-        RecurrencePickerDialog(
+        EditSheet.Recurrence -> RecurrencePickerDialog(
             current = form.rrule,
             startDate = form.start.date,
             firstDayOfWeek = firstDayOfWeek,
             onSelect = { rrule ->
                 viewModel.setRecurrence(rrule)
-                showRecurrencePicker = false
+                onClose()
             },
-            onDismiss = { showRecurrencePicker = false },
+            onDismiss = onClose,
         )
-    }
-
-    if (showVisibilityPicker) {
-        VisibilityPickerDialog(
+        EditSheet.Visibility -> VisibilityPickerDialog(
             selected = form.accessLevel,
             onSelect = { level ->
                 viewModel.setAccessLevel(level)
-                showVisibilityPicker = false
+                onClose()
             },
-            onDismiss = { showVisibilityPicker = false },
+            onDismiss = onClose,
         )
-    }
-
-    if (showTimezonePicker) {
-        TimeZonePickerDialog(
+        EditSheet.Timezone -> TimeZonePickerDialog(
             selected = form.timezone,
             deviceZoneId = ZoneId.systemDefault().id,
             recents = state.recentTimeZones,
             onSelect = viewModel::setTimezone,
-            onDismiss = { showTimezonePicker = false },
+            onDismiss = onClose,
         )
-    }
-
-    if (showColorPicker) {
-        ColorPickerDialog(
+        EditSheet.Color -> ColorPickerDialog(
             palette = state.colorPalette,
             selected = form.color,
             hasExplicitColor = form.color != null,
             syncWarning = colorSyncRisk,
             onPickKey = { key, argb ->
                 viewModel.setColorKey(key, argb)
-                showColorPicker = false
+                onClose()
             },
             onPickRaw = { argb ->
                 viewModel.setColorRaw(argb)
-                showColorPicker = false
+                onClose()
             },
             onClear = {
                 viewModel.clearColor()
-                showColorPicker = false
+                onClose()
             },
-            onDismiss = { showColorPicker = false },
+            onDismiss = onClose,
         )
-    }
-
-    if (showFieldPicker) {
-        FieldPickerDialog(
+        EditSheet.Field -> FieldPickerDialog(
             hiddenFields = state.hiddenFields,
             onSelect = { field ->
                 viewModel.revealField(field)
-                showFieldPicker = false
+                onClose()
             },
-            onDismiss = { showFieldPicker = false },
+            onDismiss = onClose,
         )
     }
 }
@@ -1282,9 +1560,6 @@ private fun FieldPickerDialog(
         }
     }
 }
-
-/** Quick-pick lead times offered as chips in the reminder dialog. */
-private val REMINDER_QUICK_PICKS = REMINDER_PRESETS
 
 /**
  * Reminder picker, two steps: the common lead times as a tappable list
@@ -1319,11 +1594,11 @@ private fun ReminderPickerDialog(
         },
     ) {
         if (!customMode) {
-            val presets = REMINDER_QUICK_PICKS.filterNot { it in alreadyChosen }
+            val presets = REMINDER_PRESETS.filterNot { it in alreadyChosen }
             val rowCount = presets.size + 1
             presets.forEachIndexed { index, minutes ->
                 GroupedRow(
-                    title = reminderLabel(minutes),
+                    title = reminderLeadTimeLabel(minutes),
                     position = positionOf(index, rowCount),
                     onClick = { onSelect(minutes) },
                 )
@@ -1461,12 +1736,7 @@ private fun RecurrencePickerDialog(
             GroupedRow(
                 title = stringResource(R.string.event_edit_recurrence_none),
                 position = positionOf(0, rowCount),
-                selected = current == null,
-                trailing = if (current == null) {
-                    { SelectedCheck() }
-                } else {
-                    null
-                },
+                checked = current == null,
                 onClick = { onSelect(null) },
             )
             RecurrenceFreq.entries.forEachIndexed { index, entry ->
@@ -1474,24 +1744,14 @@ private fun RecurrencePickerDialog(
                     title = stringResource(recurrencePresetLabel(entry)),
                     summary = nextOccurrencesText(SimpleRecurrence(entry), startDate, locale),
                     position = positionOf(index + 1, rowCount),
-                    selected = isPlainPreset && parsed?.freq == entry,
-                    trailing = if (isPlainPreset && parsed?.freq == entry) {
-                        { SelectedCheck() }
-                    } else {
-                        null
-                    },
+                    checked = isPlainPreset && parsed?.freq == entry,
                     onClick = { onSelect(SimpleRecurrence(entry).toRRule()) },
                 )
             }
             GroupedRow(
                 title = stringResource(R.string.event_edit_recurrence_custom),
                 position = positionOf(rowCount - 1, rowCount),
-                selected = current != null && !isPlainPreset,
-                trailing = if (current != null && !isPlainPreset) {
-                    { SelectedCheck() }
-                } else {
-                    null
-                },
+                checked = current != null && !isPlainPreset,
                 onClick = { customMode = true },
             )
         } else {
@@ -1620,24 +1880,14 @@ private fun RecurrencePickerDialog(
                     GroupedRow(
                         title = stringResource(R.string.event_edit_recurrence_end_never),
                         position = Position.Top,
-                        selected = endMode == RecurrenceEndMode.Never,
-                        trailing = if (endMode == RecurrenceEndMode.Never) {
-                            { SelectedCheck() }
-                        } else {
-                            null
-                        },
+                        checked = endMode == RecurrenceEndMode.Never,
                         onClick = { endMode = RecurrenceEndMode.Never },
                     )
                     GroupedRow(
                         title = stringResource(R.string.event_edit_recurrence_end_until),
                         summary = untilSummary,
                         position = Position.Middle,
-                        selected = endMode == RecurrenceEndMode.Until,
-                        trailing = if (endMode == RecurrenceEndMode.Until) {
-                            { SelectedCheck() }
-                        } else {
-                            null
-                        },
+                        checked = endMode == RecurrenceEndMode.Until,
                         onClick = {
                             endMode = RecurrenceEndMode.Until
                             showUntilPicker = true
@@ -1650,12 +1900,7 @@ private fun RecurrencePickerDialog(
                         } else {
                             Position.Bottom
                         },
-                        selected = endMode == RecurrenceEndMode.Count,
-                        trailing = if (endMode == RecurrenceEndMode.Count) {
-                            { SelectedCheck() }
-                        } else {
-                            null
-                        },
+                        checked = endMode == RecurrenceEndMode.Count,
                         onClick = { endMode = RecurrenceEndMode.Count },
                     )
                     // Animated for the same reason the weekday card is: this is the
@@ -1694,9 +1939,8 @@ private fun RecurrencePickerDialog(
 
     if (showUntilPicker) {
         CalendarDatePickerDialog(
-            initial = untilDate ?: LocalDate.fromEpochDays(
-                (Clock.System.now().toEpochMilliseconds() / MILLIS_PER_DAY).toInt(),
-            ),
+            initial = untilDate
+                ?: Clock.System.now().toLocalDateTime(TimeZone.currentSystemDefault()).date,
             onConfirm = {
                 untilIso = it.toString()
                 showUntilPicker = false
@@ -1814,13 +2058,7 @@ private fun GroupedItemCard(
     titleMaxLines: Int = Int.MAX_VALUE,
     trailing: @Composable (() -> Unit)? = null,
 ) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        shape = groupedShape(position),
-        modifier = Modifier
-            .fillMaxWidth()
-            .then(groupedGap(position)),
-    ) {
+    GroupedSurface(position = position) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier.padding(start = 16.dp, end = 8.dp, top = 8.dp, bottom = 8.dp),
@@ -2091,7 +2329,7 @@ private fun ColorPickerDialog(
     onClear: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val dark = isSystemInDarkTheme()
+    val dark = LocalFloretDarkTheme.current
     FullScreenPicker(
         title = stringResource(R.string.event_edit_color),
         onDismiss = onDismiss,
@@ -2167,144 +2405,27 @@ private fun accessLevelSummary(level: AccessLevel): Int = when (level) {
     AccessLevel.Confidential -> R.string.event_access_confidential_summary
 }
 
-/** Humanise a reminder lead time, mirroring the detail screen's rendering. */
-@Composable
-private fun reminderLabel(minutes: Int): String = reminderLeadTimeLabel(minutes)
-
 /**
- * One info card mirroring the detail screen's DetailCard: tonal container,
- * leading icon in the gutter, value to the right. Optionally clickable as a
- * whole (calendar picker).
+ * "2:00 PM – 3:00 PM" in [zone], honouring the user's 12/24-hour setting. Collapses
+ * to one time for an instant event, which shouldn't read as a range against
+ * itself. Dates are deliberately absent — the rows above carry them.
  */
 @Composable
-private fun EditCard(
-    icon: ImageVector,
-    iconContentDescription: String?,
-    iconTint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
-    onClick: (() -> Unit)? = null,
-    // Multiline-input cards align the icon with the field's first text line.
-    iconAtTop: Boolean = false,
-    // Tall cards pass their first row here: the icon centres on it, and
-    // [content] continues below, indented to the same text column.
-    header: (@Composable ColumnScope.() -> Unit)? = null,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    val shape = RoundedCornerShape(16.dp)
-    val color = MaterialTheme.colorScheme.surfaceContainerHigh
-    val inner: @Composable () -> Unit = {
-        if (header != null) {
-            Column(modifier = Modifier.padding(16.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = icon,
-                        contentDescription = iconContentDescription,
-                        tint = iconTint,
-                        modifier = Modifier.size(24.dp),
-                    )
-                    Spacer(Modifier.width(16.dp))
-                    Column(modifier = Modifier.weight(1f), content = header)
-                }
-                Column(
-                    modifier = Modifier.padding(start = 40.dp),
-                    content = content,
-                )
-            }
-        } else {
-            Row(
-                modifier = Modifier.padding(16.dp),
-                verticalAlignment = if (iconAtTop) Alignment.Top else Alignment.CenterVertically,
-            ) {
-                // A top-aligned icon centres on the first text line, whatever
-                // that line measures at the user's font scale.
-                val iconOffset = if (iconAtTop) {
-                    ((firstLineHeight() - 24.dp) / 2).coerceAtLeast(0.dp)
-                } else {
-                    0.dp
-                }
-                Icon(
-                    imageVector = icon,
-                    contentDescription = iconContentDescription,
-                    tint = iconTint,
-                    modifier = Modifier
-                        .padding(top = iconOffset)
-                        .size(24.dp),
-                )
-                Spacer(Modifier.width(16.dp))
-                Column(modifier = Modifier.weight(1f), content = content)
-            }
-        }
-    }
-    if (onClick != null) {
-        Surface(
-            onClick = onClick,
-            color = color,
-            shape = shape,
-            modifier = Modifier.fillMaxWidth(),
-        ) { inner() }
-    } else {
-        Surface(
-            color = color,
-            shape = shape,
-            modifier = Modifier.fillMaxWidth(),
-        ) { inner() }
-    }
-}
-
-/**
- * "2:00 PM – 3:00 PM", honouring the user's 12/24-hour setting. Collapses to one
- * time when both land on the same minute (an instant event shouldn't read as a
- * range against itself). Dates are deliberately absent — the rows above carry
- * them.
- */
-@Composable
-private fun formatTimeRange(start: LocalDateTime, end: LocalDateTime, locale: Locale): String {
+private fun formatTimeRange(start: Instant, end: Instant, zone: TimeZone, locale: Locale): String {
     val use24Hour = LocalUse24HourFormat.current
-    val timeFormat = remember(locale, use24Hour) { timeOfDayFormatter(use24Hour, locale) }
-    val from = timeFormat.format(start.time.toJavaLocalTime())
-    val to = timeFormat.format(end.time.toJavaLocalTime())
-    return if (from == to) from else "$from – $to"
+    return remember(start, end, zone, locale, use24Hour) {
+        fun format(at: Instant) = withRepeatedHourZone(
+            formatTimeOfDay(at, zone, use24Hour, locale),
+            at,
+            zone,
+            locale,
+        )
+        if (start == end) format(start) else "${format(start)} – ${format(end)}"
+    }
 }
 
 /**
- * Borderless text input used inside the cards (and as the headline title).
- * Thin wrapper over the shared [InlineTextField] so the form and the rest of
- * the app share one input style. Sentence-case by default, as floret-kit is;
- * a field holding an identifier rather than prose passes
- * [KeyboardCapitalization.None].
- */
-@Composable
-private fun InlineField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    textStyle: TextStyle = MaterialTheme.typography.titleMedium,
-    singleLine: Boolean = true,
-    minLines: Int = 1,
-    enabled: Boolean = true,
-    keyboardType: KeyboardType = KeyboardType.Text,
-    capitalization: KeyboardCapitalization = KeyboardCapitalization.Sentences,
-    imeAction: ImeAction = ImeAction.Default,
-    modifier: Modifier = Modifier
-        .fillMaxWidth()
-        .padding(vertical = 4.dp),
-) {
-    InlineTextField(
-        value = value,
-        onValueChange = onValueChange,
-        placeholder = placeholder,
-        modifier = modifier,
-        textStyle = textStyle,
-        singleLine = singleLine,
-        minLines = minLines,
-        enabled = enabled,
-        keyboardType = keyboardType,
-        capitalization = capitalization,
-        imeAction = imeAction,
-    )
-}
-
-/**
- * A right-aligned "n/max" counter for a capped [InlineField] (#331), hidden
+ * A right-aligned "n/max" counter for a capped [InlineTextField] (#331), hidden
  * until [length] gets close enough to [max] to matter — nobody needs to see
  * "12/255" while typing a short title.
  */
@@ -2326,7 +2447,7 @@ private fun FieldLengthCounter(length: Int, max: Int, modifier: Modifier = Modif
 }
 
 /**
- * Height of one [InlineField] line: the resolved [TextStyle.lineHeight] plus the
+ * Height of one [InlineTextField] line: the resolved [TextStyle.lineHeight] plus the
  * field's 4dp vertical padding. In dp, so it tracks the user's font scale
  * instead of assuming the 24sp line of a 1.0 scale (#165).
  */
@@ -2344,6 +2465,8 @@ private fun firstLineHeight(
 private fun ScheduleRow(
     label: String,
     dateTime: LocalDateTime,
+    instant: Instant,
+    zone: TimeZone,
     isAllDay: Boolean,
     locale: Locale,
     onDateClick: () -> Unit,
@@ -2385,8 +2508,11 @@ private fun ScheduleRow(
                 .padding(vertical = 8.dp, horizontal = 6.dp),
         )
         if (!isAllDay) {
+            val time = remember(dateTime, instant, zone, locale, timeFormat) {
+                withRepeatedHourZone(timeFormat.format(dateTime.time.toJavaLocalTime()), instant, zone, locale)
+            }
             Text(
-                text = timeFormat.format(dateTime.time.toJavaLocalTime()),
+                text = time,
                 style = MaterialTheme.typography.titleMedium,
                 color = valueColor,
                 modifier = Modifier

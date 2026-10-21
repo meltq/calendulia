@@ -8,10 +8,10 @@ import de.jeanlucmakiola.calendula.data.time.TodaySource
 import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
-import kotlinx.coroutines.flow.SharingStarted
+import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.first
 import kotlinx.datetime.LocalDate
 import javax.inject.Inject
 
@@ -28,40 +28,35 @@ class CalendarHostViewModel @Inject constructor(
 ) : ViewModel() {
 
     /** Today, kept current across midnight so the shared focus can follow it (#373). */
-    val today: StateFlow<LocalDate> = todaySource.today.stateIn(
+    val today: StateFlow<LocalDate> = todaySource.today.stateWhileSubscribed(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000L),
         initialValue = currentDate(),
     )
 
-    val defaultView: StateFlow<CalendarView?> = prefs.defaultView.stateIn(
+    val defaultView: StateFlow<CalendarView?> = prefs.defaultView.stateWhileSubscribed(
         scope = viewModelScope,
-        started = SharingStarted.WhileSubscribed(5_000L),
         initialValue = null,
     )
 
     /** Views the top-bar quick-switch pill cycles through, in the user's order (#24). */
     val quickSwitchViews: StateFlow<List<CalendarView>> = prefs.quickSwitchConfig
         .map { it.cycle }
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = IMPLEMENTED_VIEWS,
         )
 
     /** Order of the views in the navigation drawer (#24); every view always shown. */
     val drawerViewOrder: StateFlow<List<CalendarView>> = prefs.drawerViewOrder
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = IMPLEMENTED_VIEWS,
         )
 
     /** Whether each view's jump-to-today control lives in the top bar, not the FAB (#60). */
     val todayButtonInToolbar: StateFlow<Boolean> = prefs.todayButtonInToolbar
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = false,
         )
 
@@ -73,9 +68,13 @@ class CalendarHostViewModel @Inject constructor(
      * switched off to be rid of.
      */
     val dragToReschedule: StateFlow<Boolean> = prefs.dragToReschedule
-        .stateIn(
+        .stateWhileSubscribed(
             scope = viewModelScope,
-            started = SharingStarted.WhileSubscribed(5_000L),
             initialValue = false,
         )
+
+    private val tapOpensEditorPref = prefs.tapOpensEditor
+
+    /** Whether tapping an event opens the edit form rather than the detail screen (#178). */
+    suspend fun tapOpensEditor(): Boolean = tapOpensEditorPref.first()
 }

@@ -10,6 +10,8 @@ import androidx.compose.ui.text.font.FontStyle
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.SimpleRecurrence
 import de.jeanlucmakiola.calendula.domain.occurrencesSpanYears
+import de.jeanlucmakiola.calendula.domain.rruleParts
+import de.jeanlucmakiola.calendula.domain.ics.parseBasicDate
 import de.jeanlucmakiola.calendula.domain.upcomingOccurrences
 import de.jeanlucmakiola.floret.locale.localizedDateFormatter
 import kotlinx.datetime.toJavaLocalDate
@@ -32,10 +34,7 @@ import java.util.Locale
  */
 @Composable
 fun recurrenceText(rrule: String, locale: Locale): AnnotatedString {
-    val parts = rrule.removePrefix("RRULE:").split(';').mapNotNull { token ->
-        val eq = token.indexOf('=')
-        if (eq <= 0) null else token.substring(0, eq).uppercase() to token.substring(eq + 1)
-    }.toMap()
+    val parts = rruleParts(rrule).mapNotNull { part -> part.key?.let { it to part.value } }.toMap()
 
     val freq = parts["FREQ"]?.uppercase()
     val interval = parts["INTERVAL"]?.toIntOrNull() ?: 1
@@ -171,12 +170,5 @@ internal fun untilLocalDate(raw: String, zone: ZoneId = ZoneId.systemDefault()):
             .atOffset(ZoneOffset.UTC)
             .atZoneSameInstant(zone)
             .toLocalDate()
-    }.recoverCatching {
-        val digits = value.takeWhile { it.isDigit() }
-        LocalDate.of(
-            digits.substring(0, 4).toInt(),
-            digits.substring(4, 6).toInt(),
-            digits.substring(6, 8).toInt(),
-        )
-    }.getOrNull()
+    }.getOrNull() ?: parseBasicDate(value.takeWhile { it.isDigit() })?.toJavaLocalDate()
 }
