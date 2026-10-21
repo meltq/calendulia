@@ -123,8 +123,8 @@ class MonthWidget : GlanceAppWidget() {
      * Exact rather than [SizeMode.Single] or [SizeMode.Responsive], both of which
      * return early from `GlanceAppWidget.resize` — under those the grid is never
      * recomposed for a new size and a resized widget clips instead of reflowing.
-     * Exact costs one serialised copy per host size, which is affordable now that
-     * a rendering is ~190 views rather than ~740.
+     * Exact costs one serialised copy per host size, which is why a rendering is
+     * held to [VIEW_BUDGET] view ids, folding lanes into "+N" on a busy month.
      */
     override val sizeMode = SizeMode.Exact
 
@@ -223,15 +223,13 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
                 // Column width from the live widget size, minus our H padding.
                 val colW = (LocalSize.current.width - GRID_HPADDING * 2) / 7
                 val weeks = layoutMonthWeeks(ym, source.weekStart, source.instances, zone)
-                val caps = laneCaps(weeks, source.today)
 
                 MonthHeader(label = monthLabel(ym, source.today.year))
                 Spacer(GlanceModifier.height(2.dp))
                 WeekdayHeader(weekStart = source.weekStart, colW = colW)
-                weeks.forEachIndexed { i, week ->
+                layoutWeeks(weeks, source.today).forEach { layout ->
                     WeekRow(
-                        week = week,
-                        laneCap = caps[i],
+                        layout = layout,
                         currentMonth = ym.month,
                         today = source.today,
                         soften = source.soften,
@@ -340,8 +338,7 @@ private fun weekdayNarrowNames(weekStart: DayOfWeek): List<String> {
 
 @Composable
 private fun WeekRow(
-    week: MonthWeek,
-    laneCap: Int,
+    layout: WeekLayout,
     currentMonth: Month,
     today: LocalDate,
     soften: Boolean,
@@ -349,7 +346,7 @@ private fun WeekRow(
     modifier: GlanceModifier,
 ) {
     val context = LocalContext.current
-    val overflow = overflowCells(week.hiddenPerDay(laneCap))
+    val week = layout.week
     Box(modifier = modifier.fillMaxWidth()) {
         // Day-open targets, one full-height strip per column, sitting *under* the
         // content: a tap anywhere in a day still opens it, as in the app, without
@@ -387,12 +384,12 @@ private fun WeekRow(
             // its columns (colW * n) so it's connected with no seam and rounded ends.
             // Lanes past the last one this week fills emit nothing at all.
             // The grid's view budget caps the lanes per week (#372); what doesn't
-            // fit folds into the "+N" row. Mirrored one to one by viewCount.
-            repeat(week.usedLanes(laneCap)) { lane ->
-                LaneRow(cells = week.laneCells(lane, laneCap), soften = soften, colW = colW)
+            // fit folds into the "+N" row. Counted the same way by WeekLayout.viewIds.
+            layout.lanes.forEach { cells ->
+                LaneRow(cells = cells, soften = soften, colW = colW)
                 Spacer(GlanceModifier.height(1.dp))
             }
-            if (overflow.isNotEmpty()) OverflowRow(cells = overflow, colW = colW)
+            if (layout.overflow.isNotEmpty()) OverflowRow(cells = layout.overflow, colW = colW)
         }
     }
 }
@@ -440,14 +437,15 @@ private fun DayNumber(date: LocalDate, isToday: Boolean, inMonth: Boolean, colW:
 }
 
 @Composable
-private fun LaneRow(cells: List<LaneCell>, soften: Boolean, colW: Dp) {
+private fun LaneRow(cells: List<GridCell<EventInstance>>, soften: Boolean, colW: Dp) {
     Row(modifier = GlanceModifier.fillMaxWidth()) {
         cells.forEach { cell ->
-            if (cell.event == null) {
+            val event = cell.item
+            if (event == null) {
                 Spacer(GlanceModifier.width(colW * cell.cols).height(LANE_HEIGHT))
             } else {
                 SpanBar(
-                    event = cell.event,
+                    event = event,
                     soften = soften,
                     width = colW * cell.cols,
                 )
@@ -491,14 +489,14 @@ private fun SpanBar(event: EventInstance, soften: Boolean, width: Dp) {
 
 /** The "+N" row, drawn only for weeks that hide something, gaps merged as in a lane. */
 @Composable
-private fun OverflowRow(cells: List<OverflowCell>, colW: Dp) {
+private fun OverflowRow(cells: List<GridCell<Int>>, colW: Dp) {
     Row(modifier = GlanceModifier.fillMaxWidth()) {
         cells.forEach { cell ->
-            if (cell.count == 0) {
+            if (cell.item == null) {
                 Spacer(GlanceModifier.width(colW * cell.cols).height(LANE_HEIGHT))
             } else {
                 Text(
-                    text = "+${cell.count}",
+                    text = "+${cell.item}",
                     maxLines = 1,
                     style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 9.sp),
                     modifier = GlanceModifier.width(colW).padding(start = 3.dp),
