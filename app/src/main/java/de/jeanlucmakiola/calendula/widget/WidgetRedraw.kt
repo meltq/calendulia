@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.widget
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import android.os.SystemClock
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.di.ApplicationScope
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -15,12 +16,15 @@ import de.jeanlucmakiola.floret.glance.WidgetRollover
 import de.jeanlucmakiola.floret.glance.updatePlaced
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
-import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -52,15 +56,32 @@ internal fun syncWidgetRollover(context: Context) =
  * refresh stamp moves, and both widgets key their data load on it (#420).
  */
 internal suspend fun redrawWidgets(context: Context) {
+    redrawAgendaWidgets(context)
+    redrawMonthWidgets(context)
+}
+
+private suspend fun redrawAgendaWidgets(context: Context) =
     AgendaWidget().updatePlaced(context, AgendaWidgetReceiver::class.java, bumpRefreshStamp = true)
+
+private suspend fun redrawMonthWidgets(context: Context) =
     MonthWidget().updatePlaced(context, MonthWidgetReceiver::class.java, bumpRefreshStamp = true)
+
+/** When the app last saw a calendar change of its own, for skipping the `PROVIDER_CHANGED` that echoes it. */
+private val lastLocalChange = AtomicLong(0L)
+
+private const val PROVIDER_ECHO_WINDOW_MILLIS = 5_000L
+
+internal fun isProviderEcho(): Boolean {
+    val last = lastLocalChange.get()
+    return last != 0L && SystemClock.elapsedRealtime() - last < PROVIDER_ECHO_WINDOW_MILLIS
 }
 
 /**
  * Redraws the widgets on the app's own calendar writes, visibility changes and
  * the settings they draw with, so those don't wait for `PROVIDER_CHANGED`,
  * which arrives seconds late or not at all (#420, #229). Changes from outside
- * the app are [WidgetUpdateReceiver]'s. Started once from `CalendulaApp`.
+ * the app are [WidgetUpdateReceiver]'s. A setting only the agenda widget draws
+ * with leaves the month widget alone. Started once from `CalendulaApp`.
  */
 @Singleton
 class WidgetRefreshCoordinator @Inject constructor(
@@ -69,19 +90,25 @@ class WidgetRefreshCoordinator @Inject constructor(
     private val prefs: SettingsPrefs,
     @ApplicationScope private val scope: CoroutineScope,
 ) {
+    private val started = AtomicBoolean(false)
+
+    /** Subscribes before returning, so a change made right after is never taken for the starting value. */
     fun start() {
-        val refresher = WidgetRefresher(scope) { redrawWidgets(context) }
-        val settings = listOf(
-            prefs.softenCalendarColors,
-            prefs.weekStart,
-            prefs.timeFormat,
-            prefs.pastEventDisplay,
-            prefs.agendaWidgetRange,
-            prefs.widgetSize,
-            prefs.agendaShowToday,
-        ).map { flow -> flow.distinctUntilChanged().drop(1).map {} }
-        scope.launch(Dispatchers.IO) {
-            merge(repository.localChanges, *settings.toTypedArray()).collect { refresher.request() }
+        if (!started.compareAndSet(false, true)) return
+        val agenda = WidgetRefresher(scope) { redrawAgendaWidgets(context) }
+        val month = WidgetRefresher(scope) { redrawMonthWidgets(context) }
+        watch(repository.localChanges) {
+            lastLocalChange.set(SystemClock.elapsedRealtime())
+            agenda.request()
+            month.request()
+        }
+        watch(prefs.widgetSettings.drop(1)) { agenda.request() }
+        watch(prefs.widgetSettings.map { it.month }.distinctUntilChanged().drop(1)) { month.request() }
+    }
+
+    private fun watch(changes: Flow<*>, onChange: () -> Unit) {
+        scope.launch(Dispatchers.IO, start = CoroutineStart.UNDISPATCHED) {
+            changes.collect { onChange() }
         }
     }
 }

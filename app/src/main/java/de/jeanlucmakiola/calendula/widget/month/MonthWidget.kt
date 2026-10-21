@@ -3,8 +3,12 @@ package de.jeanlucmakiola.calendula.widget.month
 import de.jeanlucmakiola.calendula.domain.isDeclined
 import de.jeanlucmakiola.calendula.widget.glanceDeclinedDecoration
 import android.content.Context
-import android.content.res.Configuration
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.Preferences
@@ -22,6 +26,7 @@ import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
+import androidx.glance.color.ColorProvider
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
@@ -131,19 +136,27 @@ class MonthWidget : GlanceAppWidget() {
         val stamp = refreshStamp(context, id)
         val initialCenter = monthWindowCenter(shown)
         // Shared by every size Exact composes, so each loads nothing of its own.
-        val widgetData = WidgetData(context.loadMonthWidgetSource(initialCenter), initialCenter, stamp)
-        val dark = (context.resources.configuration.uiMode and
-            Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
+        val widgetData = WidgetData(context.loadMonthWidgetSource(id, initialCenter, stamp), initialCenter, stamp)
         provideContent {
             val index = currentState(MONTH_INDEX_KEY) ?: currentMonthIndex(systemZone())
             // Reloads when paging leaves the loaded window, and on every redraw,
             // which a running session would otherwise never see (#420).
             val center = monthWindowCenter(index)
-            val source = widgetData.current(center, currentRefreshStamp()) {
-                context.loadMonthWidgetSource(center)
+            val currentStamp = currentRefreshStamp()
+            val source = widgetData.current(center, currentStamp) {
+                context.loadMonthWidgetSource(id, center, currentStamp)
             }
+            // A jump out of the loaded window keeps the last month it covers
+            // until the reload lands, rather than drawing an empty grid.
+            var lastShown by remember { mutableIntStateOf(index) }
+            val shown = when {
+                source !is MonthWidgetSource.Ready || index in source.months -> index
+                lastShown in source.months -> lastShown
+                else -> index.coerceIn(source.months)
+            }
+            SideEffect { lastShown = shown }
             CalendulaGlanceTheme {
-                MonthWidgetBody(source = source, index = index, dark = dark)
+                MonthWidgetBody(source = source, index = shown)
             }
         }
     }
@@ -194,7 +207,7 @@ class ResetMonthAction : ActionCallback {
 }
 
 @Composable
-private fun MonthWidgetBody(source: MonthWidgetSource, index: Int, dark: Boolean) {
+private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
@@ -221,7 +234,6 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int, dark: Boolean
                         week = week,
                         currentMonth = ym.month,
                         today = source.today,
-                        dark = dark,
                         soften = source.soften,
                         colW = colW,
                         modifier = GlanceModifier.defaultWeight(),
@@ -331,7 +343,6 @@ private fun WeekRow(
     week: MonthWeek,
     currentMonth: Month,
     today: LocalDate,
-    dark: Boolean,
     soften: Boolean,
     colW: Dp,
     modifier: GlanceModifier,
@@ -375,7 +386,7 @@ private fun WeekRow(
             // its columns (colW * n) so it's connected with no seam and rounded ends.
             // Lanes past the last one this week fills emit nothing at all.
             repeat(week.usedLanes()) { lane ->
-                LaneRow(week = week, lane = lane, dark = dark, soften = soften, colW = colW)
+                LaneRow(week = week, lane = lane, soften = soften, colW = colW)
                 Spacer(GlanceModifier.height(1.dp))
             }
             if (hidden.any { it > 0 }) OverflowRow(hidden = hidden, colW = colW)
@@ -489,7 +500,7 @@ private fun MonthWeek.laneCells(lane: Int): List<LaneCell> {
 }
 
 @Composable
-private fun LaneRow(week: MonthWeek, lane: Int, dark: Boolean, soften: Boolean, colW: Dp) {
+private fun LaneRow(week: MonthWeek, lane: Int, soften: Boolean, colW: Dp) {
     Row(modifier = GlanceModifier.fillMaxWidth()) {
         week.laneCells(lane).forEach { cell ->
             if (cell.event == null) {
@@ -497,7 +508,6 @@ private fun LaneRow(week: MonthWeek, lane: Int, dark: Boolean, soften: Boolean, 
             } else {
                 SpanBar(
                     event = cell.event,
-                    dark = dark,
                     soften = soften,
                     width = colW * cell.cols,
                 )
@@ -508,9 +518,10 @@ private fun LaneRow(week: MonthWeek, lane: Int, dark: Boolean, soften: Boolean, 
 
 /** A single connected, rounded event bar [width] wide with its clipped title. */
 @Composable
-private fun SpanBar(event: EventInstance, dark: Boolean, soften: Boolean, width: Dp) {
+private fun SpanBar(event: EventInstance, soften: Boolean, width: Dp) {
     val context = LocalContext.current
-    val fill = eventFill(event.color, dark, soften)
+    val dayFill = eventFill(event.color, dark = false, soften)
+    val nightFill = eventFill(event.color, dark = true, soften)
     Box(
         modifier = GlanceModifier
             .width(width)
@@ -533,14 +544,14 @@ private fun SpanBar(event: EventInstance, dark: Boolean, soften: Boolean, width:
             modifier = GlanceModifier
                 .fillMaxSize()
                 .cornerRadius(4.dp)
-                .background(fill),
+                .background(ColorProvider(day = dayFill, night = nightFill)),
             contentAlignment = Alignment.CenterStart,
         ) {
             Text(
                 text = event.title.ifBlank { context.getString(R.string.event_untitled) },
                 maxLines = 1,
                 style = TextStyle(
-                    color = ColorProvider(eventInk(fill)),
+                    color = ColorProvider(day = eventInk(dayFill), night = eventInk(nightFill)),
                     fontSize = 9.sp,
                     textDecoration = glanceDeclinedDecoration(event.isDeclined),
                 ),

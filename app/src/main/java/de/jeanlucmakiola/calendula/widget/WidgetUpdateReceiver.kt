@@ -12,7 +12,8 @@ import kotlin.time.Duration.Companion.minutes
  * the app; the app's own writes go through [WidgetRefreshCoordinator]. A data
  * change also re-arms, at most every 15 minutes: the inexact alarm can be
  * dropped in a restricted standby bucket, and a calendar change is the one
- * signal that keeps arriving.
+ * signal that keeps arriving. A `PROVIDER_CHANGED` right after one of the
+ * app's own changes only echoes it, so it doesn't redraw a second time.
  */
 class WidgetUpdateReceiver : FloretWidgetUpdateReceiver() {
     override val rolloverAction = ACTION_WIDGET_ROLLOVER
@@ -21,6 +22,8 @@ class WidgetUpdateReceiver : FloretWidgetUpdateReceiver() {
     override val extraRearmInterval = 15.minutes
 
     override fun rolloverPendingIntent(context: Context): PendingIntent = widgetRolloverPendingIntent(context)
+
+    override fun skipRedraw(action: String) = action == Intent.ACTION_PROVIDER_CHANGED && isProviderEcho()
 
     override suspend fun redraw(context: Context) = redrawWidgets(context)
 }

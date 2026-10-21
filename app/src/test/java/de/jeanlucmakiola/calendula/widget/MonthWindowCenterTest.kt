@@ -9,8 +9,8 @@ class MonthWindowCenterTest {
     fun `the loaded window always reaches two months past the shown one`() {
         for (index in -40..40) {
             val center = monthWindowCenter(index)
-            assertThat(index - 2).isAtLeast(center - 3)
-            assertThat(index + 2).isAtMost(center + 3)
+            assertThat(index - 2).isAtLeast(center - MONTH_WIDGET_PAD_MONTHS)
+            assertThat(index + 2).isAtMost(center + MONTH_WIDGET_PAD_MONTHS)
         }
     }
 

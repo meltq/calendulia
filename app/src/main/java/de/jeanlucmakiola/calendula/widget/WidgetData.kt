@@ -4,15 +4,25 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import androidx.core.content.ContextCompat
+import androidx.glance.GlanceId
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
+import de.jeanlucmakiola.calendula.data.prefs.SettingsKeys
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.data.prefs.TimeFormatPref
+import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaDay
+import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.agendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.dayCount
 import de.jeanlucmakiola.calendula.ui.agenda.groupAgendaDays
+import de.jeanlucmakiola.floret.prefs.get
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
 import kotlinx.datetime.LocalDate
@@ -24,6 +34,7 @@ import kotlinx.datetime.plus
 import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import kotlin.time.Clock
 import kotlin.time.Instant
 
@@ -33,7 +44,34 @@ import kotlin.time.Instant
  * the whole window, and on slow devices a wide one held the widget on "loading"
  * (#363).
  */
-private const val MONTH_WIDGET_PAD_MONTHS = 3
+internal const val MONTH_WIDGET_PAD_MONTHS = 3
+
+/** Every setting the widgets draw with: what the loads read, and what [WidgetRefreshCoordinator] watches. */
+internal data class WidgetSettings(
+    val soften: Boolean,
+    val weekStart: WeekStartPref,
+    val timeFormat: TimeFormatPref,
+    val pastDisplay: PastEventDisplay,
+    val agendaRange: AgendaRange,
+    val widgetSize: WidgetSize,
+    val showToday: Boolean,
+) {
+    /** The part the month widget draws with; the rest is agenda-only. */
+    val month: Pair<Boolean, WeekStartPref> get() = soften to weekStart
+}
+
+internal val SettingsPrefs.widgetSettings: Flow<WidgetSettings>
+    get() = data.map {
+        WidgetSettings(
+            soften = it[SettingsKeys.softenCalendarColors],
+            weekStart = it[SettingsKeys.weekStart],
+            timeFormat = it[SettingsKeys.timeFormat],
+            pastDisplay = it[SettingsKeys.pastEventDisplay],
+            agendaRange = it[SettingsKeys.agendaWidgetRange],
+            widgetSize = it[SettingsKeys.widgetSize],
+            showToday = it[SettingsKeys.agendaShowToday],
+        )
+    }.distinctUntilChanged()
 
 internal fun systemZone(): TimeZone = TimeZone.currentSystemDefault()
 
@@ -78,6 +116,8 @@ sealed interface MonthWidgetSource {
         val weekStart: DayOfWeek,
         val soften: Boolean,
         val instances: List<EventInstance>,
+        /** Month indices (`year * 12 + monthOrdinal`) whose grids [instances] covers. */
+        val months: IntRange,
     ) : MonthWidgetSource
 }
 
@@ -91,22 +131,20 @@ internal suspend fun Context.loadAgendaWidgetData(): AgendaWidgetData {
     val zone = systemZone()
     val anchor = today(zone)
     val ep = widgetEntryPoint()
-    val prefs = ep.settingsPrefs()
-    val range = prefs.agendaWidgetRange.first()
-    val weekStart = prefs.weekStart.first().resolveFirstDay(Locale.getDefault())
-    val dayCount = range.dayCount(anchor, weekStart)
+    val settings = ep.settingsPrefs().widgetSettings.first()
+    val weekStart = settings.weekStart.resolveFirstDay(Locale.getDefault())
+    val dayCount = settings.agendaRange.dayCount(anchor, weekStart)
     val window = agendaRange(anchor, dayCount - 1, zone)
     val windowEnd = anchor.plus(dayCount - 1, DateTimeUnit.DAY)
     val instances = ep.calendarRepository().instances(window).first()
     return AgendaWidgetData.Ready(
         today = anchor,
         days = groupAgendaDays(anchor, windowEnd, instances, zone),
-        is24Hour = prefs.timeFormat.first()
-            .is24Hour(android.text.format.DateFormat.is24HourFormat(this)),
-        soften = prefs.softenCalendarColors.first(),
-        pastDisplay = prefs.pastEventDisplay.first(),
-        showToday = prefs.agendaShowToday.first(),
-        widgetSize = prefs.widgetSize.first(),
+        is24Hour = settings.timeFormat.is24Hour(android.text.format.DateFormat.is24HourFormat(this)),
+        soften = settings.soften,
+        pastDisplay = settings.pastDisplay,
+        showToday = settings.showToday,
+        widgetSize = settings.widgetSize,
         now = Clock.System.now(),
     )
 }
@@ -122,13 +160,37 @@ private fun firstDayOfMonthIndex(index: Int): LocalDate = LocalDate(index / 12, 
  */
 internal fun monthWindowCenter(index: Int): Int = Math.floorDiv(index, 3) * 3 + 1
 
+/**
+ * The last window each month widget loaded, under its refresh stamp, so a new
+ * session for the same widget (a tap after the last one timed out) draws
+ * without a query. Every redraw moves the stamp, so an entry is never served
+ * stale.
+ */
+private object MonthSourceCache {
+    private class Entry(val center: Int, val stamp: Long, val source: MonthWidgetSource.Ready)
+
+    private val entries = ConcurrentHashMap<GlanceId, Entry>()
+
+    fun get(id: GlanceId, center: Int, stamp: Long): MonthWidgetSource.Ready? =
+        entries[id]?.takeIf { it.center == center && it.stamp == stamp && it.source.today == today(systemZone()) }
+            ?.source
+
+    fun put(id: GlanceId, center: Int, stamp: Long, source: MonthWidgetSource) {
+        if (source is MonthWidgetSource.Ready) entries[id] = Entry(center, stamp, source)
+    }
+}
+
+/** [loadMonthWidgetSource] for widget [id], served from [MonthSourceCache] while its [stamp] holds. */
+internal suspend fun Context.loadMonthWidgetSource(id: GlanceId, centerIndex: Int, stamp: Long): MonthWidgetSource =
+    MonthSourceCache.get(id, centerIndex, stamp)
+        ?: loadMonthWidgetSource(centerIndex).also { MonthSourceCache.put(id, centerIndex, stamp, it) }
+
 /** Read backing the month widget's grid for the window around [centerIndex]. */
-internal suspend fun Context.loadMonthWidgetSource(centerIndex: Int): MonthWidgetSource {
+private suspend fun Context.loadMonthWidgetSource(centerIndex: Int): MonthWidgetSource {
     if (!hasCalendarPermission()) return MonthWidgetSource.NeedsPermission
     val zone = systemZone()
     val ep = widgetEntryPoint()
-    val prefs = ep.settingsPrefs()
-    val weekStart = prefs.weekStart.first().resolveFirstDay(Locale.getDefault())
+    val settings = ep.settingsPrefs().widgetSettings.first()
     val months = (centerIndex - MONTH_WIDGET_PAD_MONTHS)..(centerIndex + MONTH_WIDGET_PAD_MONTHS)
     // Padded by the grid's spill into the neighbouring months.
     val from = firstDayOfMonthIndex(months.first)
@@ -140,8 +202,9 @@ internal suspend fun Context.loadMonthWidgetSource(centerIndex: Int): MonthWidge
         .toInstant(zone)
     return MonthWidgetSource.Ready(
         today = today(zone),
-        weekStart = weekStart,
-        soften = prefs.softenCalendarColors.first(),
+        weekStart = settings.weekStart.resolveFirstDay(Locale.getDefault()),
+        soften = settings.soften,
         instances = ep.calendarRepository().instances(from..to).first(),
+        months = months,
     )
 }

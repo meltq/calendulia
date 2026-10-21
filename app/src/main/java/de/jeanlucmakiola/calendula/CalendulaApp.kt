@@ -44,24 +44,24 @@ class CalendulaApp : Application() {
                 chooseIssueUrl = getString(R.string.report_issue_choose_url),
             ),
         )
+        // Before anything that writes, so the widgets see every change (#420).
+        widgetEntryPoint().widgetRefreshCoordinator().start()
         reconcileAutoBackup()
         reconcileSpecialDates()
         reconcileCalendarVisibility()
         startReminderDelivery()
-        startWidgets()
+        reconcileWidgetRollover()
     }
 
     /**
      * Re-arm the widgets' midnight rollover from whatever is actually placed
-     * (#228), and start redrawing them on the app's own changes (#420). The
-     * re-arm is idempotent and covers what no broadcast reaches — an alarm
+     * (#228). Idempotent, and it covers what no broadcast reaches — an alarm
      * dropped by a force-stop is armed again the next time the app is opened.
      * Off the main thread: a handful of binder calls on every process start.
      */
-    private fun startWidgets() {
+    private fun reconcileWidgetRollover() {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             syncWidgetRollover(this@CalendulaApp)
-            widgetEntryPoint().widgetRefreshCoordinator().start()
         }
     }
 

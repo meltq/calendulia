@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.agenda
 
+import android.annotation.SuppressLint
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidget
@@ -34,12 +35,13 @@ class AgendaWidgetReceiver : GlanceAppWidgetReceiver() {
      * Self-heal on the system's own `updatePeriodMillis` wake-up — see
      * [de.jeanlucmakiola.calendula.widget.month.MonthWidgetReceiver.onUpdate].
      */
+    @SuppressLint("MissingSuperCall")
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
     ) {
-        super.onUpdate(context, appWidgetManager, appWidgetIds)
+        // In place of super, which only recomposes and would take the goAsync handle.
         reloadOnUpdate(context, appWidgetIds)
         syncWidgetRollover(context)
     }

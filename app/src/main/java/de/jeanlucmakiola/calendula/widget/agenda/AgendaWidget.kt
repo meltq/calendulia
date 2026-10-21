@@ -3,7 +3,6 @@ package de.jeanlucmakiola.calendula.widget.agenda
 import de.jeanlucmakiola.calendula.domain.isDeclined
 import de.jeanlucmakiola.calendula.widget.glanceDeclinedDecoration
 import android.content.Context
-import android.content.res.Configuration
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
@@ -17,6 +16,7 @@ import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
+import androidx.glance.color.ColorProvider
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
@@ -90,14 +90,12 @@ class AgendaWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val stamp = refreshStamp(context, id)
         val widgetData = WidgetData(context.loadAgendaWidgetData(), stamp)
-        val dark = (context.resources.configuration.uiMode and
-            Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         provideContent {
             // A running session never re-runs this preamble, so every redraw
             // moves the stamp and the data reloads here instead (#420).
             val data = widgetData.current(currentRefreshStamp()) { context.loadAgendaWidgetData() }
             CalendulaGlanceTheme {
-                AgendaWidgetBody(data = data, dark = dark)
+                AgendaWidgetBody(data = data)
             }
         }
     }
@@ -128,7 +126,7 @@ private sealed interface AgendaRow {
 }
 
 @Composable
-private fun AgendaWidgetBody(data: AgendaWidgetData, dark: Boolean) {
+private fun AgendaWidgetBody(data: AgendaWidgetData) {
     // The stripe is re-resolved against the system font scale so it tracks the
     // sp-sized text beside it instead of drifting at large accessibility settings.
     val size = (data as? AgendaWidgetData.Ready)?.widgetSize ?: WidgetSize.SMALL
@@ -144,7 +142,7 @@ private fun AgendaWidgetBody(data: AgendaWidgetData, dark: Boolean) {
         Spacer(GlanceModifier.height(4.dp))
         when (data) {
             AgendaWidgetData.NeedsPermission -> WidgetMessage(R.string.widget_needs_permission, metrics)
-            is AgendaWidgetData.Ready -> AgendaRows(data = data, dark = dark, metrics = metrics)
+            is AgendaWidgetData.Ready -> AgendaRows(data = data, metrics = metrics)
         }
     }
 }
@@ -152,7 +150,6 @@ private fun AgendaWidgetBody(data: AgendaWidgetData, dark: Boolean) {
 @Composable
 private fun AgendaRows(
     data: AgendaWidgetData.Ready,
-    dark: Boolean,
     metrics: AgendaMetrics,
 ) {
     val pastDisplay = data.pastDisplay
@@ -200,7 +197,6 @@ private fun AgendaRows(
                     is AgendaRow.Event -> EventRow(
                         event = row.event,
                         day = row.date,
-                        dark = dark,
                         soften = data.soften,
                         is24Hour = data.is24Hour,
                         dimmed = pastDisplay == PastEventDisplay.DIM &&
@@ -332,7 +328,6 @@ private fun PlaceholderRow(date: LocalDate, metrics: AgendaMetrics) {
 private fun EventRow(
     event: EventInstance,
     day: LocalDate,
-    dark: Boolean,
     soften: Boolean,
     is24Hour: Boolean,
     dimmed: Boolean,
@@ -342,9 +337,10 @@ private fun EventRow(
     val title = event.title.ifBlank { context.getString(R.string.event_untitled) }
     // Glance has no generic alpha modifier, so dim by fading the colour stripe and
     // dropping both text lines to the lower-emphasis on-surface-variant tone.
-    val stripeColor = eventAccent(event.color, dark, soften).let {
+    fun stripe(dark: Boolean) = eventAccent(event.color, dark, soften).let {
         if (dimmed) it.copy(alpha = EventDimAlpha) else it
     }
+    val stripeColor = ColorProvider(day = stripe(dark = false), night = stripe(dark = true))
     val titleColor = if (dimmed) GlanceTheme.colors.onSurfaceVariant else GlanceTheme.colors.onSurface
     Row(
         modifier = GlanceModifier

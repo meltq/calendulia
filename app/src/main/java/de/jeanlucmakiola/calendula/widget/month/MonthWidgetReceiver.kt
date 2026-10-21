@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.month
 
+import android.annotation.SuppressLint
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidget
@@ -36,12 +37,13 @@ class MonthWidgetReceiver : GlanceAppWidgetReceiver() {
      * freeze) is repaired here rather than on the next app open. Re-arming
      * closer to midnight also narrows the inexact delivery window.
      */
+    @SuppressLint("MissingSuperCall")
     override fun onUpdate(
         context: Context,
         appWidgetManager: AppWidgetManager,
         appWidgetIds: IntArray,
     ) {
-        super.onUpdate(context, appWidgetManager, appWidgetIds)
+        // In place of super, which only recomposes and would take the goAsync handle.
         reloadOnUpdate(context, appWidgetIds)
         syncWidgetRollover(context)
     }
