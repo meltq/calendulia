@@ -450,7 +450,7 @@
     <string name="settings_special_dates_grant">منح الوصول</string>
     <string name="calendars_backup_action">تصدير كملف ‎.ics</string>
     <string name="calendars_export_title">تصدير التقويمات</string>
-    <string name="calendars_export_hint">اختر التقويمات التي تريد تضمينها في ملف ‎.ics.</string>
+    <string name="calendars_export_hint">اختر التقويمات التي تريد تضمينها في الملف ‎.ics</string>
     <string name="calendars_export_action">تصدير</string>
     <string name="calendars_restore_header">استعادة</string>
     <string name="calendars_restore_action">استعادة من ملف ‎.ics</string>
@@ -514,7 +514,7 @@
     <string name="settings_default_view_hint">طريقة العرض التي يفتحها Calendula عندما تقوم ببدءه.</string>
     <string name="settings_week_start_hint">اليوم الذي يبدأ به كل أسبوع، في جميع طُرق العرض والأدوات المصغّرة.</string>
     <string name="settings_time_format_hint">كيف الأوقات تُكتب في جميع أنحاء التطبيق. تلقائيًا يتبع إعداد نظامك.</string>
-    <string name="settings_past_events_hint">ما الذي يفعله جدول بالأحداث التي انتهت بالفعل.</string>
+    <string name="settings_past_events_hint">ما الذي يفعله الجدول بالأحداث التي انتهت بالفعل.</string>
     <string name="calendars_visibility_a11y">إظهار \"%1$s\"</string>
     <string name="calendars_visibility_notice_title">بعض التقويمات متوقفة</string>
     <string name="calendars_visibility_notice_message">Calendula يعرض التقويمات التي تم تشغيلها لهذا الجهاز، وبعض من خاصتك متوقفة. لرؤية أحداثهم، قم بتشغيلهم ضمن الإعدادات ← التقويمات.</string>
