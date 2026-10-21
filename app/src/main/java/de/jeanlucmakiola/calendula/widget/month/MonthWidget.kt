@@ -86,8 +86,6 @@ import java.util.Locale
 /** Per-widget state: the displayed month as `year * 12 + monthOrdinal`. */
 private val MONTH_INDEX_KEY = intPreferencesKey("month_index")
 
-/** Event rows (lanes) shown per week before the rest collapse into "+N". */
-private const val MAX_LANES = 3
 private val LANE_HEIGHT = 14.dp
 private val DAY_NUMBER_HEIGHT = 18.dp
 private val GRID_HPADDING = 8.dp
@@ -225,13 +223,15 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
                 // Column width from the live widget size, minus our H padding.
                 val colW = (LocalSize.current.width - GRID_HPADDING * 2) / 7
                 val weeks = layoutMonthWeeks(ym, source.weekStart, source.instances, zone)
+                val caps = laneCaps(weeks, source.today)
 
                 MonthHeader(label = monthLabel(ym, source.today.year))
                 Spacer(GlanceModifier.height(2.dp))
                 WeekdayHeader(weekStart = source.weekStart, colW = colW)
-                weeks.forEach { week ->
+                weeks.forEachIndexed { i, week ->
                     WeekRow(
                         week = week,
+                        laneCap = caps[i],
                         currentMonth = ym.month,
                         today = source.today,
                         soften = source.soften,
@@ -341,6 +341,7 @@ private fun weekdayNarrowNames(weekStart: DayOfWeek): List<String> {
 @Composable
 private fun WeekRow(
     week: MonthWeek,
+    laneCap: Int,
     currentMonth: Month,
     today: LocalDate,
     soften: Boolean,
@@ -348,13 +349,13 @@ private fun WeekRow(
     modifier: GlanceModifier,
 ) {
     val context = LocalContext.current
-    val hidden = week.hiddenPerDay()
+    val overflow = overflowCells(week.hiddenPerDay(laneCap))
     Box(modifier = modifier.fillMaxWidth()) {
         // Day-open targets, one full-height strip per column, sitting *under* the
         // content: a tap anywhere in a day still opens it, as in the app, without
         // every cell in the column carrying a click target of its own. The content
-        // above is not clickable, so touches fall through to this layer; only an
-        // event bar opts out to open its own detail.
+        // above is not clickable, event bars included, so touches fall through to
+        // this layer and a day opens wherever it is tapped (#386).
         Row(modifier = GlanceModifier.fillMaxSize()) {
             week.days.forEach { date ->
                 Box(
@@ -385,42 +386,21 @@ private fun WeekRow(
             // One lane row per event row. A multi-day span is a single Box spanning
             // its columns (colW * n) so it's connected with no seam and rounded ends.
             // Lanes past the last one this week fills emit nothing at all.
-            repeat(week.usedLanes()) { lane ->
-                LaneRow(week = week, lane = lane, soften = soften, colW = colW)
+            // The grid's view budget caps the lanes per week (#372); what doesn't
+            // fit folds into the "+N" row. Mirrored one to one by viewCount.
+            repeat(week.usedLanes(laneCap)) { lane ->
+                LaneRow(cells = week.laneCells(lane, laneCap), soften = soften, colW = colW)
                 Spacer(GlanceModifier.height(1.dp))
             }
-            if (hidden.any { it > 0 }) OverflowRow(hidden = hidden, colW = colW)
+            if (overflow.isNotEmpty()) OverflowRow(cells = overflow, colW = colW)
         }
     }
 }
 
 /**
- * How many lanes this week actually fills, counting from the top. The grid draws
- * that many rows instead of a fixed [MAX_LANES]; an empty lane costs three views
- * per day and most weeks leave the last two empty.
- */
-private fun MonthWeek.usedLanes(): Int {
-    for (lane in MAX_LANES - 1 downTo 0) {
-        val filled = spans.any { it.lane == lane } ||
-            days.indices.any { col -> timedEventAt(this, lane, col, days[col]) != null }
-        if (filled) return lane + 1
-    }
-    return 0
-}
-
-/** Events per day that no lane had room for — the "+N" counts, 0 where all fit. */
-private fun MonthWeek.hiddenPerDay(): List<Int> = days.mapIndexed { col, date ->
-    val shownSpans = spans.count { col in it.startCol..it.endCol && it.lane < MAX_LANES }
-    val freeSlots = (MAX_LANES - shownSpans).coerceAtLeast(0)
-    val timedShown = minOf(freeSlots, timedByDay[date].orEmpty().size)
-    ((countByDay[date] ?: 0) - shownSpans - timedShown).coerceAtLeast(0)
-}
-
-/**
  * Open [date]'s day view rooted in the month view (so back returns to the month
  * grid) — the same target the in-app month grid uses when a day cell is tapped.
- * Shared by every tappable part of a day column so, as in the app, a tap anywhere
- * on a day opens it; only an event bar on top opts out to open its own detail.
+ * The only tap target in a day column, so a tap anywhere on a day opens it.
  */
 private fun openDayAction(context: Context, date: LocalDate) =
     actionStartActivity(MainActivity.openDateIntent(context, date, CalendarView.Month))
@@ -459,50 +439,10 @@ private fun DayNumber(date: LocalDate, isToday: Boolean, inMonth: Boolean, colW:
     }
 }
 
-/** A bar occupying [cols] columns, or — with a null event — that many blank ones. */
-private data class LaneCell(val event: EventInstance?, val cols: Int)
-
-/**
- * A lane split into bars and the gaps between them, with consecutive blank columns
- * merged into one gap: the week's day-open taps come from the strip underneath, so
- * a gap needs no per-column view and a mostly-empty lane collapses to a spacer.
- */
-private fun MonthWeek.laneCells(lane: Int): List<LaneCell> {
-    val cells = mutableListOf<LaneCell>()
-    var gap = 0
-    var col = 0
-    fun closeGap() {
-        if (gap > 0) cells += LaneCell(null, gap)
-        gap = 0
-    }
-    while (col < 7) {
-        val span = spans.firstOrNull { it.lane == lane && col in it.startCol..it.endCol }
-        val timed = if (span == null) timedEventAt(this, lane, col, days[col]) else null
-        when {
-            span != null -> {
-                closeGap()
-                cells += LaneCell(span.event, span.endCol - col + 1)
-                col = span.endCol + 1
-            }
-            timed != null -> {
-                closeGap()
-                cells += LaneCell(timed, 1)
-                col += 1
-            }
-            else -> {
-                gap += 1
-                col += 1
-            }
-        }
-    }
-    closeGap()
-    return cells
-}
-
 @Composable
-private fun LaneRow(week: MonthWeek, lane: Int, soften: Boolean, colW: Dp) {
+private fun LaneRow(cells: List<LaneCell>, soften: Boolean, colW: Dp) {
     Row(modifier = GlanceModifier.fillMaxWidth()) {
-        week.laneCells(lane).forEach { cell ->
+        cells.forEach { cell ->
             if (cell.event == null) {
                 Spacer(GlanceModifier.width(colW * cell.cols).height(LANE_HEIGHT))
             } else {
@@ -526,19 +466,7 @@ private fun SpanBar(event: EventInstance, soften: Boolean, width: Dp) {
         modifier = GlanceModifier
             .width(width)
             .height(LANE_HEIGHT)
-            .padding(horizontal = 1.dp)
-            // Tap an event bar to open its detail, rooted in the month view.
-            .clickable(
-                actionStartActivity(
-                    MainActivity.openEventIntent(
-                        context = context,
-                        eventId = event.eventId,
-                        beginMillis = event.start.toEpochMilliseconds(),
-                        endMillis = event.end.toEpochMilliseconds(),
-                        source = CalendarView.Month,
-                    ),
-                ),
-            ),
+            .padding(horizontal = 1.dp),
     ) {
         Box(
             modifier = GlanceModifier
@@ -563,38 +491,21 @@ private fun SpanBar(event: EventInstance, soften: Boolean, width: Dp) {
 
 /** The "+N" row, drawn only for weeks that hide something, gaps merged as in a lane. */
 @Composable
-private fun OverflowRow(hidden: List<Int>, colW: Dp) {
+private fun OverflowRow(cells: List<OverflowCell>, colW: Dp) {
     Row(modifier = GlanceModifier.fillMaxWidth()) {
-        var gap = 0
-        hidden.forEach { count ->
-            if (count == 0) {
-                gap += 1
-                return@forEach
+        cells.forEach { cell ->
+            if (cell.count == 0) {
+                Spacer(GlanceModifier.width(colW * cell.cols).height(LANE_HEIGHT))
+            } else {
+                Text(
+                    text = "+${cell.count}",
+                    maxLines = 1,
+                    style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 9.sp),
+                    modifier = GlanceModifier.width(colW).padding(start = 3.dp),
+                )
             }
-            if (gap > 0) {
-                Spacer(GlanceModifier.width(colW * gap).height(LANE_HEIGHT))
-                gap = 0
-            }
-            Text(
-                text = "+$count",
-                maxLines = 1,
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = 9.sp),
-                modifier = GlanceModifier.width(colW).padding(start = 3.dp),
-            )
         }
-        if (gap > 0) Spacer(GlanceModifier.width(colW * gap).height(LANE_HEIGHT))
     }
-}
-
-/** The timed single-day event that fills lane [lane] on day [col], if any. */
-private fun timedEventAt(week: MonthWeek, lane: Int, col: Int, date: LocalDate): EventInstance? {
-    val occupied = week.spans
-        .filter { col in it.startCol..it.endCol && it.lane < MAX_LANES }
-        .map { it.lane }
-        .toSet()
-    val freeSlots = (0 until MAX_LANES).filter { it !in occupied }
-    val timed = week.timedByDay[date].orEmpty()
-    return timed.getOrNull(freeSlots.indexOf(lane))
 }
 
 @Composable
