@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.di.ApplicationScope
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidget
 import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidgetReceiver
 import de.jeanlucmakiola.calendula.widget.month.MonthWidget
@@ -15,6 +16,10 @@ import de.jeanlucmakiola.floret.glance.updatePlaced
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.drop
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -52,26 +57,31 @@ internal suspend fun redrawWidgets(context: Context) {
 }
 
 /**
- * Redraws the widgets on every calendar change the app itself sees (its own
- * writes above all), so they don't wait for `PROVIDER_CHANGED`, which arrives
- * seconds late or not at all (#420, #229). Started once from `CalendulaApp`.
+ * Redraws the widgets on the app's own calendar writes, visibility changes and
+ * the settings they draw with, so those don't wait for `PROVIDER_CHANGED`,
+ * which arrives seconds late or not at all (#420, #229). Changes from outside
+ * the app are [WidgetUpdateReceiver]'s. Started once from `CalendulaApp`.
  */
 @Singleton
 class WidgetRefreshCoordinator @Inject constructor(
     @ApplicationContext private val context: Context,
     private val repository: CalendarRepository,
+    private val prefs: SettingsPrefs,
     @ApplicationScope private val scope: CoroutineScope,
 ) {
-    private var started = false
-
     fun start() {
-        if (started) return
-        started = true
-        val refresher = WidgetRefresher(scope) {
-            if (WidgetRollover.hasPlacedWidgets(context, WIDGET_RECEIVER_CLASSES)) redrawWidgets(context)
-        }
+        val refresher = WidgetRefresher(scope) { redrawWidgets(context) }
+        val settings = listOf(
+            prefs.softenCalendarColors,
+            prefs.weekStart,
+            prefs.timeFormat,
+            prefs.pastEventDisplay,
+            prefs.agendaWidgetRange,
+            prefs.widgetSize,
+            prefs.agendaShowToday,
+        ).map { flow -> flow.distinctUntilChanged().drop(1).map {} }
         scope.launch(Dispatchers.IO) {
-            repository.changes.collect { refresher.request() }
+            merge(repository.localChanges, *settings.toTypedArray()).collect { refresher.request() }
         }
     }
 }

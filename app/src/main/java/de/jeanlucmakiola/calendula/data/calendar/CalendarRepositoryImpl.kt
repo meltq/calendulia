@@ -78,17 +78,24 @@ class CalendarRepositoryImpl @Inject constructor(
         ticks.tryEmit(Unit)
     }
 
+    private val writes = MutableSharedFlow<Unit>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     /** Run a provider write on [io], then re-query whether or not it threw. */
     private suspend fun <T> write(block: suspend () -> T): T = withContext(io) {
         try {
             block()
         } finally {
             refresh()
+            writes.tryEmit(Unit)
         }
     }
 
-    override val changes: Flow<Unit> = merge(
-        ticks,
+    override val localChanges: Flow<Unit> = merge(
+        writes,
         prefs.pendingDisabledCalendarIds.distinctUntilChanged().drop(1).map {},
         prefs.hiddenCalendarIds.distinctUntilChanged().drop(1).map {},
     )

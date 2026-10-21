@@ -9,7 +9,6 @@ import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaDay
-import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.agendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.dayCount
 import de.jeanlucmakiola.calendula.ui.agenda.groupAgendaDays
@@ -51,15 +50,12 @@ sealed interface AgendaWidgetData {
     data object NeedsPermission : AgendaWidgetData
     data class Ready(
         val today: LocalDate,
-        /** Days with events across [range], unfiltered; hiding finished ones happens in the composition. */
+        /** Days with events across the configured range, unfiltered; hiding finished ones happens in the composition. */
         val days: List<AgendaDay>,
         /** Resolved clock convention for event time labels (the time-format pref). */
         val is24Hour: Boolean,
         /** Whether event colours are softened to pastels, or shown raw (#36). */
         val soften: Boolean,
-        /** First day of the week, for the calendar-aligned "this week" range. */
-        val weekStart: DayOfWeek,
-        val range: AgendaRange,
         val pastDisplay: PastEventDisplay,
         /** "Always show today" (#35): anchor today at the top even with no events left. */
         val showToday: Boolean,
@@ -73,7 +69,7 @@ sealed interface AgendaWidgetData {
  * Source data for the month widget: a window of instances plus the week-start
  * preference and today. The widget computes each displayed month's grid from
  * this in-memory list (via `layoutMonthWeeks`) as the user pages, so paging
- * inside [months] is pure recomposition.
+ * inside the loaded window is pure recomposition.
  */
 sealed interface MonthWidgetSource {
     data object NeedsPermission : MonthWidgetSource
@@ -82,8 +78,6 @@ sealed interface MonthWidgetSource {
         val weekStart: DayOfWeek,
         val soften: Boolean,
         val instances: List<EventInstance>,
-        /** Month indices (`year * 12 + monthOrdinal`) whose grids [instances] covers. */
-        val months: IntRange,
     ) : MonthWidgetSource
 }
 
@@ -110,8 +104,6 @@ internal suspend fun Context.loadAgendaWidgetData(): AgendaWidgetData {
         is24Hour = prefs.timeFormat.first()
             .is24Hour(android.text.format.DateFormat.is24HourFormat(this)),
         soften = prefs.softenCalendarColors.first(),
-        weekStart = weekStart,
-        range = range,
         pastDisplay = prefs.pastEventDisplay.first(),
         showToday = prefs.agendaShowToday.first(),
         widgetSize = prefs.widgetSize.first(),
@@ -151,6 +143,5 @@ internal suspend fun Context.loadMonthWidgetSource(centerIndex: Int): MonthWidge
         weekStart = weekStart,
         soften = prefs.softenCalendarColors.first(),
         instances = ep.calendarRepository().instances(from..to).first(),
-        months = months,
     )
 }

@@ -5,7 +5,6 @@ import de.jeanlucmakiola.calendula.widget.glanceDeclinedDecoration
 import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import androidx.glance.ColorFilter
@@ -59,9 +58,10 @@ import de.jeanlucmakiola.calendula.widget.AgendaWidgetData
 import de.jeanlucmakiola.calendula.widget.CalendulaGlanceTheme
 import de.jeanlucmakiola.calendula.widget.WidgetSize
 import de.jeanlucmakiola.calendula.widget.loadAgendaWidgetData
-import de.jeanlucmakiola.calendula.widget.redrawWidgets
+import de.jeanlucmakiola.floret.glance.WidgetData
 import de.jeanlucmakiola.floret.glance.currentRefreshStamp
-import de.jeanlucmakiola.floret.glance.rememberWidgetData
+import de.jeanlucmakiola.floret.glance.refreshStamp
+import de.jeanlucmakiola.floret.glance.updateWithRefresh
 import de.jeanlucmakiola.calendula.widget.systemZone
 import de.jeanlucmakiola.calendula.widget.today
 import kotlinx.datetime.DateTimeUnit
@@ -88,13 +88,14 @@ class AgendaWidget : GlanceAppWidget() {
     override val sizeMode = SizeMode.Single
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val initial = context.loadAgendaWidgetData()
+        val stamp = refreshStamp(context, id)
+        val widgetData = WidgetData(context.loadAgendaWidgetData(), stamp)
         val dark = (context.resources.configuration.uiMode and
             Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         provideContent {
             // A running session never re-runs this preamble, so every redraw
             // moves the stamp and the data reloads here instead (#420).
-            val data by rememberWidgetData(initial, currentRefreshStamp()) { context.loadAgendaWidgetData() }
+            val data = widgetData.current(currentRefreshStamp()) { context.loadAgendaWidgetData() }
             CalendulaGlanceTheme {
                 AgendaWidgetBody(data = data, dark = dark)
             }
@@ -102,10 +103,10 @@ class AgendaWidget : GlanceAppWidget() {
     }
 }
 
-/** Reloads and redraws the widgets (header refresh button). */
+/** Reloads and redraws the tapped widget (header refresh button). */
 class RefreshAgendaAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        redrawWidgets(context.applicationContext)
+        AgendaWidget().updateWithRefresh(context.applicationContext, glanceId)
     }
 }
 

@@ -5,7 +5,6 @@ import de.jeanlucmakiola.calendula.widget.glanceDeclinedDecoration
 import android.content.Context
 import android.content.res.Configuration
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.Preferences
@@ -63,8 +62,10 @@ import de.jeanlucmakiola.calendula.widget.CalendulaGlanceTheme
 import de.jeanlucmakiola.calendula.widget.MonthWidgetSource
 import de.jeanlucmakiola.calendula.widget.loadMonthWidgetSource
 import de.jeanlucmakiola.calendula.widget.monthWindowCenter
+import de.jeanlucmakiola.floret.glance.WidgetData
 import de.jeanlucmakiola.floret.glance.currentRefreshStamp
-import de.jeanlucmakiola.floret.glance.rememberWidgetData
+import de.jeanlucmakiola.floret.glance.refreshStamp
+import de.jeanlucmakiola.floret.glance.updateWithRefresh
 import de.jeanlucmakiola.calendula.widget.monthIndexOf
 import de.jeanlucmakiola.calendula.widget.systemZone
 import de.jeanlucmakiola.calendula.widget.today
@@ -127,7 +128,10 @@ class MonthWidget : GlanceAppWidget() {
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val shown = getAppWidgetState<Preferences>(context, id)[MONTH_INDEX_KEY]
             ?: currentMonthIndex(systemZone())
-        val initial = context.loadMonthWidgetSource(monthWindowCenter(shown))
+        val stamp = refreshStamp(context, id)
+        val initialCenter = monthWindowCenter(shown)
+        // Shared by every size Exact composes, so each loads nothing of its own.
+        val widgetData = WidgetData(context.loadMonthWidgetSource(initialCenter), initialCenter, stamp)
         val dark = (context.resources.configuration.uiMode and
             Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         provideContent {
@@ -135,7 +139,7 @@ class MonthWidget : GlanceAppWidget() {
             // Reloads when paging leaves the loaded window, and on every redraw,
             // which a running session would otherwise never see (#420).
             val center = monthWindowCenter(index)
-            val source by rememberWidgetData(initial, center, currentRefreshStamp()) {
+            val source = widgetData.current(center, currentRefreshStamp()) {
                 context.loadMonthWidgetSource(center)
             }
             CalendulaGlanceTheme {
@@ -181,11 +185,11 @@ class ShiftMonthAction : ActionCallback {
     }
 }
 
-/** Jump the displayed month back to the current month. See [ShiftMonthAction]. */
+/** Jump the displayed month back to the current month, reloading it. See [ShiftMonthAction]. */
 class ResetMonthAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
         updateAppWidgetState(context, glanceId) { prefs -> prefs.remove(MONTH_INDEX_KEY) }
-        MonthWidget().update(context.applicationContext, glanceId)
+        MonthWidget().updateWithRefresh(context.applicationContext, glanceId)
     }
 }
 

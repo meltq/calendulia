@@ -5,6 +5,7 @@ import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import de.jeanlucmakiola.calendula.widget.syncWidgetRollover
+import de.jeanlucmakiola.floret.glance.reloadOnUpdate
 
 /**
  * Host-facing receiver for the agenda widget. Declared in the manifest with the
@@ -39,6 +40,7 @@ class AgendaWidgetReceiver : GlanceAppWidgetReceiver() {
         appWidgetIds: IntArray,
     ) {
         super.onUpdate(context, appWidgetManager, appWidgetIds)
+        reloadOnUpdate(context, appWidgetIds)
         syncWidgetRollover(context)
     }
 }

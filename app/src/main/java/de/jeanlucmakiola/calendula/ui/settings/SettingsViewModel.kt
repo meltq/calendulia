@@ -46,7 +46,6 @@ import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
 import de.jeanlucmakiola.calendula.ui.theme.AppFontSettings
 import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
 import de.jeanlucmakiola.calendula.widget.WidgetSize
-import de.jeanlucmakiola.calendula.widget.redrawWidgets
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -58,8 +57,6 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
@@ -172,17 +169,6 @@ class SettingsViewModel @Inject constructor(
     private val _fontImportFailed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val fontImportFailed: SharedFlow<Unit> = _fontImportFailed
 
-    // Serialises widget redraws, so a quick run of setting changes lands in order.
-    private val widgetRefreshMutex = Mutex()
-
-    /** Saves a setting the widgets draw with, then reloads them. */
-    private fun saveAndRedrawWidgets(block: suspend SettingsPrefs.() -> Unit) {
-        viewModelScope.launch {
-            prefs.block()
-            widgetRefreshMutex.withLock { redrawWidgets(appContext) }
-        }
-    }
-
     /** Contact special-dates sub-page (issue #15). */
     val specialDatesState: StateFlow<SpecialDatesUiState> = prefs.data.map { stored ->
         val templates = stored.specialDatesTitleTemplates
@@ -265,7 +251,7 @@ class SettingsViewModel @Inject constructor(
 
     fun setDynamicColor(enabled: Boolean) = save { setDynamicColor(enabled) }
 
-    fun setSoftenColors(enabled: Boolean) = saveAndRedrawWidgets { setSoftenCalendarColors(enabled) }
+    fun setSoftenColors(enabled: Boolean) = save { setSoftenCalendarColors(enabled) }
 
     fun setFont(role: FontRole, token: String) = save {
         when (role) {
@@ -293,20 +279,20 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setWeekStart(pref: WeekStartPref) = saveAndRedrawWidgets { setWeekStart(pref) }
+    fun setWeekStart(pref: WeekStartPref) = save { setWeekStart(pref) }
 
     fun setAgendaScreenRange(range: AgendaRange) = save { setAgendaScreenRange(range) }
 
-    fun setAgendaWidgetRange(range: AgendaRange) = saveAndRedrawWidgets { setAgendaWidgetRange(range) }
+    fun setAgendaWidgetRange(range: AgendaRange) = save { setAgendaWidgetRange(range) }
 
     fun setAgendaShowRangeBar(enabled: Boolean) = save { setAgendaShowRangeBar(enabled) }
 
     /** The size the agenda widget draws its text at (#51); the month widget sizes itself (#103). */
-    fun setWidgetSize(size: WidgetSize) = saveAndRedrawWidgets { setWidgetSize(size) }
+    fun setWidgetSize(size: WidgetSize) = save { setWidgetSize(size) }
 
-    fun setAgendaShowToday(enabled: Boolean) = saveAndRedrawWidgets { setAgendaShowToday(enabled) }
+    fun setAgendaShowToday(enabled: Boolean) = save { setAgendaShowToday(enabled) }
 
-    fun setTimeFormat(pref: TimeFormatPref) = saveAndRedrawWidgets { setTimeFormat(pref) }
+    fun setTimeFormat(pref: TimeFormatPref) = save { setTimeFormat(pref) }
 
     fun setMultiDayCount(count: Int) = save { setMultiDayCount(count) }
 
@@ -335,7 +321,7 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setPastEventDisplay(mode: PastEventDisplay) = saveAndRedrawWidgets { setPastEventDisplay(mode) }
+    fun setPastEventDisplay(mode: PastEventDisplay) = save { setPastEventDisplay(mode) }
 
     fun setDimCompletedEvents(enabled: Boolean) = save { setDimCompletedEvents(enabled) }
 
