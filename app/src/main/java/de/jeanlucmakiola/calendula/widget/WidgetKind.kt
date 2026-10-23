@@ -12,6 +12,8 @@ import de.jeanlucmakiola.calendula.widget.month.MonthWidget
 import de.jeanlucmakiola.calendula.widget.month.MonthWidgetReceiver
 import de.jeanlucmakiola.calendula.widget.quickadd.QuickAddWidget
 import de.jeanlucmakiola.calendula.widget.quickadd.QuickAddWidgetReceiver
+import de.jeanlucmakiola.calendula.widget.date.DateWidget
+import de.jeanlucmakiola.calendula.widget.date.DateWidgetReceiver
 
 /** A content option a widget's config screen offers, besides background and theme. */
 enum class WidgetOption { RANGE, TEXT_SIZE, PAST_DISPLAY, SHOW_TODAY, CALENDARS }
@@ -45,12 +47,19 @@ enum class WidgetKind(
         emptySet(),
         DpSize(76.dp, 76.dp),
     ),
+    DATE(
+        DateWidgetReceiver::class.java,
+        R.string.widget_date_label,
+        emptySet(),
+        DpSize(76.dp, 76.dp),
+    ),
     ;
 
     fun widget(): GlanceAppWidget = when (this) {
         AGENDA -> AgendaWidget()
         MONTH -> MonthWidget()
         QUICK_ADD -> QuickAddWidget()
+        DATE -> DateWidget()
     }
 
     /** Whether this kind stores [AgendaWidgetOptions] of its own. */

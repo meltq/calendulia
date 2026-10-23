@@ -228,7 +228,7 @@ class WidgetConfigViewModel @Inject constructor(
                 val source = context.loadThemedMonthSource(monthWindowCenter(index), draft.hiddenCalendars)
                 WidgetPreviewData.Month(source.content, index)
             }
-            WidgetKind.QUICK_ADD -> WidgetPreviewData.Today(today(systemZone()))
+            WidgetKind.QUICK_ADD, WidgetKind.DATE -> WidgetPreviewData.Today(today(systemZone()))
         }
     }
 
