@@ -5,4 +5,5 @@
     <color name="widget_preview_variant">@android:color/system_neutral2_700</color>
     <color name="widget_preview_primary">@android:color/system_accent1_600</color>
     <color name="widget_preview_on_primary">@android:color/system_accent1_0</color>
+    <color name="widget_preview_row">@android:color/system_accent2_100</color>
 </resources>

@@ -45,13 +45,10 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.hasEnded
-import de.jeanlucmakiola.calendula.ui.agenda.AgendaTimeLabel
-import de.jeanlucmakiola.calendula.ui.agenda.agendaTimeLabel
 import de.jeanlucmakiola.calendula.ui.agenda.anchorTodayIfMissing
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.ui.common.formatCalendarTitle
-import de.jeanlucmakiola.calendula.ui.common.formatTimeOfDay
 import de.jeanlucmakiola.floret.locale.localizedDateFormatter
 import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.ui.common.eventInk
@@ -61,12 +58,11 @@ import de.jeanlucmakiola.calendula.widget.WidgetSize
 import de.jeanlucmakiola.calendula.widget.CalendulaWidgetRoot
 import de.jeanlucmakiola.calendula.widget.WidgetAppearance
 import de.jeanlucmakiola.calendula.widget.widgetCardColor
+import de.jeanlucmakiola.calendula.widget.widgetTimeLabel
 import de.jeanlucmakiola.calendula.widget.loadAgendaWidget
 import de.jeanlucmakiola.calendula.widget.widgetAppearance
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.positionOf
-import de.jeanlucmakiola.floret.glance.LocalWidgetBackground
-import de.jeanlucmakiola.floret.glance.WidgetBackground
 import de.jeanlucmakiola.floret.glance.WidgetGroupedRow
 import de.jeanlucmakiola.floret.glance.themedColor
 import de.jeanlucmakiola.floret.glance.wallpaperBacking
@@ -80,11 +76,8 @@ import de.jeanlucmakiola.calendula.widget.systemZone
 import de.jeanlucmakiola.calendula.widget.today
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
-import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
 import kotlinx.datetime.toJavaDayOfWeek
-import kotlinx.datetime.toLocalDateTime
-import kotlin.time.Instant
 import java.util.Locale
 
 /**
@@ -464,8 +457,6 @@ private fun WidgetMessage(resId: Int, metrics: AgendaMetrics) {
     }
 }
 
-private fun zone(): TimeZone = systemZone()
-
 /** "Today · Wed, 17 Jun" — relative word for today/tomorrow, else the date. */
 private fun agendaDayLabel(context: Context, date: LocalDate, today: LocalDate): String {
     val relative = when (date) {
@@ -497,20 +488,7 @@ private fun eventTimeSummary(
     day: LocalDate,
     is24Hour: Boolean,
 ): String {
-    val time = when (val label = agendaTimeLabel(event, day, zone())) {
-        AgendaTimeLabel.AllDay -> context.getString(R.string.event_detail_all_day)
-        is AgendaTimeLabel.Starts ->
-            context.getString(R.string.agenda_span_starts, formatTime(label.start, is24Hour))
-        is AgendaTimeLabel.Ends ->
-            context.getString(R.string.agenda_span_ends, formatTime(label.end, is24Hour))
-        is AgendaTimeLabel.Range ->
-            "${formatTime(label.start, is24Hour)} – ${formatTime(label.end, is24Hour)}"
-    }
+    val time = widgetTimeLabel(context, event, day, is24Hour)
     val location = event.location?.takeIf { it.isNotBlank() }
     return if (location != null) "$time · $location" else time
-}
-
-private fun formatTime(instant: Instant, is24Hour: Boolean): String {
-    val t = instant.toLocalDateTime(zone()).time
-    return formatTimeOfDay(t.hour, t.minute, is24Hour, Locale.getDefault())
 }

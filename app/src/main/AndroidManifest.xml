@@ -388,6 +388,18 @@
                 android:resource="@xml/appwidget_info_week_strip" />
         </receiver>
 
+        <receiver
+            android:name=".widget.upcoming.UpcomingWidgetReceiver"
+            android:label="@string/widget_upcoming_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_info_upcoming" />
+        </receiver>
+
         <!-- Keeps both widgets fresh: the calendar provider broadcasts
              PROVIDER_CHANGED on any data change (external sync; the app's own
              writes redraw directly). The day boundary arrives as the app's own

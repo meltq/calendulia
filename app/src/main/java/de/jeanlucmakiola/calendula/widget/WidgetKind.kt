@@ -16,6 +16,8 @@ import de.jeanlucmakiola.calendula.widget.date.DateWidget
 import de.jeanlucmakiola.calendula.widget.date.DateWidgetReceiver
 import de.jeanlucmakiola.calendula.widget.week.WeekStripWidget
 import de.jeanlucmakiola.calendula.widget.week.WeekStripWidgetReceiver
+import de.jeanlucmakiola.calendula.widget.upcoming.UpcomingWidget
+import de.jeanlucmakiola.calendula.widget.upcoming.UpcomingWidgetReceiver
 
 /** A content option a widget's config screen offers, besides background and theme. */
 enum class WidgetOption { RANGE, TEXT_SIZE, PAST_DISPLAY, SHOW_TODAY, CALENDARS }
@@ -61,6 +63,12 @@ enum class WidgetKind(
         setOf(WidgetOption.CALENDARS),
         DpSize(300.dp, 90.dp),
     ),
+    UPCOMING(
+        UpcomingWidgetReceiver::class.java,
+        R.string.widget_upcoming_label,
+        setOf(WidgetOption.RANGE, WidgetOption.TEXT_SIZE, WidgetOption.CALENDARS),
+        DpSize(180.dp, 180.dp),
+    ),
     ;
 
     fun widget(): GlanceAppWidget = when (this) {
@@ -69,6 +77,7 @@ enum class WidgetKind(
         QUICK_ADD -> QuickAddWidget()
         DATE -> DateWidget()
         WEEK_STRIP -> WeekStripWidget()
+        UPCOMING -> UpcomingWidget()
     }
 
     /** Whether this kind stores [AgendaWidgetOptions] of its own. */

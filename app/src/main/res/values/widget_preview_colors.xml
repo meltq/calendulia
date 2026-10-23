@@ -8,4 +8,5 @@
     <color name="widget_preview_variant">#6E7479</color>
     <color name="widget_preview_primary">#3B5364</color>
     <color name="widget_preview_on_primary">#FFFFFF</color>
+    <color name="widget_preview_row">#E1E6EB</color>
 </resources>
