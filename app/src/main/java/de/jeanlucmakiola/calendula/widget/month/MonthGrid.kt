@@ -31,11 +31,12 @@ internal class ViewIds(sdkInt: Int = Build.VERSION.SDK_INT) {
     val clickableSized = sized + 2
 
     /**
-     * `MonthWidgetBody`'s views outside the week rows: its Column, the header
-     * row with three sized clickable icon boxes, their sized icons and the
-     * clickable title, the spacer, and the weekday row of sized labels.
+     * `MonthWidgetBody`'s views outside the week rows: the surface Box, its
+     * Column, the header row with three sized clickable icon boxes, their sized
+     * icons and the clickable title, the spacer, the grid's Column and the
+     * weekday row of sized labels.
      */
-    val fixed = plain + plain + 3 * (clickableSized + sized) + clickablePlain + sized + plain + 7 * sized
+    val fixed = plain + plain + plain + 3 * (clickableSized + sized) + clickablePlain + sized + plain + plain + 7 * sized
 }
 
 /** A cell [cols] columns wide holding [item], or a merged gap where [item] is null. */

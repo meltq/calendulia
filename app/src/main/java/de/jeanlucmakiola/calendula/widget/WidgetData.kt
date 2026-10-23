@@ -18,6 +18,7 @@ import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.agendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.dayCount
 import de.jeanlucmakiola.calendula.ui.agenda.groupAgendaDays
+import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.floret.prefs.get
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.distinctUntilChanged
@@ -46,19 +47,38 @@ import kotlin.time.Instant
  */
 internal const val MONTH_WIDGET_PAD_MONTHS = 3
 
-/** Every setting the widgets draw with: what the loads read, and what [WidgetRefreshCoordinator] watches. */
+/**
+ * Every app setting the widgets draw with: what the loads read, and what
+ * [WidgetRefreshCoordinator] watches. The agenda fields are only the defaults
+ * for a widget that has no options of its own yet.
+ */
 internal data class WidgetSettings(
     val soften: Boolean,
     val weekStart: WeekStartPref,
     val timeFormat: TimeFormatPref,
+    val themeMode: ThemeMode,
     val pastDisplay: PastEventDisplay,
     val agendaRange: AgendaRange,
     val widgetSize: WidgetSize,
     val showToday: Boolean,
 ) {
-    /** The part the month widget draws with; the rest is agenda-only. */
-    val month: Pair<Boolean, WeekStartPref> get() = soften to weekStart
+    /** What every widget draws with; the agenda defaults aside. */
+    val shared: SharedWidgetSettings get() = SharedWidgetSettings(soften, weekStart, timeFormat, themeMode)
+
+    val agendaDefaults: AgendaWidgetOptions
+        get() = AgendaWidgetOptions(agendaRange, widgetSize, showToday, pastDisplay)
 }
+
+/** The [WidgetSettings] a configured widget still takes from the app. */
+internal data class SharedWidgetSettings(
+    val soften: Boolean,
+    val weekStart: WeekStartPref,
+    val timeFormat: TimeFormatPref,
+    val themeMode: ThemeMode,
+)
+
+/** A widget's loaded [content], with the app theme a [WidgetTheme.FOLLOW_APP] widget resolves against. */
+internal data class Themed<out T>(val content: T, val appTheme: ThemeMode)
 
 internal val SettingsPrefs.widgetSettings: Flow<WidgetSettings>
     get() = data.map {
@@ -66,6 +86,7 @@ internal val SettingsPrefs.widgetSettings: Flow<WidgetSettings>
             soften = it[SettingsKeys.softenCalendarColors],
             weekStart = it[SettingsKeys.weekStart],
             timeFormat = it[SettingsKeys.timeFormat],
+            themeMode = it[SettingsKeys.themeMode],
             pastDisplay = it[SettingsKeys.pastEventDisplay],
             agendaRange = it[SettingsKeys.agendaWidgetRange],
             widgetSize = it[SettingsKeys.widgetSize],
@@ -97,7 +118,7 @@ sealed interface AgendaWidgetData {
         val pastDisplay: PastEventDisplay,
         /** "Always show today" (#35): anchor today at the top even with no events left. */
         val showToday: Boolean,
-        val widgetSize: WidgetSize,
+        val textSize: WidgetSize,
         /** Snapshot instant the data was read at, for "has this event ended?" tests. */
         val now: Instant,
     ) : AgendaWidgetData
@@ -121,19 +142,28 @@ sealed interface MonthWidgetSource {
     ) : MonthWidgetSource
 }
 
+/** [loadAgendaWidgetData] with agenda widget [id]'s own options. */
+internal suspend fun Context.loadAgendaWidget(id: GlanceId): Themed<AgendaWidgetData> {
+    val settings = widgetEntryPoint().settingsPrefs().widgetSettings.first()
+    val options = widgetState(id).agendaWidgetOptions(settings.agendaDefaults)
+    return Themed(loadAgendaWidgetData(settings, options), settings.themeMode)
+}
+
 /**
  * One-shot read of the upcoming agenda for the widget. Reuses the app's
  * [agendaRange] window and [groupAgendaDays] grouping, and the repository's
  * [first]-emitted snapshot already has hidden calendars filtered out.
  */
-internal suspend fun Context.loadAgendaWidgetData(): AgendaWidgetData {
+internal suspend fun Context.loadAgendaWidgetData(
+    settings: WidgetSettings,
+    options: AgendaWidgetOptions,
+): AgendaWidgetData {
     if (!hasCalendarPermission()) return AgendaWidgetData.NeedsPermission
     val zone = systemZone()
     val anchor = today(zone)
     val ep = widgetEntryPoint()
-    val settings = ep.settingsPrefs().widgetSettings.first()
     val weekStart = settings.weekStart.resolveFirstDay(Locale.getDefault())
-    val dayCount = settings.agendaRange.dayCount(anchor, weekStart)
+    val dayCount = options.range.dayCount(anchor, weekStart)
     val window = agendaRange(anchor, dayCount - 1, zone)
     val windowEnd = anchor.plus(dayCount - 1, DateTimeUnit.DAY)
     val instances = ep.calendarRepository().instances(window).first()
@@ -142,9 +172,9 @@ internal suspend fun Context.loadAgendaWidgetData(): AgendaWidgetData {
         days = groupAgendaDays(anchor, windowEnd, instances, zone),
         is24Hour = settings.timeFormat.is24Hour(android.text.format.DateFormat.is24HourFormat(this)),
         soften = settings.soften,
-        pastDisplay = settings.pastDisplay,
-        showToday = settings.showToday,
-        widgetSize = settings.widgetSize,
+        pastDisplay = options.pastDisplay,
+        showToday = options.showToday,
+        textSize = options.textSize,
         now = Clock.System.now(),
     )
 }
@@ -167,30 +197,35 @@ internal fun monthWindowCenter(index: Int): Int = Math.floorDiv(index, 3) * 3 + 
  * stale.
  */
 private object MonthSourceCache {
-    private class Entry(val center: Int, val stamp: Long, val source: MonthWidgetSource.Ready)
+    private class Entry(val center: Int, val stamp: Long, val source: Themed<MonthWidgetSource.Ready>)
 
     private val entries = ConcurrentHashMap<GlanceId, Entry>()
 
-    fun get(id: GlanceId, center: Int, stamp: Long): MonthWidgetSource.Ready? =
-        entries[id]?.takeIf { it.center == center && it.stamp == stamp && it.source.today == today(systemZone()) }
+    fun get(id: GlanceId, center: Int, stamp: Long): Themed<MonthWidgetSource>? =
+        entries[id]?.takeIf { it.center == center && it.stamp == stamp && it.source.content.today == today(systemZone()) }
             ?.source
 
-    fun put(id: GlanceId, center: Int, stamp: Long, source: MonthWidgetSource) {
-        if (source is MonthWidgetSource.Ready) entries[id] = Entry(center, stamp, source)
+    fun put(id: GlanceId, center: Int, stamp: Long, source: Themed<MonthWidgetSource>) {
+        val ready = source.content as? MonthWidgetSource.Ready ?: return
+        entries[id] = Entry(center, stamp, Themed(ready, source.appTheme))
     }
 }
 
-/** [loadMonthWidgetSource] for widget [id], served from [MonthSourceCache] while its [stamp] holds. */
-internal suspend fun Context.loadMonthWidgetSource(id: GlanceId, centerIndex: Int, stamp: Long): MonthWidgetSource =
+/** [loadThemedMonthSource] for widget [id], served from [MonthSourceCache] while its [stamp] holds. */
+internal suspend fun Context.loadCachedMonthSource(id: GlanceId, centerIndex: Int, stamp: Long): Themed<MonthWidgetSource> =
     MonthSourceCache.get(id, centerIndex, stamp)
-        ?: loadMonthWidgetSource(centerIndex).also { MonthSourceCache.put(id, centerIndex, stamp, it) }
+        ?: loadThemedMonthSource(centerIndex).also { MonthSourceCache.put(id, centerIndex, stamp, it) }
 
-/** Read backing the month widget's grid for the window around [centerIndex]. */
-private suspend fun Context.loadMonthWidgetSource(centerIndex: Int): MonthWidgetSource {
+/** Read backing the month widget's grid for the window around [centerIndex], with the app theme. */
+internal suspend fun Context.loadThemedMonthSource(centerIndex: Int): Themed<MonthWidgetSource> {
+    val settings = widgetEntryPoint().settingsPrefs().widgetSettings.first()
+    return Themed(queryMonthSource(centerIndex, settings), settings.themeMode)
+}
+
+private suspend fun Context.queryMonthSource(centerIndex: Int, settings: WidgetSettings): MonthWidgetSource {
     if (!hasCalendarPermission()) return MonthWidgetSource.NeedsPermission
     val zone = systemZone()
     val ep = widgetEntryPoint()
-    val settings = ep.settingsPrefs().widgetSettings.first()
     val months = (centerIndex - MONTH_WIDGET_PAD_MONTHS)..(centerIndex + MONTH_WIDGET_PAD_MONTHS)
     // Padded by the grid's spill into the neighbouring months.
     val from = firstDayOfMonthIndex(months.first)

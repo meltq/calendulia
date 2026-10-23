@@ -318,6 +318,16 @@
             android:exported="false" />
 
         <!-- Home-screen widgets (Glance). Exported: the launcher/host binds them. -->
+        <activity
+            android:name=".widget.config.WidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Calendula.WidgetConfig">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
         <receiver
             android:name=".widget.agenda.AgendaWidgetReceiver"
             android:label="@string/widget_agenda_label"

@@ -1,6 +1,8 @@
 package de.jeanlucmakiola.calendula.widget
 
 import android.app.PendingIntent
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
@@ -14,6 +16,8 @@ import de.jeanlucmakiola.calendula.widget.month.MonthWidgetReceiver
 import de.jeanlucmakiola.floret.glance.WidgetRefresher
 import de.jeanlucmakiola.floret.glance.WidgetRollover
 import de.jeanlucmakiola.floret.glance.updatePlaced
+import de.jeanlucmakiola.floret.glance.updateWithRefresh
+import androidx.glance.appwidget.GlanceAppWidgetManager
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -63,6 +67,18 @@ internal suspend fun redrawWidgets(context: Context) {
 private suspend fun redrawAgendaWidgets(context: Context) =
     AgendaWidget().updatePlaced(context, AgendaWidgetReceiver::class.java, bumpRefreshStamp = true)
 
+/** Redraws only the agenda widgets with no options of their own, which still follow the app's. */
+private suspend fun redrawUnconfiguredAgendaWidgets(context: Context) {
+    val appContext = context.applicationContext
+    val ids = AppWidgetManager.getInstance(appContext)
+        ?.getAppWidgetIds(ComponentName(appContext, AgendaWidgetReceiver::class.java)) ?: return
+    val glanceManager = GlanceAppWidgetManager(appContext)
+    ids.forEach { appWidgetId ->
+        val glanceId = glanceManager.getGlanceIdBy(appWidgetId)
+        if (!appContext.widgetState(glanceId).hasAgendaOptions) AgendaWidget().updateWithRefresh(appContext, glanceId)
+    }
+}
+
 private suspend fun redrawMonthWidgets(context: Context) =
     MonthWidget().updatePlaced(context, MonthWidgetReceiver::class.java, bumpRefreshStamp = true)
 
@@ -80,8 +96,9 @@ internal fun isProviderEcho(): Boolean {
  * Redraws the widgets on the app's own calendar writes, visibility changes and
  * the settings they draw with, so those don't wait for `PROVIDER_CHANGED`,
  * which arrives seconds late or not at all (#420, #229). Changes from outside
- * the app are [WidgetUpdateReceiver]'s. A setting only the agenda widget draws
- * with leaves the month widget alone. Started once from `CalendulaApp`.
+ * the app are [WidgetUpdateReceiver]'s. The app's agenda options only redraw
+ * agenda widgets that have none of their own (#292). Started once from
+ * `CalendulaApp`.
  */
 @Singleton
 class WidgetRefreshCoordinator @Inject constructor(
@@ -96,14 +113,20 @@ class WidgetRefreshCoordinator @Inject constructor(
     fun start() {
         if (!started.compareAndSet(false, true)) return
         val agenda = WidgetRefresher(scope) { redrawAgendaWidgets(context) }
+        val unconfiguredAgenda = WidgetRefresher(scope) { redrawUnconfiguredAgendaWidgets(context) }
         val month = WidgetRefresher(scope) { redrawMonthWidgets(context) }
         watch(repository.localChanges) {
             lastLocalChange.set(SystemClock.elapsedRealtime())
             agenda.request()
             month.request()
         }
-        watch(prefs.widgetSettings.drop(1)) { agenda.request() }
-        watch(prefs.widgetSettings.map { it.month }.distinctUntilChanged().drop(1)) { month.request() }
+        watch(prefs.widgetSettings.map { it.shared }.distinctUntilChanged().drop(1)) {
+            agenda.request()
+            month.request()
+        }
+        watch(prefs.widgetSettings.map { it.agendaDefaults }.distinctUntilChanged().drop(1)) {
+            unconfiguredAgenda.request()
+        }
     }
 
     private fun watch(changes: Flow<*>, onChange: () -> Unit) {

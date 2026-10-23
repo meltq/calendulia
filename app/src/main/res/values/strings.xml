@@ -441,6 +441,21 @@
     <string name="widget_prev_month">Previous month</string>
     <string name="widget_next_month">Next month</string>
     <string name="widget_today">Today</string>
+    <string name="widget_config_background">Background</string>
+    <string name="widget_config_background_solid">Solid</string>
+    <string name="widget_config_background_tinted">Tinted</string>
+    <string name="widget_config_background_transparent">Transparent</string>
+    <string name="widget_config_theme_follow_app">Follow app</string>
+    <string name="widget_config_content">Content</string>
+    <string name="widget_config_range">Time range</string>
+    <string name="widget_config_text_size">Text size</string>
+    <string name="widget_config_load_failed">Couldn\'t read this widget\'s settings.</string>
+    <string name="widget_config_preview_failed">Preview unavailable</string>
+    <string name="widget_config_save_failed">Couldn\'t save the widget. Try again.</string>
+    <!-- A widget's name and its number, when there are several of the same kind: "Calendula agenda 2" -->
+    <string name="widget_numbered">%1$s %2$d</string>
+    <!-- A placed widget's background and theme: "Tinted · Follow app" -->
+    <string name="widget_appearance_summary">%1$s · %2$s</string>
 
     <!-- Calendar filter (M3) -->
     <string name="filter_title">Calendars</string>
@@ -554,7 +569,7 @@
     <!-- %1$d is the event text size as a percentage of the smallest step, e.g. 130. -->
     <string name="settings_widget_size_summary">Event text %1$d%%</string>
     <string name="settings_agenda_show_today">Always show today</string>
-    <string name="settings_agenda_show_today_hint">Keep today at the top of the agenda and its widget, even once nothing is left today.</string>
+    <string name="settings_agenda_show_today_hint">Keep today at the top of the agenda, even once nothing is left today. Each widget has its own setting.</string>
     <string name="settings_agenda_range_bar">Range bar</string>
     <string name="settings_agenda_range_bar_hint">Show a bar at the top of the agenda naming the dates shown, with a button to switch the range for the session</string>
     <string name="agenda_range_day">Today</string>
@@ -645,12 +660,15 @@
     <string name="settings_event_form_subtitle">Default fields and behaviour</string>
     <string name="settings_notifications_subtitle">Reminders and delivery</string>
     <string name="settings_special_dates_subtitle">Contact birthdays &amp; anniversaries</string>
-    <string name="settings_widgets_subtitle">Agenda widget, Quick Settings tile</string>
+    <string name="settings_widgets_subtitle">Your widgets, Quick Settings tile</string>
     <string name="settings_backup_subtitle">Export, import, automatic backup</string>
 
     <!-- Widgets &amp; tiles (#69) -->
     <string name="settings_section_widgets">Widgets &amp; tiles</string>
-    <string name="settings_widgets_hint">Settings for the home-screen widgets and the Quick Settings tile. Add a widget by long-pressing your home screen.</string>
+    <string name="settings_widgets_hint">Each widget has its own look and options. Tap one below, or long-press it on your home screen and choose Edit. Add a widget by long-pressing your home screen.</string>
+    <string name="settings_widgets_hint_legacy">Each widget has its own look and options. Tap one below to change it. Add a widget by long-pressing your home screen.</string>
+    <string name="settings_widgets_placed">On your home screen</string>
+    <string name="settings_widgets_none">No Calendula widgets on your home screen yet.</string>
 
     <!-- Backup &amp; restore (#69) — the rows themselves reuse the calendars_* strings -->
     <string name="settings_section_backup">Backup &amp; restore</string>
