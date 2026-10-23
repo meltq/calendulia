@@ -5,10 +5,12 @@ import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.glance.GlanceId
 import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
+import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.parseAgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.storageValue
@@ -50,6 +52,7 @@ private val AgendaRangeKey = stringPreferencesKey("cfg_agenda_range")
 private val TextSizeKey = stringPreferencesKey("cfg_text_size")
 private val ShowTodayKey = booleanPreferencesKey("cfg_show_today")
 private val PastDisplayKey = stringPreferencesKey("cfg_past_display")
+private val HiddenCalendarsKey = stringSetPreferencesKey("cfg_hidden_calendars")
 
 internal val Preferences.widgetAppearance: WidgetAppearance
     get() = WidgetAppearance(
@@ -83,6 +86,20 @@ internal fun MutablePreferences.putAgendaOptions(options: AgendaWidgetOptions) {
     this[ShowTodayKey] = options.showToday
     this[PastDisplayKey] = options.pastDisplay.name
 }
+
+/**
+ * Calendars this widget leaves out, on top of the ones hidden app-wide. Stored
+ * as the excluded set, so a calendar added later shows up by default.
+ */
+internal val Preferences.hiddenCalendars: Set<Long>
+    get() = this[HiddenCalendarsKey]?.mapNotNull { it.toLongOrNull() }?.toSet().orEmpty()
+
+internal fun MutablePreferences.putHiddenCalendars(ids: Set<Long>) {
+    this[HiddenCalendarsKey] = ids.map(Long::toString).toSet()
+}
+
+internal fun List<EventInstance>.withoutCalendars(hidden: Set<Long>): List<EventInstance> =
+    if (hidden.isEmpty()) this else filterNot { it.calendarId in hidden }
 
 internal suspend fun Context.widgetState(id: GlanceId): Preferences =
     getAppWidgetState(this, PreferencesGlanceStateDefinition, id)

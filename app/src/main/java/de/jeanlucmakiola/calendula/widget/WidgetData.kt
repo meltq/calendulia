@@ -96,6 +96,12 @@ internal val SettingsPrefs.widgetSettings: Flow<WidgetSettings>
 
 internal fun systemZone(): TimeZone = TimeZone.currentSystemDefault()
 
+/**
+ * The locale widget text is written in. Glance has no LocalConfiguration, and a
+ * widget is redrawn on a locale change anyway (LOCALE_CHANGED), so a plain read is enough.
+ */
+internal fun widgetLocale(): Locale = Locale.getDefault()
+
 internal fun today(zone: TimeZone): LocalDate =
     Clock.System.now().toLocalDateTime(zone).date
 
@@ -145,8 +151,9 @@ sealed interface MonthWidgetSource {
 /** [loadAgendaWidgetData] with agenda widget [id]'s own options. */
 internal suspend fun Context.loadAgendaWidget(id: GlanceId): Themed<AgendaWidgetData> {
     val settings = widgetEntryPoint().settingsPrefs().widgetSettings.first()
-    val options = widgetState(id).agendaWidgetOptions(settings.agendaDefaults)
-    return Themed(loadAgendaWidgetData(settings, options), settings.themeMode)
+    val state = widgetState(id)
+    val options = state.agendaWidgetOptions(settings.agendaDefaults)
+    return Themed(loadAgendaWidgetData(settings, options, state.hiddenCalendars), settings.themeMode)
 }
 
 /**
@@ -157,6 +164,7 @@ internal suspend fun Context.loadAgendaWidget(id: GlanceId): Themed<AgendaWidget
 internal suspend fun Context.loadAgendaWidgetData(
     settings: WidgetSettings,
     options: AgendaWidgetOptions,
+    hiddenCalendars: Set<Long>,
 ): AgendaWidgetData {
     if (!hasCalendarPermission()) return AgendaWidgetData.NeedsPermission
     val zone = systemZone()
@@ -166,7 +174,7 @@ internal suspend fun Context.loadAgendaWidgetData(
     val dayCount = options.range.dayCount(anchor, weekStart)
     val window = agendaRange(anchor, dayCount - 1, zone)
     val windowEnd = anchor.plus(dayCount - 1, DateTimeUnit.DAY)
-    val instances = ep.calendarRepository().instances(window).first()
+    val instances = ep.calendarRepository().instances(window).first().withoutCalendars(hiddenCalendars)
     return AgendaWidgetData.Ready(
         today = anchor,
         days = groupAgendaDays(anchor, windowEnd, instances, zone),
@@ -214,15 +222,20 @@ private object MonthSourceCache {
 /** [loadThemedMonthSource] for widget [id], served from [MonthSourceCache] while its [stamp] holds. */
 internal suspend fun Context.loadCachedMonthSource(id: GlanceId, centerIndex: Int, stamp: Long): Themed<MonthWidgetSource> =
     MonthSourceCache.get(id, centerIndex, stamp)
-        ?: loadThemedMonthSource(centerIndex).also { MonthSourceCache.put(id, centerIndex, stamp, it) }
+        ?: loadThemedMonthSource(centerIndex, widgetState(id).hiddenCalendars)
+            .also { MonthSourceCache.put(id, centerIndex, stamp, it) }
 
 /** Read backing the month widget's grid for the window around [centerIndex], with the app theme. */
-internal suspend fun Context.loadThemedMonthSource(centerIndex: Int): Themed<MonthWidgetSource> {
+internal suspend fun Context.loadThemedMonthSource(centerIndex: Int, hiddenCalendars: Set<Long>): Themed<MonthWidgetSource> {
     val settings = widgetEntryPoint().settingsPrefs().widgetSettings.first()
-    return Themed(queryMonthSource(centerIndex, settings), settings.themeMode)
+    return Themed(queryMonthSource(centerIndex, settings, hiddenCalendars), settings.themeMode)
 }
 
-private suspend fun Context.queryMonthSource(centerIndex: Int, settings: WidgetSettings): MonthWidgetSource {
+private suspend fun Context.queryMonthSource(
+    centerIndex: Int,
+    settings: WidgetSettings,
+    hiddenCalendars: Set<Long>,
+): MonthWidgetSource {
     if (!hasCalendarPermission()) return MonthWidgetSource.NeedsPermission
     val zone = systemZone()
     val ep = widgetEntryPoint()
@@ -239,7 +252,7 @@ private suspend fun Context.queryMonthSource(centerIndex: Int, settings: WidgetS
         today = today(zone),
         weekStart = settings.weekStart.resolveFirstDay(Locale.getDefault()),
         soften = settings.soften,
-        instances = ep.calendarRepository().instances(from..to).first(),
+        instances = ep.calendarRepository().instances(from..to).first().withoutCalendars(hiddenCalendars),
         months = months,
     )
 }

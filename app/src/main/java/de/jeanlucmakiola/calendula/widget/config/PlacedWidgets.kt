@@ -5,6 +5,7 @@ import android.content.ComponentName
 import android.content.Context
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import de.jeanlucmakiola.calendula.widget.WidgetAppearance
+import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.widgetAppearance
 import de.jeanlucmakiola.calendula.widget.widgetState
 

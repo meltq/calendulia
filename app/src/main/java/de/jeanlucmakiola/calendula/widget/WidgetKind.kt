@@ -1,0 +1,57 @@
+package de.jeanlucmakiola.calendula.widget
+
+import android.appwidget.AppWidgetManager
+import android.content.Context
+import androidx.compose.ui.unit.DpSize
+import androidx.compose.ui.unit.dp
+import androidx.glance.appwidget.GlanceAppWidget
+import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidget
+import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidgetReceiver
+import de.jeanlucmakiola.calendula.widget.month.MonthWidget
+import de.jeanlucmakiola.calendula.widget.month.MonthWidgetReceiver
+
+/** A content option a widget's config screen offers, besides background and theme. */
+enum class WidgetOption { RANGE, TEXT_SIZE, PAST_DISPLAY, SHOW_TODAY, CALENDARS }
+
+/**
+ * Every widget the app ships, told apart by their receiver: what redraws,
+ * the rollover and the config screen go through.
+ */
+enum class WidgetKind(
+    val receiver: Class<*>,
+    val label: Int,
+    val options: Set<WidgetOption>,
+    /** The size a config preview draws at before the launcher reports one. */
+    val defaultSize: DpSize,
+) {
+    AGENDA(
+        AgendaWidgetReceiver::class.java,
+        R.string.widget_agenda_label,
+        setOf(WidgetOption.RANGE, WidgetOption.TEXT_SIZE, WidgetOption.PAST_DISPLAY, WidgetOption.SHOW_TODAY, WidgetOption.CALENDARS),
+        DpSize(260.dp, 280.dp),
+    ),
+    MONTH(
+        MonthWidgetReceiver::class.java,
+        R.string.widget_month_label,
+        setOf(WidgetOption.CALENDARS),
+        DpSize(320.dp, 340.dp),
+    ),
+    ;
+
+    fun widget(): GlanceAppWidget = when (this) {
+        AGENDA -> AgendaWidget()
+        MONTH -> MonthWidget()
+    }
+
+    /** Whether this kind stores [AgendaWidgetOptions] of its own. */
+    val hasContentOptions: Boolean
+        get() = options.any { it != WidgetOption.CALENDARS }
+
+    companion object {
+        fun of(context: Context, appWidgetId: Int): WidgetKind? {
+            val provider = AppWidgetManager.getInstance(context)?.getAppWidgetInfo(appWidgetId)?.provider ?: return null
+            return entries.firstOrNull { it.receiver.name == provider.className }
+        }
+    }
+}

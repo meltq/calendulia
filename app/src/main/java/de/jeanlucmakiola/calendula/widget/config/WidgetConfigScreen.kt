@@ -42,6 +42,7 @@ import de.jeanlucmakiola.calendula.ui.common.agendaRangeLabel
 import de.jeanlucmakiola.calendula.ui.settings.pastEventDisplayLabelRes
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetOptions
 import de.jeanlucmakiola.calendula.widget.WidgetAppearance
+import de.jeanlucmakiola.calendula.widget.WidgetOption
 import de.jeanlucmakiola.calendula.widget.WidgetSize
 import de.jeanlucmakiola.calendula.widget.WidgetTheme
 import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidgetContent
@@ -54,6 +55,7 @@ import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.components.GroupedSwitchRow
 import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
+import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.floret.glance.GlanceWidgetPreview
 import de.jeanlucmakiola.floret.glance.WallpaperWindow
 import de.jeanlucmakiola.floret.glance.WidgetBackground
@@ -69,7 +71,8 @@ internal fun WidgetConfigScreen(
     onSave: () -> Unit,
     onRetry: () -> Unit,
     onAppearance: (WidgetAppearance) -> Unit,
-    onAgendaOptions: (AgendaWidgetOptions) -> Unit,
+    onContent: (AgendaWidgetOptions) -> Unit,
+    onCalendarShown: (Long, Boolean) -> Unit,
 ) {
     val ready = state as? WidgetConfigUiState.Ready
     val surface = MaterialTheme.colorScheme.surface
@@ -150,7 +153,8 @@ internal fun WidgetConfigScreen(
                 ConfigOptions(
                     state = state,
                     onAppearance = onAppearance,
-                    onAgendaOptions = onAgendaOptions,
+                    onContent = onContent,
+                    onCalendarShown = onCalendarShown,
                     modifier = Modifier
                         .weight(1f)
                         .background(surface),
@@ -173,17 +177,12 @@ private fun PreviewFailed() {
     )
 }
 
-internal val WidgetKind.label: Int
-    get() = when (this) {
-        WidgetKind.AGENDA -> R.string.widget_agenda_label
-        WidgetKind.MONTH -> R.string.widget_month_label
-    }
-
 @Composable
 private fun ConfigOptions(
     state: WidgetConfigUiState.Ready,
     onAppearance: (WidgetAppearance) -> Unit,
-    onAgendaOptions: (AgendaWidgetOptions) -> Unit,
+    onContent: (AgendaWidgetOptions) -> Unit,
+    onCalendarShown: (Long, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -209,47 +208,72 @@ private fun ConfigOptions(
             onSelect = { onAppearance(state.appearance.copy(theme = it)) },
             position = Position.Bottom,
         )
-        state.agenda?.let { options ->
-            AgendaOptions(options = options, state = state, onChange = onAgendaOptions)
+        if (state.kind.options.isNotEmpty()) {
+            ContentOptions(state = state, onChange = onContent, onCalendarShown = onCalendarShown)
         }
     }
 }
 
 @Composable
-private fun AgendaOptions(
-    options: AgendaWidgetOptions,
+private fun ContentOptions(
     state: WidgetConfigUiState.Ready,
     onChange: (AgendaWidgetOptions) -> Unit,
+    onCalendarShown: (Long, Boolean) -> Unit,
 ) {
+    val options = state.draft.content
     var showRange by rememberSaveable { mutableStateOf(false) }
     var showSize by rememberSaveable { mutableStateOf(false) }
     var showPast by rememberSaveable { mutableStateOf(false) }
+    var showCalendars by rememberSaveable { mutableStateOf(false) }
+
+    // Rows in WidgetOption order, each shaped by where it lands among the kind's own.
+    val rows = WidgetOption.entries.filter { it in state.kind.options }
+    fun position(option: WidgetOption) = positionOf(rows.indexOf(option), rows.size)
 
     GroupedSectionHeader(stringResource(R.string.widget_config_content))
-    GroupedRow(
-        title = stringResource(R.string.widget_config_range),
-        summary = agendaRangeLabel(options.range),
-        position = Position.Top,
-        onClick = { showRange = true },
-    )
-    GroupedRow(
-        title = stringResource(R.string.widget_config_text_size),
-        summary = widgetSizeLabel(options.textSize),
-        position = Position.Middle,
-        onClick = { showSize = true },
-    )
-    GroupedRow(
-        title = stringResource(R.string.settings_past_events),
-        summary = stringResource(pastEventDisplayLabelRes(options.pastDisplay)),
-        position = Position.Middle,
-        onClick = { showPast = true },
-    )
-    GroupedSwitchRow(
-        title = stringResource(R.string.settings_agenda_show_today),
-        checked = options.showToday,
-        onCheckedChange = { onChange(options.copy(showToday = it)) },
-        position = Position.Bottom,
-    )
+    rows.forEach { option ->
+        when (option) {
+            WidgetOption.RANGE -> GroupedRow(
+                title = stringResource(R.string.widget_config_range),
+                summary = agendaRangeLabel(options.range),
+                position = position(option),
+                onClick = { showRange = true },
+            )
+            WidgetOption.TEXT_SIZE -> GroupedRow(
+                title = stringResource(R.string.widget_config_text_size),
+                summary = widgetSizeLabel(options.textSize),
+                position = position(option),
+                onClick = { showSize = true },
+            )
+            WidgetOption.PAST_DISPLAY -> GroupedRow(
+                title = stringResource(R.string.settings_past_events),
+                summary = stringResource(pastEventDisplayLabelRes(options.pastDisplay)),
+                position = position(option),
+                onClick = { showPast = true },
+            )
+            WidgetOption.SHOW_TODAY -> GroupedSwitchRow(
+                title = stringResource(R.string.settings_agenda_show_today),
+                checked = options.showToday,
+                onCheckedChange = { onChange(options.copy(showToday = it)) },
+                position = position(option),
+            )
+            WidgetOption.CALENDARS -> GroupedRow(
+                title = stringResource(R.string.widget_config_calendars),
+                summary = calendarsSummary(state.calendars, state.draft.hiddenCalendars),
+                position = position(option),
+                onClick = { showCalendars = true },
+            )
+        }
+    }
+
+    if (showCalendars) {
+        WidgetCalendarPicker(
+            calendars = state.calendars,
+            hidden = state.draft.hiddenCalendars,
+            onSetShown = onCalendarShown,
+            onDismiss = { showCalendars = false },
+        )
+    }
 
     if (showRange) {
         AgendaRangePicker(

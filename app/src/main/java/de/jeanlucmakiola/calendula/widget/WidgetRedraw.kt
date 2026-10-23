@@ -9,10 +9,6 @@ import android.os.SystemClock
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.di.ApplicationScope
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
-import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidget
-import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidgetReceiver
-import de.jeanlucmakiola.calendula.widget.month.MonthWidget
-import de.jeanlucmakiola.calendula.widget.month.MonthWidgetReceiver
 import de.jeanlucmakiola.floret.glance.WidgetRefresher
 import de.jeanlucmakiola.floret.glance.WidgetRollover
 import de.jeanlucmakiola.floret.glance.updatePlaced
@@ -33,10 +29,7 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /** Every widget receiver; the set [WidgetRollover] checks for placed instances. */
-internal val WIDGET_RECEIVER_CLASSES: List<Class<*>> = listOf(
-    MonthWidgetReceiver::class.java,
-    AgendaWidgetReceiver::class.java,
-)
+internal val WIDGET_RECEIVER_CLASSES: List<Class<*>> = WidgetKind.entries.map { it.receiver }
 
 /** The app's own midnight wake-up (#228). */
 internal const val ACTION_WIDGET_ROLLOVER = "de.jeanlucmakiola.calendula.widget.ROLLOVER"
@@ -57,30 +50,27 @@ internal fun syncWidgetRollover(context: Context) =
 
 /**
  * Reloads and redraws every placed widget, a running session included: the
- * refresh stamp moves, and both widgets key their data load on it (#420).
+ * refresh stamp moves, and every widget keys its data load on it (#420).
  */
 internal suspend fun redrawWidgets(context: Context) {
-    redrawAgendaWidgets(context)
-    redrawMonthWidgets(context)
+    WidgetKind.entries.forEach { redrawWidgets(context, it) }
 }
 
-private suspend fun redrawAgendaWidgets(context: Context) =
-    AgendaWidget().updatePlaced(context, AgendaWidgetReceiver::class.java, bumpRefreshStamp = true)
+internal suspend fun redrawWidgets(context: Context, kind: WidgetKind) =
+    kind.widget().updatePlaced(context, kind.receiver, bumpRefreshStamp = true)
 
-/** Redraws only the agenda widgets with no options of their own, which still follow the app's. */
-private suspend fun redrawUnconfiguredAgendaWidgets(context: Context) {
+/** Redraws only the widgets with no content options of their own, which still follow the app's. */
+private suspend fun redrawUnconfiguredWidgets(context: Context) {
     val appContext = context.applicationContext
-    val ids = AppWidgetManager.getInstance(appContext)
-        ?.getAppWidgetIds(ComponentName(appContext, AgendaWidgetReceiver::class.java)) ?: return
+    val manager = AppWidgetManager.getInstance(appContext) ?: return
     val glanceManager = GlanceAppWidgetManager(appContext)
-    ids.forEach { appWidgetId ->
-        val glanceId = glanceManager.getGlanceIdBy(appWidgetId)
-        if (!appContext.widgetState(glanceId).hasAgendaOptions) AgendaWidget().updateWithRefresh(appContext, glanceId)
+    WidgetKind.entries.filter { it.hasContentOptions }.forEach { kind ->
+        manager.getAppWidgetIds(ComponentName(appContext, kind.receiver)).forEach { appWidgetId ->
+            val glanceId = glanceManager.getGlanceIdBy(appWidgetId)
+            if (!appContext.widgetState(glanceId).hasAgendaOptions) kind.widget().updateWithRefresh(appContext, glanceId)
+        }
     }
 }
-
-private suspend fun redrawMonthWidgets(context: Context) =
-    MonthWidget().updatePlaced(context, MonthWidgetReceiver::class.java, bumpRefreshStamp = true)
 
 /** When the app last saw a calendar change of its own, for skipping the `PROVIDER_CHANGED` that echoes it. */
 private val lastLocalChange = AtomicLong(0L)
@@ -97,7 +87,7 @@ internal fun isProviderEcho(): Boolean {
  * the settings they draw with, so those don't wait for `PROVIDER_CHANGED`,
  * which arrives seconds late or not at all (#420, #229). Changes from outside
  * the app are [WidgetUpdateReceiver]'s. The app's agenda options only redraw
- * agenda widgets that have none of their own (#292). Started once from
+ * widgets that have no content options of their own (#292). Started once from
  * `CalendulaApp`.
  */
 @Singleton
@@ -112,20 +102,17 @@ class WidgetRefreshCoordinator @Inject constructor(
     /** Subscribes before returning, so a change made right after is never taken for the starting value. */
     fun start() {
         if (!started.compareAndSet(false, true)) return
-        val agenda = WidgetRefresher(scope) { redrawAgendaWidgets(context) }
-        val unconfiguredAgenda = WidgetRefresher(scope) { redrawUnconfiguredAgendaWidgets(context) }
-        val month = WidgetRefresher(scope) { redrawMonthWidgets(context) }
+        val all = WidgetKind.entries.map { kind -> WidgetRefresher(scope) { redrawWidgets(context, kind) } }
+        val unconfigured = WidgetRefresher(scope) { redrawUnconfiguredWidgets(context) }
         watch(repository.localChanges) {
             lastLocalChange.set(SystemClock.elapsedRealtime())
-            agenda.request()
-            month.request()
+            all.forEach { it.request() }
         }
         watch(prefs.widgetSettings.map { it.shared }.distinctUntilChanged().drop(1)) {
-            agenda.request()
-            month.request()
+            all.forEach { it.request() }
         }
         watch(prefs.widgetSettings.map { it.agendaDefaults }.distinctUntilChanged().drop(1)) {
-            unconfiguredAgenda.request()
+            unconfigured.request()
         }
     }
 

@@ -4,25 +4,27 @@ import android.appwidget.AppWidgetManager
 import android.content.Context
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
-import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetManager
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
+import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
+import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.WidgetOption
+import de.jeanlucmakiola.calendula.widget.hiddenCalendars
+import de.jeanlucmakiola.calendula.widget.putHiddenCalendars
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetData
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetOptions
 import de.jeanlucmakiola.calendula.widget.MonthWidgetSource
 import de.jeanlucmakiola.calendula.widget.WidgetAppearance
-import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidget
-import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidgetReceiver
 import de.jeanlucmakiola.calendula.widget.loadAgendaWidgetData
 import de.jeanlucmakiola.calendula.widget.loadThemedMonthSource
-import de.jeanlucmakiola.calendula.widget.month.MonthWidget
-import de.jeanlucmakiola.calendula.widget.month.MonthWidgetReceiver
 import de.jeanlucmakiola.calendula.widget.monthIndexOf
 import de.jeanlucmakiola.calendula.widget.monthWindowCenter
 import de.jeanlucmakiola.calendula.widget.agendaWidgetOptions
@@ -50,30 +52,19 @@ import kotlinx.coroutines.launch
 import kotlinx.datetime.DayOfWeek
 import java.util.Locale
 
-/** The widgets a config screen can edit, told apart by their receiver. */
-enum class WidgetKind(val receiver: Class<*>) {
-    AGENDA(AgendaWidgetReceiver::class.java),
-    MONTH(MonthWidgetReceiver::class.java),
-    ;
-
-    fun widget(): GlanceAppWidget = when (this) {
-        AGENDA -> AgendaWidget()
-        MONTH -> MonthWidget()
-    }
-
-    companion object {
-        fun of(context: Context, appWidgetId: Int): WidgetKind? {
-            val provider = AppWidgetManager.getInstance(context)?.getAppWidgetInfo(appWidgetId)?.provider ?: return null
-            return entries.firstOrNull { it.receiver.name == provider.className }
-        }
-    }
-}
-
 /** What the preview draws, loaded with the draft's options. */
 sealed interface WidgetPreviewData {
     data class Agenda(val data: AgendaWidgetData) : WidgetPreviewData
     data class Month(val source: MonthWidgetSource, val index: Int) : WidgetPreviewData
 }
+
+/** The options being edited, applied to the preview as they change and written on save. */
+data class WidgetDraft(
+    val appearance: WidgetAppearance,
+    /** The content options; stored only for a kind that [WidgetKind.hasContentOptions]. */
+    val content: AgendaWidgetOptions,
+    val hiddenCalendars: Set<Long>,
+)
 
 sealed interface WidgetConfigUiState {
     data object Loading : WidgetConfigUiState
@@ -86,9 +77,9 @@ sealed interface WidgetConfigUiState {
 
     data class Ready(
         val kind: WidgetKind,
-        val appearance: WidgetAppearance,
-        /** Null for a widget with no content options. */
-        val agenda: AgendaWidgetOptions?,
+        val draft: WidgetDraft,
+        /** The calendars the app shows, for the widget's own calendar choice. */
+        val calendars: List<CalendarSource>,
         val appTheme: ThemeMode,
         val weekStart: DayOfWeek,
         /** The widget's size on the home screen, which the preview is laid out at. */
@@ -98,7 +89,9 @@ sealed interface WidgetConfigUiState {
         /** The first preview load failed, so there's nothing to show. */
         val previewFailed: Boolean = false,
         val saving: Boolean = false,
-    ) : WidgetConfigUiState
+    ) : WidgetConfigUiState {
+        val appearance: WidgetAppearance get() = draft.appearance
+    }
 }
 
 /** One-time outcomes of a save, for the screen that's showing when they land. */
@@ -113,6 +106,8 @@ enum class WidgetConfigEvent { SAVED, SAVE_FAILED }
 class WidgetConfigViewModel @Inject constructor(
     @ApplicationContext private val context: Context,
     private val prefs: SettingsPrefs,
+    private val calendarPrefs: CalendarPrefs,
+    private val repository: CalendarRepository,
     savedState: SavedStateHandle,
 ) : ViewModel() {
 
@@ -147,8 +142,12 @@ class WidgetConfigViewModel @Inject constructor(
             val settings = prefs.widgetSettings.first()
             WidgetConfigUiState.Ready(
                 kind = kind,
-                appearance = stored.widgetAppearance,
-                agenda = if (kind == WidgetKind.AGENDA) stored.agendaWidgetOptions(settings.agendaDefaults) else null,
+                draft = WidgetDraft(
+                    appearance = stored.widgetAppearance,
+                    content = stored.agendaWidgetOptions(settings.agendaDefaults),
+                    hiddenCalendars = stored.hiddenCalendars,
+                ),
+                calendars = if (WidgetOption.CALENDARS in kind.options) shownCalendars() else emptyList(),
                 appTheme = settings.themeMode,
                 weekStart = settings.weekStart.resolveFirstDay(Locale.getDefault()),
                 placedSize = placedSize(kind),
@@ -171,16 +170,27 @@ class WidgetConfigViewModel @Inject constructor(
         val width = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH) ?: 0
         val height = options?.getInt(AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT) ?: 0
         if (width > 0 && height > 0) return DpSize(width.dp, height.dp)
-        return when (kind) {
-            WidgetKind.AGENDA -> DpSize(260.dp, 280.dp)
-            WidgetKind.MONTH -> DpSize(320.dp, 340.dp)
-        }
+        return kind.defaultSize
     }
 
-    fun setAppearance(appearance: WidgetAppearance) = edit { it.copy(appearance = appearance) }
+    /** The calendars the app itself shows; the ones hidden there never reach a widget anyway. */
+    private suspend fun shownCalendars(): List<CalendarSource> {
+        val hidden = calendarPrefs.hiddenCalendarIds.first()
+        return repository.calendars().first().filter { it.isVisibleInSystem && it.id !in hidden }
+    }
 
-    fun setAgendaOptions(options: AgendaWidgetOptions) {
-        edit { it.copy(agenda = options) }
+    fun setAppearance(appearance: WidgetAppearance) = edit { it.copy(draft = it.draft.copy(appearance = appearance)) }
+
+    fun setContent(options: AgendaWidgetOptions) {
+        edit { it.copy(draft = it.draft.copy(content = options)) }
+        reloadPreview()
+    }
+
+    fun setCalendarShown(id: Long, shown: Boolean) {
+        edit {
+            val hidden = it.draft.hiddenCalendars
+            it.copy(draft = it.draft.copy(hiddenCalendars = if (shown) hidden - id else hidden + id))
+        }
         reloadPreview()
     }
 
@@ -205,14 +215,17 @@ class WidgetConfigViewModel @Inject constructor(
         }
     }
 
-    private suspend fun loadPreview(ready: WidgetConfigUiState.Ready): WidgetPreviewData = when (ready.kind) {
-        WidgetKind.AGENDA -> {
-            val settings = prefs.widgetSettings.first()
-            WidgetPreviewData.Agenda(context.loadAgendaWidgetData(settings, requireNotNull(ready.agenda)))
-        }
-        WidgetKind.MONTH -> {
-            val index = monthIndexOf(today(systemZone()))
-            WidgetPreviewData.Month(context.loadThemedMonthSource(monthWindowCenter(index)).content, index)
+    private suspend fun loadPreview(ready: WidgetConfigUiState.Ready): WidgetPreviewData {
+        val draft = ready.draft
+        val settings = prefs.widgetSettings.first()
+        return when (ready.kind) {
+            WidgetKind.AGENDA ->
+                WidgetPreviewData.Agenda(context.loadAgendaWidgetData(settings, draft.content, draft.hiddenCalendars))
+            WidgetKind.MONTH -> {
+                val index = monthIndexOf(today(systemZone()))
+                val source = context.loadThemedMonthSource(monthWindowCenter(index), draft.hiddenCalendars)
+                WidgetPreviewData.Month(source.content, index)
+            }
         }
     }
 
@@ -225,8 +238,9 @@ class WidgetConfigViewModel @Inject constructor(
             try {
                 val glanceId = GlanceAppWidgetManager(context).getGlanceIdBy(appWidgetId)
                 ready.kind.widget().updateWithRefresh(context, glanceId) { state ->
-                    state.putAppearance(ready.appearance)
-                    ready.agenda?.let { state.putAgendaOptions(it) }
+                    state.putAppearance(ready.draft.appearance)
+                    if (ready.kind.hasContentOptions) state.putAgendaOptions(ready.draft.content)
+                    if (WidgetOption.CALENDARS in ready.kind.options) state.putHiddenCalendars(ready.draft.hiddenCalendars)
                 }
                 _events.send(WidgetConfigEvent.SAVED)
             } catch (e: CancellationException) {

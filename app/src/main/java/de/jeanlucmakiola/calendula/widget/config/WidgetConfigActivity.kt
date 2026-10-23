@@ -113,7 +113,8 @@ class WidgetConfigActivity : ComponentActivity() {
                     onSave = viewModel::save,
                     onRetry = viewModel::retry,
                     onAppearance = viewModel::setAppearance,
-                    onAgendaOptions = viewModel::setAgendaOptions,
+                    onContent = viewModel::setContent,
+                    onCalendarShown = viewModel::setCalendarShown,
                 )
             }
         }

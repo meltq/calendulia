@@ -29,11 +29,10 @@ import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.calendula.widget.config.PlacedWidget
 import de.jeanlucmakiola.calendula.widget.config.WidgetConfigActivity
-import de.jeanlucmakiola.calendula.widget.config.WidgetKind
+import de.jeanlucmakiola.calendula.widget.WidgetKind
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import de.jeanlucmakiola.calendula.widget.config.backgroundLabel
-import de.jeanlucmakiola.calendula.widget.config.label
 import de.jeanlucmakiola.calendula.widget.config.placedWidgets
 import de.jeanlucmakiola.calendula.widget.config.themeLabel
 
