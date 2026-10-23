@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static mock shown in the widget picker (android:previewLayout). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/preview_widget_bg"
+    android:gravity="center"
+    android:orientation="horizontal"
+    android:padding="6dp"
+    tools:ignore="HardcodedText">
+
+    <TextView style="@style/WidgetPreviewWeekDay" android:text="M\n5" />
+    <TextView style="@style/WidgetPreviewWeekDay" android:text="T\n6" />
+    <TextView
+        style="@style/WidgetPreviewWeekDay"
+        android:background="@drawable/preview_widget_today_bg"
+        android:text="W\n7"
+        android:textColor="@color/widget_preview_on_primary" />
+    <TextView style="@style/WidgetPreviewWeekDay" android:text="T\n8" />
+    <TextView style="@style/WidgetPreviewWeekDay" android:text="F\n9" />
+    <TextView style="@style/WidgetPreviewWeekDay" android:text="S\n10" />
+    <TextView style="@style/WidgetPreviewWeekDay" android:text="S\n11" />
+</LinearLayout>

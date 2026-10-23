@@ -260,3 +260,67 @@ private suspend fun Context.queryMonthSource(
 /** Today and the app theme, for a widget that draws no events. */
 internal suspend fun Context.loadToday(): Themed<LocalDate> =
     Themed(today(systemZone()), widgetEntryPoint().settingsPrefs().widgetSettings.first().themeMode)
+
+/** What a widget drawing a run of days loads: those days' events, grouped like the agenda. */
+sealed interface DaysWidgetData {
+    data object NeedsPermission : DaysWidgetData
+    data class Ready(
+        val today: LocalDate,
+        val firstDay: LocalDate,
+        val lastDay: LocalDate,
+        /** Only the days with events, in order. */
+        val days: List<AgendaDay>,
+        val weekStart: DayOfWeek,
+        val is24Hour: Boolean,
+        val soften: Boolean,
+        val options: AgendaWidgetOptions,
+        val now: Instant,
+    ) : DaysWidgetData {
+        fun eventsOn(date: LocalDate): List<EventInstance> = days.firstOrNull { it.date == date }?.events.orEmpty()
+    }
+}
+
+/** Widget [id]'s stored options and calendars, with the app's values for what it has none of. */
+internal class WidgetLoadContext(val settings: WidgetSettings, val options: AgendaWidgetOptions, val hiddenCalendars: Set<Long>)
+
+internal suspend fun Context.widgetLoadContext(id: GlanceId): WidgetLoadContext {
+    val settings = widgetEntryPoint().settingsPrefs().widgetSettings.first()
+    val state = widgetState(id)
+    return WidgetLoadContext(settings, state.agendaWidgetOptions(settings.agendaDefaults), state.hiddenCalendars)
+}
+
+/** The events on the days [days] picks from today and the week start, for [load]'s widget. */
+internal suspend fun Context.loadDays(
+    load: WidgetLoadContext,
+    days: (today: LocalDate, weekStart: DayOfWeek) -> ClosedRange<LocalDate>,
+): Themed<DaysWidgetData> {
+    val settings = load.settings
+    if (!hasCalendarPermission()) return Themed(DaysWidgetData.NeedsPermission, settings.themeMode)
+    val zone = systemZone()
+    val anchor = today(zone)
+    val weekStart = settings.weekStart.resolveFirstDay(Locale.getDefault())
+    val range = days(anchor, weekStart)
+    val window = range.start.atStartOfDayIn(zone)..range.endInclusive.atTime(23, 59, 59).toInstant(zone)
+    val instances = widgetEntryPoint().calendarRepository().instances(window).first().withoutCalendars(load.hiddenCalendars)
+    return Themed(
+        DaysWidgetData.Ready(
+            today = anchor,
+            firstDay = range.start,
+            lastDay = range.endInclusive,
+            days = groupAgendaDays(range.start, range.endInclusive, instances, zone),
+            weekStart = weekStart,
+            is24Hour = settings.timeFormat.is24Hour(android.text.format.DateFormat.is24HourFormat(this)),
+            soften = settings.soften,
+            options = load.options,
+            now = Clock.System.now(),
+        ),
+        settings.themeMode,
+    )
+}
+
+/** The week [today] falls in, from [weekStart]. */
+internal fun weekOf(today: LocalDate, weekStart: DayOfWeek): ClosedRange<LocalDate> {
+    val back = (today.dayOfWeek.ordinal - weekStart.ordinal + 7) % 7
+    val first = today.minus(back, DateTimeUnit.DAY)
+    return first..first.plus(6, DateTimeUnit.DAY)
+}

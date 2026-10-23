@@ -15,6 +15,11 @@ import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.DaysWidgetData
+import de.jeanlucmakiola.calendula.widget.WidgetLoadContext
+import de.jeanlucmakiola.calendula.widget.WidgetSettings
+import de.jeanlucmakiola.calendula.widget.loadDays
+import de.jeanlucmakiola.calendula.widget.weekOf
 import de.jeanlucmakiola.calendula.widget.WidgetOption
 import de.jeanlucmakiola.calendula.widget.hiddenCalendars
 import de.jeanlucmakiola.calendula.widget.putHiddenCalendars
@@ -58,6 +63,7 @@ sealed interface WidgetPreviewData {
     data class Agenda(val data: AgendaWidgetData) : WidgetPreviewData
     data class Month(val source: MonthWidgetSource, val index: Int) : WidgetPreviewData
     data class Today(val today: LocalDate) : WidgetPreviewData
+    data class Days(val data: DaysWidgetData) : WidgetPreviewData
 }
 
 /** The options being edited, applied to the preview as they change and written on save. */
@@ -67,6 +73,8 @@ data class WidgetDraft(
     val content: AgendaWidgetOptions,
     val hiddenCalendars: Set<Long>,
 )
+
+private fun WidgetDraft.loadContext(settings: WidgetSettings) = WidgetLoadContext(settings, content, hiddenCalendars)
 
 sealed interface WidgetConfigUiState {
     data object Loading : WidgetConfigUiState
@@ -229,6 +237,7 @@ class WidgetConfigViewModel @Inject constructor(
                 WidgetPreviewData.Month(source.content, index)
             }
             WidgetKind.QUICK_ADD, WidgetKind.DATE -> WidgetPreviewData.Today(today(systemZone()))
+            WidgetKind.WEEK_STRIP -> WidgetPreviewData.Days(context.loadDays(draft.loadContext(settings), ::weekOf).content)
         }
     }
 

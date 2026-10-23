@@ -50,6 +50,7 @@ import de.jeanlucmakiola.calendula.widget.agenda.metricsFor
 import de.jeanlucmakiola.calendula.widget.month.MonthWidgetContent
 import de.jeanlucmakiola.calendula.widget.quickadd.QuickAddWidgetContent
 import de.jeanlucmakiola.calendula.widget.date.DateWidgetContent
+import de.jeanlucmakiola.calendula.widget.week.WeekStripWidgetContent
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.floret.components.GroupedChoiceRow
 import de.jeanlucmakiola.floret.components.GroupedHint
@@ -149,6 +150,9 @@ internal fun WidgetConfigScreen(
                                     AgendaWidgetContent(preview.data, state.appearance, state.appTheme, preview = true)
                                 is WidgetPreviewData.Month ->
                                     MonthWidgetContent(preview.source, preview.index, state.appearance, state.appTheme)
+                                is WidgetPreviewData.Days -> when (state.kind) {
+                                    else -> WeekStripWidgetContent(preview.data, state.appearance, state.appTheme)
+                                }
                                 is WidgetPreviewData.Today -> if (state.kind == WidgetKind.DATE) {
                                     DateWidgetContent(preview.today, state.appearance, state.appTheme)
                                 } else {

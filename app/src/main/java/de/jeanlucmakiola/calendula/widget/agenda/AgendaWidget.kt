@@ -60,6 +60,7 @@ import de.jeanlucmakiola.calendula.widget.AgendaWidgetData
 import de.jeanlucmakiola.calendula.widget.WidgetSize
 import de.jeanlucmakiola.calendula.widget.CalendulaWidgetRoot
 import de.jeanlucmakiola.calendula.widget.WidgetAppearance
+import de.jeanlucmakiola.calendula.widget.widgetCardColor
 import de.jeanlucmakiola.calendula.widget.loadAgendaWidget
 import de.jeanlucmakiola.calendula.widget.widgetAppearance
 import de.jeanlucmakiola.floret.components.Position
@@ -217,7 +218,7 @@ private fun AgendaRows(
         // Each day is one card of grouped rows (#71), with its date pill
         // beside the first row.
         val positions = dayPositions(rows)
-        val cardColor = agendaCardColor()
+        val cardColor = widgetCardColor()
         val item: @Composable (Int) -> Unit = { index ->
             val row = rows[index]
             val position = positions[index]
@@ -303,13 +304,6 @@ private fun AgendaHeader() {
             action = actionStartActivity(MainActivity.openCreateIntent(context, today(systemZone()))),
         )
     }
-}
-
-/** Cards sit one tone off the root fill, and stay opaque over a wallpaper (#292). */
-@Composable
-private fun agendaCardColor(): ColorProvider = when (LocalWidgetBackground.current) {
-    WidgetBackground.SOLID -> GlanceTheme.colors.surfaceVariant
-    WidgetBackground.TINTED, WidgetBackground.TRANSPARENT -> GlanceTheme.colors.widgetBackground
 }
 
 /** The month name ("November", with its year outside the current one) above a new month's first day. */
