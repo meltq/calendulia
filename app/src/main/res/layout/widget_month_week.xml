@@ -13,43 +13,176 @@
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="?android:attr/selectableItemBackground" />
+            android:foreground="?android:attr/selectableItemBackground"
+            android:padding="1dp">
+
+            <ImageView
+                android:id="@+id/cell_0"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg" />
+
+            <ImageView
+                android:id="@+id/cell_dim_0"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg"
+                android:visibility="gone" />
+        </FrameLayout>
         <FrameLayout
             android:id="@+id/strip_1"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="?android:attr/selectableItemBackground" />
+            android:foreground="?android:attr/selectableItemBackground"
+            android:padding="1dp">
+
+            <ImageView
+                android:id="@+id/cell_1"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg" />
+
+            <ImageView
+                android:id="@+id/cell_dim_1"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg"
+                android:visibility="gone" />
+        </FrameLayout>
         <FrameLayout
             android:id="@+id/strip_2"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="?android:attr/selectableItemBackground" />
+            android:foreground="?android:attr/selectableItemBackground"
+            android:padding="1dp">
+
+            <ImageView
+                android:id="@+id/cell_2"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg" />
+
+            <ImageView
+                android:id="@+id/cell_dim_2"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg"
+                android:visibility="gone" />
+        </FrameLayout>
         <FrameLayout
             android:id="@+id/strip_3"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="?android:attr/selectableItemBackground" />
+            android:foreground="?android:attr/selectableItemBackground"
+            android:padding="1dp">
+
+            <ImageView
+                android:id="@+id/cell_3"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg" />
+
+            <ImageView
+                android:id="@+id/cell_dim_3"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg"
+                android:visibility="gone" />
+        </FrameLayout>
         <FrameLayout
             android:id="@+id/strip_4"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="?android:attr/selectableItemBackground" />
+            android:foreground="?android:attr/selectableItemBackground"
+            android:padding="1dp">
+
+            <ImageView
+                android:id="@+id/cell_4"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg" />
+
+            <ImageView
+                android:id="@+id/cell_dim_4"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg"
+                android:visibility="gone" />
+        </FrameLayout>
         <FrameLayout
             android:id="@+id/strip_5"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="?android:attr/selectableItemBackground" />
+            android:foreground="?android:attr/selectableItemBackground"
+            android:padding="1dp">
+
+            <ImageView
+                android:id="@+id/cell_5"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg" />
+
+            <ImageView
+                android:id="@+id/cell_dim_5"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg"
+                android:visibility="gone" />
+        </FrameLayout>
         <FrameLayout
             android:id="@+id/strip_6"
             android:layout_width="0dp"
             android:layout_height="match_parent"
             android:layout_weight="1"
-            android:background="?android:attr/selectableItemBackground" />
+            android:foreground="?android:attr/selectableItemBackground"
+            android:padding="1dp">
+
+            <ImageView
+                android:id="@+id/cell_6"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg" />
+
+            <ImageView
+                android:id="@+id/cell_dim_6"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:importantForAccessibility="no"
+                android:scaleType="fitXY"
+                android:src="@drawable/widget_month_cell_bg"
+                android:visibility="gone" />
+        </FrameLayout>
     </LinearLayout>
 
     <LinearLayout

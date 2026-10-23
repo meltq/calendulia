@@ -295,7 +295,7 @@ private fun AgendaHeader() {
     WidgetHeader(
         title = context.getString(R.string.widget_agenda_title),
         titleAction = actionStartActivity(MainActivity.openViewIntent(context, view = null)),
-        modifier = GlanceModifier.padding(start = 4.dp),
+        titleInset = 4.dp,
     ) {
         WidgetHeaderAction(
             icon = ImageProvider(R.drawable.ic_widget_add),

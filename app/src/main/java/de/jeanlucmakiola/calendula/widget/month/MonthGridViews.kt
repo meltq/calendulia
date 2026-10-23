@@ -9,6 +9,7 @@ import android.text.style.StrikethroughSpan
 import android.text.style.StyleSpan
 import android.view.View
 import android.widget.RemoteViews
+import androidx.compose.ui.graphics.Color
 import de.jeanlucmakiola.calendula.MainActivity
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
@@ -30,6 +31,7 @@ internal data class GridColors(
     val onSurfaceVariant: RemoteColor,
     val primary: RemoteColor,
     val onPrimary: RemoteColor,
+    val cell: RemoteColor,
 )
 
 /**
@@ -69,6 +71,15 @@ private fun weekViews(
     week.removeAllViews(R.id.week_lanes)
     layout.week.days.forEachIndexed { col, date ->
         week.setOnClickPendingIntent(STRIP_IDS[col], openDayIntent(context, date))
+        // Each day its own rounded cell, as in the app's month grid. Days around
+        // the month get a shade over their (opaque) cell, so they recede without
+        // letting a wallpaper show through.
+        week.setImageTint(context, CELL_IDS[col], colors.cell)
+        val outside = date.month != currentMonth
+        week.setViewVisibility(CELL_DIM_IDS[col], if (outside) View.VISIBLE else View.GONE)
+        if (outside) {
+            week.setImageTint(context, CELL_DIM_IDS[col], mode.remoteColor(OUTSIDE_SHADE_DAY, OUTSIDE_SHADE_NIGHT))
+        }
         val dayId = DAY_IDS[col]
         val isToday = date == today
         week.setTextViewText(dayId, if (isToday) bold(date.day.toString()) else date.day.toString())
@@ -136,6 +147,14 @@ private fun openDayIntent(context: Context, date: LocalDate): PendingIntent = Pe
 )
 
 private val STRIP_IDS = intArrayOf(R.id.strip_0, R.id.strip_1, R.id.strip_2, R.id.strip_3, R.id.strip_4, R.id.strip_5, R.id.strip_6)
+/** The shade over a day outside the month: a dark cell needs more of it to read as dimmed. */
+private val OUTSIDE_SHADE_DAY = Color.Black.copy(alpha = 0.18f)
+private val OUTSIDE_SHADE_NIGHT = Color.Black.copy(alpha = 0.50f)
+
+private val CELL_DIM_IDS = intArrayOf(
+    R.id.cell_dim_0, R.id.cell_dim_1, R.id.cell_dim_2, R.id.cell_dim_3, R.id.cell_dim_4, R.id.cell_dim_5, R.id.cell_dim_6,
+)
+private val CELL_IDS = intArrayOf(R.id.cell_0, R.id.cell_1, R.id.cell_2, R.id.cell_3, R.id.cell_4, R.id.cell_5, R.id.cell_6)
 private val DAY_IDS = intArrayOf(R.id.day_0, R.id.day_1, R.id.day_2, R.id.day_3, R.id.day_4, R.id.day_5, R.id.day_6)
 private val TODAY_IDS = intArrayOf(
     R.id.today_bg_0, R.id.today_bg_1, R.id.today_bg_2, R.id.today_bg_3, R.id.today_bg_4, R.id.today_bg_5, R.id.today_bg_6,

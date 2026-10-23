@@ -21,6 +21,10 @@ import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.AndroidRemoteViews
+import de.jeanlucmakiola.floret.glance.WidgetBackground
+import de.jeanlucmakiola.floret.glance.LocalWidgetBackground
+import androidx.glance.background
+import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
@@ -88,11 +92,11 @@ private val GRID_HPADDING = 8.dp
 
 /**
  * Height around the week rows: body padding, the header's bottom padding and
- * spacer, then the header (its 28dp pills, or a title line in its transparent
+ * spacer and the weekday pills' padding, then the header (its 28dp pills, or a title line in its transparent
  * pill when that's taller) and the weekday row, the text lines at [fontScale].
  */
 private fun gridChromeHeight(fontScale: Float): Dp =
-    18.dp + maxOf(28.dp, 19.dp * fontScale + 8.dp) + 15.dp * fontScale
+    21.dp + maxOf(28.dp, 19.dp * fontScale + 8.dp) + 15.dp * fontScale
 
 private fun currentMonthIndex(zone: TimeZone): Int = monthIndexOf(today(zone))
 
@@ -248,12 +252,15 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
                     onSurfaceVariant = remoteColor(WidgetColorRole.ON_SURFACE_VARIANT),
                     primary = remoteColor(WidgetColorRole.PRIMARY),
                     onPrimary = remoteColor(WidgetColorRole.ON_PRIMARY),
+                    cell = remoteColor(monthCellRole()),
                 )
 
                 MonthHeader(label = monthLabel(ym, source.today.year), today = source.today)
                 Spacer(GlanceModifier.height(4.dp))
-                // One backing for the whole grid on a transparent widget (#292).
-                Column(modifier = GlanceModifier.fillMaxWidth().defaultWeight().wallpaperBacking()) {
+                // No backing behind the grid: the weekday pills and day cells
+                // each carry their own fill, so a transparent widget stays
+                // readable without one blob over the wallpaper (#292).
+                Column(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
                     WeekdayHeader(weekStart = source.weekStart, colW = colW)
                     AndroidRemoteViews(
                         remoteViews = monthGridViews(context, layouts, ym.month, source.today, source.soften, colors, mode),
@@ -273,7 +280,8 @@ private fun MonthHeader(label: String, today: LocalDate) {
     WidgetHeader(
         title = label,
         titleAction = actionStartActivity(MainActivity.openViewIntent(context, CalendarView.Month)),
-        modifier = GlanceModifier.padding(start = 4.dp, bottom = 2.dp),
+        modifier = GlanceModifier.padding(bottom = 2.dp),
+        titleInset = 4.dp,
     ) {
         WidgetHeaderAction(
             icon = ImageProvider(R.drawable.ic_widget_chevron_left),
@@ -288,6 +296,7 @@ private fun MonthHeader(label: String, today: LocalDate) {
             text = today.day.toString(),
             contentDescription = context.getString(R.string.widget_today),
             action = actionRunCallback<ResetMonthAction>(),
+            style = WidgetActionStyle.TONAL,
         )
         WidgetHeaderActionGap()
         WidgetHeaderAction(
@@ -296,25 +305,46 @@ private fun MonthHeader(label: String, today: LocalDate) {
             action = actionRunCallback<ShiftMonthAction>(actionParametersOf(ShiftMonthAction.deltaKey to 1)),
             style = WidgetActionStyle.TONAL,
         )
+        WidgetHeaderActionGap()
+        WidgetHeaderAction(
+            icon = ImageProvider(R.drawable.ic_widget_add),
+            contentDescription = context.getString(R.string.widget_new_event),
+            action = actionStartActivity(MainActivity.openCreateIntent(context, today)),
+        )
     }
 }
 
 @Composable
 private fun WeekdayHeader(weekStart: DayOfWeek, colW: Dp) {
-    Row(modifier = GlanceModifier.fillMaxWidth()) {
+    Row(modifier = GlanceModifier.fillMaxWidth().padding(bottom = 1.dp)) {
         weekdayNarrowNames(weekStart).forEach { name ->
-            Text(
-                text = name,
-                style = TextStyle(
-                    color = GlanceTheme.colors.onSurfaceVariant,
-                    fontSize = 11.sp,
-                    textAlign = TextAlign.Center,
-                ),
-                modifier = GlanceModifier.width(colW),
-            )
+            Box(modifier = GlanceModifier.width(colW).padding(horizontal = 1.dp)) {
+                Text(
+                    text = name,
+                    style = TextStyle(
+                        color = GlanceTheme.colors.onPrimaryContainer,
+                        fontSize = 11.sp,
+                        textAlign = TextAlign.Center,
+                    ),
+                    modifier = GlanceModifier
+                        .fillMaxWidth()
+                        .cornerRadius(8.dp)
+                        .background(GlanceTheme.colors.primaryContainer)
+                        .padding(vertical = 1.dp),
+                )
+            }
         }
     }
 }
+
+/** The fill of a day cell: one tone off a filled root, the widget surface over a wallpaper. */
+private fun monthCellRole(background: WidgetBackground): WidgetColorRole = when (background) {
+    WidgetBackground.SOLID -> WidgetColorRole.SURFACE_VARIANT
+    WidgetBackground.TINTED, WidgetBackground.TRANSPARENT -> WidgetColorRole.WIDGET_BACKGROUND
+}
+
+@Composable
+private fun monthCellRole(): WidgetColorRole = monthCellRole(LocalWidgetBackground.current)
 
 /** Narrow weekday initials starting at [weekStart], in the device locale.
  * Computed outside the composable so the locale read stays observable-safe. */
