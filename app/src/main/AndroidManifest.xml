@@ -429,6 +429,18 @@
             android:name=".widget.countdown.CountdownTickReceiver"
             android:exported="false" />
 
+        <receiver
+            android:name=".widget.split.MonthDayWidgetReceiver"
+            android:label="@string/widget_month_day_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_info_month_day" />
+        </receiver>
+
         <!-- Keeps both widgets fresh: the calendar provider broadcasts
              PROVIDER_CHANGED on any data change (external sync; the app's own
              writes redraw directly). The day boundary arrives as the app's own

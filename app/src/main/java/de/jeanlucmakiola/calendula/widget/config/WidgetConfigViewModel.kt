@@ -28,6 +28,8 @@ import de.jeanlucmakiola.calendula.widget.countdown.CountdownOptions
 import de.jeanlucmakiola.calendula.widget.countdown.countdownOptions
 import de.jeanlucmakiola.calendula.widget.countdown.loadCountdown
 import de.jeanlucmakiola.calendula.widget.countdown.putCountdownOptions
+import de.jeanlucmakiola.calendula.widget.split.MonthDayData
+import de.jeanlucmakiola.calendula.widget.split.loadMonthDay
 import kotlin.time.Clock
 import kotlin.time.Duration.Companion.days
 import de.jeanlucmakiola.calendula.widget.WidgetOption
@@ -75,6 +77,7 @@ sealed interface WidgetPreviewData {
     data class Today(val today: LocalDate) : WidgetPreviewData
     data class Days(val data: DaysWidgetData) : WidgetPreviewData
     data class Countdown(val data: CountdownData) : WidgetPreviewData
+    data class MonthDay(val data: MonthDayData, val index: Int) : WidgetPreviewData
 }
 
 /** The options being edited, applied to the preview as they change and written on save. */
@@ -293,6 +296,11 @@ class WidgetConfigViewModel @Inject constructor(
             WidgetKind.QUICK_ADD, WidgetKind.DATE -> WidgetPreviewData.Today(today(systemZone()))
             WidgetKind.UPCOMING -> WidgetPreviewData.Days(context.loadUpcoming(draft.loadContext(settings)).content)
             WidgetKind.TODAY -> WidgetPreviewData.Days(context.loadTodayList(draft.loadContext(settings)).content)
+            WidgetKind.MONTH_DAY -> {
+                val index = monthIndexOf(today(systemZone()))
+                val source = context.loadThemedMonthSource(monthWindowCenter(index), draft.hiddenCalendars)
+                WidgetPreviewData.MonthDay(context.loadMonthDay(source, draft.content).content, index)
+            }
             WidgetKind.COUNTDOWN ->
                 WidgetPreviewData.Countdown(context.loadCountdown(draft.loadContext(settings), draft.countdown, null).content)
             WidgetKind.WEEK_STRIP -> WidgetPreviewData.Days(context.loadDays(draft.loadContext(settings), ::weekOf).content)

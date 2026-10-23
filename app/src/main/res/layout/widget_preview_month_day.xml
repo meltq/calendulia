@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static mock shown in the widget picker (android:previewLayout). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/preview_widget_bg"
+    android:orientation="vertical"
+    android:padding="10dp"
+    tools:ignore="HardcodedText">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="October"
+        android:textColor="@color/widget_preview_primary"
+        android:textSize="15sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:layout_marginTop="4dp"
+        android:orientation="horizontal">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:gravity="center"
+            android:lineSpacingExtra="2dp"
+            android:text="1  2  3  4  5  6  7\n8  9 10 11 12 13 14\n15 16 17 18 19 20 21\n22 23 24 25 26 27 28"
+            android:textColor="@color/widget_preview_on_surface"
+            android:textSize="10sp" />
+
+        <LinearLayout
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_marginStart="8dp"
+            android:layout_weight="1"
+            android:orientation="vertical">
+
+            <TextView style="@style/WidgetPreviewEventRow" android:layout_marginTop="0dp" android:text="Stand-up\n9:30" />
+            <TextView style="@style/WidgetPreviewEventRow" android:text="Lunch\n12:30" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

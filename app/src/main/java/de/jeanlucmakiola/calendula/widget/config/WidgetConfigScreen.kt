@@ -55,6 +55,7 @@ import de.jeanlucmakiola.calendula.widget.upcoming.UpcomingWidgetContent
 import de.jeanlucmakiola.calendula.widget.today.TodayWidgetContent
 import de.jeanlucmakiola.calendula.widget.countdown.CountdownOptions
 import de.jeanlucmakiola.calendula.widget.countdown.CountdownWidgetContent
+import de.jeanlucmakiola.calendula.widget.split.MonthDayWidgetContent
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.floret.components.GroupedChoiceRow
 import de.jeanlucmakiola.floret.components.GroupedHint
@@ -156,6 +157,14 @@ internal fun WidgetConfigScreen(
                                     AgendaWidgetContent(preview.data, state.appearance, state.appTheme, preview = true)
                                 is WidgetPreviewData.Month ->
                                     MonthWidgetContent(preview.source, preview.index, state.appearance, state.appTheme)
+                                is WidgetPreviewData.MonthDay -> MonthDayWidgetContent(
+                                    preview.data,
+                                    preview.index,
+                                    selected = null,
+                                    appearance = state.appearance,
+                                    appTheme = state.appTheme,
+                                    preview = true,
+                                )
                                 is WidgetPreviewData.Countdown ->
                                     CountdownWidgetContent(preview.data, state.appearance, state.appTheme)
                                 is WidgetPreviewData.Days -> when (state.kind) {

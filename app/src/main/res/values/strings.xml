@@ -492,6 +492,8 @@
     <string name="widget_config_countdown_load_failed">Couldn\'t load your events.</string>
     <!-- A repeating event in the countdown's event list: "Next: Fri, 24 Oct · repeats" -->
     <string name="widget_config_countdown_repeats">%1$s · repeats</string>
+    <string name="widget_month_day_label">Calendula month and day</string>
+    <string name="widget_day_empty">No events</string>
     <string name="widget_refresh">Refresh</string>
     <string name="widget_new_event">New event</string>
     <string name="widget_needs_permission">Open Calendula to grant calendar access</string>
