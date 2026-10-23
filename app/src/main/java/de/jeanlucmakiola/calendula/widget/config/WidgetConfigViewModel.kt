@@ -50,12 +50,14 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DayOfWeek
+import kotlinx.datetime.LocalDate
 import java.util.Locale
 
 /** What the preview draws, loaded with the draft's options. */
 sealed interface WidgetPreviewData {
     data class Agenda(val data: AgendaWidgetData) : WidgetPreviewData
     data class Month(val source: MonthWidgetSource, val index: Int) : WidgetPreviewData
+    data class Today(val today: LocalDate) : WidgetPreviewData
 }
 
 /** The options being edited, applied to the preview as they change and written on save. */
@@ -226,6 +228,7 @@ class WidgetConfigViewModel @Inject constructor(
                 val source = context.loadThemedMonthSource(monthWindowCenter(index), draft.hiddenCalendars)
                 WidgetPreviewData.Month(source.content, index)
             }
+            WidgetKind.QUICK_ADD -> WidgetPreviewData.Today(today(systemZone()))
         }
     }
 

@@ -256,3 +256,7 @@ private suspend fun Context.queryMonthSource(
         months = months,
     )
 }
+
+/** Today and the app theme, for a widget that draws no events. */
+internal suspend fun Context.loadToday(): Themed<LocalDate> =
+    Themed(today(systemZone()), widgetEntryPoint().settingsPrefs().widgetSettings.first().themeMode)

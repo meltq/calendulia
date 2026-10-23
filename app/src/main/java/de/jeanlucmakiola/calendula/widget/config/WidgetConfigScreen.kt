@@ -48,6 +48,7 @@ import de.jeanlucmakiola.calendula.widget.WidgetTheme
 import de.jeanlucmakiola.calendula.widget.agenda.AgendaWidgetContent
 import de.jeanlucmakiola.calendula.widget.agenda.metricsFor
 import de.jeanlucmakiola.calendula.widget.month.MonthWidgetContent
+import de.jeanlucmakiola.calendula.widget.quickadd.QuickAddWidgetContent
 import de.jeanlucmakiola.floret.components.GroupedChoiceRow
 import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
@@ -146,6 +147,8 @@ internal fun WidgetConfigScreen(
                                     AgendaWidgetContent(preview.data, state.appearance, state.appTheme, preview = true)
                                 is WidgetPreviewData.Month ->
                                     MonthWidgetContent(preview.source, preview.index, state.appearance, state.appTheme)
+                                is WidgetPreviewData.Today ->
+                                    QuickAddWidgetContent(preview.today, state.appearance, state.appTheme)
                             }
                         }
                     }
