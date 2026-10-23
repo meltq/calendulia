@@ -2,14 +2,13 @@ package de.jeanlucmakiola.calendula.widget.month
 
 import android.app.PendingIntent
 import android.content.Context
-import android.content.res.Configuration
-import android.graphics.Paint
-import android.os.Build
+import android.graphics.Typeface
+import android.text.SpannableString
+import android.text.Spanned
+import android.text.style.StrikethroughSpan
+import android.text.style.StyleSpan
 import android.view.View
 import android.widget.RemoteViews
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
-import androidx.glance.unit.ColorProvider
 import de.jeanlucmakiola.calendula.MainActivity
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
@@ -17,44 +16,21 @@ import de.jeanlucmakiola.calendula.domain.isDeclined
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.ui.common.eventInk
+import de.jeanlucmakiola.floret.glance.RemoteColor
 import de.jeanlucmakiola.floret.glance.WidgetThemeMode
+import de.jeanlucmakiola.floret.glance.remoteColor
+import de.jeanlucmakiola.floret.glance.setImageTint
+import de.jeanlucmakiola.floret.glance.setTextColor
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.Month
 
-/** A colour for the light and the dark widget theme; equal when the widget pins one. */
-internal data class DayNight(val day: Int, val night: Int) {
-    fun current(context: Context): Int =
-        if (context.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK == Configuration.UI_MODE_NIGHT_YES) night else day
-}
-
-/** The theme colours the plain-RemoteViews grid draws with, resolved out of Glance's providers. */
+/** The theme colours the plain-RemoteViews grid draws with. */
 internal data class GridColors(
-    val onSurface: DayNight,
-    val onSurfaceVariant: DayNight,
-    val primary: DayNight,
-    val onPrimary: DayNight,
+    val onSurface: RemoteColor,
+    val onSurfaceVariant: RemoteColor,
+    val primary: RemoteColor,
+    val onPrimary: RemoteColor,
 )
-
-internal fun ColorProvider.dayNight(context: Context, mode: WidgetThemeMode): DayNight {
-    fun at(night: Boolean): Int {
-        val config = Configuration(context.resources.configuration).apply {
-            uiMode = (uiMode and Configuration.UI_MODE_NIGHT_MASK.inv()) or
-                if (night) Configuration.UI_MODE_NIGHT_YES else Configuration.UI_MODE_NIGHT_NO
-        }
-        return getColor(context.createConfigurationContext(config)).toArgb()
-    }
-    return when (mode) {
-        WidgetThemeMode.SYSTEM -> DayNight(day = at(false), night = at(true))
-        WidgetThemeMode.LIGHT -> at(false).let { DayNight(it, it) }
-        WidgetThemeMode.DARK -> at(true).let { DayNight(it, it) }
-    }
-}
-
-private fun pinned(day: Color, night: Color, mode: WidgetThemeMode): DayNight = when (mode) {
-    WidgetThemeMode.SYSTEM -> DayNight(day.toArgb(), night.toArgb())
-    WidgetThemeMode.LIGHT -> DayNight(day.toArgb(), day.toArgb())
-    WidgetThemeMode.DARK -> DayNight(night.toArgb(), night.toArgb())
-}
 
 /**
  * The month's week rows as one plain RemoteViews tree, embedded in the Glance
@@ -94,15 +70,15 @@ private fun weekViews(
     layout.week.days.forEachIndexed { col, date ->
         week.setOnClickPendingIntent(STRIP_IDS[col], openDayIntent(context, date))
         val dayId = DAY_IDS[col]
-        week.setTextViewText(dayId, date.day.toString())
         val isToday = date == today
-        week.setColor(context, dayId, "setTextColor", when {
+        week.setTextViewText(dayId, if (isToday) bold(date.day.toString()) else date.day.toString())
+        week.setTextColor(context, dayId, when {
             isToday -> colors.onPrimary
             date.month == currentMonth -> colors.onSurface
             else -> colors.onSurfaceVariant
         })
         week.setViewVisibility(TODAY_IDS[col], if (isToday) View.VISIBLE else View.GONE)
-        if (isToday) week.setColor(context, TODAY_IDS[col], "setColorFilter", colors.primary)
+        if (isToday) week.setImageTint(context, TODAY_IDS[col], colors.primary)
     }
     layout.lanes.forEach { cells ->
         val lane = laneViews(context)
@@ -112,7 +88,7 @@ private fun weekViews(
         }
         week.addView(R.id.week_lanes, lane)
     }
-    if (layout.overflow.isNotEmpty()) {
+    if (layout.showsOverflow && layout.overflow.isNotEmpty()) {
         val lane = laneViews(context)
         layout.overflow.forEach { cell ->
             val count = cell.item
@@ -121,7 +97,7 @@ private fun weekViews(
             } else {
                 val more = RemoteViews(context.packageName, R.layout.widget_month_more)
                 more.setTextViewText(R.id.more, "+$count")
-                more.setColor(context, R.id.more, "setTextColor", colors.onSurfaceVariant)
+                more.setTextColor(context, R.id.more, colors.onSurfaceVariant)
                 lane.addView(R.id.lane, more)
             }
         }
@@ -139,21 +115,18 @@ private fun bar(context: Context, event: EventInstance, cols: Int, soften: Boole
     val views = RemoteViews(context.packageName, BAR_LAYOUTS[cols - 1])
     val dayFill = eventFill(event.color, dark = false, soften)
     val nightFill = eventFill(event.color, dark = true, soften)
-    views.setColor(context, R.id.bar_bg, "setColorFilter", pinned(dayFill, nightFill, mode))
-    views.setTextViewText(R.id.bar_title, event.title.ifBlank { context.getString(R.string.event_untitled) })
-    views.setColor(context, R.id.bar_title, "setTextColor", pinned(eventInk(dayFill), eventInk(nightFill), mode))
-    val strike = if (event.isDeclined) Paint.STRIKE_THRU_TEXT_FLAG else 0
-    views.setInt(R.id.bar_title, "setPaintFlags", strike or Paint.ANTI_ALIAS_FLAG or Paint.SUBPIXEL_TEXT_FLAG)
+    views.setImageTint(context, R.id.bar_bg, mode.remoteColor(dayFill, nightFill))
+    val title = event.title.ifBlank { context.getString(R.string.event_untitled) }
+    // A span, like Glance's own decoration: paint flags would drop the text's defaults.
+    views.setTextViewText(R.id.bar_title, if (event.isDeclined) span(title, StrikethroughSpan()) else title)
+    views.setTextColor(context, R.id.bar_title, mode.remoteColor(eventInk(dayFill), eventInk(nightFill)))
     return views
 }
 
-private fun RemoteViews.setColor(context: Context, id: Int, method: String, color: DayNight) {
-    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S && color.day != color.night) {
-        setColorInt(id, method, color.day, color.night)
-    } else {
-        setInt(id, method, color.current(context))
-    }
-}
+private fun bold(text: String): CharSequence = span(text, StyleSpan(Typeface.BOLD))
+
+private fun span(text: String, span: Any): CharSequence =
+    SpannableString(text).apply { setSpan(span, 0, length, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE) }
 
 private fun openDayIntent(context: Context, date: LocalDate): PendingIntent = PendingIntent.getActivity(
     context,

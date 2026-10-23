@@ -1,7 +1,5 @@
 package de.jeanlucmakiola.calendula.widget.month
 
-import de.jeanlucmakiola.calendula.domain.isDeclined
-import de.jeanlucmakiola.calendula.widget.glanceDeclinedDecoration
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -21,25 +19,21 @@ import androidx.glance.LocalContext
 import androidx.glance.LocalSize
 import androidx.glance.action.ActionParameters
 import androidx.glance.action.actionParametersOf
-import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.AndroidRemoteViews
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
-import androidx.glance.appwidget.cornerRadius
 import androidx.glance.appwidget.provideContent
 import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.appwidget.state.updateAppWidgetState
-import androidx.glance.background
 import androidx.glance.currentState
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
 import androidx.glance.layout.Row
 import androidx.glance.layout.Spacer
-import androidx.glance.layout.fillMaxHeight
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
@@ -48,29 +42,24 @@ import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import de.jeanlucmakiola.floret.glance.LocalWidgetThemeMode
+import de.jeanlucmakiola.floret.glance.WidgetColorRole
+import de.jeanlucmakiola.floret.glance.remoteColor
 import de.jeanlucmakiola.floret.glance.WidgetActionStyle
 import de.jeanlucmakiola.floret.glance.WidgetHeader
 import de.jeanlucmakiola.floret.glance.WidgetHeaderAction
 import de.jeanlucmakiola.floret.glance.WidgetHeaderActionGap
 import de.jeanlucmakiola.floret.glance.WidgetHeaderTextAction
-import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
-import androidx.glance.unit.ColorProvider
 import de.jeanlucmakiola.calendula.MainActivity
 import de.jeanlucmakiola.calendula.R
-import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.formatCalendarTitle
-import de.jeanlucmakiola.calendula.ui.month.MonthWeek
 import de.jeanlucmakiola.calendula.ui.month.layoutMonthWeeks
-import de.jeanlucmakiola.calendula.ui.common.eventFill
-import de.jeanlucmakiola.calendula.ui.common.eventInk
 import de.jeanlucmakiola.calendula.widget.CalendulaWidgetRoot
 import de.jeanlucmakiola.calendula.widget.WidgetAppearance
 import de.jeanlucmakiola.calendula.widget.widgetAppearance
-import de.jeanlucmakiola.floret.glance.themedColor
 import de.jeanlucmakiola.floret.glance.wallpaperBacking
 import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.widget.MonthWidgetSource
@@ -97,8 +86,13 @@ private val MONTH_INDEX_KEY = intPreferencesKey("month_index")
 
 private val GRID_HPADDING = 8.dp
 
-/** Height around the week rows: body padding, header, its spacer and the weekday row. */
-private val GRID_CHROME_HEIGHT = 62.dp
+/**
+ * Height around the week rows: body padding, the header's bottom padding and
+ * spacer, then the header (its 28dp pills, or a title line in its transparent
+ * pill when that's taller) and the weekday row, the text lines at [fontScale].
+ */
+private fun gridChromeHeight(fontScale: Float): Dp =
+    18.dp + maxOf(28.dp, 19.dp * fontScale + 8.dp) + 15.dp * fontScale
 
 private fun currentMonthIndex(zone: TimeZone): Int = monthIndexOf(today(zone))
 
@@ -244,15 +238,16 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
                 // Column width from the live widget size, minus our H padding.
                 val colW = (LocalSize.current.width - GRID_HPADDING * 2) / 7
                 val weeks = layoutMonthWeeks(ym, source.weekStart, source.instances, zone)
-                val weekHeight = (LocalSize.current.height - GRID_CHROME_HEIGHT) / weeks.size
-                val layouts = fitWeeks(weeks, lanesFitting(weekHeight))
                 val context = LocalContext.current
+                val fontScale = context.resources.configuration.fontScale
+                val weekHeight = (LocalSize.current.height - gridChromeHeight(fontScale)) / weeks.size
+                val layouts = fitWeeks(weeks, lanesFitting(weekHeight))
                 val mode = LocalWidgetThemeMode.current
                 val colors = GridColors(
-                    onSurface = GlanceTheme.colors.onSurface.dayNight(context, mode),
-                    onSurfaceVariant = GlanceTheme.colors.onSurfaceVariant.dayNight(context, mode),
-                    primary = GlanceTheme.colors.primary.dayNight(context, mode),
-                    onPrimary = GlanceTheme.colors.onPrimary.dayNight(context, mode),
+                    onSurface = remoteColor(WidgetColorRole.ON_SURFACE),
+                    onSurfaceVariant = remoteColor(WidgetColorRole.ON_SURFACE_VARIANT),
+                    primary = remoteColor(WidgetColorRole.PRIMARY),
+                    onPrimary = remoteColor(WidgetColorRole.ON_PRIMARY),
                 )
 
                 MonthHeader(label = monthLabel(ym, source.today.year), today = source.today)

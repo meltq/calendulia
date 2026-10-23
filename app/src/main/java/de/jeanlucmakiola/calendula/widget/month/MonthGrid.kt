@@ -36,8 +36,11 @@ internal fun <T : Any> mergeGaps(columns: Int, cellAt: (Int) -> GridCell<T>?): L
     return cells
 }
 
-/** One week of the grid seated with [laneCap] lanes. */
-internal class WeekLayout(val week: MonthWeek, val laneCap: Int) {
+/**
+ * One week of the grid seated with [laneCap] lanes. [showsOverflow] is off when
+ * the week has no room for even the "+N" row.
+ */
+internal class WeekLayout(val week: MonthWeek, val laneCap: Int, val showsOverflow: Boolean = true) {
     private val seating: List<DaySeating> = week.days.indices.map { week.seating(it, laneCap) }
 
     /** Lanes filled from the top; empty lanes below are not drawn. */
@@ -59,18 +62,25 @@ internal class WeekLayout(val week: MonthWeek, val laneCap: Int) {
     }
 }
 
-/** Event lanes a week row [weekHeight] tall holds under its day number. */
+/**
+ * Event lanes a week row [weekHeight] tall holds under its day number, held to
+ * [MAX_LANES] so a tall widget's payload stays bounded (#214).
+ */
 internal fun lanesFitting(weekHeight: Dp): Int =
-    ((weekHeight.value - DAY_ROW_DP - LANES_TOP_DP) / LANE_ROW_DP).toInt().coerceAtLeast(0)
+    ((weekHeight.value - DAY_ROW_DP - LANES_TOP_DP) / LANE_ROW_DP).toInt().coerceIn(0, MAX_LANES)
 
 /**
  * Seats each week in [lanes] lanes. A week whose events need more gives its
  * last lane to the "+N" row instead.
  */
 internal fun fitWeeks(weeks: List<MonthWeek>, lanes: Int): List<WeekLayout> = weeks.map { week ->
+    if (lanes == 0) return@map WeekLayout(week, laneCap = 0, showsOverflow = false)
     val needed = WeekLayout(week, UNCAPPED_LANES).usedLanes
-    WeekLayout(week, if (needed <= lanes) lanes else (lanes - 1).coerceAtLeast(0))
+    WeekLayout(week, if (needed <= lanes) lanes else lanes - 1)
 }
+
+/** Lanes a week shows at most, however tall the widget. */
+internal const val MAX_LANES = 8
 
 private const val DAY_ROW_DP = 18f
 private const val LANES_TOP_DP = 2f

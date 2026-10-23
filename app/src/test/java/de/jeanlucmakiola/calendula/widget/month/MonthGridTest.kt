@@ -62,6 +62,18 @@ class MonthGridTest {
     }
 
     @Test
+    fun `lanes stop at the cap however tall the week`() {
+        assertThat(lanesFitting(1000.dp)).isEqualTo(MAX_LANES)
+    }
+
+    @Test
+    fun `a week with no room for a lane draws no overflow row either`() {
+        val layouts = fitWeeks(busyWeeks(perDay = 5), lanes = 0)
+        assertThat(layouts.none { it.showsOverflow }).isTrue()
+        assertThat(layouts.all { it.lanes.isEmpty() }).isTrue()
+    }
+
+    @Test
     fun `folded events are counted in the overflow`() {
         val layout = WeekLayout(busyWeeks(perDay = 5)[1], laneCap = 1)
         assertThat(layout.usedLanes).isEqualTo(1)

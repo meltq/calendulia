@@ -12,37 +12,44 @@
             android:id="@+id/strip_0"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackground" />
         <FrameLayout
             android:id="@+id/strip_1"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackground" />
         <FrameLayout
             android:id="@+id/strip_2"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackground" />
         <FrameLayout
             android:id="@+id/strip_3"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackground" />
         <FrameLayout
             android:id="@+id/strip_4"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackground" />
         <FrameLayout
             android:id="@+id/strip_5"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackground" />
         <FrameLayout
             android:id="@+id/strip_6"
             android:layout_width="0dp"
             android:layout_height="match_parent"
-            android:layout_weight="1" />
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackground" />
     </LinearLayout>
 
     <LinearLayout

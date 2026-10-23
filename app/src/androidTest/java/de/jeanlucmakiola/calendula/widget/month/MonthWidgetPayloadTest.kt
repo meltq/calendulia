@@ -25,6 +25,7 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import de.jeanlucmakiola.calendula.R
 import java.time.LocalDate
 import java.time.ZoneId
 
@@ -97,7 +98,7 @@ class MonthWidgetPayloadTest {
 
     @Test
     fun aPackedMonthRendersWithinItsPayload() = runBlocking {
-        for (size in listOf(DpSize(250.dp, 250.dp), DpSize(320.dp, 360.dp), DpSize(420.dp, 520.dp))) {
+        for (size in listOf(DpSize(250.dp, 250.dp), DpSize(320.dp, 360.dp), DpSize(420.dp, 520.dp), DpSize(600.dp, 1000.dp))) {
             val views = MonthWidget().compose(context, size = size)
             val bytes = Parcel.obtain().let { parcel ->
                 try {
@@ -107,18 +108,21 @@ class MonthWidgetPayloadTest {
                     parcel.recycle()
                 }
             }
-            var texts = 0
+            var dayNumbers = 0
+            var bars = 0
             instrumentation.runOnMainSync {
                 val root = views.apply(context, FrameLayout(context))
                 fun walk(view: View) {
-                    if (view is TextView) texts += 1
+                    if (view.id in DAY_IDS && view is TextView && view.text.isNotEmpty()) dayNumbers += 1
+                    if (view.id == R.id.bar_title) bars += 1
                     if (view is ViewGroup) for (i in 0 until view.childCount) walk(view.getChildAt(i))
                 }
                 walk(root)
             }
-            Log.i(TAG, "size=$size bytes=$bytes texts=$texts")
-            // The grid itself rendered, not Glance's error layout: every day number is there.
-            assertThat(texts).isAtLeast(42)
+            Log.i(TAG, "size=$size bytes=$bytes days=$dayNumbers bars=$bars")
+            // The grid itself rendered, not Glance's error layout: a number in every day of every week.
+            assertThat(dayNumbers % 7).isEqualTo(0)
+            assertThat(dayNumbers).isAtLeast(28)
             assertThat(bytes).isAtMost(MAX_BYTES_PER_SIZE)
         }
     }
@@ -127,6 +131,8 @@ class MonthWidgetPayloadTest {
         const val TAG = "MonthWidgetPayload"
         const val ACCOUNT = "calendula-widget-payload-test"
         const val EVENTS_PER_DAY = 6
+
+        val DAY_IDS = setOf(R.id.day_0, R.id.day_1, R.id.day_2, R.id.day_3, R.id.day_4, R.id.day_5, R.id.day_6)
 
         /** A quarter of the host's buffer, leaving room for a second size and every other widget. */
         const val MAX_BYTES_PER_SIZE = 256 * 1024
