@@ -32,11 +32,14 @@ internal class ViewIds(sdkInt: Int = Build.VERSION.SDK_INT) {
 
     /**
      * `MonthWidgetBody`'s views outside the week rows: the surface Box, its
-     * Column, the header row with three sized clickable icon boxes, their sized
-     * icons and the clickable title, the spacer, the grid's Column and the
-     * weekday row of sized labels.
+     * Column, the header row with its clickable title Box, title Text and (on a
+     * transparent widget) the spacer after the title pill, two
+     * sized clickable icon pills with their sized icons, the sized clickable
+     * today pill with its Text and the two sized action gaps, the spacer, the
+     * grid's Column and the weekday row of sized labels.
      */
-    val fixed = plain + plain + plain + 3 * (clickableSized + sized) + clickablePlain + sized + plain + plain + 7 * sized
+    val fixed = plain + plain + plain + clickablePlain + plain + plain + 2 * (clickableSized + sized) +
+        (clickableSized + plain) + 2 * sized + sized + plain + plain + 7 * sized
 }
 
 /** A cell [cols] columns wide holding [item], or a merged gap where [item] is null. */

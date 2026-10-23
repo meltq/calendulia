@@ -13,11 +13,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.intPreferencesKey
-import androidx.glance.ColorFilter
 import androidx.glance.GlanceId
 import androidx.glance.GlanceModifier
 import androidx.glance.GlanceTheme
-import androidx.glance.Image
 import androidx.glance.ImageProvider
 import androidx.glance.LocalContext
 import androidx.glance.LocalSize
@@ -48,6 +46,11 @@ import androidx.glance.layout.padding
 import androidx.glance.layout.size
 import androidx.glance.layout.width
 import androidx.glance.state.PreferencesGlanceStateDefinition
+import de.jeanlucmakiola.floret.glance.WidgetActionStyle
+import de.jeanlucmakiola.floret.glance.WidgetHeader
+import de.jeanlucmakiola.floret.glance.WidgetHeaderAction
+import de.jeanlucmakiola.floret.glance.WidgetHeaderActionGap
+import de.jeanlucmakiola.floret.glance.WidgetHeaderTextAction
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
@@ -229,7 +232,7 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
     ) {
         when (source) {
             MonthWidgetSource.NeedsPermission -> {
-                MonthHeader(label = "Calendula")
+                MonthHeader(label = "Calendula", today = today(systemZone()))
                 PermissionMessage()
             }
             is MonthWidgetSource.Ready -> {
@@ -239,8 +242,8 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
                 val colW = (LocalSize.current.width - GRID_HPADDING * 2) / 7
                 val weeks = layoutMonthWeeks(ym, source.weekStart, source.instances, zone)
 
-                MonthHeader(label = monthLabel(ym, source.today.year))
-                Spacer(GlanceModifier.height(2.dp))
+                MonthHeader(label = monthLabel(ym, source.today.year), today = source.today)
+                Spacer(GlanceModifier.height(4.dp))
                 // One backing for the whole grid on a transparent widget (#292).
                 Column(modifier = GlanceModifier.fillMaxWidth().defaultWeight().wallpaperBacking()) {
                     WeekdayHeader(weekStart = source.weekStart, colW = colW)
@@ -261,68 +264,35 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
 }
 
 @Composable
-private fun MonthHeader(label: String) {
+private fun MonthHeader(label: String, today: LocalDate) {
     val context = LocalContext.current
-    Row(
-        modifier = GlanceModifier.fillMaxWidth().wallpaperBacking(),
-        verticalAlignment = Alignment.CenterVertically,
+    // Tap the month/year title to open the app on the month view (issue #18),
+    // rooted over the default home so backing out returns there.
+    WidgetHeader(
+        title = label,
+        titleAction = actionStartActivity(MainActivity.openViewIntent(context, CalendarView.Month)),
+        modifier = GlanceModifier.padding(start = 4.dp, bottom = 2.dp),
     ) {
-        HeaderIcon(
-            resId = R.drawable.ic_widget_chevron_left,
+        WidgetHeaderAction(
+            icon = ImageProvider(R.drawable.ic_widget_chevron_left),
             contentDescription = context.getString(R.string.widget_prev_month),
-            onClick = GlanceModifier.clickable(
-                actionRunCallback<ShiftMonthAction>(
-                    actionParametersOf(ShiftMonthAction.deltaKey to -1),
-                ),
-            ),
+            action = actionRunCallback<ShiftMonthAction>(actionParametersOf(ShiftMonthAction.deltaKey to -1)),
+            style = WidgetActionStyle.TONAL,
         )
-        // Tap the month/year title to open the app on the month view (issue #18),
-        // rooted over the default home so backing out returns there.
-        Text(
-            text = label,
-            style = TextStyle(
-                color = GlanceTheme.colors.primary,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                textAlign = TextAlign.Center,
-            ),
-            modifier = GlanceModifier
-                .defaultWeight()
-                .clickable(
-                    actionStartActivity(
-                        MainActivity.openViewIntent(context, CalendarView.Month),
-                    ),
-                ),
-        )
-        // The "today" button snaps the grid back to the current month in place.
-        HeaderIcon(
-            resId = R.drawable.ic_widget_today,
+        WidgetHeaderActionGap()
+        // The "today" pill carries today's number like the app icon, and snaps
+        // the grid back to the current month in place.
+        WidgetHeaderTextAction(
+            text = today.day.toString(),
             contentDescription = context.getString(R.string.widget_today),
-            onClick = GlanceModifier.clickable(actionRunCallback<ResetMonthAction>()),
+            action = actionRunCallback<ResetMonthAction>(),
         )
-        HeaderIcon(
-            resId = R.drawable.ic_widget_chevron_right,
+        WidgetHeaderActionGap()
+        WidgetHeaderAction(
+            icon = ImageProvider(R.drawable.ic_widget_chevron_right),
             contentDescription = context.getString(R.string.widget_next_month),
-            onClick = GlanceModifier.clickable(
-                actionRunCallback<ShiftMonthAction>(
-                    actionParametersOf(ShiftMonthAction.deltaKey to 1),
-                ),
-            ),
-        )
-    }
-}
-
-@Composable
-private fun HeaderIcon(resId: Int, contentDescription: String, onClick: GlanceModifier) {
-    Box(
-        modifier = GlanceModifier.size(40.dp).then(onClick),
-        contentAlignment = Alignment.Center,
-    ) {
-        Image(
-            provider = ImageProvider(resId),
-            contentDescription = contentDescription,
-            colorFilter = ColorFilter.tint(GlanceTheme.colors.onSurfaceVariant),
-            modifier = GlanceModifier.size(20.dp),
+            action = actionRunCallback<ShiftMonthAction>(actionParametersOf(ShiftMonthAction.deltaKey to 1)),
+            style = WidgetActionStyle.TONAL,
         )
     }
 }

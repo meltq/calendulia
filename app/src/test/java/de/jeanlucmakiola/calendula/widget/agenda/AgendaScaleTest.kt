@@ -15,25 +15,12 @@ class AgendaScaleTest {
         // SMALL is the default, so if this fails an agenda widget whose owner never
         // touched the size setting no longer looks as it did (#51).
         val m = metricsFor(WidgetSize.SMALL)
-        assertThat(m.title).isEqualTo(16.sp)
-        assertThat(m.dayHeader).isEqualTo(13.sp)
         assertThat(m.eventTitle).isEqualTo(14.sp)
         assertThat(m.eventTime).isEqualTo(12.sp)
         assertThat(m.placeholder).isEqualTo(14.sp)
         assertThat(m.message).isEqualTo(14.sp)
-        assertThat(m.stripeH).isEqualTo(36.dp)
-        assertThat(m.iconImage).isEqualTo(22.dp)
-        assertThat(m.iconBox).isEqualTo(40.dp)
+        assertThat(m.contentH).isEqualTo(36.dp)
         assertThat(m.rowVPad).isEqualTo(4.dp)
-        assertThat(m.dayHeaderTopPad).isEqualTo(10.dp)
-    }
-
-    @Test
-    fun `the derived text indent matches the original hardcoded inset`() {
-        // TEXT_INDENT replaced a hardcoded 19dp; it must still resolve to 19dp or
-        // day headers and the placeholder line stop aligning with event titles.
-        assertThat(TEXT_INDENT).isEqualTo(19.dp)
-        assertThat(TEXT_INDENT).isEqualTo(ROW_H_PAD + STRIPE_WIDTH + STRIPE_GAP)
     }
 
     // --- the ramp ------------------------------------------------------------
@@ -43,17 +30,17 @@ class AgendaScaleTest {
         val steps = WidgetSize.entries.map(::metricsFor)
 
         steps.zipWithNext { small, big ->
-            assertThat(big.title.value).isAtLeast(small.title.value)
-            assertThat(big.dayHeader.value).isAtLeast(small.dayHeader.value)
+            assertThat(big.pillWeekday.value).isAtLeast(small.pillWeekday.value)
+            assertThat(big.pillDay.value).isAtLeast(small.pillDay.value)
             assertThat(big.eventTitle.value).isAtLeast(small.eventTitle.value)
             assertThat(big.eventTime.value).isAtLeast(small.eventTime.value)
             assertThat(big.placeholder.value).isAtLeast(small.placeholder.value)
             assertThat(big.message.value).isAtLeast(small.message.value)
-            assertThat(big.stripeH.value).isAtLeast(small.stripeH.value)
-            assertThat(big.iconImage.value).isAtLeast(small.iconImage.value)
-            assertThat(big.iconBox.value).isAtLeast(small.iconBox.value)
+            assertThat(big.contentH.value).isAtLeast(small.contentH.value)
+            assertThat(big.pillWidth.value).isAtLeast(small.pillWidth.value)
             assertThat(big.rowVPad.value).isAtLeast(small.rowVPad.value)
-            assertThat(big.dayHeaderTopPad.value).isAtLeast(small.dayHeaderTopPad.value)
+            assertThat(big.dayGap.value).isAtLeast(small.dayGap.value)
+            assertThat(big.monthLabel.value).isAtLeast(small.monthLabel.value)
         }
     }
 
@@ -71,20 +58,28 @@ class AgendaScaleTest {
         // Guards against a future edit turning "more readable" into "absurd".
         val base = metricsFor(WidgetSize.SMALL)
         val top = metricsFor(WidgetSize.EXTRA_LARGE)
-        assertThat(top.title.value / base.title.value).isLessThan(1.5f)
+        assertThat(top.pillDay.value / base.pillDay.value).isLessThan(1.5f)
         assertThat(top.eventTitle.value / base.eventTitle.value).isLessThan(1.5f)
     }
 
     // --- font scale ----------------------------------------------------------
 
     @Test
-    fun `the stripe tracks the system font scale`() {
-        // The stripe is Dp, the text beside it is sp: without this the two diverge
-        // at large accessibility font settings and the stripe under-runs the row.
+    fun `the row height tracks the system font scale`() {
+        // The row height is Dp, the text in it is sp: without this the two diverge
+        // at large accessibility font settings and the text outgrows the row.
         val m = metricsFor(WidgetSize.SMALL)
-        assertThat(m.scaledForFont(1f).stripeH).isEqualTo(36.dp)
-        assertThat(m.scaledForFont(1.3f).stripeH.value).isWithin(0.01f).of(46.8f)
-        assertThat(m.scaledForFont(0.85f).stripeH.value).isWithin(0.01f).of(30.6f)
+        assertThat(m.scaledForFont(1f).contentH).isEqualTo(36.dp)
+        assertThat(m.scaledForFont(1.3f).contentH.value).isWithin(0.01f).of(46.8f)
+        assertThat(m.scaledForFont(0.85f).contentH.value).isWithin(0.01f).of(30.6f)
+    }
+
+    @Test
+    fun `the date pill widens with the system font scale`() {
+        // The pill's text is sp; a fixed-width pill clips "Wed" / "23" at large font settings.
+        val m = metricsFor(WidgetSize.SMALL)
+        assertThat(m.scaledForFont(2f).pillWidth).isEqualTo(m.pillWidth * 2)
+        assertThat(m.scaledForFont(2f).rowHeight).isEqualTo(m.contentH * 2 + m.rowVPad * 2)
     }
 
     @Test
@@ -99,7 +94,7 @@ class AgendaScaleTest {
         // double-count it.
         val m = metricsFor(WidgetSize.MEDIUM)
         val scaled = m.scaledForFont(1.3f)
-        assertThat(scaled.title).isEqualTo(m.title)
+        assertThat(scaled.pillDay).isEqualTo(m.pillDay)
         assertThat(scaled.eventTitle).isEqualTo(m.eventTitle)
         assertThat(scaled.rowVPad).isEqualTo(m.rowVPad)
     }
