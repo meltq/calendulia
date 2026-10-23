@@ -53,6 +53,8 @@ import de.jeanlucmakiola.calendula.widget.date.DateWidgetContent
 import de.jeanlucmakiola.calendula.widget.week.WeekStripWidgetContent
 import de.jeanlucmakiola.calendula.widget.upcoming.UpcomingWidgetContent
 import de.jeanlucmakiola.calendula.widget.today.TodayWidgetContent
+import de.jeanlucmakiola.calendula.widget.countdown.CountdownOptions
+import de.jeanlucmakiola.calendula.widget.countdown.CountdownWidgetContent
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.floret.components.GroupedChoiceRow
 import de.jeanlucmakiola.floret.components.GroupedHint
@@ -79,6 +81,8 @@ internal fun WidgetConfigScreen(
     onAppearance: (WidgetAppearance) -> Unit,
     onContent: (AgendaWidgetOptions) -> Unit,
     onCalendarShown: (Long, Boolean) -> Unit,
+    onCountdown: (CountdownOptions) -> Unit,
+    onLoadCountdownCandidates: () -> Unit,
 ) {
     val ready = state as? WidgetConfigUiState.Ready
     val surface = MaterialTheme.colorScheme.surface
@@ -152,6 +156,8 @@ internal fun WidgetConfigScreen(
                                     AgendaWidgetContent(preview.data, state.appearance, state.appTheme, preview = true)
                                 is WidgetPreviewData.Month ->
                                     MonthWidgetContent(preview.source, preview.index, state.appearance, state.appTheme)
+                                is WidgetPreviewData.Countdown ->
+                                    CountdownWidgetContent(preview.data, state.appearance, state.appTheme)
                                 is WidgetPreviewData.Days -> when (state.kind) {
                                     WidgetKind.TODAY ->
                                         TodayWidgetContent(preview.data, state.appearance, state.appTheme, preview = true)
@@ -172,6 +178,8 @@ internal fun WidgetConfigScreen(
                     onAppearance = onAppearance,
                     onContent = onContent,
                     onCalendarShown = onCalendarShown,
+                    onCountdown = onCountdown,
+                    onLoadCountdownCandidates = onLoadCountdownCandidates,
                     modifier = Modifier
                         .weight(1f)
                         .background(surface),
@@ -200,6 +208,8 @@ private fun ConfigOptions(
     onAppearance: (WidgetAppearance) -> Unit,
     onContent: (AgendaWidgetOptions) -> Unit,
     onCalendarShown: (Long, Boolean) -> Unit,
+    onCountdown: (CountdownOptions) -> Unit,
+    onLoadCountdownCandidates: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -225,6 +235,14 @@ private fun ConfigOptions(
             onSelect = { onAppearance(state.appearance.copy(theme = it)) },
             position = Position.Bottom,
         )
+        if (state.kind == WidgetKind.COUNTDOWN) {
+            CountdownOptionsSection(
+                options = state.draft.countdown,
+                candidates = state.candidates,
+                onChange = onCountdown,
+                onLoadCandidates = onLoadCountdownCandidates,
+            )
+        }
         if (state.kind.options.isNotEmpty()) {
             ContentOptions(state = state, onChange = onContent, onCalendarShown = onCalendarShown)
         }

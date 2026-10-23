@@ -194,6 +194,11 @@ class CalendarRepositoryImpl @Inject constructor(
         cachedCalendars
     }
 
+    override suspend fun eventOccurrences(eventId: Long, range: ClosedRange<Instant>): List<EventInstance> =
+        withContext(io) {
+            dataSource.eventInstances(eventId, range.start.toEpochMillis(), range.endInclusive.toEpochMillis())
+        }
+
     override suspend fun eventDetail(eventId: Long): EventDetail = withContext(io) {
         dataSource.eventDetail(eventId, allDayReminderTimeMinutes())
             ?: throw NoSuchEventException(eventId)

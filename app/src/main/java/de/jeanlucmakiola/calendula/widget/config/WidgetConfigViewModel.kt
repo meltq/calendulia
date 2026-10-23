@@ -22,6 +22,14 @@ import de.jeanlucmakiola.calendula.widget.loadDays
 import de.jeanlucmakiola.calendula.widget.weekOf
 import de.jeanlucmakiola.calendula.widget.upcoming.loadUpcoming
 import de.jeanlucmakiola.calendula.widget.today.loadTodayList
+import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.widget.countdown.CountdownData
+import de.jeanlucmakiola.calendula.widget.countdown.CountdownOptions
+import de.jeanlucmakiola.calendula.widget.countdown.countdownOptions
+import de.jeanlucmakiola.calendula.widget.countdown.loadCountdown
+import de.jeanlucmakiola.calendula.widget.countdown.putCountdownOptions
+import kotlin.time.Clock
+import kotlin.time.Duration.Companion.days
 import de.jeanlucmakiola.calendula.widget.WidgetOption
 import de.jeanlucmakiola.calendula.widget.hiddenCalendars
 import de.jeanlucmakiola.calendula.widget.putHiddenCalendars
@@ -66,6 +74,7 @@ sealed interface WidgetPreviewData {
     data class Month(val source: MonthWidgetSource, val index: Int) : WidgetPreviewData
     data class Today(val today: LocalDate) : WidgetPreviewData
     data class Days(val data: DaysWidgetData) : WidgetPreviewData
+    data class Countdown(val data: CountdownData) : WidgetPreviewData
 }
 
 /** The options being edited, applied to the preview as they change and written on save. */
@@ -74,7 +83,19 @@ data class WidgetDraft(
     /** The content options; stored only for a kind that [WidgetKind.hasContentOptions]. */
     val content: AgendaWidgetOptions,
     val hiddenCalendars: Set<Long>,
+    val countdown: CountdownOptions = CountdownOptions(),
 )
+
+/** One event or series the countdown can be pinned to, at its next occurrence. */
+data class CountdownCandidate(val event: EventInstance, val repeats: Boolean)
+
+/** The countdown's event list, loaded when its picker first opens. */
+sealed interface CountdownCandidates {
+    data object Idle : CountdownCandidates
+    data object Loading : CountdownCandidates
+    data object Failed : CountdownCandidates
+    data class Ready(val events: List<CountdownCandidate>) : CountdownCandidates
+}
 
 private fun WidgetDraft.loadContext(settings: WidgetSettings) = WidgetLoadContext(settings, content, hiddenCalendars)
 
@@ -98,6 +119,7 @@ sealed interface WidgetConfigUiState {
         val placedSize: DpSize,
         /** Null until the first preview load lands. */
         val preview: WidgetPreviewData?,
+        val candidates: CountdownCandidates = CountdownCandidates.Idle,
         /** The first preview load failed, so there's nothing to show. */
         val previewFailed: Boolean = false,
         val saving: Boolean = false,
@@ -158,6 +180,7 @@ class WidgetConfigViewModel @Inject constructor(
                     appearance = stored.widgetAppearance,
                     content = stored.agendaWidgetOptions(settings.agendaDefaults),
                     hiddenCalendars = stored.hiddenCalendars,
+                    countdown = stored.countdownOptions,
                 ),
                 calendars = if (WidgetOption.CALENDARS in kind.options) shownCalendars() else emptyList(),
                 appTheme = settings.themeMode,
@@ -196,6 +219,35 @@ class WidgetConfigViewModel @Inject constructor(
     fun setContent(options: AgendaWidgetOptions) {
         edit { it.copy(draft = it.draft.copy(content = options)) }
         reloadPreview()
+    }
+
+    fun setCountdown(options: CountdownOptions) {
+        edit { it.copy(draft = it.draft.copy(countdown = options)) }
+        reloadPreview()
+    }
+
+    /** Loads the events the countdown can be pinned to, unless they're loaded or loading. */
+    fun loadCountdownCandidates() {
+        val ready = _state.value as? WidgetConfigUiState.Ready ?: return
+        if (ready.candidates is CountdownCandidates.Loading || ready.candidates is CountdownCandidates.Ready) return
+        edit { it.copy(candidates = CountdownCandidates.Loading) }
+        viewModelScope.launch {
+            val candidates = try {
+                val now = Clock.System.now()
+                val occurrences = repository.instances(now..now + 365.days).first().filter { it.end > now }
+                val perEvent = occurrences.groupBy { it.eventId }
+                CountdownCandidates.Ready(
+                    perEvent.values
+                        .map { CountdownCandidate(it.minBy { o -> o.start }, repeats = it.size > 1) }
+                        .sortedBy { it.event.start },
+                )
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                CountdownCandidates.Failed
+            }
+            edit { it.copy(candidates = candidates) }
+        }
     }
 
     fun setCalendarShown(id: Long, shown: Boolean) {
@@ -241,6 +293,8 @@ class WidgetConfigViewModel @Inject constructor(
             WidgetKind.QUICK_ADD, WidgetKind.DATE -> WidgetPreviewData.Today(today(systemZone()))
             WidgetKind.UPCOMING -> WidgetPreviewData.Days(context.loadUpcoming(draft.loadContext(settings)).content)
             WidgetKind.TODAY -> WidgetPreviewData.Days(context.loadTodayList(draft.loadContext(settings)).content)
+            WidgetKind.COUNTDOWN ->
+                WidgetPreviewData.Countdown(context.loadCountdown(draft.loadContext(settings), draft.countdown, null).content)
             WidgetKind.WEEK_STRIP -> WidgetPreviewData.Days(context.loadDays(draft.loadContext(settings), ::weekOf).content)
         }
     }
@@ -257,6 +311,7 @@ class WidgetConfigViewModel @Inject constructor(
                     state.putAppearance(ready.draft.appearance)
                     if (ready.kind.hasContentOptions) state.putAgendaOptions(ready.draft.content)
                     if (WidgetOption.CALENDARS in ready.kind.options) state.putHiddenCalendars(ready.draft.hiddenCalendars)
+                    if (ready.kind == WidgetKind.COUNTDOWN) state.putCountdownOptions(ready.draft.countdown)
                 }
                 _events.send(WidgetConfigEvent.SAVED)
             } catch (e: CancellationException) {

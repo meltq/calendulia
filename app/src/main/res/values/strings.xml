@@ -447,6 +447,51 @@
     <string name="widget_upcoming_empty">No upcoming events</string>
     <string name="widget_today_label">Calendula today</string>
     <string name="widget_nothing_left_today">Nothing left today</string>
+    <string name="widget_countdown_label">Calendula countdown</string>
+    <string name="widget_countdown_now">Now</string>
+    <string name="widget_countdown_ending_now">Ending now</string>
+    <string name="widget_countdown_tomorrow">Tomorrow</string>
+    <string name="widget_countdown_ends_tomorrow">Ends tomorrow</string>
+    <!-- A running all-day event's last day: "Until Fri" -->
+    <string name="widget_countdown_until">Until %1$s</string>
+    <plurals name="widget_countdown_in_minutes">
+        <item quantity="one">in %d min</item>
+        <item quantity="other">in %d min</item>
+    </plurals>
+    <plurals name="widget_countdown_in_hours">
+        <item quantity="one">in %d h</item>
+        <item quantity="other">in %d h</item>
+    </plurals>
+    <plurals name="widget_countdown_in_days">
+        <item quantity="one">in %d day</item>
+        <item quantity="other">in %d days</item>
+    </plurals>
+    <plurals name="widget_countdown_ends_minutes">
+        <item quantity="one">ends in %d min</item>
+        <item quantity="other">ends in %d min</item>
+    </plurals>
+    <plurals name="widget_countdown_ends_hours">
+        <item quantity="one">ends in %d h</item>
+        <item quantity="other">ends in %d h</item>
+    </plurals>
+    <plurals name="widget_countdown_ends_days">
+        <item quantity="one">ends in %d day</item>
+        <item quantity="other">ends in %d days</item>
+    </plurals>
+    <string name="widget_countdown_choose">Tap to choose an event to count down to</string>
+    <!-- A pinned countdown whose event has no occurrence left: "Vacation is over" -->
+    <string name="widget_countdown_over">%1$s is over</string>
+    <string name="widget_config_countdown">Count down to</string>
+    <string name="widget_config_countdown_next">Next event</string>
+    <string name="widget_config_countdown_pinned">Chosen event</string>
+    <string name="widget_config_countdown_next_hint">The next timed event in this widget\'s calendars, or the one running now. All-day and declined events are skipped.</string>
+    <string name="widget_config_countdown_event">Event</string>
+    <string name="widget_config_countdown_event_none">None chosen yet</string>
+    <string name="widget_config_countdown_search">Search events</string>
+    <string name="widget_config_countdown_empty">No events in the coming year match.</string>
+    <string name="widget_config_countdown_load_failed">Couldn\'t load your events.</string>
+    <!-- A repeating event in the countdown's event list: "Next: Fri, 24 Oct · repeats" -->
+    <string name="widget_config_countdown_repeats">%1$s · repeats</string>
     <string name="widget_refresh">Refresh</string>
     <string name="widget_new_event">New event</string>
     <string name="widget_needs_permission">Open Calendula to grant calendar access</string>

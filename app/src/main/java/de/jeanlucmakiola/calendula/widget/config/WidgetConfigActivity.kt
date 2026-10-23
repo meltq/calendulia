@@ -115,6 +115,8 @@ class WidgetConfigActivity : ComponentActivity() {
                     onAppearance = viewModel::setAppearance,
                     onContent = viewModel::setContent,
                     onCalendarShown = viewModel::setCalendarShown,
+                    onCountdown = viewModel::setCountdown,
+                    onLoadCountdownCandidates = viewModel::loadCountdownCandidates,
                 )
             }
         }
