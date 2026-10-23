@@ -155,7 +155,7 @@ fun SettingsScreen(
             enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
             exit = overlayExit,
         ) {
-            WidgetsScreen(state = state, viewModel = viewModel, onBack = { section = null }, visible = section == SettingsSection.Widgets)
+            WidgetsScreen(onBack = { section = null }, visible = section == SettingsSection.Widgets)
         }
         AnimatedVisibility(
             visible = section == SettingsSection.Licences,

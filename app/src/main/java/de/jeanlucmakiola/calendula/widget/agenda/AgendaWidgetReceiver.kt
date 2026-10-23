@@ -7,6 +7,7 @@ import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
 import de.jeanlucmakiola.calendula.widget.syncWidgetRollover
 import de.jeanlucmakiola.floret.glance.reloadOnUpdate
+import de.jeanlucmakiola.floret.glance.restoreState
 
 /**
  * Host-facing receiver for the agenda widget. Declared in the manifest with the
@@ -29,6 +30,11 @@ class AgendaWidgetReceiver : GlanceAppWidgetReceiver() {
     override fun onDisabled(context: Context) {
         super.onDisabled(context)
         syncWidgetRollover(context)
+    }
+
+    /** A backup restore or device transfer renumbered the widgets: keep each one's settings (#292). */
+    override fun onRestored(context: Context, oldWidgetIds: IntArray, newWidgetIds: IntArray) {
+        restoreState(context, oldWidgetIds, newWidgetIds)
     }
 
     /**

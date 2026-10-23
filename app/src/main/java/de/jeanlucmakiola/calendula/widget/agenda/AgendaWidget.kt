@@ -16,7 +16,6 @@ import androidx.glance.action.ActionParameters
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
-import androidx.glance.color.ColorProvider
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
@@ -55,9 +54,21 @@ import de.jeanlucmakiola.floret.locale.localizedDateFormatter
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
 import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetData
-import de.jeanlucmakiola.calendula.widget.CalendulaGlanceTheme
 import de.jeanlucmakiola.calendula.widget.WidgetSize
-import de.jeanlucmakiola.calendula.widget.loadAgendaWidgetData
+import de.jeanlucmakiola.calendula.widget.CalendulaWidgetRoot
+import de.jeanlucmakiola.calendula.widget.WidgetAppearance
+import de.jeanlucmakiola.calendula.widget.loadAgendaWidget
+import de.jeanlucmakiola.calendula.widget.widgetAppearance
+import de.jeanlucmakiola.floret.components.Position
+import de.jeanlucmakiola.floret.components.positionOf
+import de.jeanlucmakiola.floret.glance.LocalWidgetBackground
+import de.jeanlucmakiola.floret.glance.WidgetBackground
+import de.jeanlucmakiola.floret.glance.WidgetGroupedRow
+import de.jeanlucmakiola.floret.glance.themedColor
+import de.jeanlucmakiola.floret.glance.wallpaperBacking
+import de.jeanlucmakiola.floret.prefs.ThemeMode
+import androidx.datastore.preferences.core.Preferences
+import androidx.glance.currentState
 import de.jeanlucmakiola.floret.glance.WidgetData
 import de.jeanlucmakiola.floret.glance.currentRefreshStamp
 import de.jeanlucmakiola.floret.glance.refreshStamp
@@ -89,17 +100,39 @@ class AgendaWidget : GlanceAppWidget() {
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val stamp = refreshStamp(context, id)
-        val widgetData = WidgetData(context.loadAgendaWidgetData(), stamp)
+        val widgetData = WidgetData(context.loadAgendaWidget(id), stamp)
         provideContent {
             // A running session never re-runs this preamble, so every redraw
             // moves the stamp and the data reloads here instead (#420).
-            val data = widgetData.current(currentRefreshStamp()) { context.loadAgendaWidgetData() }
-            CalendulaGlanceTheme {
-                AgendaWidgetBody(data = data)
-            }
+            val loaded = widgetData.current(currentRefreshStamp()) { context.loadAgendaWidget(id) }
+            AgendaWidgetContent(
+                data = loaded.content,
+                appearance = currentState<Preferences>().widgetAppearance,
+                appTheme = loaded.appTheme,
+            )
         }
     }
 }
+
+/**
+ * The whole agenda widget, shared with its config screen's preview (#292). The
+ * [preview] draws its rows as a plain column, which RemoteViews can show
+ * outside a widget host on every Android version.
+ */
+@Composable
+internal fun AgendaWidgetContent(
+    data: AgendaWidgetData,
+    appearance: WidgetAppearance,
+    appTheme: ThemeMode,
+    preview: Boolean = false,
+) {
+    CalendulaWidgetRoot(appearance, appTheme) {
+        AgendaWidgetBody(data = data, preview = preview)
+    }
+}
+
+/** Rows a preview draws: more than any widget shows at once. */
+private const val PREVIEW_ROWS = 16
 
 /** Reloads and redraws the tapped widget (header refresh button). */
 class RefreshAgendaAction : ActionCallback {
@@ -119,30 +152,31 @@ private const val MAX_AGENDA_ROWS = 100
 
 /** Flat row model so the [LazyColumn] can mix day headers and events. */
 private sealed interface AgendaRow {
-    data class Header(val date: LocalDate, val today: LocalDate) : AgendaRow
-    data class Event(val date: LocalDate, val event: EventInstance) : AgendaRow
+    val date: LocalDate
+
+    data class Header(override val date: LocalDate, val today: LocalDate) : AgendaRow
+    data class Event(override val date: LocalDate, val event: EventInstance) : AgendaRow
     /** "Nothing left today" line under an anchored, event-less today (#35). */
-    data class Placeholder(val date: LocalDate) : AgendaRow
+    data class Placeholder(override val date: LocalDate) : AgendaRow
 }
 
 @Composable
-private fun AgendaWidgetBody(data: AgendaWidgetData) {
+private fun AgendaWidgetBody(data: AgendaWidgetData, preview: Boolean) {
     // The stripe is re-resolved against the system font scale so it tracks the
     // sp-sized text beside it instead of drifting at large accessibility settings.
-    val size = (data as? AgendaWidgetData.Ready)?.widgetSize ?: WidgetSize.SMALL
+    val size = (data as? AgendaWidgetData.Ready)?.textSize ?: WidgetSize.SMALL
     val fontScale = androidx.glance.LocalContext.current.resources.configuration.fontScale
     val metrics = metricsFor(size).scaledForFont(fontScale)
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(GlanceTheme.colors.surface)
             .padding(horizontal = 8.dp, vertical = 6.dp),
     ) {
         AgendaHeader(metrics)
         Spacer(GlanceModifier.height(4.dp))
         when (data) {
             AgendaWidgetData.NeedsPermission -> WidgetMessage(R.string.widget_needs_permission, metrics)
-            is AgendaWidgetData.Ready -> AgendaRows(data = data, metrics = metrics)
+            is AgendaWidgetData.Ready -> AgendaRows(data = data, metrics = metrics, preview = preview)
         }
     }
 }
@@ -151,6 +185,7 @@ private fun AgendaWidgetBody(data: AgendaWidgetData) {
 private fun AgendaRows(
     data: AgendaWidgetData.Ready,
     metrics: AgendaMetrics,
+    preview: Boolean,
 ) {
     val pastDisplay = data.pastDisplay
     // Drop finished events (and any day they leave empty) when the mode is
@@ -189,23 +224,59 @@ private fun AgendaRows(
             // stranded with nothing under it.
             .take(MAX_AGENDA_ROWS)
             .dropLastWhile { it is AgendaRow.Header }
-        LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
-            items(rows.size) { index ->
-                when (val row = rows[index]) {
-                    is AgendaRow.Header -> DayHeaderRow(row.date, row.today, metrics)
-                    is AgendaRow.Placeholder -> PlaceholderRow(row.date, metrics)
-                    is AgendaRow.Event -> EventRow(
-                        event = row.event,
-                        day = row.date,
-                        soften = data.soften,
-                        is24Hour = data.is24Hour,
-                        dimmed = pastDisplay == PastEventDisplay.DIM &&
-                            row.event.hasEnded(data.now),
-                        metrics = metrics,
-                    )
+        // On a transparent widget each day becomes one card of grouped rows,
+        // so it stays readable over the wallpaper (#292).
+        val positions = if (LocalWidgetBackground.current == WidgetBackground.TRANSPARENT) dayPositions(rows) else null
+        val item: @Composable (Int) -> Unit = { index ->
+            val row = rows[index]
+            if (positions != null) {
+                WidgetGroupedRow(
+                    position = positions[index],
+                    modifier = if (row is AgendaRow.Header && index > 0) GlanceModifier.padding(top = 6.dp) else GlanceModifier,
+                    color = GlanceTheme.colors.widgetBackground,
+                ) {
+                    AgendaRowContent(row, data, metrics)
                 }
+            } else {
+                AgendaRowContent(row, data, metrics)
             }
         }
+        if (preview) {
+            Column(modifier = GlanceModifier.fillMaxSize()) {
+                repeat(minOf(rows.size, PREVIEW_ROWS)) { item(it) }
+            }
+        } else {
+            LazyColumn(modifier = GlanceModifier.fillMaxSize()) {
+                items(rows.size) { item(it) }
+            }
+        }
+    }
+}
+
+/** Where each row sits among the rows of its day, for the grouped-card shapes. */
+private fun dayPositions(rows: List<AgendaRow>): List<Position> = buildList {
+    var start = 0
+    for (end in 1..rows.size) {
+        if (end == rows.size || rows[end].date != rows[start].date) {
+            for (i in start until end) add(positionOf(i - start, end - start))
+            start = end
+        }
+    }
+}
+
+@Composable
+private fun AgendaRowContent(row: AgendaRow, data: AgendaWidgetData.Ready, metrics: AgendaMetrics) {
+    when (row) {
+        is AgendaRow.Header -> DayHeaderRow(row.date, row.today, metrics)
+        is AgendaRow.Placeholder -> PlaceholderRow(row.date, metrics)
+        is AgendaRow.Event -> EventRow(
+            event = row.event,
+            day = row.date,
+            soften = data.soften,
+            is24Hour = data.is24Hour,
+            dimmed = data.pastDisplay == PastEventDisplay.DIM && row.event.hasEnded(data.now),
+            metrics = metrics,
+        )
     }
 }
 
@@ -213,7 +284,7 @@ private fun AgendaRows(
 private fun AgendaHeader(metrics: AgendaMetrics) {
     val context = androidx.glance.LocalContext.current
     Row(
-        modifier = GlanceModifier.fillMaxWidth().padding(horizontal = 4.dp),
+        modifier = GlanceModifier.fillMaxWidth().wallpaperBacking().padding(horizontal = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // Tap the "Upcoming" title to open the app on the user's default view
@@ -340,7 +411,7 @@ private fun EventRow(
     fun stripe(dark: Boolean) = eventAccent(event.color, dark, soften).let {
         if (dimmed) it.copy(alpha = EventDimAlpha) else it
     }
-    val stripeColor = ColorProvider(day = stripe(dark = false), night = stripe(dark = true))
+    val stripeColor = themedColor(day = stripe(dark = false), night = stripe(dark = true))
     val titleColor = if (dimmed) GlanceTheme.colors.onSurfaceVariant else GlanceTheme.colors.onSurface
     Row(
         modifier = GlanceModifier
@@ -396,6 +467,7 @@ private fun WidgetMessage(resId: Int, metrics: AgendaMetrics) {
         Text(
             text = context.getString(resId),
             style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = metrics.message),
+            modifier = GlanceModifier.wallpaperBacking().padding(horizontal = 12.dp, vertical = 8.dp),
         )
     }
 }

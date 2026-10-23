@@ -165,15 +165,12 @@ class SettingsPrefsTest {
     }
 
     @Test
-    fun `agenda ranges default to month and round-trip independently`(@TempDir tempDir: Path) = runTest {
+    fun `agenda screen range defaults to month and round-trips`(@TempDir tempDir: Path) = runTest {
         val prefs = testSettings(tempDir)
         assertThat(prefs.agendaScreenRange.first()).isEqualTo(AgendaRange.Month)
-        assertThat(prefs.agendaWidgetRange.first()).isEqualTo(AgendaRange.Month)
 
         prefs.setAgendaScreenRange(AgendaRange.Custom(14))
-        prefs.setAgendaWidgetRange(AgendaRange.Week)
         assertThat(prefs.agendaScreenRange.first()).isEqualTo(AgendaRange.Custom(14))
-        assertThat(prefs.agendaWidgetRange.first()).isEqualTo(AgendaRange.Week)
     }
 
     @Test

@@ -26,7 +26,6 @@ import androidx.glance.action.actionParametersOf
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.SizeMode
-import androidx.glance.color.ColorProvider
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
 import androidx.glance.appwidget.action.actionStartActivity
@@ -63,9 +62,14 @@ import de.jeanlucmakiola.calendula.ui.month.MonthWeek
 import de.jeanlucmakiola.calendula.ui.month.layoutMonthWeeks
 import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.ui.common.eventInk
-import de.jeanlucmakiola.calendula.widget.CalendulaGlanceTheme
+import de.jeanlucmakiola.calendula.widget.CalendulaWidgetRoot
+import de.jeanlucmakiola.calendula.widget.WidgetAppearance
+import de.jeanlucmakiola.calendula.widget.widgetAppearance
+import de.jeanlucmakiola.floret.glance.themedColor
+import de.jeanlucmakiola.floret.glance.wallpaperBacking
+import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.widget.MonthWidgetSource
-import de.jeanlucmakiola.calendula.widget.loadMonthWidgetSource
+import de.jeanlucmakiola.calendula.widget.loadCachedMonthSource
 import de.jeanlucmakiola.calendula.widget.monthWindowCenter
 import de.jeanlucmakiola.floret.glance.WidgetData
 import de.jeanlucmakiola.floret.glance.currentRefreshStamp
@@ -134,16 +138,17 @@ class MonthWidget : GlanceAppWidget() {
         val stamp = refreshStamp(context, id)
         val initialCenter = monthWindowCenter(shown)
         // Shared by every size Exact composes, so each loads nothing of its own.
-        val widgetData = WidgetData(context.loadMonthWidgetSource(id, initialCenter, stamp), initialCenter, stamp)
+        val widgetData = WidgetData(context.loadCachedMonthSource(id, initialCenter, stamp), initialCenter, stamp)
         provideContent {
             val index = currentState(MONTH_INDEX_KEY) ?: currentMonthIndex(systemZone())
             // Reloads when paging leaves the loaded window, and on every redraw,
             // which a running session would otherwise never see (#420).
             val center = monthWindowCenter(index)
             val currentStamp = currentRefreshStamp()
-            val source = widgetData.current(center, currentStamp) {
-                context.loadMonthWidgetSource(id, center, currentStamp)
+            val loaded = widgetData.current(center, currentStamp) {
+                context.loadCachedMonthSource(id, center, currentStamp)
             }
+            val source = loaded.content
             // A jump out of the loaded window keeps the last month it covers
             // until the reload lands, rather than drawing an empty grid.
             var lastShown by remember { mutableIntStateOf(index) }
@@ -153,10 +158,21 @@ class MonthWidget : GlanceAppWidget() {
                 else -> index.coerceIn(source.months)
             }
             SideEffect { lastShown = shown }
-            CalendulaGlanceTheme {
-                MonthWidgetBody(source = source, index = shown)
-            }
+            MonthWidgetContent(
+                source = source,
+                index = shown,
+                appearance = currentState<Preferences>().widgetAppearance,
+                appTheme = loaded.appTheme,
+            )
         }
+    }
+}
+
+/** The whole month widget showing month [index], shared with its config screen's preview (#292). */
+@Composable
+internal fun MonthWidgetContent(source: MonthWidgetSource, index: Int, appearance: WidgetAppearance, appTheme: ThemeMode) {
+    CalendulaWidgetRoot(appearance, appTheme) {
+        MonthWidgetBody(source = source, index = index)
     }
 }
 
@@ -209,7 +225,6 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
     Column(
         modifier = GlanceModifier
             .fillMaxSize()
-            .background(GlanceTheme.colors.surface)
             .padding(horizontal = GRID_HPADDING, vertical = 6.dp),
     ) {
         when (source) {
@@ -226,16 +241,19 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
 
                 MonthHeader(label = monthLabel(ym, source.today.year))
                 Spacer(GlanceModifier.height(2.dp))
-                WeekdayHeader(weekStart = source.weekStart, colW = colW)
-                layoutWeeks(weeks, source.today).forEach { layout ->
-                    WeekRow(
-                        layout = layout,
-                        currentMonth = ym.month,
-                        today = source.today,
-                        soften = source.soften,
-                        colW = colW,
-                        modifier = GlanceModifier.defaultWeight(),
-                    )
+                // One backing for the whole grid on a transparent widget (#292).
+                Column(modifier = GlanceModifier.fillMaxWidth().defaultWeight().wallpaperBacking()) {
+                    WeekdayHeader(weekStart = source.weekStart, colW = colW)
+                    layoutWeeks(weeks, source.today).forEach { layout ->
+                        WeekRow(
+                            layout = layout,
+                            currentMonth = ym.month,
+                            today = source.today,
+                            soften = source.soften,
+                            colW = colW,
+                            modifier = GlanceModifier.defaultWeight(),
+                        )
+                    }
                 }
             }
         }
@@ -246,7 +264,7 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
 private fun MonthHeader(label: String) {
     val context = LocalContext.current
     Row(
-        modifier = GlanceModifier.fillMaxWidth(),
+        modifier = GlanceModifier.fillMaxWidth().wallpaperBacking(),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         HeaderIcon(
@@ -470,14 +488,14 @@ private fun SpanBar(event: EventInstance, soften: Boolean, width: Dp) {
             modifier = GlanceModifier
                 .fillMaxSize()
                 .cornerRadius(4.dp)
-                .background(ColorProvider(day = dayFill, night = nightFill)),
+                .background(themedColor(day = dayFill, night = nightFill)),
             contentAlignment = Alignment.CenterStart,
         ) {
             Text(
                 text = event.title.ifBlank { context.getString(R.string.event_untitled) },
                 maxLines = 1,
                 style = TextStyle(
-                    color = ColorProvider(day = eventInk(dayFill), night = eventInk(nightFill)),
+                    color = themedColor(day = eventInk(dayFill), night = eventInk(nightFill)),
                     fontSize = 9.sp,
                     textDecoration = glanceDeclinedDecoration(event.isDeclined),
                 ),
@@ -520,6 +538,7 @@ private fun PermissionMessage() {
                 fontSize = 14.sp,
                 textAlign = TextAlign.Center,
             ),
+            modifier = GlanceModifier.wallpaperBacking().padding(horizontal = 12.dp, vertical = 8.dp),
         )
     }
 }

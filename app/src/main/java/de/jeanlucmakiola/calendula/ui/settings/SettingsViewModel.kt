@@ -45,7 +45,6 @@ import de.jeanlucmakiola.calendula.ui.common.TimelineScale
 import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
 import de.jeanlucmakiola.calendula.ui.theme.AppFontSettings
 import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
-import de.jeanlucmakiola.calendula.widget.WidgetSize
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -106,10 +105,8 @@ class SettingsViewModel @Inject constructor(
         dragToReschedule = this[SettingsKeys.dragToReschedule],
         tapOpensEditor = this[SettingsKeys.tapOpensEditor],
         agendaScreenRange = this[SettingsKeys.agendaScreenRange],
-        agendaWidgetRange = this[SettingsKeys.agendaWidgetRange],
         agendaShowToday = this[SettingsKeys.agendaShowToday],
         agendaShowRangeBar = this[SettingsKeys.agendaShowRangeBar],
-        widgetSize = this[SettingsKeys.widgetSize],
         defaultView = this[SettingsKeys.defaultView],
         quickSwitchConfig = this[SettingsKeys.quickSwitchConfig],
         monthViewStyle = this[SettingsKeys.monthViewStyle],
@@ -283,12 +280,7 @@ class SettingsViewModel @Inject constructor(
 
     fun setAgendaScreenRange(range: AgendaRange) = save { setAgendaScreenRange(range) }
 
-    fun setAgendaWidgetRange(range: AgendaRange) = save { setAgendaWidgetRange(range) }
-
     fun setAgendaShowRangeBar(enabled: Boolean) = save { setAgendaShowRangeBar(enabled) }
-
-    /** The size the agenda widget draws its text at (#51); the month widget sizes itself (#103). */
-    fun setWidgetSize(size: WidgetSize) = save { setWidgetSize(size) }
 
     fun setAgendaShowToday(enabled: Boolean) = save { setAgendaShowToday(enabled) }
 
