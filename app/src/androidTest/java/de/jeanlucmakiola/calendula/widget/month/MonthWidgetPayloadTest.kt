@@ -4,6 +4,7 @@ import android.Manifest
 import android.content.ContentUris
 import android.content.ContentValues
 import android.net.Uri
+import android.os.Parcel
 import android.provider.CalendarContract
 import android.util.Log
 import android.view.View
@@ -29,12 +30,12 @@ import java.time.ZoneId
 
 /**
  * Renders the month widget for a packed month through Glance's own translator
- * and counts what it inflates (#372): the view-id model in [WeekLayout] has to
- * match what Glance really builds, or a busy month fails with "too many views".
+ * (#372) and checks what one size costs on the wire: the host's binder buffer is
+ * 1 MB for every widget update at once, and Exact sends one copy per size (#214).
  */
 @OptIn(ExperimentalGlanceApi::class)
 @RunWith(AndroidJUnit4::class)
-class MonthWidgetViewBudgetTest {
+class MonthWidgetPayloadTest {
 
     @get:Rule
     val permissionRule: GrantPermissionRule =
@@ -95,31 +96,39 @@ class MonthWidgetViewBudgetTest {
     }
 
     @Test
-    fun aPackedMonthRendersWithinGlancesViewIds() = runBlocking {
+    fun aPackedMonthRendersWithinItsPayload() = runBlocking {
         for (size in listOf(DpSize(250.dp, 250.dp), DpSize(320.dp, 360.dp), DpSize(420.dp, 520.dp))) {
             val views = MonthWidget().compose(context, size = size)
-            var total = 0
+            val bytes = Parcel.obtain().let { parcel ->
+                try {
+                    views.writeToParcel(parcel, 0)
+                    parcel.dataSize()
+                } finally {
+                    parcel.recycle()
+                }
+            }
             var texts = 0
             instrumentation.runOnMainSync {
                 val root = views.apply(context, FrameLayout(context))
                 fun walk(view: View) {
-                    total += 1
                     if (view is TextView) texts += 1
                     if (view is ViewGroup) for (i in 0 until view.childCount) walk(view.getChildAt(i))
                 }
                 walk(root)
             }
-            Log.i(TAG, "size=$size views=$total texts=$texts budget=$VIEW_BUDGET")
+            Log.i(TAG, "size=$size bytes=$bytes texts=$texts")
             // The grid itself rendered, not Glance's error layout: every day number is there.
-            assertThat(texts).isAtLeast(35)
-            assertThat(total).isAtMost(GLANCE_VIEW_IDS)
+            assertThat(texts).isAtLeast(42)
+            assertThat(bytes).isAtMost(MAX_BYTES_PER_SIZE)
         }
     }
 
     private companion object {
-        const val TAG = "MonthWidgetBudget"
-        const val ACCOUNT = "calendula-widget-budget-test"
+        const val TAG = "MonthWidgetPayload"
+        const val ACCOUNT = "calendula-widget-payload-test"
         const val EVENTS_PER_DAY = 6
-        const val GLANCE_VIEW_IDS = 499
+
+        /** A quarter of the host's buffer, leaving room for a second size and every other widget. */
+        const val MAX_BYTES_PER_SIZE = 256 * 1024
     }
 }

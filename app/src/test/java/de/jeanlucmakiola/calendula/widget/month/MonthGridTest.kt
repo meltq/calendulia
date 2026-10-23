@@ -13,20 +13,17 @@ import kotlinx.datetime.Month
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.YearMonth
 import kotlinx.datetime.plus
+import androidx.compose.ui.unit.dp
 import org.junit.jupiter.api.Test
 
-/** The month widget's view budget (#372). */
+/** How the month widget seats a week's events into lanes (#372). */
 class MonthGridTest {
 
     private val zone = TimeZone.UTC
     private val jul26 = YearMonth(2026, Month.JULY)
-    private val today = LocalDate(2026, 7, 15)
 
     /** Monday Jul 6 to Sunday Jul 12. */
     private val monday = LocalDate(2026, 7, 6)
-
-    private val android16 = ViewIds(sdkInt = 36)
-    private val android10 = ViewIds(sdkInt = 29)
 
     private fun weeks(events: List<EventInstance>): List<MonthWeek> =
         layoutMonthWeeks(jul26, DayOfWeek.MONDAY, events, zone)
@@ -43,33 +40,25 @@ class MonthGridTest {
         )
     }
 
-    private fun List<WeekLayout>.cost(ids: ViewIds) = sumOf { it.viewIds(today, ids) }
-
     @Test
-    fun `a quiet month keeps every lane it uses`() {
-        val layouts = layoutWeeks(busyWeeks(perDay = 1), today, android16)
-        assertThat(layouts.map { it.laneCap }.distinct()).containsExactly(1)
+    fun `a week that fits keeps every lane`() {
+        val layouts = fitWeeks(busyWeeks(perDay = 2), lanes = 3)
+        assertThat(layouts.map { it.laneCap }.distinct()).containsExactly(3)
         assertThat(layouts.all { it.overflow.isEmpty() }).isTrue()
     }
 
     @Test
-    fun `a full month folds lanes until it fits, on every Android version`() {
-        for (ids in listOf(android16, android10)) {
-            val weeks = busyWeeks(perDay = 5)
-            assertThat(weeks.map { WeekLayout(it, MAX_LANES) }.cost(ids)).isGreaterThan(VIEW_BUDGET - ids.fixed)
-
-            val layouts = layoutWeeks(weeks, today, ids)
-            assertThat(layouts.cost(ids)).isAtMost(VIEW_BUDGET - ids.fixed)
-            assertThat(layouts.any { it.laneCap < MAX_LANES }).isTrue()
-        }
+    fun `a week that doesn't fit gives its last lane to the overflow`() {
+        val layouts = fitWeeks(busyWeeks(perDay = 5), lanes = 3)
+        assertThat(layouts.map { it.laneCap }.distinct()).containsExactly(2)
+        assertThat(layouts.all { it.overflow.isNotEmpty() }).isTrue()
     }
 
     @Test
-    fun `older Android folds more, since a sized view costs it two ids`() {
-        val weeks = busyWeeks(perDay = 3)
-        val newer = layoutWeeks(weeks, today, android16).sumOf { it.laneCap }
-        val older = layoutWeeks(weeks, today, android10).sumOf { it.laneCap }
-        assertThat(older).isLessThan(newer)
+    fun `a taller week fits more lanes`() {
+        assertThat(lanesFitting(19.dp)).isEqualTo(0)
+        assertThat(lanesFitting(50.dp)).isEqualTo(2)
+        assertThat(lanesFitting(100.dp)).isEqualTo(5)
     }
 
     @Test
@@ -83,7 +72,7 @@ class MonthGridTest {
     @Test
     fun `a multi-day bar is one cell as wide as its days`() {
         val bar = allDayEvent(monday.plus(1, DateTimeUnit.DAY), monday.plus(3, DateTimeUnit.DAY), id = 1)
-        val layout = WeekLayout(weeks(listOf(bar))[1], MAX_LANES)
+        val layout = WeekLayout(weeks(listOf(bar))[1], laneCap = 3)
         assertThat(layout.lanes).hasSize(1)
         assertThat(layout.lanes[0]).containsExactly(GridCell(null, 1), GridCell(bar, 3), GridCell(null, 3)).inOrder()
     }
