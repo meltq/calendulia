@@ -316,12 +316,7 @@ private fun agendaCardColor(): ColorProvider = when (LocalWidgetBackground.curre
 @Composable
 private fun MonthLabel(date: LocalDate, today: LocalDate, metrics: AgendaMetrics) {
     Text(
-        text = formatCalendarTitle(
-            date = java.time.LocalDate.of(date.year, date.month.ordinal + 1, 1),
-            locale = Locale.getDefault(),
-            currentYear = today.year,
-            skeleton = "LLLL",
-        ),
+        text = monthName(date, today),
         maxLines = 1,
         style = TextStyle(
             color = GlanceTheme.colors.onSurfaceVariant,
@@ -491,6 +486,13 @@ private fun agendaDayLabel(context: Context, date: LocalDate, today: LocalDate):
     val formatted = localizedDateFormatter(locale, "EEEdMMM").format(java)
     return if (relative != null) "$relative · $formatted" else formatted
 }
+
+private fun monthName(date: LocalDate, today: LocalDate): String = formatCalendarTitle(
+    date = java.time.LocalDate.of(date.year, date.month.ordinal + 1, 1),
+    locale = Locale.getDefault(),
+    currentYear = today.year,
+    skeleton = "LLLL",
+)
 
 private fun weekdayShort(date: LocalDate): String =
     date.dayOfWeek.toJavaDayOfWeek().getDisplayName(java.time.format.TextStyle.SHORT, Locale.getDefault())
