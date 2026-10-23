@@ -21,6 +21,7 @@ import de.jeanlucmakiola.calendula.widget.WidgetSettings
 import de.jeanlucmakiola.calendula.widget.loadDays
 import de.jeanlucmakiola.calendula.widget.weekOf
 import de.jeanlucmakiola.calendula.widget.upcoming.loadUpcoming
+import de.jeanlucmakiola.calendula.widget.today.loadTodayList
 import de.jeanlucmakiola.calendula.widget.WidgetOption
 import de.jeanlucmakiola.calendula.widget.hiddenCalendars
 import de.jeanlucmakiola.calendula.widget.putHiddenCalendars
@@ -239,6 +240,7 @@ class WidgetConfigViewModel @Inject constructor(
             }
             WidgetKind.QUICK_ADD, WidgetKind.DATE -> WidgetPreviewData.Today(today(systemZone()))
             WidgetKind.UPCOMING -> WidgetPreviewData.Days(context.loadUpcoming(draft.loadContext(settings)).content)
+            WidgetKind.TODAY -> WidgetPreviewData.Days(context.loadTodayList(draft.loadContext(settings)).content)
             WidgetKind.WEEK_STRIP -> WidgetPreviewData.Days(context.loadDays(draft.loadContext(settings), ::weekOf).content)
         }
     }
