@@ -1,5 +1,8 @@
 package de.jeanlucmakiola.calendula.widget.today
 
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.previewSizeOf
+import de.jeanlucmakiola.calendula.widget.provideSamplePreview
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
@@ -87,6 +90,11 @@ class TodayWidget : GlanceAppWidget() {
     // Exact: whether one or two of tomorrow's events fit follows the height.
     override val sizeMode = SizeMode.Exact
 
+    override val previewSizeMode = previewSizeOf(WidgetKind.TODAY)
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) =
+        provideSamplePreview(context, WidgetKind.TODAY)
+
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgetData = WidgetData(context.loadTodayList(context.widgetLoadContext(id)), refreshStamp(context, id))
         provideContent {
@@ -165,7 +173,8 @@ private fun TodayList(events: List<EventInstance>, data: DaysWidgetData.Ready, m
         )
     }
     if (preview) {
-        Column(modifier = GlanceModifier.fillMaxSize()) { repeat(minOf(events.size, 10)) { row(it) } }
+        val fits = ((LocalSize.current.height - 12.dp + RowGap) / (metrics.rowHeight + RowGap)).toInt().coerceAtLeast(1)
+        Column(modifier = GlanceModifier.fillMaxSize()) { repeat(minOf(events.size, fits)) { row(it) } }
     } else {
         LazyColumn(modifier = GlanceModifier.fillMaxSize()) { items(events.size) { row(it) } }
     }

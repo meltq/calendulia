@@ -1,5 +1,8 @@
 package de.jeanlucmakiola.calendula.widget.quickadd
 
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.previewSizeOf
+import de.jeanlucmakiola.calendula.widget.provideSamplePreview
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
@@ -45,6 +48,11 @@ class QuickAddWidget : GlanceAppWidget() {
 
     // Exact: the shape fills whatever square the launcher gives it.
     override val sizeMode = SizeMode.Exact
+
+    override val previewSizeMode = previewSizeOf(WidgetKind.QUICK_ADD)
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) =
+        provideSamplePreview(context, WidgetKind.QUICK_ADD)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgetData = WidgetData(context.loadToday(), refreshStamp(context, id))

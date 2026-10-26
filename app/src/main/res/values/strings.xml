@@ -621,6 +621,9 @@
     <string name="settings_past_events_sample_morning">Team review</string>
     <string name="settings_past_events_sample_midday">Lunch with Robin</string>
     <string name="settings_past_events_sample_evening">Choir practice</string>
+    <!-- Stand-in event titles in the widget picker previews. Short, everyday entries. -->
+    <string name="widget_preview_sample_trip">Weekend trip</string>
+    <string name="widget_preview_sample_dentist">Dentist</string>
     <string name="settings_agenda_header">Agenda</string>
     <string name="settings_agenda_range">Agenda range</string>
     <string name="settings_agenda_range_hint">How far ahead the Agenda screen lists events.</string>

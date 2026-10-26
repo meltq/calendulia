@@ -1,5 +1,8 @@
 package de.jeanlucmakiola.calendula.widget.month
 
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.previewSizeOf
+import de.jeanlucmakiola.calendula.widget.provideSamplePreview
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
@@ -43,7 +46,6 @@ import androidx.glance.layout.fillMaxWidth
 import androidx.glance.layout.height
 import androidx.glance.layout.padding
 import androidx.glance.layout.size
-import androidx.glance.layout.width
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import de.jeanlucmakiola.floret.glance.LocalWidgetThemeMode
 import de.jeanlucmakiola.floret.glance.WidgetColorRole
@@ -135,6 +137,11 @@ class MonthWidget : GlanceAppWidget() {
      * lanes the size can show, folding the rest into "+N".
      */
     override val sizeMode = SizeMode.Exact
+
+    override val previewSizeMode = previewSizeOf(WidgetKind.MONTH)
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) =
+        provideSamplePreview(context, WidgetKind.MONTH)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val shown = getAppWidgetState<Preferences>(context, id)[MONTH_INDEX_KEY]
@@ -239,8 +246,6 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
             is MonthWidgetSource.Ready -> {
                 val zone = systemZone()
                 val ym = yearMonthOf(index)
-                // Column width from the live widget size, minus our H padding.
-                val colW = (LocalSize.current.width - GRID_HPADDING * 2) / 7
                 val weeks = layoutMonthWeeks(ym, source.weekStart, source.instances, zone)
                 val context = LocalContext.current
                 val fontScale = context.resources.configuration.fontScale
@@ -261,7 +266,7 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
                 // each carry their own fill, so a transparent widget stays
                 // readable without one blob over the wallpaper (#292).
                 Column(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
-                    WeekdayHeader(weekStart = source.weekStart, colW = colW)
+                    WeekdayHeader(weekStart = source.weekStart)
                     AndroidRemoteViews(
                         remoteViews = monthGridViews(context, layouts, ym.month, source.today, source.soften, colors, mode),
                         modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
@@ -315,10 +320,10 @@ private fun MonthHeader(label: String, today: LocalDate) {
 }
 
 @Composable
-private fun WeekdayHeader(weekStart: DayOfWeek, colW: Dp) {
+private fun WeekdayHeader(weekStart: DayOfWeek) {
     Row(modifier = GlanceModifier.fillMaxWidth().padding(bottom = 1.dp)) {
         weekdayNarrowNames(weekStart).forEach { name ->
-            Box(modifier = GlanceModifier.width(colW).padding(horizontal = 1.dp)) {
+            Box(modifier = GlanceModifier.defaultWeight().padding(horizontal = 1.dp)) {
                 Text(
                     text = name,
                     style = TextStyle(

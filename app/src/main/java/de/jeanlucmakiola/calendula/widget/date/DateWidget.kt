@@ -1,5 +1,8 @@
 package de.jeanlucmakiola.calendula.widget.date
 
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.previewSizeOf
+import de.jeanlucmakiola.calendula.widget.provideSamplePreview
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
@@ -58,6 +61,11 @@ class DateWidget : GlanceAppWidget() {
     override val stateDefinition = PreferencesGlanceStateDefinition
 
     override val sizeMode = SizeMode.Exact
+
+    override val previewSizeMode = previewSizeOf(WidgetKind.DATE)
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) =
+        provideSamplePreview(context, WidgetKind.DATE)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgetData = WidgetData(context.loadToday(), refreshStamp(context, id))

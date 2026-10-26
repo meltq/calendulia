@@ -1,5 +1,8 @@
 package de.jeanlucmakiola.calendula.widget.split
 
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.previewSizeOf
+import de.jeanlucmakiola.calendula.widget.provideSamplePreview
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
@@ -145,6 +148,11 @@ class MonthDayWidget : GlanceAppWidget() {
     override val stateDefinition = PreferencesGlanceStateDefinition
 
     override val sizeMode = SizeMode.Exact
+
+    override val previewSizeMode = previewSizeOf(WidgetKind.MONTH_DAY)
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) =
+        provideSamplePreview(context, WidgetKind.MONTH_DAY)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val stamp = refreshStamp(context, id)

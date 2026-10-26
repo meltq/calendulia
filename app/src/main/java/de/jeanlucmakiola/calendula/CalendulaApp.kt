@@ -10,6 +10,7 @@ import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesScheduler
 import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesSyncWorker
 import de.jeanlucmakiola.calendula.data.reminders.ReminderMaintenanceScheduler
 import de.jeanlucmakiola.calendula.data.reminders.ReminderMaintenanceWorker
+import de.jeanlucmakiola.calendula.widget.publishCalendulaWidgetPreviews
 import de.jeanlucmakiola.calendula.widget.syncWidgetRollover
 import de.jeanlucmakiola.calendula.widget.widgetEntryPoint
 import de.jeanlucmakiola.floret.crash.CrashConfig
@@ -58,10 +59,12 @@ class CalendulaApp : Application() {
      * (#228). Idempotent, and it covers what no broadcast reaches — an alarm
      * dropped by a force-stop is armed again the next time the app is opened.
      * Off the main thread: a handful of binder calls on every process start.
+     * The picker previews are republished here too, once per update.
      */
     private fun reconcileWidgetRollover() {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             syncWidgetRollover(this@CalendulaApp)
+            publishCalendulaWidgetPreviews(this@CalendulaApp)
         }
     }
 

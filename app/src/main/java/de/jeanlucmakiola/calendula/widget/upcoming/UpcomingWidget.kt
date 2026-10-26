@@ -1,5 +1,8 @@
 package de.jeanlucmakiola.calendula.widget.upcoming
 
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.previewSizeOf
+import de.jeanlucmakiola.calendula.widget.provideSamplePreview
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.Dp
@@ -76,6 +79,11 @@ class UpcomingWidget : GlanceAppWidget() {
 
     // Exact: how many rows show follows the height.
     override val sizeMode = SizeMode.Exact
+
+    override val previewSizeMode = previewSizeOf(WidgetKind.UPCOMING)
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) =
+        provideSamplePreview(context, WidgetKind.UPCOMING)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgetData = WidgetData(context.loadUpcoming(context.widgetLoadContext(id)), refreshStamp(context, id))

@@ -1,5 +1,8 @@
 package de.jeanlucmakiola.calendula.widget.agenda
 
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.previewSizeOf
+import de.jeanlucmakiola.calendula.widget.provideSamplePreview
 import de.jeanlucmakiola.calendula.domain.isDeclined
 import de.jeanlucmakiola.calendula.widget.glanceDeclinedDecoration
 import android.content.Context
@@ -94,6 +97,11 @@ class AgendaWidget : GlanceAppWidget() {
     // payload. The row list stays capped below — an uncapped agenda could push
     // the RemoteViews past the binder transaction limit.
     override val sizeMode = SizeMode.Single
+
+    override val previewSizeMode = previewSizeOf(WidgetKind.AGENDA)
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) =
+        provideSamplePreview(context, WidgetKind.AGENDA)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val stamp = refreshStamp(context, id)

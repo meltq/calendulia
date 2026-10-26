@@ -1,5 +1,8 @@
 package de.jeanlucmakiola.calendula.widget.countdown
 
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.previewSizeOf
+import de.jeanlucmakiola.calendula.widget.provideSamplePreview
 import android.appwidget.AppWidgetManager
 import android.content.Context
 import android.content.res.Resources
@@ -69,6 +72,11 @@ class CountdownWidget : GlanceAppWidget() {
     override val stateDefinition = PreferencesGlanceStateDefinition
 
     override val sizeMode = SizeMode.Single
+
+    override val previewSizeMode = previewSizeOf(WidgetKind.COUNTDOWN)
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) =
+        provideSamplePreview(context, WidgetKind.COUNTDOWN)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgetData = WidgetData(context.loadPlacedCountdown(id), refreshStamp(context, id))

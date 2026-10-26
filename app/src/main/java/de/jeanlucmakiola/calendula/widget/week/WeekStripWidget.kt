@@ -1,5 +1,8 @@
 package de.jeanlucmakiola.calendula.widget.week
 
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import de.jeanlucmakiola.calendula.widget.previewSizeOf
+import de.jeanlucmakiola.calendula.widget.provideSamplePreview
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.unit.dp
@@ -78,6 +81,11 @@ class WeekStripWidget : GlanceAppWidget() {
     override val stateDefinition = PreferencesGlanceStateDefinition
 
     override val sizeMode = SizeMode.Single
+
+    override val previewSizeMode = previewSizeOf(WidgetKind.WEEK_STRIP)
+
+    override suspend fun providePreview(context: Context, widgetCategory: Int) =
+        provideSamplePreview(context, WidgetKind.WEEK_STRIP)
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val widgetData = WidgetData(context.loadWeek(id), refreshStamp(context, id))
