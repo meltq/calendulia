@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.widget.split
 
 import android.content.Context
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -45,6 +46,7 @@ import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextAlign
 import androidx.glance.text.TextStyle
+import androidx.glance.unit.ColorProvider
 import de.jeanlucmakiola.calendula.MainActivity
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
@@ -354,9 +356,10 @@ private fun DayCell(date: LocalDate, inMonth: Boolean, isToday: Boolean, isSelec
         inMonth -> GlanceTheme.colors.onSurface
         else -> GlanceTheme.colors.outline
     }
-    val fill = if (isSelected) GlanceModifier.cornerRadius(10.dp).background(GlanceTheme.colors.primary) else GlanceModifier
+    // Always set: the host reapplies onto reused views, so a dropped background would linger.
+    val fill = if (isSelected) GlanceTheme.colors.primary else ColorProvider(Color.Transparent)
     Column(
-        modifier = fill
+        modifier = GlanceModifier.cornerRadius(10.dp).background(fill)
             .width(width)
             .fillMaxHeight()
             .clickable(actionRunCallback<SelectDayAction>(actionParametersOf(SelectDayAction.dateKey to date.toString()))),
