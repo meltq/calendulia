@@ -101,9 +101,10 @@ fun TimeZonePickerDialog(
         onDismiss = onDismiss,
         scrollable = false,
     ) {
-        SearchField(
+        PickerSearchField(
             query = query,
             onQueryChange = { query = it },
+            placeholder = stringResource(R.string.event_edit_timezone_search),
             modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
         )
         LazyColumn(contentPadding = PaddingValues(top = 8.dp, bottom = 24.dp)) {
@@ -181,9 +182,10 @@ fun TimeZonePickerDialog(
  * which has a top bar to put it in) because the picker's bar is the title.
  */
 @Composable
-private fun SearchField(
+internal fun PickerSearchField(
     query: String,
     onQueryChange: (String) -> Unit,
+    placeholder: String,
     modifier: Modifier = Modifier,
 ) {
     val keyboard = LocalSoftwareKeyboardController.current
@@ -206,7 +208,7 @@ private fun SearchField(
             InlineTextField(
                 value = query,
                 onValueChange = onQueryChange,
-                placeholder = stringResource(R.string.event_edit_timezone_search),
+                placeholder = placeholder,
                 capitalization = KeyboardCapitalization.None,
                 imeAction = ImeAction.Search,
                 onImeAction = { keyboard?.hide() },

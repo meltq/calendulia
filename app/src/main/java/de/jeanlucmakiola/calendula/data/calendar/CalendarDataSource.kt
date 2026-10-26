@@ -56,6 +56,10 @@ import javax.inject.Singleton
 interface CalendarDataSource {
     fun calendars(): List<CalendarSource>
     fun instances(beginMillis: Long, endMillis: Long): List<EventInstance>
+
+    /** [instances] of event [eventId] alone, soonest first. */
+    fun eventInstances(eventId: Long, beginMillis: Long, endMillis: Long): List<EventInstance> =
+        instances(beginMillis, endMillis).filter { it.eventId == eventId }
     /**
      * [allDayReminderTimeMinutes]: the hour all-day reminders fire at, needed to
      * decode their stored offsets back to whole-day lead times (see
@@ -563,21 +567,33 @@ class AndroidCalendarDataSource @Inject constructor(
         }
     }
 
-    override fun instances(beginMillis: Long, endMillis: Long): List<EventInstance> {
+    override fun instances(beginMillis: Long, endMillis: Long): List<EventInstance> =
+        queryInstances(beginMillis, endMillis, null, null)
+
+    override fun eventInstances(eventId: Long, beginMillis: Long, endMillis: Long): List<EventInstance> =
+        queryInstances(beginMillis, endMillis, "${CalendarContract.Instances.EVENT_ID} = ?", arrayOf(eventId.toString()))
+
+    private fun queryInstances(
+        beginMillis: Long,
+        endMillis: Long,
+        extraSelection: String?,
+        args: Array<String>?,
+    ): List<EventInstance> {
         ensureObserversRegistered()
+        // Hide cancelled occurrences: "delete only this event" writes a
+        // cancelled exception for the one instance (#47). A NULL status is a
+        // normal, un-cancelled event, so it must survive the filter — a bare
+        // `!= CANCELED` would drop it (NULL != 2 is NULL, not true).
+        // DELETED = 0: a provider that soft-deletes may keep the row's
+        // instances until a purge (#364).
+        val visible = "(${CalendarContract.Instances.STATUS} IS NULL OR " +
+            "${CalendarContract.Instances.STATUS} != ${CalendarContract.Events.STATUS_CANCELED}) AND " +
+            "${CalendarContract.Events.DELETED} = 0"
         return resolver.query(
             instancesUri(beginMillis, endMillis),
             InstanceProjection.COLUMNS,
-            // Hide cancelled occurrences: "delete only this event" writes a
-            // cancelled exception for the one instance (#47). A NULL status is a
-            // normal, un-cancelled event, so it must survive the filter — a bare
-            // `!= CANCELED` would drop it (NULL != 2 is NULL, not true).
-            // DELETED = 0: a provider that soft-deletes may keep the row's
-            // instances until a purge (#364).
-            "(${CalendarContract.Instances.STATUS} IS NULL OR " +
-                "${CalendarContract.Instances.STATUS} != ${CalendarContract.Events.STATUS_CANCELED}) AND " +
-                "${CalendarContract.Events.DELETED} = 0",
-            null,
+            if (extraSelection == null) visible else "$visible AND $extraSelection",
+            args,
             CalendarContract.Instances.BEGIN + " ASC",
         )?.use { c -> c.mapRowsNotNull { toEventInstance() } } ?: emptyList()
     }

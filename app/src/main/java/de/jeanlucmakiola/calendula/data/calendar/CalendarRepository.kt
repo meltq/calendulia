@@ -16,8 +16,15 @@ interface CalendarRepository {
     fun calendars(): Flow<List<CalendarSource>>
     fun instances(range: ClosedRange<Instant>): Flow<List<EventInstance>>
 
+    /** One read of event [eventId]'s occurrences overlapping [range], soonest first, whatever calendar it is in. */
+    suspend fun eventOccurrences(eventId: Long, range: ClosedRange<Instant>): List<EventInstance>
+
     /** Re-query every open [calendars] / [instances] flow. */
     fun refresh()
+
+    /** Emits on the app's own writes and visibility changes; not on provider notifications or [refresh]. */
+    val localChanges: Flow<Unit>
+
     suspend fun eventDetail(eventId: Long): EventDetail
 
     /**

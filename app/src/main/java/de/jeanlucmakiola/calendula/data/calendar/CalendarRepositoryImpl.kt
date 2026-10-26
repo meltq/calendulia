@@ -78,14 +78,27 @@ class CalendarRepositoryImpl @Inject constructor(
         ticks.tryEmit(Unit)
     }
 
+    private val writes = MutableSharedFlow<Unit>(
+        replay = 0,
+        extraBufferCapacity = 1,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST,
+    )
+
     /** Run a provider write on [io], then re-query whether or not it threw. */
     private suspend fun <T> write(block: suspend () -> T): T = withContext(io) {
         try {
             block()
         } finally {
             refresh()
+            writes.tryEmit(Unit)
         }
     }
+
+    override val localChanges: Flow<Unit> = merge(
+        writes,
+        prefs.pendingDisabledCalendarIds.distinctUntilChanged().drop(1).map {},
+        prefs.hiddenCalendarIds.distinctUntilChanged().drop(1).map {},
+    )
 
     /**
      * Re-query signal for everything filtered by visibility: the provider's own
@@ -180,6 +193,11 @@ class CalendarRepositoryImpl @Inject constructor(
         }
         cachedCalendars
     }
+
+    override suspend fun eventOccurrences(eventId: Long, range: ClosedRange<Instant>): List<EventInstance> =
+        withContext(io) {
+            dataSource.eventInstances(eventId, range.start.toEpochMillis(), range.endInclusive.toEpochMillis())
+        }
 
     override suspend fun eventDetail(eventId: Long): EventDetail = withContext(io) {
         dataSource.eventDetail(eventId, allDayReminderTimeMinutes())

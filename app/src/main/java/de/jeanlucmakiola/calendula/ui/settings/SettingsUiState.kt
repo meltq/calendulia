@@ -16,7 +16,6 @@ import de.jeanlucmakiola.calendula.ui.common.QuickSwitchConfig
 import de.jeanlucmakiola.calendula.ui.common.TimelineHours
 import de.jeanlucmakiola.calendula.ui.common.TimelineScale
 import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
-import de.jeanlucmakiola.calendula.widget.WidgetSize
 
 /**
  * Settings screen state (M4). Persisted preferences are instant to read, so
@@ -51,14 +50,10 @@ data class SettingsUiState(
     val tapOpensEditor: Boolean = false,
     /** How far ahead the in-app Agenda screen shows events (v2.11). */
     val agendaScreenRange: AgendaRange = AgendaRange.Month,
-    /** How far ahead the agenda widget shows events (v2.11). */
-    val agendaWidgetRange: AgendaRange = AgendaRange.Month,
-    /** Whether the agenda (screen + widget) always anchors today at the top (#35). */
+    /** Whether the agenda screen always anchors today at the top (#35); widgets have their own (#292). */
     val agendaShowToday: Boolean = true,
     /** Whether the agenda shows its top range bar — header + switcher (v2.11). */
     val agendaShowRangeBar: Boolean = true,
-    /** The size step the agenda widget draws its text at (#51). */
-    val widgetSize: WidgetSize = WidgetSize.SMALL,
     /** The calendar view the app opens on, and the home of the view back stack (M1). */
     val defaultView: CalendarView = CalendarView.Week,
     /** Which views the top-bar quick-switch button cycles through, and their order (#24). */

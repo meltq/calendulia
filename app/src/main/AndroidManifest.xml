@@ -318,6 +318,16 @@
             android:exported="false" />
 
         <!-- Home-screen widgets (Glance). Exported: the launcher/host binds them. -->
+        <activity
+            android:name=".widget.config.WidgetConfigActivity"
+            android:exported="true"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:theme="@style/Theme.Calendula.WidgetConfig">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
         <receiver
             android:name=".widget.agenda.AgendaWidgetReceiver"
             android:label="@string/widget_agenda_label"
@@ -342,13 +352,103 @@
                 android:resource="@xml/appwidget_info_month" />
         </receiver>
 
+        <receiver
+            android:name=".widget.quickadd.QuickAddWidgetReceiver"
+            android:label="@string/widget_quick_add_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_info_quick_add" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.date.DateWidgetReceiver"
+            android:label="@string/widget_date_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_info_date" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.week.WeekStripWidgetReceiver"
+            android:label="@string/widget_week_strip_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_info_week_strip" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.upcoming.UpcomingWidgetReceiver"
+            android:label="@string/widget_upcoming_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_info_upcoming" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.today.TodayWidgetReceiver"
+            android:label="@string/widget_today_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_info_today" />
+        </receiver>
+
+        <receiver
+            android:name=".widget.countdown.CountdownWidgetReceiver"
+            android:label="@string/widget_countdown_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_info_countdown" />
+        </receiver>
+
+        <!-- A countdown widget's redraw for when its label changes (#439). -->
+        <receiver
+            android:name=".widget.countdown.CountdownTickReceiver"
+            android:exported="false" />
+
+        <receiver
+            android:name=".widget.split.MonthDayWidgetReceiver"
+            android:label="@string/widget_month_day_label"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/appwidget_info_month_day" />
+        </receiver>
+
         <!-- Keeps both widgets fresh: the calendar provider broadcasts
-             PROVIDER_CHANGED on any data change (our writes and external sync).
-             The day boundary arrives as the app's own ROLLOVER alarm (#228), by
-             explicit PendingIntent, so it needs no filter here; DATE_CHANGED is
-             a free extra only, since Android 8+ withholds it from manifest
-             receivers. The four below re-arm that alarm: TIME_SET /
-             TIMEZONE_CHANGED move the boundary, boot / package-replace wipe it.
+             PROVIDER_CHANGED on any data change (external sync; the app's own
+             writes redraw directly). The day boundary arrives as the app's own
+             ROLLOVER alarm (#228), by explicit PendingIntent, so it needs no
+             filter here; DATE_CHANGED is a free extra only, since Android 8+
+             withholds it from manifest receivers. TIME_SET / TIMEZONE_CHANGED
+             move the boundary, boot / package-replace wipe the alarm, and
+             LOCALE_CHANGED redraws the labels in the new language.
              Exported: the system broadcasts arrive from outside the app. -->
         <receiver
             android:name=".widget.WidgetUpdateReceiver"
@@ -365,6 +465,7 @@
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
                 <action android:name="android.intent.action.BOOT_COMPLETED" />
                 <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+                <action android:name="android.intent.action.LOCALE_CHANGED" />
             </intent-filter>
         </receiver>
 

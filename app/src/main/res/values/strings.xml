@@ -435,12 +435,94 @@
     <string name="widget_agenda_title">Upcoming</string>
     <string name="widget_agenda_label">Calendula agenda</string>
     <string name="widget_month_label">Calendula month</string>
+    <string name="widget_quick_add_label">Calendula quick add</string>
+    <string name="widget_date_label">Calendula date</string>
+    <string name="widget_week_strip_label">Calendula week strip</string>
+    <!-- A day in the week strip widget, for screen readers: "Wednesday, 7 October, 2 events" -->
+    <plurals name="widget_day_with_events">
+        <item quantity="one">%1$s, %2$d event</item>
+        <item quantity="other">%1$s, %2$d events</item>
+    </plurals>
+    <string name="widget_upcoming_label">Calendula upcoming</string>
+    <string name="widget_upcoming_empty">No upcoming events</string>
+    <string name="widget_today_label">Calendula today</string>
+    <string name="widget_nothing_left_today">Nothing left today</string>
+    <string name="widget_countdown_label">Calendula countdown</string>
+    <string name="widget_countdown_now">Now</string>
+    <string name="widget_countdown_ending_now">Ending now</string>
+    <string name="widget_countdown_tomorrow">Tomorrow</string>
+    <string name="widget_countdown_ends_tomorrow">Ends tomorrow</string>
+    <!-- A running all-day event's last day: "Until Fri" -->
+    <string name="widget_countdown_until">Until %1$s</string>
+    <plurals name="widget_countdown_in_minutes">
+        <item quantity="one">in %d min</item>
+        <item quantity="other">in %d min</item>
+    </plurals>
+    <plurals name="widget_countdown_in_hours">
+        <item quantity="one">in %d h</item>
+        <item quantity="other">in %d h</item>
+    </plurals>
+    <plurals name="widget_countdown_in_days">
+        <item quantity="one">in %d day</item>
+        <item quantity="other">in %d days</item>
+    </plurals>
+    <plurals name="widget_countdown_ends_minutes">
+        <item quantity="one">ends in %d min</item>
+        <item quantity="other">ends in %d min</item>
+    </plurals>
+    <plurals name="widget_countdown_ends_hours">
+        <item quantity="one">ends in %d h</item>
+        <item quantity="other">ends in %d h</item>
+    </plurals>
+    <plurals name="widget_countdown_ends_days">
+        <item quantity="one">ends in %d day</item>
+        <item quantity="other">ends in %d days</item>
+    </plurals>
+    <string name="widget_countdown_choose">Tap to choose an event to count down to</string>
+    <!-- A pinned countdown whose event has no occurrence left: "Vacation is over" -->
+    <string name="widget_countdown_over">%1$s is over</string>
+    <string name="widget_config_countdown">Count down to</string>
+    <string name="widget_config_countdown_next">Next event</string>
+    <string name="widget_config_countdown_pinned">Chosen event</string>
+    <string name="widget_config_countdown_next_hint">The next timed event in this widget\'s calendars, or the one running now. All-day and declined events are skipped.</string>
+    <string name="widget_config_countdown_event">Event</string>
+    <string name="widget_config_countdown_event_none">None chosen yet</string>
+    <string name="widget_config_countdown_search">Search events</string>
+    <string name="widget_config_countdown_empty">No events in the coming year match.</string>
+    <string name="widget_config_countdown_load_failed">Couldn\'t load your events.</string>
+    <!-- A repeating event in the countdown's event list: "Next: Fri, 24 Oct · repeats" -->
+    <string name="widget_config_countdown_repeats">%1$s · repeats</string>
+    <string name="widget_month_day_label">Calendula month and day</string>
+    <string name="widget_day_empty">No events</string>
     <string name="widget_refresh">Refresh</string>
     <string name="widget_new_event">New event</string>
     <string name="widget_needs_permission">Open Calendula to grant calendar access</string>
     <string name="widget_prev_month">Previous month</string>
     <string name="widget_next_month">Next month</string>
     <string name="widget_today">Today</string>
+    <string name="widget_config_background">Background</string>
+    <string name="widget_config_background_solid">Solid</string>
+    <string name="widget_config_background_tinted">Tinted</string>
+    <string name="widget_config_background_transparent">Transparent</string>
+    <string name="widget_config_theme_follow_app">Follow app</string>
+    <string name="widget_config_content">Content</string>
+    <string name="widget_config_range">Time range</string>
+    <string name="widget_config_text_size">Text size</string>
+    <string name="widget_config_load_failed">Couldn\'t read this widget\'s settings.</string>
+    <string name="widget_config_preview_failed">Preview unavailable</string>
+    <string name="widget_config_save_failed">Couldn\'t save the widget. Try again.</string>
+    <!-- A widget's name and its number, when there are several of the same kind: "Calendula agenda 2" -->
+    <string name="widget_numbered">%1$s %2$d</string>
+    <!-- A placed widget's background and theme: "Tinted · Follow app" -->
+    <string name="widget_appearance_summary">%1$s · %2$s</string>
+    <string name="widget_config_calendars">Calendars</string>
+    <string name="widget_config_calendars_hint">The calendars this widget shows. Calendars you hid in the app stay hidden here too.</string>
+    <string name="widget_config_calendars_all">All calendars</string>
+    <!-- How many calendars a widget shows: "2 of 5 calendars" -->
+    <plurals name="widget_config_calendars_some">
+        <item quantity="one">%1$d of %2$d calendar</item>
+        <item quantity="other">%1$d of %2$d calendars</item>
+    </plurals>
 
     <!-- Calendar filter (M3) -->
     <string name="filter_title">Calendars</string>
@@ -539,6 +621,9 @@
     <string name="settings_past_events_sample_morning">Team review</string>
     <string name="settings_past_events_sample_midday">Lunch with Robin</string>
     <string name="settings_past_events_sample_evening">Choir practice</string>
+    <!-- Stand-in event titles in the widget picker previews. Short, everyday entries. -->
+    <string name="widget_preview_sample_trip">Weekend trip</string>
+    <string name="widget_preview_sample_dentist">Dentist</string>
     <string name="settings_agenda_header">Agenda</string>
     <string name="settings_agenda_range">Agenda range</string>
     <string name="settings_agenda_range_hint">How far ahead the Agenda screen lists events.</string>
@@ -554,7 +639,7 @@
     <!-- %1$d is the event text size as a percentage of the smallest step, e.g. 130. -->
     <string name="settings_widget_size_summary">Event text %1$d%%</string>
     <string name="settings_agenda_show_today">Always show today</string>
-    <string name="settings_agenda_show_today_hint">Keep today at the top of the agenda and its widget, even once nothing is left today.</string>
+    <string name="settings_agenda_show_today_hint">Keep today at the top of the agenda, even once nothing is left today. Each widget has its own setting.</string>
     <string name="settings_agenda_range_bar">Range bar</string>
     <string name="settings_agenda_range_bar_hint">Show a bar at the top of the agenda naming the dates shown, with a button to switch the range for the session</string>
     <string name="agenda_range_day">Today</string>
@@ -645,12 +730,15 @@
     <string name="settings_event_form_subtitle">Default fields and behaviour</string>
     <string name="settings_notifications_subtitle">Reminders and delivery</string>
     <string name="settings_special_dates_subtitle">Contact birthdays &amp; anniversaries</string>
-    <string name="settings_widgets_subtitle">Agenda widget, Quick Settings tile</string>
+    <string name="settings_widgets_subtitle">Your widgets, Quick Settings tile</string>
     <string name="settings_backup_subtitle">Export, import, automatic backup</string>
 
     <!-- Widgets &amp; tiles (#69) -->
     <string name="settings_section_widgets">Widgets &amp; tiles</string>
-    <string name="settings_widgets_hint">Settings for the home-screen widgets and the Quick Settings tile. Add a widget by long-pressing your home screen.</string>
+    <string name="settings_widgets_hint">Each widget has its own look and options. Tap one below, or long-press it on your home screen and choose Edit. Add a widget by long-pressing your home screen.</string>
+    <string name="settings_widgets_hint_legacy">Each widget has its own look and options. Tap one below to change it. Add a widget by long-pressing your home screen.</string>
+    <string name="settings_widgets_placed">On your home screen</string>
+    <string name="settings_widgets_none">No Calendula widgets on your home screen yet.</string>
 
     <!-- Backup &amp; restore (#69) — the rows themselves reuse the calendars_* strings -->
     <string name="settings_section_backup">Backup &amp; restore</string>

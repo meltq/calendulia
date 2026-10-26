@@ -1,39 +1,36 @@
 package de.jeanlucmakiola.calendula.widget
 
-import android.os.Build
 import androidx.compose.runtime.Composable
-import androidx.glance.GlanceTheme
-import androidx.glance.material3.ColorProviders
 import androidx.glance.text.TextDecoration
 import de.jeanlucmakiola.calendula.ui.theme.CalendulaDarkFallback
 import de.jeanlucmakiola.calendula.ui.theme.CalendulaLightFallback
+import de.jeanlucmakiola.floret.glance.FloretGlanceTheme
+import de.jeanlucmakiola.floret.glance.WidgetSurface
+import de.jeanlucmakiola.floret.glance.WidgetThemeMode
+import de.jeanlucmakiola.floret.prefs.ThemeMode
 
 /**
- * Brand fallback for devices without Material You dynamic colour (API < 31).
- * Reuses the exact same hand-tuned schemes as the in-app theme
- * ([CalendulaLightFallback] / [CalendulaDarkFallback]) so a widget on an older
- * device matches the app surface-for-surface.
- */
-private val CalendulaGlanceColors = ColorProviders(
-    light = CalendulaLightFallback,
-    dark = CalendulaDarkFallback,
-)
-
-/**
- * Glance equivalent of `CalendulaTheme`. On API 31+ it follows the system's
- * Material You palette (so the widget matches the home screen / the app's
- * dynamic colour); below that it falls back to the brand scheme. Either way the
- * widget draws only from M3 colour-role tokens (`GlanceTheme.colors.*`) — never
- * a hardcoded colour — so it tracks light/dark automatically.
+ * Glance equivalent of `CalendulaTheme`: Material You on API 31+, the app's
+ * hand-tuned fallback schemes below that, in the light/dark [mode] the widget
+ * was configured with (#292).
  */
 @Composable
-fun CalendulaGlanceTheme(content: @Composable () -> Unit) {
-    val colors = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-        GlanceTheme.colors
-    } else {
-        CalendulaGlanceColors
+fun CalendulaGlanceTheme(mode: WidgetThemeMode, content: @Composable () -> Unit) {
+    FloretGlanceTheme(
+        lightScheme = CalendulaLightFallback,
+        darkScheme = CalendulaDarkFallback,
+        dynamicColor = true,
+        mode = mode,
+        content = content,
+    )
+}
+
+/** A widget's root: its configured theme and background around [content]. */
+@Composable
+internal fun CalendulaWidgetRoot(appearance: WidgetAppearance, appTheme: ThemeMode, content: @Composable () -> Unit) {
+    CalendulaGlanceTheme(appearance.theme.resolve(appTheme)) {
+        WidgetSurface(background = appearance.background, content = content)
     }
-    GlanceTheme(colors = colors, content = content)
 }
 
 /**

@@ -10,7 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.produceState
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -18,56 +20,46 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
-import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
 import de.jeanlucmakiola.calendula.qs.NewEventTileService
-import de.jeanlucmakiola.calendula.ui.common.AgendaRangePicker
-import de.jeanlucmakiola.calendula.ui.common.agendaRangeLabel
-import de.jeanlucmakiola.calendula.widget.WidgetSize
-import de.jeanlucmakiola.calendula.widget.agenda.metricsFor
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
-import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
-import de.jeanlucmakiola.floret.locale.currentLocale
-import kotlin.math.roundToInt
+import de.jeanlucmakiola.floret.components.GroupedSectionHeader
+import de.jeanlucmakiola.floret.components.positionOf
+import de.jeanlucmakiola.calendula.widget.config.PlacedWidget
+import de.jeanlucmakiola.calendula.widget.config.WidgetConfigActivity
+import de.jeanlucmakiola.calendula.widget.WidgetKind
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import de.jeanlucmakiola.calendula.widget.config.backgroundLabel
+import de.jeanlucmakiola.calendula.widget.config.placedWidgets
+import de.jeanlucmakiola.calendula.widget.config.themeLabel
 
 /**
- * Widgets & tiles (#69): the home-screen widgets' settings and the Quick
- * Settings tile shortcut. The agenda widget keeps its own range and text size,
- * separate from the Agenda screen's range in [ViewsScreen].
+ * Widgets & tiles (#69): the placed home-screen widgets, each opening its own
+ * config screen (#292), and the Quick Settings tile shortcut.
  */
 @Composable
 internal fun WidgetsScreen(
-    state: SettingsUiState,
-    viewModel: SettingsViewModel,
     onBack: () -> Unit,
     visible: Boolean = true,
 ) {
-    var showAgendaWidgetRange by remember { mutableStateOf(false) }
-    var showWidgetSize by remember { mutableStateOf(false) }
-
     CollapsingScaffold(
         title = stringResource(R.string.settings_section_widgets),
         onBack = onBack,
         predictiveBack = true,
         visible = visible,
     ) {
-        GroupedHint(stringResource(R.string.settings_widgets_hint))
-        Spacer(Modifier.height(8.dp))
-
-        GroupedRow(
-            title = stringResource(R.string.settings_agenda_widget_range),
-            summary = agendaRangeLabel(state.agendaWidgetRange),
-            position = Position.Top,
-            onClick = { showAgendaWidgetRange = true },
+        GroupedHint(
+            stringResource(
+                // The launcher's "Edit widget" action only exists from Android 12.
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) R.string.settings_widgets_hint
+                else R.string.settings_widgets_hint_legacy,
+            ),
         )
-        GroupedRow(
-            title = stringResource(R.string.settings_widget_size),
-            summary = widgetSizeLabel(state.widgetSize),
-            position = Position.Bottom,
-            onClick = { showWidgetSize = true },
-        )
+        GroupedSectionHeader(stringResource(R.string.settings_widgets_placed))
+        PlacedWidgetRows()
 
         // The add-tile prompt is API 33+; below that the tile is still
         // addable from the QS editor, so the row just doesn't appear.
@@ -76,30 +68,44 @@ internal fun WidgetsScreen(
             QuickSettingsTileRow()
         }
     }
+}
 
-    if (showAgendaWidgetRange) {
-        AgendaRangePicker(
-            title = stringResource(R.string.settings_agenda_widget_range),
-            description = stringResource(R.string.settings_agenda_widget_range_hint),
-            selected = state.agendaWidgetRange,
-            weekStart = state.weekStart.resolveFirstDay(currentLocale()),
-            onSelect = viewModel::setAgendaWidgetRange,
-            onDismiss = { showAgendaWidgetRange = false },
-        )
+@Composable
+private fun PlacedWidgetRows() {
+    val context = LocalContext.current
+    // Read on every resume, the first included, so a widget added, removed or
+    // edited meanwhile shows up.
+    var refresh by remember { mutableIntStateOf(0) }
+    LifecycleResumeEffect(Unit) {
+        refresh++
+        onPauseOrDispose {}
     }
-    if (showWidgetSize) {
-        OptionPicker(
-            title = stringResource(R.string.settings_widget_size),
-            header = { GroupedHint(stringResource(R.string.settings_widget_size_hint), verticalPadding = 8.dp) },
-            predictiveBack = true,
-            options = WidgetSize.entries,
-            selected = state.widgetSize,
-            label = { widgetSizeLabel(it) },
-            // No live preview: the widget is Glance/RemoteViews, so a Compose
-            // mock-up would be a second implementation free to drift.
-            summary = { widgetSizeSummary(it) },
-            onSelect = viewModel::setWidgetSize,
-            onDismiss = { showWidgetSize = false },
+    val widgets by produceState<List<PlacedWidget>?>(initialValue = null, refresh) {
+        if (refresh > 0) value = withContext(Dispatchers.IO) { context.placedWidgets() }
+    }
+    val placed = widgets ?: return
+    if (placed.isEmpty()) {
+        GroupedRow(
+            title = stringResource(R.string.settings_widgets_none),
+            position = Position.Alone,
+            dimmed = true,
+        )
+        return
+    }
+    val kindCounts = placed.groupingBy { it.kind }.eachCount()
+    val kindSeen = mutableMapOf<WidgetKind, Int>()
+    placed.forEachIndexed { index, widget ->
+        val number = kindSeen.merge(widget.kind, 1, Int::plus)!!
+        val label = stringResource(widget.kind.label)
+        GroupedRow(
+            title = if (kindCounts.getValue(widget.kind) > 1) stringResource(R.string.widget_numbered, label, number) else label,
+            summary = stringResource(
+                R.string.widget_appearance_summary,
+                backgroundLabel(widget.appearance.background),
+                themeLabel(widget.appearance.theme),
+            ),
+            position = positionOf(index, placed.size),
+            onClick = { context.startActivity(WidgetConfigActivity.intent(context, widget.appWidgetId)) },
         )
     }
 }
@@ -131,24 +137,3 @@ private fun requestAddQsTile(context: Context) {
         context.mainExecutor,
     ) { /* result code unused — the system surfaces its own feedback */ }
 }
-
-/**
- * What a size step does, as a percentage of the smallest one's event text.
- * Derived from the widget's own [metricsFor] table rather than hardcoded.
- */
-@Composable
-private fun widgetSizeSummary(size: WidgetSize): String {
-    val base = metricsFor(WidgetSize.SMALL).eventTitle.value
-    val percent = (metricsFor(size).eventTitle.value / base * 100f).roundToInt()
-    return stringResource(R.string.settings_widget_size_summary, percent)
-}
-
-@Composable
-private fun widgetSizeLabel(size: WidgetSize): String = stringResource(
-    when (size) {
-        WidgetSize.SMALL -> R.string.settings_widget_size_small
-        WidgetSize.MEDIUM -> R.string.settings_widget_size_medium
-        WidgetSize.LARGE -> R.string.settings_widget_size_large
-        WidgetSize.EXTRA_LARGE -> R.string.settings_widget_size_extra_large
-    },
-)
