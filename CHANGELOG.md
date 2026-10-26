@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Six new home-screen widgets.** Quick add (1×1) opens a new event on today with the same defaults as the app's + button ([#435]). Date (1×1) shows today's weekday and day number on a rounded shape and opens today ([#376]). Week strip (4×1) shows this week's days with a dot in each event's colour and today filled ([#436]). Upcoming (2×2) shows today's date over your next events, as many as fit ([#437]). Today lists today's events; once they're over it says "Nothing left today" and shows tomorrow's first one or two ([#438]). Countdown counts down to your next timed event, or to an event or series you pick, like a holiday in 12 days ([#439]).
+- **A month and day widget.** A compact month grid sits beside the events of one day. Tap a day in the grid to see its events, and tap the list to open that day in the app ([#441]).
+- **Each widget has its own settings.** Placing a widget, or long-pressing it and choosing Edit, opens a settings screen with a live preview. Pick a solid, tinted or transparent background, a light or dark theme or the app's, and which calendars it shows. Widgets that list events also have their time range, text size and how past events look. Settings → Widgets lists the widgets on your home screen so you can change them from there. These options used to be shared by all widgets; widgets you already placed keep what you had set ([#292]).
+
+### Changed
+- **The agenda and month widgets have a new look.** The agenda puts each day in its own card, with a round date pill beside the first event and today's pill filled. The month widget has rounded day cells, weekday pills, shaded days outside the month and a + for a new event. The agenda's refresh button is gone, since widgets now update on their own ([#71], [#90]).
+- **Tapping a day in the month widget opens that day,** wherever in its cell you tap ([#386]).
+- **The widget picker shows what each widget looks like.** On Android 15 and later the previews are the real widgets with sample events, in your language and colours; on older versions they are redrawn to match.
+
+### Fixed
+- **Widgets show your changes straight away.** After you added, edited or deleted an event, a widget could keep showing the old events until something else redrew it ([#420], [#229]).
+- **The month widget handles busy months.** It could show "Can't show content", or only one or two events per day. Each day now shows as many events as its height fits, and the rest fold into +N ([#372]).
+
 ## [2.23.0] — 2026-10-21
 
 ### Added
@@ -1889,3 +1903,17 @@ automatically, with zero telemetry and no internet permission.
 [#178]: https://codeberg.org/jlmakiola/calendula/issues/178
 [#116]: https://codeberg.org/jlmakiola/calendula/issues/116
 [#413]: https://codeberg.org/jlmakiola/calendula/issues/413
+[#71]: https://codeberg.org/jlmakiola/calendula/issues/71
+[#90]: https://codeberg.org/jlmakiola/calendula/issues/90
+[#229]: https://codeberg.org/jlmakiola/calendula/issues/229
+[#292]: https://codeberg.org/jlmakiola/calendula/issues/292
+[#372]: https://codeberg.org/jlmakiola/calendula/issues/372
+[#376]: https://codeberg.org/jlmakiola/calendula/issues/376
+[#386]: https://codeberg.org/jlmakiola/calendula/issues/386
+[#420]: https://codeberg.org/jlmakiola/calendula/issues/420
+[#435]: https://codeberg.org/jlmakiola/calendula/issues/435
+[#436]: https://codeberg.org/jlmakiola/calendula/issues/436
+[#437]: https://codeberg.org/jlmakiola/calendula/issues/437
+[#438]: https://codeberg.org/jlmakiola/calendula/issues/438
+[#439]: https://codeberg.org/jlmakiola/calendula/issues/439
+[#441]: https://codeberg.org/jlmakiola/calendula/issues/441
