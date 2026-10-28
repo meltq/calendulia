@@ -147,9 +147,9 @@ private fun openDayIntent(context: Context, date: LocalDate): PendingIntent = Pe
 )
 
 private val STRIP_IDS = intArrayOf(R.id.strip_0, R.id.strip_1, R.id.strip_2, R.id.strip_3, R.id.strip_4, R.id.strip_5, R.id.strip_6)
-/** The shade over a day outside the month: a dark cell needs more of it to read as dimmed. */
-private val OUTSIDE_SHADE_DAY = Color.Black.copy(alpha = 0.18f)
-private val OUTSIDE_SHADE_NIGHT = Color.Black.copy(alpha = 0.50f)
+/** The shade over a day outside the month: a dark cell needs more of it to read as dimmed. Mirrored by `widget_preview_outside_shade`. */
+private val OUTSIDE_SHADE_DAY = Color.Black.copy(alpha = 0.11f)
+private val OUTSIDE_SHADE_NIGHT = Color.Black.copy(alpha = 0.30f)
 
 private val CELL_DIM_IDS = intArrayOf(
     R.id.cell_dim_0, R.id.cell_dim_1, R.id.cell_dim_2, R.id.cell_dim_3, R.id.cell_dim_4, R.id.cell_dim_5, R.id.cell_dim_6,

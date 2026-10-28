@@ -23,7 +23,6 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.isDeclined
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
-import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.ui.common.SECONDARY_INK_ALPHA
 import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.ui.common.eventInk
@@ -31,6 +30,16 @@ import de.jeanlucmakiola.calendula.widget.agenda.metricsFor
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.glance.WidgetGroupedRow
 import de.jeanlucmakiola.floret.glance.themedColor
+
+/** A past event's fill when dimmed: fainter than the app's whole-row dim, so its text can stay readable (#90). */
+internal const val WidgetDimFillAlpha = 0.3f
+
+/** A dimmed event's ink, held above its fill. */
+private const val WidgetDimInkAlpha = 0.65f
+
+/** Ink for an event on [fill], picked against the opaque tone and faded when the fill is dimmed. */
+internal fun widgetEventInk(fill: Color, alpha: Float): Color =
+    eventInk(fill.copy(alpha = 1f), if (fill.alpha < 1f) alpha * WidgetDimInkAlpha else alpha)
 
 /** Text and row sizes of a compact event list, from a widget's [WidgetSize]. */
 internal data class EventRowMetrics(val title: TextUnit, val time: TextUnit, val rowHeight: Dp, val message: TextUnit)
@@ -63,11 +72,9 @@ internal fun WidgetEventRow(
     quiet: Boolean = false,
 ) {
     val context = LocalContext.current
-    fun tone(dark: Boolean): Color = eventFill(event.color, dark, soften).let { if (dimmed) it.copy(alpha = EventDimAlpha) else it }
+    fun tone(dark: Boolean): Color = eventFill(event.color, dark, soften).let { if (dimmed) it.copy(alpha = WidgetDimFillAlpha) else it }
     val day = tone(dark = false)
     val night = tone(dark = true)
-    // Ink is picked against the opaque fill, then carries the dim along with it.
-    fun ink(fill: Color, alpha: Float) = eventInk(fill.copy(alpha = 1f), alpha * fill.alpha)
     val card = widgetCardColor()
     WidgetGroupedRow(position = position, color = if (quiet) card else themedColor(day = day, night = night)) {
         Column(
@@ -91,12 +98,12 @@ internal fun WidgetEventRow(
             val titleInk = if (quiet) {
                 GlanceTheme.colors.onSurface
             } else {
-                themedColor(day = ink(day, 1f), night = ink(night, 1f))
+                themedColor(day = widgetEventInk(day, 1f), night = widgetEventInk(night, 1f))
             }
             val timeInk = if (quiet) {
                 GlanceTheme.colors.onSurfaceVariant
             } else {
-                themedColor(day = ink(day, SECONDARY_INK_ALPHA), night = ink(night, SECONDARY_INK_ALPHA))
+                themedColor(day = widgetEventInk(day, SECONDARY_INK_ALPHA), night = widgetEventInk(night, SECONDARY_INK_ALPHA))
             }
             Text(
                 text = event.title.ifBlank { context.getString(R.string.event_untitled) },

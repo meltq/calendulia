@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.date
 
+import de.jeanlucmakiola.calendula.widget.InAppLanguage
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.previewSizeOf
 import de.jeanlucmakiola.calendula.widget.provideSamplePreview
@@ -24,7 +25,6 @@ import androidx.glance.layout.Column
 import androidx.glance.layout.Spacer
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.height
-import androidx.glance.layout.padding
 import androidx.glance.semantics.contentDescription
 import androidx.glance.semantics.semantics
 import androidx.glance.state.PreferencesGlanceStateDefinition
@@ -40,8 +40,6 @@ import de.jeanlucmakiola.calendula.widget.WidgetAppearance
 import de.jeanlucmakiola.calendula.widget.loadToday
 import de.jeanlucmakiola.calendula.widget.widgetAppearance
 import de.jeanlucmakiola.calendula.widget.widgetLocale
-import de.jeanlucmakiola.floret.glance.LocalWidgetBackground
-import de.jeanlucmakiola.floret.glance.WidgetBackground
 import de.jeanlucmakiola.floret.glance.WidgetData
 import de.jeanlucmakiola.floret.glance.WidgetShape
 import de.jeanlucmakiola.floret.glance.WidgetShapedBox
@@ -71,7 +69,9 @@ class DateWidget : GlanceAppWidget() {
         val widgetData = WidgetData(context.loadToday(), refreshStamp(context, id))
         provideContent {
             val loaded = widgetData.current(currentRefreshStamp()) { context.loadToday() }
-            DateWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            InAppLanguage {
+                DateWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            }
         }
     }
 }
@@ -105,11 +105,7 @@ internal fun DateWidgetContent(today: LocalDate, appearance: WidgetAppearance, a
             verticalAlignment = Alignment.CenterVertically,
         ) {
             val name = today.dayOfWeek.toJavaDayOfWeek().getDisplayName(JavaTextStyle.SHORT, widgetLocale())
-            val backing = if (LocalWidgetBackground.current == WidgetBackground.TRANSPARENT) {
-                GlanceModifier.wallpaperBacking(radius = 8.dp).padding(horizontal = 6.dp)
-            } else {
-                GlanceModifier
-            }
+            val backing = GlanceModifier.wallpaperBacking(radius = 8.dp, horizontalPadding = 6.dp)
             Text(text = name.uppercase(widgetLocale()), maxLines = 1, style = weekday, modifier = backing)
             Spacer(GlanceModifier.height(2.dp))
             WidgetShapedBox(shape = WidgetShape.COOKIE, color = GlanceTheme.colors.primary, size = side) {

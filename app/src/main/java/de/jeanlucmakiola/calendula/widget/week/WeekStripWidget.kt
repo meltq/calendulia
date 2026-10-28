@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.week
 
+import de.jeanlucmakiola.calendula.widget.InAppLanguage
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.previewSizeOf
 import de.jeanlucmakiola.calendula.widget.provideSamplePreview
@@ -91,7 +92,9 @@ class WeekStripWidget : GlanceAppWidget() {
         val widgetData = WidgetData(context.loadWeek(id), refreshStamp(context, id))
         provideContent {
             val loaded = widgetData.current(currentRefreshStamp()) { context.loadWeek(id) }
-            WeekStripWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            InAppLanguage {
+                WeekStripWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            }
         }
     }
 }

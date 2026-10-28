@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.month
 
+import de.jeanlucmakiola.calendula.widget.InAppLanguage
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.previewSizeOf
 import de.jeanlucmakiola.calendula.widget.provideSamplePreview
@@ -169,12 +170,14 @@ class MonthWidget : GlanceAppWidget() {
                 else -> index.coerceIn(source.months)
             }
             SideEffect { lastShown = shown }
-            MonthWidgetContent(
-                source = source,
-                index = shown,
-                appearance = currentState<Preferences>().widgetAppearance,
-                appTheme = loaded.appTheme,
-            )
+            InAppLanguage {
+                MonthWidgetContent(
+                    source = source,
+                    index = shown,
+                    appearance = currentState<Preferences>().widgetAppearance,
+                    appTheme = loaded.appTheme,
+                )
+            }
         }
     }
 }

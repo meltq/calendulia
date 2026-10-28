@@ -34,6 +34,17 @@ internal val WIDGET_RECEIVER_CLASSES: List<Class<*>> = WidgetKind.entries.map { 
 /** The app's own midnight wake-up (#228). */
 internal const val ACTION_WIDGET_ROLLOVER = "de.jeanlucmakiola.calendula.widget.ROLLOVER"
 
+/** Redraws every widget, for app changes they draw with that no other signal reaches, like its language (#90). */
+internal const val ACTION_WIDGET_REDRAW = "de.jeanlucmakiola.calendula.widget.REDRAW"
+
+/**
+ * Asks [WidgetUpdateReceiver] to redraw every widget. A broadcast rather than a
+ * coroutine, so it outlives the activity a language change recreates.
+ */
+fun requestWidgetRedraw(context: Context) {
+    context.sendBroadcast(Intent(context, WidgetUpdateReceiver::class.java).setAction(ACTION_WIDGET_REDRAW))
+}
+
 /** Fixed: there is only ever one rollover alarm, and re-arming must replace it. */
 private const val ROLLOVER_REQUEST_CODE = 0x0DA1
 

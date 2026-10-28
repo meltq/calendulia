@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.today
 
+import de.jeanlucmakiola.calendula.widget.InAppLanguage
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.previewSizeOf
 import de.jeanlucmakiola.calendula.widget.provideSamplePreview
@@ -62,8 +63,6 @@ import de.jeanlucmakiola.calendula.widget.widgetLocale
 import de.jeanlucmakiola.calendula.widget.widgetLoadContext
 import de.jeanlucmakiola.calendula.widget.widgetTimeLabel
 import de.jeanlucmakiola.floret.components.positionOf
-import de.jeanlucmakiola.floret.glance.LocalWidgetBackground
-import de.jeanlucmakiola.floret.glance.WidgetBackground
 import de.jeanlucmakiola.floret.glance.WidgetData
 import de.jeanlucmakiola.floret.glance.WidgetMessage
 import de.jeanlucmakiola.floret.glance.currentRefreshStamp
@@ -99,7 +98,9 @@ class TodayWidget : GlanceAppWidget() {
         val widgetData = WidgetData(context.loadTodayList(context.widgetLoadContext(id)), refreshStamp(context, id))
         provideContent {
             val loaded = widgetData.current(currentRefreshStamp()) { context.loadTodayList(context.widgetLoadContext(id)) }
-            TodayWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            InAppLanguage {
+                TodayWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            }
         }
     }
 }
@@ -189,11 +190,7 @@ private fun NothingLeft(tomorrow: List<EventInstance>, data: DaysWidgetData.Read
     val room = LocalSize.current.height - 12.dp - lineHeight
     val fits = ((room + RowGap) / (metrics.rowHeight + RowGap)).toInt().coerceIn(0, 2)
     val ahead = tomorrow.take(fits)
-    val backing = if (LocalWidgetBackground.current == WidgetBackground.TRANSPARENT) {
-        GlanceModifier.wallpaperBacking(radius = 8.dp).padding(horizontal = 8.dp)
-    } else {
-        GlanceModifier.padding(horizontal = 4.dp)
-    }
+    val backing = GlanceModifier.wallpaperBacking(radius = 8.dp, horizontalPadding = 8.dp, filledHorizontalPadding = 4.dp)
     Column(modifier = GlanceModifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
         Text(
             text = context.getString(R.string.widget_nothing_left_today),

@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.agenda
 
+import de.jeanlucmakiola.calendula.widget.InAppLanguage
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.previewSizeOf
 import de.jeanlucmakiola.calendula.widget.provideSamplePreview
@@ -50,11 +51,11 @@ import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.hasEnded
 import de.jeanlucmakiola.calendula.ui.agenda.anchorTodayIfMissing
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
-import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.ui.common.formatCalendarTitle
 import de.jeanlucmakiola.floret.locale.localizedDateFormatter
 import de.jeanlucmakiola.calendula.ui.common.eventFill
-import de.jeanlucmakiola.calendula.ui.common.eventInk
+import de.jeanlucmakiola.calendula.widget.WidgetDimFillAlpha
+import de.jeanlucmakiola.calendula.widget.widgetEventInk
 import de.jeanlucmakiola.calendula.ui.common.SECONDARY_INK_ALPHA
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetData
 import de.jeanlucmakiola.calendula.widget.WidgetSize
@@ -110,11 +111,13 @@ class AgendaWidget : GlanceAppWidget() {
             // A running session never re-runs this preamble, so every redraw
             // moves the stamp and the data reloads here instead (#420).
             val loaded = widgetData.current(currentRefreshStamp()) { context.loadAgendaWidget(id) }
-            AgendaWidgetContent(
-                data = loaded.content,
-                appearance = currentState<Preferences>().widgetAppearance,
-                appTheme = loaded.appTheme,
-            )
+            InAppLanguage {
+                AgendaWidgetContent(
+                    data = loaded.content,
+                    appearance = currentState<Preferences>().widgetAppearance,
+                    appTheme = loaded.appTheme,
+                )
+            }
         }
     }
 }
@@ -392,7 +395,7 @@ private data class EventFill(val day: Color, val night: Color)
 private fun AgendaRow.Event.fill(data: AgendaWidgetData.Ready): EventFill {
     val dimmed = data.pastDisplay == PastEventDisplay.DIM && event.hasEnded(data.now)
     fun tone(dark: Boolean) = eventFill(event.color, dark, data.soften).let {
-        if (dimmed) it.copy(alpha = EventDimAlpha) else it
+        if (dimmed) it.copy(alpha = WidgetDimFillAlpha) else it
     }
     return EventFill(day = tone(dark = false), night = tone(dark = true))
 }
@@ -407,12 +410,10 @@ private fun EventRow(
 ) {
     val context = androidx.glance.LocalContext.current
     val title = event.title.ifBlank { context.getString(R.string.event_untitled) }
-    // Ink is picked against the opaque fill, then carries the dim along with it.
-    fun ink(fill: Color, alpha: Float) = eventInk(fill.copy(alpha = 1f), alpha * fill.alpha)
-    val titleInk = themedColor(day = ink(fill.day, 1f), night = ink(fill.night, 1f))
+    val titleInk = themedColor(day = widgetEventInk(fill.day, 1f), night = widgetEventInk(fill.night, 1f))
     val timeInk = themedColor(
-        day = ink(fill.day, SECONDARY_INK_ALPHA),
-        night = ink(fill.night, SECONDARY_INK_ALPHA),
+        day = widgetEventInk(fill.day, SECONDARY_INK_ALPHA),
+        night = widgetEventInk(fill.night, SECONDARY_INK_ALPHA),
     )
     Column(
         modifier = GlanceModifier

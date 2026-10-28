@@ -30,6 +30,7 @@ import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.floret.locale.AppLanguage
 import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.floret.prefs.isDark
 import de.jeanlucmakiola.floret.prefs.isPureBlack
@@ -278,6 +279,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // Reaching a running UI means startup succeeded; reset the loop trail.
         CrashReporter.markHealthy(this)
+        AppLanguage.syncMirror(this)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

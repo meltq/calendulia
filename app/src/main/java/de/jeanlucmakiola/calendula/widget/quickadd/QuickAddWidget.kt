@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.quickadd
 
+import de.jeanlucmakiola.calendula.widget.InAppLanguage
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.previewSizeOf
 import de.jeanlucmakiola.calendula.widget.provideSamplePreview
@@ -59,7 +60,9 @@ class QuickAddWidget : GlanceAppWidget() {
         provideContent {
             // The rollover moves the stamp, so the editor opens on the new day.
             val loaded = widgetData.current(currentRefreshStamp()) { context.loadToday() }
-            QuickAddWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            InAppLanguage {
+                QuickAddWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            }
         }
     }
 }

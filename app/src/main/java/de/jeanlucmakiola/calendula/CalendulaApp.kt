@@ -15,6 +15,7 @@ import de.jeanlucmakiola.calendula.widget.syncWidgetRollover
 import de.jeanlucmakiola.calendula.widget.widgetEntryPoint
 import de.jeanlucmakiola.floret.crash.CrashConfig
 import de.jeanlucmakiola.floret.crash.CrashReporter
+import de.jeanlucmakiola.floret.locale.AppLanguage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -45,6 +46,9 @@ class CalendulaApp : Application() {
                 chooseIssueUrl = getString(R.string.report_issue_choose_url),
             ),
         )
+        // Below API 33 only AppCompat activities get the app language; a process
+        // woken for a widget formats in it too (#90).
+        AppLanguage.applyDefault(this)
         // Before anything that writes, so the widgets see every change (#420).
         widgetEntryPoint().widgetRefreshCoordinator().start()
         reconcileAutoBackup()

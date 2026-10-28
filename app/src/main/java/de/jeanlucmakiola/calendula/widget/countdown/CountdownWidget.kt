@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.countdown
 
+import de.jeanlucmakiola.calendula.widget.InAppLanguage
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.previewSizeOf
 import de.jeanlucmakiola.calendula.widget.provideSamplePreview
@@ -49,9 +50,7 @@ import de.jeanlucmakiola.calendula.widget.formatWidgetTime
 import de.jeanlucmakiola.calendula.widget.relativeDayLabel
 import de.jeanlucmakiola.calendula.widget.systemZone
 import de.jeanlucmakiola.calendula.widget.widgetAppearance
-import de.jeanlucmakiola.calendula.widget.widgetCardColor
-import de.jeanlucmakiola.floret.glance.LocalWidgetBackground
-import de.jeanlucmakiola.floret.glance.WidgetBackground
+import de.jeanlucmakiola.floret.glance.wallpaperBacking
 import de.jeanlucmakiola.floret.glance.WidgetData
 import de.jeanlucmakiola.floret.glance.WidgetMessage
 import de.jeanlucmakiola.floret.glance.currentRefreshStamp
@@ -82,7 +81,9 @@ class CountdownWidget : GlanceAppWidget() {
         val widgetData = WidgetData(context.loadPlacedCountdown(id), refreshStamp(context, id))
         provideContent {
             val loaded = widgetData.current(currentRefreshStamp()) { context.loadPlacedCountdown(id) }
-            CountdownWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            InAppLanguage {
+                CountdownWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            }
         }
     }
 }
@@ -144,11 +145,7 @@ private fun EventCountdown(event: EventInstance, data: CountdownData.Ready) {
         ),
     )
     // Over a wallpaper the text sits on its own card, as every other widget's rows do.
-    val card = if (LocalWidgetBackground.current == WidgetBackground.TRANSPARENT) {
-        GlanceModifier.cornerRadius(16.dp).background(widgetCardColor())
-    } else {
-        GlanceModifier
-    }
+    val card = GlanceModifier.wallpaperBacking(radius = 16.dp)
     Box(modifier = GlanceModifier.fillMaxSize().padding(6.dp)) {
         Row(
             modifier = card.fillMaxSize().clickable(open).padding(horizontal = 10.dp, vertical = 8.dp),

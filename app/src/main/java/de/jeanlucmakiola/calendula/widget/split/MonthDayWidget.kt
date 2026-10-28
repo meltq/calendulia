@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.split
 
+import de.jeanlucmakiola.calendula.widget.InAppLanguage
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.previewSizeOf
 import de.jeanlucmakiola.calendula.widget.provideSamplePreview
@@ -84,9 +85,7 @@ import kotlinx.datetime.toJavaLocalDate
 import de.jeanlucmakiola.calendula.widget.widgetTimeLabel
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.floret.components.positionOf
-import de.jeanlucmakiola.floret.glance.LocalWidgetBackground
 import de.jeanlucmakiola.floret.glance.WidgetActionStyle
-import de.jeanlucmakiola.floret.glance.WidgetBackground
 import de.jeanlucmakiola.floret.glance.WidgetData
 import de.jeanlucmakiola.floret.glance.WidgetHeader
 import de.jeanlucmakiola.floret.glance.WidgetHeaderAction
@@ -168,7 +167,9 @@ class MonthDayWidget : GlanceAppWidget() {
             val currentStamp = currentRefreshStamp()
             val loaded = widgetData.current(currentCenter, currentStamp) { load(currentCenter, currentStamp) }
             val selected = currentState(SELECTED_KEY)?.let(LocalDate::parse)
-            MonthDayWidgetContent(loaded.content, index, selected, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            InAppLanguage {
+                MonthDayWidgetContent(loaded.content, index, selected, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            }
         }
     }
 }
@@ -331,11 +332,7 @@ private fun Grid(
 ) {
     val locale = widgetLocale()
     val month = index % 12 + 1
-    val backing = if (LocalWidgetBackground.current == WidgetBackground.TRANSPARENT) {
-        GlanceModifier.cornerRadius(14.dp).background(widgetCardColor())
-    } else {
-        GlanceModifier
-    }
+    val backing = GlanceModifier.wallpaperBacking(radius = 14.dp)
     Column(modifier = backing.fillMaxSize().padding(2.dp)) {
         Row(modifier = GlanceModifier.fillMaxWidth()) {
             for (i in 0 until 7) {

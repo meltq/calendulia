@@ -1,12 +1,17 @@
 package de.jeanlucmakiola.calendula.widget
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.glance.LocalContext
 import androidx.glance.text.TextDecoration
 import de.jeanlucmakiola.calendula.ui.theme.CalendulaDarkFallback
 import de.jeanlucmakiola.calendula.ui.theme.CalendulaLightFallback
 import de.jeanlucmakiola.floret.glance.FloretGlanceTheme
 import de.jeanlucmakiola.floret.glance.WidgetSurface
 import de.jeanlucmakiola.floret.glance.WidgetThemeMode
+import de.jeanlucmakiola.floret.locale.AppLanguage
 import de.jeanlucmakiola.floret.prefs.ThemeMode
 
 /**
@@ -39,3 +44,20 @@ internal fun CalendulaWidgetRoot(appearance: WidgetAppearance, appTheme: ThemeMo
  */
 fun glanceDeclinedDecoration(isDeclined: Boolean): TextDecoration =
     if (isDeclined) TextDecoration.LineThrough else TextDecoration.None
+
+/** Static, so a language change recomposes the whole widget rather than letting unchanged parts skip. */
+private val LocalWidgetLanguage = staticCompositionLocalOf<String?> { null }
+
+/**
+ * Draws [content] in the app's own language (#90): [LocalContext] and the
+ * default locale follow it, which below API 33 nothing else does outside an
+ * AppCompat activity. Read on every recomposition, so a redraw picks up a change.
+ */
+@Composable
+internal fun InAppLanguage(content: @Composable () -> Unit) {
+    val base = LocalContext.current
+    val tag = AppLanguage.currentTag(base)
+    AppLanguage.applyDefault(base, tag)
+    val localized = remember(base, tag) { AppLanguage.localized(base, tag) }
+    CompositionLocalProvider(LocalContext provides localized, LocalWidgetLanguage provides tag, content = content)
+}

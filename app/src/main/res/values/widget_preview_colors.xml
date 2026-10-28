@@ -6,7 +6,7 @@
 <resources>
     <color name="widget_preview_surface">#D6E4F0</color>
     <color name="widget_preview_cell">#EEF3F8</color>
-    <color name="widget_preview_outside">#C2CCD6</color>
+    <color name="widget_preview_outside_shade">#1C000000</color>
     <color name="widget_preview_on_surface">#191C1F</color>
     <color name="widget_preview_variant">#6E7479</color>
     <color name="widget_preview_primary">#3B5364</color>

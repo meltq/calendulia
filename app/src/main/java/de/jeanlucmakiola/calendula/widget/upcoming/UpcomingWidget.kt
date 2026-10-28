@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget.upcoming
 
+import de.jeanlucmakiola.calendula.widget.InAppLanguage
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.previewSizeOf
 import de.jeanlucmakiola.calendula.widget.provideSamplePreview
@@ -54,8 +55,6 @@ import de.jeanlucmakiola.calendula.widget.widgetLocale
 import de.jeanlucmakiola.calendula.widget.widgetLoadContext
 import de.jeanlucmakiola.calendula.widget.widgetTimeLabel
 import de.jeanlucmakiola.floret.components.positionOf
-import de.jeanlucmakiola.floret.glance.LocalWidgetBackground
-import de.jeanlucmakiola.floret.glance.WidgetBackground
 import de.jeanlucmakiola.floret.glance.WidgetData
 import de.jeanlucmakiola.floret.glance.WidgetMessage
 import de.jeanlucmakiola.floret.glance.currentRefreshStamp
@@ -89,7 +88,9 @@ class UpcomingWidget : GlanceAppWidget() {
         val widgetData = WidgetData(context.loadUpcoming(context.widgetLoadContext(id)), refreshStamp(context, id))
         provideContent {
             val loaded = widgetData.current(currentRefreshStamp()) { context.loadUpcoming(context.widgetLoadContext(id)) }
-            UpcomingWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            InAppLanguage {
+                UpcomingWidgetContent(loaded.content, currentState<Preferences>().widgetAppearance, loaded.appTheme)
+            }
         }
     }
 }
@@ -155,11 +156,7 @@ internal fun UpcomingWidgetContent(data: DaysWidgetData, appearance: WidgetAppea
 private fun DateHeader(today: LocalDate, height: Dp) {
     val context = LocalContext.current
     val locale = widgetLocale()
-    val backing = if (LocalWidgetBackground.current == WidgetBackground.TRANSPARENT) {
-        GlanceModifier.wallpaperBacking(radius = 12.dp).padding(horizontal = 8.dp)
-    } else {
-        GlanceModifier.padding(horizontal = 4.dp)
-    }
+    val backing = GlanceModifier.wallpaperBacking(radius = 12.dp, horizontalPadding = 8.dp, filledHorizontalPadding = 4.dp)
     Box(modifier = GlanceModifier.fillMaxWidth().height(height), contentAlignment = Alignment.CenterStart) {
         Row(
             modifier = backing.clickable(actionStartActivity(MainActivity.openViewIntent(context, CalendarView.Agenda))),
