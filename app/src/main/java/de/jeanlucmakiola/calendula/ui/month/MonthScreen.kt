@@ -63,6 +63,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -157,10 +158,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.hasEnded
-import de.jeanlucmakiola.calendula.ui.agenda.AgendaDayHeader
+import de.jeanlucmakiola.calendula.ui.agenda.agendaDayLabel
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaEmptyDayRow
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaEventRow
-import de.jeanlucmakiola.calendula.ui.agenda.agendaDayLabel
 import de.jeanlucmakiola.calendula.ui.common.formatCalendarTitle
 import de.jeanlucmakiola.calendula.ui.common.AppBarSpacing
 import de.jeanlucmakiola.calendula.ui.common.CalendarFailure
@@ -1423,24 +1423,13 @@ private fun SplitMonthCollapsed(
                     .then(paneModifier)
                     .then(rememberSplitPaneSwipe(onPaneSwipeNext, onPaneSwipePrev)),
             ) {
-                InputChip(
-                    selected = true,
-                    onClick = onClearSelection,
-                    label = { Text(agendaDayLabel(selected, state.today)) },
-                    trailingIcon = {
-                        Icon(
-                            Icons.Default.Close,
-                            contentDescription = stringResource(R.string.month_split_clear_filter),
-                        )
-                    },
-                    modifier = Modifier.padding(start = 16.dp),
-                )
                 SplitDayPane(
                     date = selected,
                     today = state.today,
                     events = state.instancesByDay[selected],
                     zone = state.zone,
                     onOpenDay = onOpenDay,
+                    onClearSelection = onClearSelection,
                     onEventClick = onEventClick,
                     onCreateEvent = onCreateEvent,
                     modifier = Modifier.weight(1f).fillMaxWidth(),
@@ -1814,7 +1803,10 @@ private fun SplitDots(
     if (events.isEmpty()) return
     val soften = LocalSoftenColors.current
     val dimCutoff = LocalDimCutoff.current
+    // Held to the dots' height so a "+N" doesn't grow the row and push the dots
+    // down; the label overflows it evenly instead (#142).
     Row(
+        modifier = Modifier.height(SPLIT_DOT_SIZE),
         horizontalArrangement = Arrangement.spacedBy(2.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1849,6 +1841,7 @@ private fun SplitDots(
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier
+                    .wrapContentHeight(unbounded = true)
                     .morphBounds(MonthMorphKey.Overflow(date))
                     .alpha(if (allEnded(hidden, date, dimCutoff)) EventDimAlpha else 1f),
             )
@@ -1872,7 +1865,7 @@ private fun SplitMonthAgendaPane(
         .sorted()
     val dimCutoff = LocalDimCutoff.current
     val listState = key(state.month) { rememberLazyListState() }
-    LazyColumn(state = listState, contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp)) {
+    LazyColumn(state = listState, contentPadding = PaddingValues(top = 4.dp, bottom = 96.dp)) {
         agendaDays(
             days = days.map { AgendaDay(it, state.instancesByDay[it].orEmpty()) },
             today = state.today,
@@ -1882,6 +1875,7 @@ private fun SplitMonthAgendaPane(
             dimmed = { event, day -> dimCutoff != null && event.isPastOn(day, dimCutoff) },
             onOpenDay = onOpenDay,
             onEventClick = onEventClick,
+            compact = true,
         )
     }
 }
@@ -1889,7 +1883,8 @@ private fun SplitMonthAgendaPane(
 /**
  * The selected day's events, in the agenda's own row vocabulary so the two
  * surfaces read as one app. The date header opens the full Day view, matching
- * the Week and Agenda headers (#37).
+ * the Week and Agenda headers (#37). It is shown as the filter chip itself,
+ * whose ✕ clears the day filter back to the whole month (#142).
  */
 @Composable
 internal fun SplitDayPane(
@@ -1899,6 +1894,7 @@ internal fun SplitDayPane(
     events: List<EventInstance>?,
     zone: TimeZone,
     onOpenDay: (LocalDate) -> Unit,
+    onClearSelection: () -> Unit,
     onEventClick: (EventInstance) -> Unit,
     onCreateEvent: (LocalDate) -> Unit,
     modifier: Modifier = Modifier,
@@ -1910,7 +1906,23 @@ internal fun SplitDayPane(
     val enter = itemEnter()
     val fadeSpec = rememberCalendarFadeSpec()
     Column(modifier = modifier) {
-        AgendaDayHeader(date = date, today = today, onOpenDay = onOpenDay)
+        InputChip(
+            selected = true,
+            onClick = { onOpenDay(date) },
+            label = {
+                Text(agendaDayLabel(date, today), style = MaterialTheme.typography.titleSmall)
+            },
+            trailingIcon = {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = stringResource(R.string.month_split_clear_filter),
+                    modifier = Modifier
+                        .clip(CircleShape)
+                        .clickable(onClick = onClearSelection),
+                )
+            },
+            modifier = Modifier.padding(start = 16.dp),
+        )
         AnimatedContent(
             targetState = date to events,
             modifier = Modifier.weight(1f).fillMaxWidth(),

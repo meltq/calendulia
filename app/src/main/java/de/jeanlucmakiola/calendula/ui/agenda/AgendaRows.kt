@@ -59,11 +59,16 @@ import java.util.Locale
 // split style can list a day with exactly the same visual language instead of
 // growing a parallel set of event rows.
 
+/**
+ * A day's header; tapping it opens the Day view. [compact] trims the padding for
+ * the month view's split pane, where vertical space is short (#142).
+ */
 @Composable
 internal fun AgendaDayHeader(
     date: LocalDate,
     today: LocalDate,
     onOpenDay: (LocalDate) -> Unit,
+    compact: Boolean = false,
 ) {
     Surface(
         color = MaterialTheme.colorScheme.surface,
@@ -79,7 +84,12 @@ internal fun AgendaDayHeader(
             } else {
                 MaterialTheme.colorScheme.onSurfaceVariant
             },
-            modifier = Modifier.padding(start = 28.dp, end = 28.dp, top = 16.dp, bottom = 8.dp),
+            modifier = Modifier.padding(
+                start = 28.dp,
+                end = 28.dp,
+                top = if (compact) 8.dp else 16.dp,
+                bottom = if (compact) 4.dp else 8.dp,
+            ),
         )
     }
 }
@@ -220,10 +230,11 @@ internal fun LazyListScope.agendaDays(
     dimmed: (EventInstance, LocalDate) -> Boolean,
     onOpenDay: (LocalDate) -> Unit,
     onEventClick: (EventInstance) -> Unit,
+    compact: Boolean = false,
 ) {
     days.forEach { day ->
         stickyHeader(key = "header-${day.date}") {
-            AgendaDayHeader(date = day.date, today = today, onOpenDay = onOpenDay)
+            AgendaDayHeader(date = day.date, today = today, onOpenDay = onOpenDay, compact = compact)
         }
         if (day.events.isEmpty()) {
             item(key = "placeholder-${day.date}") {
@@ -251,6 +262,6 @@ internal fun LazyListScope.agendaDays(
                 )
             }
         }
-        item(key = "gap-${day.date}") { Spacer(Modifier.height(8.dp)) }
+        item(key = "gap-${day.date}") { Spacer(Modifier.height(if (compact) 4.dp else 8.dp)) }
     }
 }

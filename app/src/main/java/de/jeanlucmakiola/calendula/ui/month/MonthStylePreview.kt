@@ -83,6 +83,7 @@ internal fun MonthStylePreview(
                     events = sample.month.instancesByDay[today].orEmpty(),
                     zone = zone,
                     onOpenDay = {},
+                    onClearSelection = {},
                     onEventClick = {},
                     onCreateEvent = {},
                     modifier = Modifier.fillMaxWidth().height(SPLIT_PANE_HEIGHT),

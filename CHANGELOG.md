@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.23.1] — 2026-10-28
+
+### Changed
+- **The split month view fits more events.** With a day selected, its date is no longer shown twice: the filter chip now stands in for the day's header. Tapping the chip opens the day, and its ✕ clears the filter. The day headers in the month agenda below the grid take less room too ([#142]).
+
+### Fixed
+- **Event dots in the split month grid stay in place on busy days.** A day with a "+N" next to its dots used to push them further down the cell ([#142]).
+
 ## [2.23.0] — 2026-10-21
 
 ### Added
