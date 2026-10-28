@@ -16,9 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **The agenda and month widgets have a new look.** The agenda puts each day in its own card, with a round date pill beside the first event and today's pill filled. The month widget has rounded day cells, weekday pills, shaded days outside the month and a + for a new event. The agenda's refresh button is gone, since widgets now update on their own ([#71], [#90]).
 - **Tapping a day in the month widget opens that day,** wherever in its cell you tap ([#386]).
 - **The widget picker shows what each widget looks like.** On Android 15 and later the previews are the real widgets with sample events, in your language and colours; on older versions they are redrawn to match.
+- **Widgets are listed by their name alone,** without "Calendula" in front, and each has a short description in the picker ([#71]).
+- **Past events in widgets stay readable when dimmed.** Their background fades further and their text less ([#90]).
 
 ### Fixed
 - **Widgets show your changes straight away.** After you added, edited or deleted an event, a widget could keep showing the old events until something else redrew it ([#420], [#229]).
+- **Widgets follow the app's language.** After you picked a language in Settings, widgets kept the old one until something redrew them ([#90]).
 - **The month widget handles busy months.** It could show "Can't show content", or only one or two events per day. Each day now shows as many events as its height fits, and the rest fold into +N ([#372]).
 
 ## [2.23.0] — 2026-10-21
