@@ -212,4 +212,30 @@ class ReminderTimeTextTest {
         )
         assertThat(text).isEqualTo("Today")
     }
+
+    @Test
+    fun `a timed event from local midnight to midnight reads like an all-day one`() {
+        val oneDay = text(
+            beginMillis = millisAt(LocalDateTime.of(2026, 6, 12, 0, 0), berlin),
+            endMillis = millisAt(LocalDateTime.of(2026, 6, 13, 0, 0), berlin),
+            today = LocalDate.of(2026, 6, 11),
+        )
+        assertThat(oneDay).isEqualTo("Tomorrow")
+        val twoDays = text(
+            beginMillis = millisAt(LocalDateTime.of(2026, 6, 11, 0, 0), berlin),
+            endMillis = millisAt(LocalDateTime.of(2026, 6, 13, 0, 0), berlin),
+        )
+        assertThat(twoDays).startsWith("Today – ")
+    }
+
+    @Test
+    fun `midnight is read in the device zone`() {
+        // Midnight in Berlin is 22:00 the day before in UTC, so it is timed there.
+        val text = text(
+            beginMillis = millisAt(LocalDateTime.of(2026, 6, 12, 0, 0), berlin),
+            endMillis = millisAt(LocalDateTime.of(2026, 6, 13, 0, 0), berlin),
+            zone = ZoneOffset.UTC,
+        )
+        assertThat(text).contains("22:00")
+    }
 }

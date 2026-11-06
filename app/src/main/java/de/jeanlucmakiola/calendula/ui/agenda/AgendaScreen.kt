@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.agenda
 
+import de.jeanlucmakiola.calendula.ui.common.FabClearance
 import de.jeanlucmakiola.calendula.ui.common.PublishChrome
 import de.jeanlucmakiola.calendula.ui.common.ScreenActions
 import de.jeanlucmakiola.calendula.ui.common.ScreenBody
@@ -432,7 +433,7 @@ private fun AgendaList(
         modifier = modifier.nestedScroll(loadOnScrollUp),
         state = listState,
         // Bottom inset clears the FAB stack so the last row stays tappable.
-        contentPadding = PaddingValues(top = 8.dp, bottom = 96.dp),
+        contentPadding = PaddingValues(top = 8.dp, bottom = FabClearance),
     ) {
         agendaDays(
             days = days,

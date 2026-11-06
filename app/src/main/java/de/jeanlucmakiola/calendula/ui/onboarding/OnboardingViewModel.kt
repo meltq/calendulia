@@ -220,6 +220,7 @@ class OnboardingViewModel @Inject constructor(
         prefs.defaultView,
         prefs.monthViewStyle,
         prefs.weekStart,
+        prefs.monthShowStartTimes,
         ::ViewChoice,
     ).stateWhileSubscribed(
         scope = viewModelScope,
@@ -464,6 +465,7 @@ data class ViewChoice(
     val defaultView: CalendarView,
     val monthViewStyle: MonthViewStyle,
     val weekStart: WeekStartPref,
+    val monthShowStartTimes: Boolean,
 )
 
 /**

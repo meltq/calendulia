@@ -420,6 +420,30 @@ class ReminderPlanTest {
     }
 
     @Test
+    fun `of several reminders due on one occurrence only the latest is posted`() {
+        val planned = plan(
+            instances = listOf(instance(1L, beginMillis = now + 20 * minute)),
+            minutesByEvent = mapOf(1L to listOf(60, 30)),
+        )
+
+        val schedule = scheduleReminders(
+            planned, lastFiredMillis = now - day, nowMillis = now, horizonMillis = now + day,
+        )
+
+        assertThat(schedule.due.map { it.minutes }).containsExactly(30)
+    }
+
+    @Test
+    fun `two reminders on one occurrence share an occurrence key`() {
+        val planned = plan(
+            instances = listOf(instance(1L)),
+            minutesByEvent = mapOf(1L to listOf(10, 30)),
+        )
+
+        assertThat(planned[0].occurrenceKey).isEqualTo(planned[1].occurrenceKey)
+    }
+
+    @Test
     fun `due reminders come out in occurrence order`() {
         val planned = plan(
             instances = listOf(

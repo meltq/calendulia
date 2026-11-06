@@ -46,6 +46,14 @@ class TimelineHoursTest {
     }
 
     @Test
+    fun `the clearance under midnight is not counted as day`() {
+        // 40px an hour plus 100px of clearance over a 600px viewport: 460px of scroll.
+        assertThat(
+            startHourScroll(maxValue = 460, viewportPx = 600, startHour = 7, hourPx = 40f, clearancePx = 100),
+        ).isEqualTo(280)
+    }
+
+    @Test
     fun `a layout still at the previous scale is waited out`() {
         // Still 56px an hour: 1344 - 600 = 744 of scroll.
         assertThat(startHourScroll(maxValue = 744, viewportPx = 600, startHour = 7, hourPx = 40f))

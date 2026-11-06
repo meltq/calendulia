@@ -3,15 +3,12 @@ package de.jeanlucmakiola.calendula.ui.common
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.withStyle
-import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import de.jeanlucmakiola.floret.locale.currentLocale
 
@@ -45,33 +42,17 @@ fun inlineTimeLabel(time: String?, title: String, timeInk: Color): AnnotatedStri
         append(title)
     }
 
-/**
- * The characters of title that have to survive a time prefix for it to be worth
- * its place — lowercase Latin of average advance, priced at the surface's own
- * text style rather than guessed in dp.
- */
-private const val TITLE_SAMPLE = "notepad"
-
 /** The widest wall-clock time in either convention: two-digit hour, and a meridiem in 12-hour. */
 private const val SAMPLE_HOUR = 12
 private const val SAMPLE_MINUTE = 45
 
 /**
- * The narrowest run of [style] text that may carry a time in front of a title:
- * wide enough for the widest time in the current convention plus [TITLE_SAMPLE].
- *
- * Measured rather than a device breakpoint, so it follows the font scale, the
- * 12/24-hour setting, the locale's own time format and whatever else has
- * already been taken off the width.
+ * The widest time the current convention writes, for pricing a time prefix by
+ * measurement: it follows the 12/24-hour setting and the locale's own format.
  */
 @Composable
-fun rememberInlineTimeWidth(style: TextStyle): Dp {
-    val measurer = rememberTextMeasurer()
-    val density = LocalDensity.current
+fun rememberWidestTimeSample(): String {
     val locale = currentLocale()
-    val sample = formatTimeOfDay(SAMPLE_HOUR, SAMPLE_MINUTE, LocalUse24HourFormat.current, locale)
-    return remember(sample, style, density, measurer) {
-        val label = inlineTimeLabel(sample, TITLE_SAMPLE, Color.Unspecified)
-        with(density) { measurer.measure(label, style).size.width.toDp() }
-    }
+    val is24Hour = LocalUse24HourFormat.current
+    return remember(is24Hour, locale) { formatTimeOfDay(SAMPLE_HOUR, SAMPLE_MINUTE, is24Hour, locale) }
 }

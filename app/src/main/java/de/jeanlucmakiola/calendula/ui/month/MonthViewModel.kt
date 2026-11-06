@@ -13,11 +13,15 @@ import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.data.time.stateFollowingDays
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.domain.coversWholeDays
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.calendarListFailure
+import de.jeanlucmakiola.calendula.ui.agenda.AgendaDay
+import de.jeanlucmakiola.calendula.ui.agenda.anchorTodayIfMissing
+import de.jeanlucmakiola.calendula.ui.common.CalendarSpan
 import de.jeanlucmakiola.calendula.ui.common.PageStateCache
-import de.jeanlucmakiola.calendula.domain.isDeclined
-import de.jeanlucmakiola.calendula.domain.eventDisplayComparator
+import de.jeanlucmakiola.calendula.domain.isCrossedOut
+import de.jeanlucmakiola.calendula.domain.sortedForDisplay
 import de.jeanlucmakiola.calendula.ui.week.coversDay
 import de.jeanlucmakiola.calendula.ui.week.layoutAllDay
 import de.jeanlucmakiola.calendula.ui.week.spansMultipleDays
@@ -81,6 +85,23 @@ class MonthViewModel @Inject constructor(
             initialValue = false,
         )
 
+    /** Whether the split agenda keeps a free today, as the Agenda view does (#35). */
+    val showToday: StateFlow<Boolean> = settingsPrefs.agendaShowToday
+        .stateWhileSubscribed(
+            scope = viewModelScope,
+            initialValue = true,
+        )
+
+    /**
+     * Whether chips may show their start time before the title (#476; display
+     * only). Null until the setting has loaded, so the grid can wait for it.
+     */
+    val showStartTimes: StateFlow<Boolean?> = settingsPrefs.monthShowStartTimes
+        .stateWhileSubscribed(
+            scope = viewModelScope,
+            initialValue = null,
+        )
+
     /** How the grid is laid out and navigated (#38, #53). */
     val viewStyle: StateFlow<MonthViewStyle> = settingsPrefs.monthViewStyle
         .stateWhileSubscribed(
@@ -95,7 +116,7 @@ class MonthViewModel @Inject constructor(
     val today: StateFlow<LocalDate> =
         todaySource.today.stateFollowingDays(viewModelScope, todayDate, ::followToday)
 
-    private val _month = MutableStateFlow(todayDate.yearMonth)
+    private val _month = MutableStateFlow(yearMonthForIndex(monthIndexOf(todayDate.yearMonth)))
     val month: StateFlow<YearMonth> = _month
 
     /**
@@ -149,7 +170,7 @@ class MonthViewModel @Inject constructor(
     /** The pager came to rest on [page]; follow it unless it is already the anchor's. */
     fun onPageSettled(page: Int) {
         if (monthIndexOf(_month.value) == page) return
-        _month.value = yearMonthForIndex(page)
+        setMonth(yearMonthForIndex(page))
         // Moving the grid to another month restores its full agenda.
         _selectedDate.value = null
     }
@@ -298,9 +319,11 @@ class MonthViewModel @Inject constructor(
      * silently list a date the grid isn't pointing at.
      */
     fun selectDate(date: LocalDate) {
+        // A greyed-out day past either end of the grid has no month to follow to.
+        if (!isInMonthRange(date)) return
         val target = date.yearMonth
         _selectedDate.value = if (target == _month.value && _selectedDate.value == date) null else date
-        if (target != _month.value) _month.value = target
+        if (target != _month.value) setMonth(target)
     }
 
     fun clearSelection() { _selectedDate.value = null }
@@ -309,16 +332,16 @@ class MonthViewModel @Inject constructor(
     fun stepSplitPane(days: Int) {
         val selected = _selectedDate.value
         if (selected == null) {
-            _month.value = yearMonthForIndex(monthIndexOf(_month.value) + days)
+            setMonth(yearMonthForIndex(monthIndexOf(_month.value) + days))
         } else {
-            val next = selected.plus(days, DateTimeUnit.DAY)
+            val next = coerceToMonthRange(selected.plus(days, DateTimeUnit.DAY))
             _selectedDate.value = next
-            _month.value = next.yearMonth
+            setMonth(next.yearMonth)
         }
     }
 
     fun goToToday() {
-        _month.value = todayDate.yearMonth
+        setMonth(todayDate.yearMonth)
         _selectedDate.value = null
     }
 
@@ -330,7 +353,7 @@ class MonthViewModel @Inject constructor(
     private fun followToday(old: LocalDate, new: LocalDate) {
         if (viewStyle.value.isScrolling) return
         if (_month.value != old.yearMonth) return
-        _month.value = new.yearMonth
+        setMonth(new.yearMonth)
         _selectedDate.value = null
     }
 
@@ -344,14 +367,24 @@ class MonthViewModel @Inject constructor(
      */
     fun syncScrollMonth(ym: YearMonth) {
         if (_month.value == ym) return
-        _month.value = ym
+        setMonth(ym)
         _selectedDate.value = null
     }
 
-    /** Jump to the month containing [date] (drawer jump-to-date). */
+    /**
+     * Jump to the month containing [date] (drawer jump-to-date, or the focus
+     * handed over by another view). The focus itself keeps a date outside the
+     * grid's span, so the day and week views return to it unchanged.
+     */
     fun goToDate(date: LocalDate) {
-        _month.value = date.yearMonth
-        _selectedDate.value = date
+        val target = coerceToMonthRange(date)
+        setMonth(target.yearMonth)
+        _selectedDate.value = target
+    }
+
+    /** Every write to [_month] goes through here, so it can't leave the grid's span (#457). */
+    private fun setMonth(ym: YearMonth) {
+        _month.value = yearMonthForIndex(monthIndexOf(ym))
     }
 
     private fun buildState(
@@ -469,7 +502,7 @@ internal fun layoutCalendarWeek(
     // crossing midnight into the next week row covers a single day in each, and
     // counting per row drew it as two unrelated pills (#253).
     val (bars, singles) = weekEvents.partition { ev ->
-        ev.isAllDay || ev.spansMultipleDays(zone)
+        ev.coversWholeDays(zone) || ev.spansMultipleDays(zone)
     }
     val spans = layoutAllDay(bars, days, zone).map { s ->
         MonthSpan(
@@ -488,7 +521,7 @@ internal fun layoutCalendarWeek(
             // Declined last, so a day that overflows drops the events you said
             // no to before the ones you are actually going to (#230).
             singles.filter { it.coversDay(d, zone) }
-                .sortedWith(compareBy<EventInstance> { it.isDeclined }.thenBy { it.start })
+                .sortedWith(compareBy<EventInstance> { it.isCrossedOut }.thenBy { it.start })
         },
         countByDay = days.associateWith { d -> weekEvents.count { it.coversDay(d, zone) } },
     )
@@ -509,7 +542,7 @@ internal fun instancesByDay(
     days.associateWith { day ->
         instances
             .filter { it.coversDay(day, zone) }
-            .sortedWith(eventDisplayComparator(zone))
+            .sortedForDisplay(zone)
     }
 
 /**
@@ -557,6 +590,25 @@ internal fun agendaStartForMonth(month: YearMonth, today: LocalDate): LocalDate 
     }
 
 /**
+ * The days the split agenda lists for [month]: those from [agendaStartForMonth]
+ * on that have events, plus a free today when [showToday] is set, as in the
+ * Agenda view (#142).
+ */
+internal fun splitAgendaDays(
+    month: YearMonth,
+    today: LocalDate,
+    instancesByDay: Map<LocalDate, List<EventInstance>>,
+    showToday: Boolean,
+): List<AgendaDay> {
+    val start = agendaStartForMonth(month, today)
+    val days = instancesByDay.keys
+        .filter { it >= start && it.yearMonth == month && instancesByDay.getValue(it).isNotEmpty() }
+        .sorted()
+        .map { AgendaDay(it, instancesByDay.getValue(it)) }
+    return anchorTodayIfMissing(days, today, enabled = showToday && start == today)
+}
+
+/**
  * The window to load for a visible range, or null to keep the current one.
  *
  * Kept pure and separate from the view model so the hysteresis — the reason a
@@ -578,24 +630,39 @@ internal fun nextLoadWindow(
 /**
  * The continuous grid addresses months by an absolute index, so the list has one
  * stable, gap-free coordinate space to scroll through and key its items by.
- * Index 0 is January 1900; the list runs to [continuousMonthCount].
+ * Index 0 is the first month of [CalendarSpan]; the list runs to [continuousMonthCount].
  *
  * Unlike the week indexing this replaced, the coordinate space doesn't depend on
  * the week-start preference — changing it reflows the rows *inside* a month
  * block but never moves the block, so a scroll position stays put.
  */
-private const val MONTH_INDEX_EPOCH_YEAR = 1900
-private const val MONTH_INDEX_END_YEAR = 2100
+private val MONTH_INDEX_EPOCH_YEAR = CalendarSpan.FIRST_DAY.year
+private val MONTH_INDEX_END_YEAR = CalendarSpan.LAST_DAY.year
+
+/** The first and last day the month and Dense grids can show. */
+private val GRID_FIRST_DAY = LocalDate(MONTH_INDEX_EPOCH_YEAR, 1, 1)
+private val GRID_LAST_DAY = LocalDate(MONTH_INDEX_END_YEAR, 12, 31)
 
 internal fun monthIndexOf(ym: YearMonth): Int =
     (ym.year - MONTH_INDEX_EPOCH_YEAR) * 12 + ym.month.ordinal
 
-internal fun yearMonthForIndex(index: Int): YearMonth = YearMonth(
-    MONTH_INDEX_EPOCH_YEAR + index / 12,
-    Month.entries[index % 12],
-)
+/** The month at [index], held to the grid's span, so a stray index can't throw (#457). */
+internal fun yearMonthForIndex(index: Int): YearMonth {
+    val held = clampMonthIndex(index)
+    return YearMonth(MONTH_INDEX_EPOCH_YEAR + held / 12, Month.entries[held % 12])
+}
 
-/** Total months the continuous grid scrolls through (1900 → 2100). */
+internal fun clampMonthIndex(index: Int): Int = index.coerceIn(0, continuousMonthCount() - 1)
+
+/**
+ * Hold [date] inside the span the month grid can show. Every view shares
+ * [CalendarSpan], but another app can open Calendula on any date (#457).
+ */
+internal fun coerceToMonthRange(date: LocalDate): LocalDate = date.coerceIn(GRID_FIRST_DAY, GRID_LAST_DAY)
+
+internal fun isInMonthRange(date: LocalDate): Boolean = date in GRID_FIRST_DAY..GRID_LAST_DAY
+
+/** Total months the continuous grid scrolls through. */
 internal fun continuousMonthCount(): Int =
     (MONTH_INDEX_END_YEAR - MONTH_INDEX_EPOCH_YEAR + 1) * 12
 
@@ -611,25 +678,23 @@ internal fun monthIndexForItem(itemIndex: Int): Int = itemIndex / 2
 /**
  * Hold a load window inside the months that actually exist. The pad
  * [nextLoadWindow] adds can otherwise push an index past either end of the
- * 1900–2100 span, and [yearMonthForIndex] has no month to hand back for one.
+ * span, and [yearMonthForIndex] has no month to hand back for one.
  */
-internal fun clampMonthWindow(window: IntRange): IntRange {
-    val last = continuousMonthCount() - 1
-    return window.first.coerceIn(0, last)..window.last.coerceIn(0, last)
-}
+internal fun clampMonthWindow(window: IntRange): IntRange =
+    clampMonthIndex(window.first)..clampMonthIndex(window.last)
 
 /**
  * The Dense style addresses *weeks* by absolute index instead: it has no month
  * blocks to key by, and a row's identity has to survive the months around it
- * scrolling past. Index 0 is the first week of 1900 under the active week-start,
+ * scrolling past. Index 0 is the span's first week under the active week-start,
  * so — like the month space — every index is non-negative and the LazyColumn's
  * item indices and week indices are the same number.
  *
  * Unlike month indices these *do* shift with the week-start preference, which is
  * why the list state is keyed on it.
  */
-private val WEEK_INDEX_EPOCH = LocalDate(1900, 1, 1)
-private val WEEK_INDEX_END = LocalDate(2100, 12, 31)
+private val WEEK_INDEX_EPOCH = GRID_FIRST_DAY
+private val WEEK_INDEX_END = GRID_LAST_DAY
 
 internal fun weekIndexOf(date: LocalDate, weekStart: DayOfWeek): Int {
     val base = WEEK_INDEX_EPOCH.startOfWeek(weekStart)
@@ -639,7 +704,7 @@ internal fun weekIndexOf(date: LocalDate, weekStart: DayOfWeek): Int {
 internal fun weekStartForIndex(index: Int, weekStart: DayOfWeek): LocalDate =
     WEEK_INDEX_EPOCH.startOfWeek(weekStart).plus(index * 7, DateTimeUnit.DAY)
 
-/** Total weeks the Dense grid scrolls through (1900 → 2100). */
+/** Total weeks the Dense grid scrolls through. */
 internal fun continuousWeekCount(weekStart: DayOfWeek): Int =
     weekIndexOf(WEEK_INDEX_END, weekStart) + 1
 

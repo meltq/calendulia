@@ -38,6 +38,8 @@ class ReminderActionReceiver : BroadcastReceiver() {
             ACTION_DISMISS -> notifier.cancel(alert)
 
             ACTION_SNOOZE -> {
+                // Tapped on a stale view: the reminder that replaced it stays put.
+                if (notifier.isSuperseded(alert)) return
                 // Cancel now so the notification doesn't linger until the alarm;
                 // the snooze delay read is the only async work.
                 notifier.cancel(alert)
@@ -50,6 +52,8 @@ class ReminderActionReceiver : BroadcastReceiver() {
 
             ACTION_SHOW -> {
                 goAsync {
+                    // A later reminder posted while this one was snoozed has taken its place.
+                    if (notifier.isSuperseded(alert)) return@goAsync
                     if (settingsPrefs.remindersEnabled.first() && notifier.canPost()) {
                         notifier.post(alert)
                     }
@@ -82,12 +86,14 @@ class ReminderActionReceiver : BroadcastReceiver() {
         /**
          * An explicit intent to this receiver carrying [alert] as extras. The
          * data URI duplicates no information but is what keeps two reminders'
-         * `PendingIntent`s apart — `filterEquals` never compares extras.
+         * `PendingIntent`s apart — `filterEquals` never compares extras. The
+         * snooze alarm is the exception: one per occurrence, so a later snooze
+         * replaces an earlier one and a newer reminder can cancel it.
          */
         fun intent(context: Context, action: String, alert: ReminderAlert): Intent =
             Intent(context, ReminderActionReceiver::class.java).apply {
                 this.action = action
-                data = "calendula://reminder/${alert.key}".toUri()
+                data = "calendula://reminder/${identity(alert, action)}".toUri()
                 putExtra(EXTRA_ALERT_KEY, alert.key)
                 putExtra(EXTRA_EVENT_ID, alert.eventId)
                 putExtra(EXTRA_CALENDAR_ID, alert.calendarId)
@@ -101,7 +107,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
         /**
          * A stable request code per (alert, action), so one notification's
          * PendingIntents stay distinct. The shift keeps the action slot intact;
-         * the top bits it drops are separated by [intent]'s per-reminder URI.
+         * the top bits it drops are separated by [intent]'s URI.
          */
         fun requestCode(alert: ReminderAlert, action: String): Int {
             val actionOffset = when (action) {
@@ -111,8 +117,11 @@ class ReminderActionReceiver : BroadcastReceiver() {
                 ACTION_OPEN -> 4
                 else -> 0
             }
-            return (alert.key.toInt() shl 3) + actionOffset
+            return (identity(alert, action).toInt() shl 3) + actionOffset
         }
+
+        private fun identity(alert: ReminderAlert, action: String): Long =
+            if (action == ACTION_SHOW) alert.occurrenceKey else alert.key
 
         private fun alertFrom(intent: Intent): ReminderAlert? {
             if (!intent.hasExtra(EXTRA_ALERT_KEY)) return null

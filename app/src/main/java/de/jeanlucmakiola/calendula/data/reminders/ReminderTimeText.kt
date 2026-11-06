@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.data.reminders
 
+import de.jeanlucmakiola.calendula.domain.runsMidnightToMidnight
 import de.jeanlucmakiola.calendula.ui.common.timeOfDayFormatter
 import java.time.DayOfWeek
 import java.time.Instant
@@ -11,6 +12,8 @@ import java.time.format.FormatStyle
 import java.time.format.TextStyle
 import java.time.temporal.ChronoUnit
 import java.util.Locale
+import kotlinx.datetime.toKotlinTimeZone
+import kotlin.time.Instant as KInstant
 
 /**
  * The one line of time context in a reminder notification. Pure so it can be
@@ -32,7 +35,8 @@ import java.util.Locale
  * - all-day, multi-day:   "Tomorrow – 12 Jun 2026"        (relative start, explicit end)
  *
  * All-day instances store UTC midnights with an exclusive end, so they are read
- * in UTC and the end day is the last *covered* day (issue #308).
+ * in UTC and the end day is the last *covered* day (issue #308). A timed event
+ * from local midnight to local midnight reads like one too, in [zone] (#296).
  */
 fun reminderTimeText(
     beginMillis: Long,
@@ -47,11 +51,17 @@ fun reminderTimeText(
     tomorrowLabel: String,
     yesterdayLabel: String,
 ): String {
-    if (isAllDay) {
+    val wholeDays = !isAllDay && runsMidnightToMidnight(
+        KInstant.fromEpochMilliseconds(beginMillis),
+        KInstant.fromEpochMilliseconds(endMillis),
+        zone.toKotlinTimeZone(),
+    )
+    if (isAllDay || wholeDays) {
+        val dayZone = if (isAllDay) ZoneOffset.UTC else zone
         val dateFormat = DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale)
         // (atZone().toLocalDate() instead of LocalDate.ofInstant — API 34+)
-        val firstDay = Instant.ofEpochMilli(beginMillis).atZone(ZoneOffset.UTC).toLocalDate()
-        val lastDay = Instant.ofEpochMilli(endMillis).atZone(ZoneOffset.UTC).toLocalDate()
+        val firstDay = Instant.ofEpochMilli(beginMillis).atZone(dayZone).toLocalDate()
+        val lastDay = Instant.ofEpochMilli(endMillis).atZone(dayZone).toLocalDate()
             .minusDays(1)
             .coerceAtLeast(firstDay)
         val start = relativeDayPrefix(

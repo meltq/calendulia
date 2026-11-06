@@ -6,6 +6,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.time.ZoneSource
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
+import de.jeanlucmakiola.calendula.domain.canSaveApartFromSeries
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventFormProblem
@@ -57,7 +58,10 @@ sealed interface MoveTarget {
      */
     data class ByDays(val days: Int) : MoveTarget
 
-    /** New start and end instants — a timeline resize, which changes the length. */
+    /**
+     * New start and end instants — a timeline resize, which changes the length,
+     * or an all-day event dragged into the time grid, which becomes timed.
+     */
     data class Span(val start: Instant, val end: Instant) : MoveTarget
 }
 
@@ -113,6 +117,12 @@ sealed interface MoveOutcome {
 
     /** The drop would push the series past its own `UNTIL`, generating nothing. */
     data object BlockedSeriesEnd : MoveOutcome
+
+    /**
+     * A cancelled series only moves as a whole, and this drop would change which
+     * days it falls on (#388).
+     */
+    data object BlockedCancelledSeries : MoveOutcome
 
     data object Failed : MoveOutcome
 }
@@ -203,7 +213,10 @@ class RescheduleViewModel @Inject constructor(
         val canRealign: Boolean,
         /** The series row's DTSTART date after the move — what its `UNTIL` must clear. */
         val newAnchorDate: LocalDate,
-    )
+    ) {
+        /** A timed event's new length, rather than an all-day one dragged into the grid. */
+        val isResize: Boolean get() = request.target is MoveTarget.Span && !original.isAllDay
+    }
 
     /**
      * Take a drop, unless one is already being written. False means nothing will
@@ -227,15 +240,21 @@ class RescheduleViewModel @Inject constructor(
                 busy = false
                 return@launch
             }
-            if (!prepared.isRecurring) {
+            // A cancelled series only moves as a whole (#388).
+            val seriesOnly = !prepared.original.canSaveApartFromSeries()
+            if (!prepared.isRecurring || (seriesOnly && prepared.canRealign)) {
                 write(prepared, RecurringWriteScope.AllEvents)
+                busy = false
+            } else if (seriesOnly) {
+                _outcome.value = MoveOutcome.BlockedCancelledSeries
+                _abandoned.value += 1
                 busy = false
             } else {
                 // Still busy: the scope dialog is now the thing in flight.
                 pending = prepared
                 _scopePrompt.value = MoveScopePrompt(
                     occurrenceOnly = !prepared.canRealign,
-                    resize = request.target is MoveTarget.Span,
+                    resize = prepared.isResize,
                 )
             }
         }
@@ -459,9 +478,9 @@ class RescheduleViewModel @Inject constructor(
         val anchorZone = if (original.isAllDay) TimeZone.UTC else original.resolvedZone(zone)
         val anchorMinute = detail.instance.start.toLocalDateTime(anchorZone)
             .time.toMillisecondOfDay() / MILLIS_PER_MINUTE
-        val delta = (
-            shifted.start.time.toMillisecondOfDay() - original.start.time.toMillisecondOfDay()
-            ) / MILLIS_PER_MINUTE
+        // An all-day form's time is a placeholder; its anchor sits at midnight.
+        val fromMillis = if (original.isAllDay) 0 else original.start.time.toMillisecondOfDay()
+        val delta = (shifted.start.time.toMillisecondOfDay() - fromMillis) / MILLIS_PER_MINUTE
         return anchorMinute + delta in 0 until MINUTES_PER_DAY
     }
 
@@ -494,7 +513,7 @@ class RescheduleViewModel @Inject constructor(
 
     /** Where a resized occurrence now ends; null for a move, which keeps its length. */
     private fun resizedEndMillis(prepared: PreparedMove): Long? {
-        if (prepared.request.target !is MoveTarget.Span) return null
+        if (!prepared.isResize) return null
         val form = prepared.updated
         return form.endInstant(form.resolvedZone(zoneSource.current())).toEpochMilliseconds()
     }

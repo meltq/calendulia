@@ -62,6 +62,7 @@ internal object InstanceProjection {
         CalendarContract.Instances.CALENDAR_COLOR,
         CalendarContract.Instances.EVENT_LOCATION,
         CalendarContract.Instances.SELF_ATTENDEE_STATUS,
+        CalendarContract.Instances.STATUS,
     )
 
     const val IDX_INSTANCE_ID = 0
@@ -75,6 +76,29 @@ internal object InstanceProjection {
     const val IDX_CALENDAR_COLOR = 8
     const val IDX_LOCATION = 9
     const val IDX_SELF_ATTENDEE_STATUS = 10
+    const val IDX_STATUS = 11
+}
+
+/**
+ * A cancelled one-off straight from the Events table, laid out on
+ * [InstanceProjection]'s indices so [toCancelledOneOff] reuses its mapper. AOSP
+ * writes no Instances rows for a cancelled event (#388).
+ */
+internal object CancelledEventProjection {
+    val COLUMNS: Array<String> = arrayOf(
+        CalendarContract.Events._ID,
+        CalendarContract.Events._ID,
+        CalendarContract.Events.CALENDAR_ID,
+        CalendarContract.Events.TITLE,
+        CalendarContract.Events.DTSTART,
+        CalendarContract.Events.DTEND,
+        CalendarContract.Events.ALL_DAY,
+        CalendarContract.Events.EVENT_COLOR,
+        CalendarContract.Events.CALENDAR_COLOR,
+        CalendarContract.Events.EVENT_LOCATION,
+        CalendarContract.Events.SELF_ATTENDEE_STATUS,
+        CalendarContract.Events.STATUS,
+    )
 }
 
 internal object EventDetailProjection {
@@ -198,6 +222,7 @@ internal object SearchProjection {
         // Excerpted, not just filtered on: a hit has to show what it matched.
         CalendarContract.Events.DESCRIPTION,
         CalendarContract.Events.SELF_ATTENDEE_STATUS,
+        CalendarContract.Events.STATUS,
     )
 
     const val IDX_ID = 0
@@ -214,6 +239,7 @@ internal object SearchProjection {
     const val IDX_RDATE = 11
     const val IDX_DESCRIPTION = 12
     const val IDX_SELF_ATTENDEE_STATUS = 13
+    const val IDX_STATUS = 14
 }
 
 /**

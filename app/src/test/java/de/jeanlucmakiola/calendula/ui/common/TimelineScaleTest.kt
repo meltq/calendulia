@@ -41,6 +41,19 @@ class TimelineScaleTest {
     }
 
     @Test
+    fun `fit-day leaves the FAB clearance under midnight`() {
+        val viewport = 800.dp
+        val h = TimelineScale.FitDay.hourHeight(dayFitHeight(viewport))
+        assertThat(h * 24 + FabClearance).isAtMost(viewport)
+        assertThat(h * 24 + FabClearance).isGreaterThan(viewport * 0.99f)
+    }
+
+    @Test
+    fun `the fitted height never goes negative`() {
+        assertThat(dayFitHeight(40.dp)).isEqualTo(0.dp)
+    }
+
+    @Test
     fun `fit-day clamps instead of shrinking hours past legibility`() {
         // A very short viewport (split screen, tiny device) would otherwise give
         // hour rows too small for the gutter's 24 labels; the clamp wins and the

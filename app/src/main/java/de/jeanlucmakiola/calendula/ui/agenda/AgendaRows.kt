@@ -32,7 +32,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
-import de.jeanlucmakiola.calendula.domain.isDeclined
+import de.jeanlucmakiola.calendula.domain.isCrossedOut
 import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.ui.common.ViewMorphKey
 import de.jeanlucmakiola.calendula.ui.common.declinedTitle
@@ -148,7 +148,7 @@ internal fun AgendaEventRow(
     val title = event.title.ifBlank { stringResource(R.string.event_untitled) }
     GroupedRow(
         modifier = if (dimmed) modifier.alpha(EventDimAlpha) else modifier,
-        title = declinedTitle(title, event.isDeclined),
+        title = declinedTitle(title, event.isCrossedOut),
         summary = AnnotatedString(agendaTimeSummary(event, day, zone)),
         position = position,
         minHeight = 64.dp,

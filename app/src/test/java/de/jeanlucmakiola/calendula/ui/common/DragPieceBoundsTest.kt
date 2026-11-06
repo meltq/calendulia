@@ -73,6 +73,13 @@ class DragPieceBoundsTest {
     }
 
     @Test
+    fun `a short piece at the end of the day rises as its block does`() {
+        val bounds = dragPieceBounds(slice(startMin = 1438, spanMin = 1), hourPx, insetPx = 0f)
+        assertThat(bounds.top + bounds.height).isWithin(0.01f).of(24 * hourPx)
+        assertThat(bounds.height).isWithin(0.01f).of(MIN_EVENT_FRACTION * hourPx)
+    }
+
+    @Test
     fun `an inset taller than the piece leaves no height at all`() {
         val bounds = dragPieceBounds(slice(startMin = 0, spanMin = 60), hourPx = 4f, insetPx = insetPx)
         assertThat(bounds.height).isEqualTo(0f)

@@ -49,6 +49,12 @@ data class EventEditUiState(
      */
     val recurrenceChanged: Boolean = false,
     /**
+     * Whether the Status field offers Cancelled: only for an event that already
+     * is. Google reads a cancelled event as deleted, so picking it is no safe
+     * way to strike an event through (#388).
+     */
+    val offerCancelled: Boolean = false,
+    /**
      * The event-colour palette the resolved target calendar publishes; empty
      * when it exposes none. Non-empty → the colour picker offers these swatches
      * (written as a key, sync-safe); empty → see [colorMode].

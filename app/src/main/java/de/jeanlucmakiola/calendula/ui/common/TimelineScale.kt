@@ -4,6 +4,8 @@ import androidx.annotation.StringRes
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.ui.week.MINUTES_PER_DAY
+import de.jeanlucmakiola.calendula.ui.week.TimedBlock
 
 /**
  * How tall one hour is drawn in the week and day timelines (#56).
@@ -59,8 +61,9 @@ sealed interface TimelineScale {
 }
 
 /**
- * Hour height for this scale. [viewportHeight] is the visible height of the
- * scrolling timeline and is only consulted by [TimelineScale.FitDay].
+ * Hour height for this scale. [viewportHeight] is the height the day is fitted
+ * to, the scrolling timeline's [dayFitHeight], and is not consulted by the
+ * fixed presets.
  *
  * The fit-day result is clamped: below [FIT_DAY_MIN] the 24 gutter labels stop
  * being legible, and above [FIT_DAY_MAX] a short landscape day would stretch its
@@ -86,6 +89,13 @@ fun TimelineScale.hourHeight(viewportHeight: Dp): Dp = when (this) {
 }
 
 /**
+ * The part of a [viewportHeight]-tall timeline the day is fitted to: the
+ * [FabClearance] under midnight, which lets the last hour scroll clear of the
+ * FAB (#483), is left out. Pass this, not the raw viewport, to [hourHeight].
+ */
+fun dayFitHeight(viewportHeight: Dp): Dp = (viewportHeight - FabClearance).coerceAtLeast(0.dp)
+
+/**
  * The minute of the day a tap [offsetY] px down a timeline column means, snapped
  * to the hour it landed in.
  *
@@ -104,6 +114,28 @@ fun tappedMinuteOfDay(offsetY: Float, hourPx: Float): Int =
  * short events overlap their neighbours.
  */
 const val MIN_EVENT_FRACTION = 26f / 60f
+
+/** Where a timed block is drawn down its day, in minutes from midnight. */
+data class RenderedSpan(val topMin: Float, val bottomMin: Float)
+
+/**
+ * Where a block of [startMin]..[endMin] is drawn, at least [MIN_EVENT_FRACTION]
+ * of an hour tall. A short block near midnight rises until that floor ends at
+ * midnight instead of running off the day, unless it [continuesAfter] into the
+ * next one (#483).
+ */
+fun renderedSpan(startMin: Int, endMin: Int, continuesAfter: Boolean): RenderedSpan {
+    val floor = MIN_EVENT_FRACTION * 60f
+    val bottom = maxOf(endMin.toFloat(), startMin + floor)
+    return if (continuesAfter || bottom <= MINUTES_PER_DAY) {
+        RenderedSpan(startMin.toFloat(), bottom)
+    } else {
+        RenderedSpan(MINUTES_PER_DAY - floor, MINUTES_PER_DAY.toFloat())
+    }
+}
+
+/** This block's [renderedSpan]. */
+fun TimedBlock.renderedSpan(): RenderedSpan = renderedSpan(startMin, endMin, continuesAfter)
 
 /** Smallest hour height [TimelineScale.FitDay] will resolve to. */
 val FIT_DAY_MIN = 24.dp

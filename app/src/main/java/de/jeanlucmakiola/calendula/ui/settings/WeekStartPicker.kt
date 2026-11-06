@@ -27,6 +27,7 @@ import de.jeanlucmakiola.floret.locale.currentLocale
 internal fun WeekStartPicker(
     selected: WeekStartPref,
     monthStyle: MonthViewStyle,
+    showStartTimes: Boolean,
     options: List<WeekStartPref>,
     onSelect: (WeekStartPref) -> Unit,
     onDismiss: () -> Unit,
@@ -46,6 +47,7 @@ internal fun WeekStartPicker(
             MonthStylePreview(
                 style = monthStyle,
                 weekStart = day,
+                showStartTimes = showStartTimes,
                 height = PREVIEW_HEIGHT,
             )
         }

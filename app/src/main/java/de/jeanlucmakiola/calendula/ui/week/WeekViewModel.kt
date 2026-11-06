@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.ui.week
 
 import de.jeanlucmakiola.calendula.ui.common.dayRange
+import de.jeanlucmakiola.calendula.ui.common.renderedSpan
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,7 +14,9 @@ import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.data.time.stateFollowingDays
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.domain.coversWholeDays
 import de.jeanlucmakiola.calendula.domain.displayPriority
+import de.jeanlucmakiola.calendula.domain.displayStart
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.calendarListFailure
 import de.jeanlucmakiola.calendula.ui.common.PageStateCache
@@ -206,8 +209,7 @@ abstract class PagedTimelineViewModel(
     ): WeekUiState {
         calendarListFailure(calendars)?.let { return WeekUiState.Failure(it) }
         val days = (0 until span.count).map { span.start.plus(it, DateTimeUnit.DAY) }
-        val allDay = instances.filter { it.isAllDay }
-        val timed = instances.filterNot { it.isAllDay }
+        val (allDay, timed) = instances.splitWholeDays(zone)
         return WeekUiState.Success(
             weekStart = span.start,
             today = today,
@@ -292,20 +294,21 @@ internal fun layoutAllDay(
     days: List<LocalDate>,
     zone: TimeZone,
 ): List<AllDaySpan> {
-    data class Raw(val event: EventInstance, val startCol: Int, val endCol: Int)
+    data class Raw(val event: EventInstance, val startCol: Int, val endCol: Int, val priority: Int)
 
     val raw = events
         .mapNotNull { ev ->
             val covered = days.indices.filter { ev.coversDay(days[it], zone) }
-            if (covered.isEmpty()) null else Raw(ev, covered.first(), covered.last())
+            if (covered.isEmpty()) null else Raw(ev, covered.first(), covered.last(), ev.displayPriority(zone))
         }
         // Declined bars are packed after every other one, so on any day they
         // cover they land in a lane below it (#230).
         .sortedWith(
-            compareBy<Raw> { it.event.displayPriority(zone) }
+            compareBy<Raw> { it.priority }
                 .thenBy { it.startCol }
                 .thenBy { it.endCol }
-                .thenBy { it.event.start }
+                .thenBy { it.event.displayStart(zone) }
+                .thenBy { it.event.title }
                 .thenBy { it.event.instanceId },
         )
 
@@ -427,11 +430,20 @@ internal fun EventInstance.spansMultipleDays(zone: TimeZone): Boolean {
 }
 
 /**
+ * Split events into those for the all-day strip and those for the time grid:
+ * all-day events and timed ones from midnight to midnight go to the strip (#296).
+ */
+internal fun List<EventInstance>.splitWholeDays(zone: TimeZone): Pair<List<EventInstance>, List<EventInstance>> =
+    partition { it.coversWholeDays(zone) }
+
+/**
  * Clip [events] to a single [day] and assign lanes so overlapping events render
  * side-by-side. Lane count is computed per overlap-cluster (a maximal run of
  * chained-overlapping events), matching the common phone week-view behaviour.
+ * Overlap is judged on each block's [renderedSpan], so a short block's floor
+ * (lifted off midnight, #483) never hides another block.
  *
- * All-day events are ignored here — they live in the all-day strip.
+ * Takes the timed half of [splitWholeDays]; the rest lives in the all-day strip.
  */
 internal fun layoutDay(
     events: List<EventInstance>,
@@ -441,55 +453,53 @@ internal fun layoutDay(
     val dayStart = day.atStartOfDayIn(zone)
     val dayEnd = day.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone)
 
-    data class Raw(val event: EventInstance, val startMin: Int, val endMin: Int)
-
     val raw = events.asSequence()
-        .filterNot { it.isAllDay }
         .mapNotNull { ev ->
             if (ev.start == ev.end) {
                 // Instant event: keep only if the point falls inside this day.
                 if (ev.start < dayStart || ev.start >= dayEnd) return@mapNotNull null
                 val m = wallClockMinutes(ev.start, day, zone)
-                Raw(ev, m, m)
+                TimedBlock(ev, m, m, lane = 0, laneCount = 1)
             } else {
                 val s = maxOf(ev.start, dayStart)
                 val e = minOf(ev.end, dayEnd)
                 if (e <= s) return@mapNotNull null
                 val startMin = wallClockMinutes(s, day, zone)
                 val endMin = wallClockEndMinutes(startMin, s, e, day, zone).coerceAtMost(MINUTES_PER_DAY)
-                Raw(ev, startMin, endMin)
+                TimedBlock(ev, startMin, endMin, lane = 0, laneCount = 1, continuesAfter = ev.end > dayEnd)
             }
         }
-        .sortedWith(compareBy({ it.startMin }, { it.endMin }))
+        .map { it to it.renderedSpan() }
+        .sortedWith(compareBy({ it.second.topMin }, { it.second.bottomMin }))
         .toList()
 
     val result = ArrayList<TimedBlock>(raw.size)
     var i = 0
     while (i < raw.size) {
         // Grow a cluster of chained-overlapping events.
-        var clusterEnd = raw[i].endMin
+        var clusterEnd = raw[i].second.bottomMin
         var j = i + 1
-        while (j < raw.size && raw[j].startMin < clusterEnd) {
-            clusterEnd = maxOf(clusterEnd, raw[j].endMin)
+        while (j < raw.size && raw[j].second.topMin < clusterEnd) {
+            clusterEnd = maxOf(clusterEnd, raw[j].second.bottomMin)
             j++
         }
         val cluster = raw.subList(i, j)
         // Greedy first-fit column assignment (= max overlap depth in the cluster).
-        val laneEnd = ArrayList<Int>()
+        val laneEnd = ArrayList<Float>()
         val lanes = IntArray(cluster.size)
-        cluster.forEachIndexed { k, r ->
-            var placed = laneEnd.indexOfFirst { it <= r.startMin }
+        cluster.forEachIndexed { k, (_, span) ->
+            var placed = laneEnd.indexOfFirst { it <= span.topMin }
             if (placed == -1) {
-                laneEnd.add(r.endMin)
+                laneEnd.add(span.bottomMin)
                 placed = laneEnd.size - 1
             } else {
-                laneEnd[placed] = r.endMin
+                laneEnd[placed] = span.bottomMin
             }
             lanes[k] = placed
         }
         val laneCount = laneEnd.size
-        cluster.forEachIndexed { k, r ->
-            result.add(TimedBlock(r.event, r.startMin, r.endMin, lanes[k], laneCount))
+        cluster.forEachIndexed { k, (block, _) ->
+            result.add(block.copy(lane = lanes[k], laneCount = laneCount))
         }
         i = j
     }

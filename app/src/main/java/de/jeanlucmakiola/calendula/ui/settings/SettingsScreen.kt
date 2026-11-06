@@ -63,6 +63,7 @@ import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.components.LanguagePickerRow
+import de.jeanlucmakiola.calendula.widget.requestWidgetRedraw
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.crash.CrashReportDialog
 import de.jeanlucmakiola.floret.crash.CrashReporter
@@ -155,7 +156,7 @@ fun SettingsScreen(
             enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
             exit = overlayExit,
         ) {
-            WidgetsScreen(state = state, viewModel = viewModel, onBack = { section = null }, visible = section == SettingsSection.Widgets)
+            WidgetsScreen(onBack = { section = null }, visible = section == SettingsSection.Widgets)
         }
         AnimatedVisibility(
             visible = section == SettingsSection.Licences,
@@ -258,15 +259,16 @@ private fun SettingsHub(
             leading = { CategoryIcon(Icons.Default.Widgets, ChipAccent.Tertiary) },
             onClick = { onOpenSection(SettingsSection.Widgets) },
         )
+        val context = LocalContext.current
         LanguagePickerRow(
             position = Position.Middle,
             title = stringResource(R.string.settings_language),
             autoLabel = stringResource(R.string.settings_language_auto),
             localesConfig = R.xml.locales_config,
             predictiveBack = true,
+            onChange = { requestWidgetRedraw(context) },
             // Invite contributions right where users pick their language.
             header = {
-                val context = LocalContext.current
                 val translateUrl = stringResource(R.string.about_translate_url)
                 GroupedRow(
                     title = stringResource(R.string.settings_translate),

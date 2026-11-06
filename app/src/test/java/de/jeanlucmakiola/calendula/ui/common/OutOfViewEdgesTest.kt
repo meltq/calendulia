@@ -79,6 +79,21 @@ class OutOfViewEdgesTest {
     }
 
     @Test
+    fun `a short event at midnight is judged by where it rises to`() {
+        // 23:58–23:59 draws from 23:34, so a viewport ending at 23:40 already shows it.
+        val late = block(6, 23 * 60 + 58, 23 * 60 + 59)
+        assertThat(outOfViewEvents(listOf(late), topMin = 1000f, bottomMin = 1420f).below).isNull()
+        val target = revealScrollTarget(late, ViewportEdge.Bottom, hourPx = 60f, viewportPx = 10, marginPx = 0f, maxScroll = 1440)
+        assertThat(target).isEqualTo(1440 - 26)
+    }
+
+    @Test
+    fun `a short event carrying on past midnight is judged by its own start`() {
+        val overnight = block(7, 23 * 60 + 58, 24 * 60).copy(continuesAfter = true)
+        assertThat(outOfViewEvents(listOf(overnight), topMin = 1000f, bottomMin = 1420f).below).isEqualTo(overnight)
+    }
+
+    @Test
     fun `an event above scrolls to its start less the margin`() {
         val target = revealScrollTarget(breakfast, ViewportEdge.Top, hourPx = 100f, viewportPx = 700, marginPx = 20f, maxScroll = 1700)
         assertThat(target).isEqualTo(780)

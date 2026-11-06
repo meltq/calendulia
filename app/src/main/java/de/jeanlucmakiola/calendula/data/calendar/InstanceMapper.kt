@@ -38,8 +38,16 @@ internal fun ColumnReader.toEventInstance(): EventInstance? {
         color = color,
         location = getString(InstanceProjection.IDX_LOCATION),
         response = mapEventResponse(getInt(InstanceProjection.IDX_SELF_ATTENDEE_STATUS)),
+        status = eventStatus(InstanceProjection.IDX_STATUS),
     )
 }
+
+/**
+ * A [CancelledEventProjection] row as an instance. Its id is the negated event
+ * id, so it can't collide with a provider instance id.
+ */
+internal fun ColumnReader.toCancelledOneOff(): EventInstance? =
+    toEventInstance()?.let { it.copy(instanceId = -it.eventId) }
 
 /**
  * `SELF_ATTENDEE_STATUS` as the calendar surfaces read it: a tentative "maybe"

@@ -4,6 +4,7 @@ import android.provider.CalendarContract
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.Availability
+import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.FormTime
 import de.jeanlucmakiola.calendula.domain.realignRecurrence
@@ -1110,6 +1111,52 @@ class EventWriteMapperTest {
         )
         assertThat(values).containsEntry(CalendarContract.Events.EVENT_COLOR, null)
         assertThat(values).containsEntry(CalendarContract.Events.EVENT_COLOR_KEY, null)
+    }
+
+    @Test
+    fun `a status change on update writes just the status`() {
+        val original = form()
+        val values = update(original, original.copy(status = EventStatus.Cancelled))
+        assertThat(values).containsExactly(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CANCELED)
+    }
+
+    @Test
+    fun `an unchanged status writes no status column`() {
+        val original = form().copy(status = EventStatus.Tentative)
+        assertThat(update(original, original.copy(title = "Renamed")))
+            .doesNotContainKey(CalendarContract.Events.STATUS)
+    }
+
+    @Test
+    fun `a new event writes its status only when it is not confirmed`() {
+        val confirmed = form()
+        assertThat(buildEventInsertValues(confirmed, "uid", confirmed.toWriteTimes(berlin)))
+            .doesNotContainKey(CalendarContract.Events.STATUS)
+        val tentative = form().copy(status = EventStatus.Tentative)
+        assertThat(buildEventInsertValues(tentative, "uid", tentative.toWriteTimes(berlin)))
+            .containsEntry(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_TENTATIVE)
+    }
+
+    @Test
+    fun `occurrence exception writes the form's status`() {
+        val values = buildOccurrenceExceptionValues(
+            form = form().copy(status = EventStatus.Tentative),
+            originalInstanceMillis = 0L,
+            zone = berlin,
+        )
+        assertThat(values).containsEntry(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_TENTATIVE)
+    }
+
+    @Test
+    fun `no new row is written cancelled`() {
+        val cancelled = form().copy(status = EventStatus.Cancelled)
+        assertThat(buildEventInsertValues(cancelled, "uid", cancelled.toWriteTimes(berlin)))
+            .doesNotContainKey(CalendarContract.Events.STATUS)
+        assertThat(buildOccurrenceExceptionValues(cancelled, originalInstanceMillis = 0L, zone = berlin))
+            .containsEntry(CalendarContract.Events.STATUS, CalendarContract.Events.STATUS_CONFIRMED)
+        val snapshot = masterSnapshot().copy(status = CalendarContract.Events.STATUS_CANCELED)
+        assertThat(buildMovedMasterValues(snapshot, targetCalendarId = 9L, uid = "u@calendula"))
+            .doesNotContainKey(CalendarContract.Events.STATUS)
     }
 
     // --- buildMovedMasterValues (calendar move: verbatim series copy) ---

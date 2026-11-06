@@ -31,6 +31,7 @@ import kotlinx.datetime.yearMonth
 internal fun MonthStylePreview(
     style: MonthViewStyle,
     weekStart: DayOfWeek,
+    showStartTimes: Boolean,
     height: Dp,
     modifier: Modifier = Modifier,
 ) {
@@ -44,6 +45,7 @@ internal fun MonthStylePreview(
             MonthViewStyle.Paged -> MonthGrid(
                 state = sample.month,
                 showWeekNumbers = false,
+                showStartTimes = showStartTimes,
                 onOpenDay = {},
                 onEventClick = {},
             )
@@ -55,6 +57,7 @@ internal fun MonthStylePreview(
                     ),
                 ),
                 showWeekNumbers = false,
+                showStartTimes = showStartTimes,
                 onOpenDay = {},
                 onEventClick = {},
             )
@@ -67,6 +70,7 @@ internal fun MonthStylePreview(
                     initialFirstVisibleItemIndex = weekIndexOf(today, weekStart) - 1,
                 ),
                 showWeekNumbers = false,
+                showStartTimes = showStartTimes,
                 onOpenDay = {},
                 onEventClick = {},
             )

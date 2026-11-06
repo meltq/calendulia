@@ -106,9 +106,16 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.snap
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.runtime.State
+import androidx.compose.ui.layout.ParentDataModifier
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.graphics.RectangleShape
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
@@ -125,6 +132,9 @@ import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.domain.dateZone
+import de.jeanlucmakiola.calendula.domain.spanFirstDay
+import de.jeanlucmakiola.calendula.domain.spanLastDay
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.common.LocalChipGround
 import de.jeanlucmakiola.calendula.ui.common.eventPaint
@@ -147,10 +157,11 @@ import de.jeanlucmakiola.calendula.ui.common.LocalEventMove
 import de.jeanlucmakiola.calendula.ui.common.MoveRequest
 import de.jeanlucmakiola.calendula.ui.common.MoveTarget
 import de.jeanlucmakiola.calendula.ui.common.TimelineDragController
+import de.jeanlucmakiola.calendula.ui.common.StripDrag
+import de.jeanlucmakiola.calendula.ui.common.StripDrop
 import de.jeanlucmakiola.calendula.ui.common.TimelineDragOverlay
 import de.jeanlucmakiola.calendula.ui.common.TimelineDrop
 import de.jeanlucmakiola.calendula.ui.common.clipOffsetMinutes
-import de.jeanlucmakiola.calendula.ui.common.continuesAfter
 import de.jeanlucmakiola.calendula.ui.common.continuesBefore
 import de.jeanlucmakiola.calendula.ui.common.ChipCuts
 import de.jeanlucmakiola.calendula.ui.common.timedBlockCuts
@@ -185,8 +196,10 @@ import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.LocalShowHourGrid
 import de.jeanlucmakiola.calendula.ui.common.LocalTimelineZoom
-import de.jeanlucmakiola.calendula.ui.common.MIN_EVENT_FRACTION
+import de.jeanlucmakiola.calendula.ui.common.renderedSpan
 import de.jeanlucmakiola.calendula.ui.common.hourHeight
+import de.jeanlucmakiola.calendula.ui.common.dayFitHeight
+import de.jeanlucmakiola.calendula.ui.common.FabClearance
 import de.jeanlucmakiola.calendula.ui.common.rememberTimelinePinchZoom
 import de.jeanlucmakiola.calendula.ui.common.formatMinuteOfDay
 import de.jeanlucmakiola.calendula.ui.common.GUTTER_CONTENT_START_INSET
@@ -198,6 +211,7 @@ import de.jeanlucmakiola.calendula.ui.common.hourGridCells
 import de.jeanlucmakiola.calendula.ui.common.tappedMinuteOfDay
 import de.jeanlucmakiola.floret.time.isoWeekNumber
 import kotlinx.coroutines.launch
+import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.plus
@@ -601,6 +615,21 @@ private fun WeekContent(
         )
     }
 
+    // Off the all-day strip: sideways moves days, into the grid makes it timed.
+    val onStripDrop: (StripDrop) -> Unit = { drop ->
+        move?.move(
+            MoveRequest(
+                eventId = drop.event.eventId,
+                beginMillis = drop.event.start.toEpochMilliseconds(),
+                endMillis = drop.event.end.toEpochMilliseconds(),
+                target = when (drop) {
+                    is StripDrop.Days -> MoveTarget.ByDays(drop.days)
+                    is StripDrop.Timed -> MoveTarget.Span(drop.start, drop.end)
+                },
+            ),
+        )
+    }
+
     // A drafted block (#153) opens the new-event form at its own instants: the
     // end it is drawn to differs on a DST change (#387).
     val createDraft: (EventInstance) -> Unit = { draft ->
@@ -661,6 +690,7 @@ private fun WeekContent(
         onCreateAt = onCreateAt,
         onDrop = onDrop,
         onResize = onResize,
+        onStripDrop = onStripDrop,
     )
 
     Box(modifier = modifier) {
@@ -736,7 +766,12 @@ private fun WeekPager(
             val loaded = pageState as? WeekUiState.Success
             // Until its days arrive a page shows their frame without events.
             val empty = remember(pageSpan, today) { emptySpan(pageSpan, today) }
-            val stripHeight = loaded?.allDayStripHeight()
+            // A bar held over other days in the strip makes room there before it is dropped.
+            val held = (dragController.stripDrag ?: dragController.stripSettling)
+                ?.takeIf { page == pagerState.currentPage }
+            val zone = LocalTimelineZone.current
+            val shown = remember(loaded, held, zone) { loaded?.withStripPreview(held, zone) }
+            val stripHeight = shown?.allDayStripHeight()
             DisposableEffect(page, stripHeight) {
                 if (stripHeight != null) stripHeights[page] = stripHeight
                 onDispose { stripHeights.remove(page) }
@@ -744,8 +779,8 @@ private fun WeekPager(
             ViewMorphPage(active = morphPageActive(page, pagerState.settledPage)) {
                 WeekPage(
                     // A cached page may predate midnight; today comes off the clock (#373).
-                    state = remember(loaded, empty, today) {
-                        loaded?.takeIf { it.today != today }?.copy(today = today) ?: loaded ?: empty
+                    state = remember(shown, empty, today) {
+                        shown?.takeIf { it.today != today }?.copy(today = today) ?: shown ?: empty
                     },
                     headerBias = kind.headerBias,
                     allDayHeight = allDayHeight,
@@ -755,6 +790,25 @@ private fun WeekPager(
             }
         }
     }
+}
+
+/**
+ * [this] with the strip bar [held] sideways laid out at the days it is over, so
+ * the bars there move aside live. The bar keeps its own event, and with it its
+ * key and the gesture on it; one moved off the page keeps a lane it is not seen in.
+ */
+internal fun WeekUiState.Success.withStripPreview(held: StripDrag?, zone: TimeZone): WeekUiState.Success {
+    if (held == null || held.overGrid || held.dayShift == 0) return this
+    val id = held.event.instanceId
+    val original = allDaySpans.firstOrNull { it.event.instanceId == id } ?: return this
+    val events = allDaySpans.map { if (it.event.instanceId == id) it.event.shiftedDays(held.dayShift, zone) else it.event }
+    val spans = layoutAllDay(events, days, zone).map { if (it.event.instanceId == id) it.copy(event = original.event) else it }
+    return copy(allDaySpans = if (spans.any { it.event.instanceId == id }) spans else spans + original.copy(lane = 0))
+}
+
+private fun EventInstance.shiftedDays(days: Int, zone: TimeZone): EventInstance {
+    val dates = dateZone(zone)
+    return copy(start = start.plus(days, DateTimeUnit.DAY, dates), end = end.plus(days, DateTimeUnit.DAY, dates))
 }
 
 /** A page with no events yet, for one whose days are still loading. */
@@ -892,8 +946,9 @@ private fun WeekFrame(
                 ),
             ) {
                 val zoom = LocalTimelineZoom.current
-                val fitHeight = if (animatedAllDayHeight == null) maxHeight + allDayHeight
-                    else maxHeight
+                val fitHeight = dayFitHeight(
+                    if (animatedAllDayHeight == null) maxHeight + allDayHeight else maxHeight,
+                )
                 val hourHeight = zoom.scale.hourHeight(fitHeight)
                 HourGutter(
                     scrollState = actions.scrollState,
@@ -992,7 +1047,7 @@ private fun TimelinePageContent(
                 LocalChipGround provides MaterialTheme.colorScheme.surface,
             ) {
                 AllDayStrip(geometry = geometry, bars = bars, height = allDayHeight,
-                    animatedHeight = animatedAllDayHeight, onEventClick = actions.onEventClick)
+                    animatedHeight = animatedAllDayHeight, actions = actions, active = active)
             }
         }
         Spacer(Modifier.height(TIMELINE_TOP_GAP))
@@ -1127,9 +1182,29 @@ private fun AllDayStrip(
     bars: List<PlacedBar>,
     height: Dp,
     animatedHeight: (() -> Dp)? = null,
-    onEventClick: (EventInstance) -> Unit,
+    actions: TimelineActions,
+    active: Boolean,
 ) {
     val dark = LocalFloretDarkTheme.current
+    val zone = LocalTimelineZone.current
+    val dragController = actions.dragController
+    // Only the page the finger is on draws the drag; the controller is shared.
+    val held = (dragController.stripDrag ?: dragController.stripSettling)?.takeIf { active }
+    val sideways = held?.takeIf { !it.overGrid }
+    val lifted = dragController.liftedInstanceId?.takeIf { active && dragController.stripDrag?.overGrid != false }
+    val settling = dragController.stripSettling?.takeIf { active }
+    // Seated once the re-read draws the event at the days it was dropped on.
+    LaunchedEffect(settling, bars) {
+        if (settling == null) return@LaunchedEffect
+        val target = settling.event.spanFirstDay(zone).plus(settling.dayShift, DateTimeUnit.DAY)
+        val landed = bars.any { bar ->
+            bar.event.instanceId != settling.event.instanceId &&
+                (bar.event.eventId == settling.event.eventId ||
+                    (settling.event.title.isNotBlank() && bar.event.title == settling.event.title)) &&
+                bar.event.spanFirstDay(zone) == target
+        }
+        if (landed) dragController.seatStrip()
+    }
 
     Row(
         modifier = Modifier
@@ -1150,12 +1225,20 @@ private fun AllDayStrip(
             content = {
                 bars.forEach { bar ->
                     key(bar.event.eventId, bar.event.start) {
+                        val moving = sideways?.event?.instanceId == bar.event.instanceId
+                        val lane = animatedStripLane(bar.toLane)
                         AllDayBar(
                             event = bar.event,
                             lastDay = bar.toRange.endInclusive,
                             dark = dark,
-                            onClick = { onEventClick(bar.event) },
+                            dragController = dragController,
+                            lifted = moving,
+                            ghosted = lifted == bar.event.instanceId,
+                            onClick = { actions.onEventClick(bar.event) },
+                            onDrop = actions.onStripDrop,
                             modifier = Modifier
+                                .then(if (moving) Modifier.zIndex(1f) else Modifier)
+                                .then(StripLane(lane))
                                 .morphEvent(ViewMorphKey.event(bar.event, bar.keyDate))
                                 .padding(horizontal = 1.dp, vertical = 1.dp),
                         )
@@ -1172,10 +1255,19 @@ private fun AllDayStrip(
             val progress = geometry.progress()
             val placed = measurables.mapIndexed { i, measurable ->
                 val bar = bars[i]
-                val extent = geometry.extent(bar.fromRange, bar.toRange, width, 0f)
+                val shift = sideways?.takeIf { it.event.instanceId == bar.event.instanceId }?.dayShift ?: 0
+                val extent = if (shift == 0) {
+                    geometry.extent(bar.fromRange, bar.toRange, width, 0f)
+                } else {
+                    // The whole event, not the part this page shows: it may come in from off screen.
+                    val moved = bar.event.spanFirstDay(zone)..bar.event.spanLastDay(zone)
+                    geometry.extent(moved.shiftedBy(shift), moved.shiftedBy(shift), width, 0f)
+                }
                 val left = extent.left.roundToInt()
                 val barWidth = (extent.right.roundToInt() - left).coerceAtLeast(0)
-                val y = (lerp(bar.fromLane.toFloat(), bar.toLane.toFloat(), progress) * rowPx).roundToInt()
+                // Standing still a bar tweens to a new lane, as bars make room for a dragged one.
+                val lane = (measurable.parentData as? StripLane)?.lane?.takeIf { bar.fromLane == bar.toLane }
+                val y = ((lane?.value ?: lerp(bar.fromLane.toFloat(), bar.toLane.toFloat(), progress)) * rowPx).roundToInt()
                 Triple(measurable.measure(Constraints.fixed(barWidth, rowPx.roundToInt())), left, y)
             }
             layout(constraints.maxWidth, constraints.maxHeight) {
@@ -1185,12 +1277,31 @@ private fun AllDayStrip(
     }
 }
 
+private data class StripLane(val lane: State<Float>) : ParentDataModifier {
+    override fun Density.modifyParentData(parentData: Any?): Any = this@StripLane
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun animatedStripLane(lane: Int): State<Float> {
+    val spec: FiniteAnimationSpec<Float> =
+        if (rememberReduceMotion()) snap() else MaterialTheme.motionScheme.fastSpatialSpec()
+    return animateFloatAsState(lane.toFloat(), spec, label = "strip-lane")
+}
+
+private fun ClosedRange<LocalDate>.shiftedBy(days: Int): ClosedRange<LocalDate> =
+    start.plus(days, DateTimeUnit.DAY)..endInclusive.plus(days, DateTimeUnit.DAY)
+
 @Composable
 private fun AllDayBar(
     event: EventInstance,
     lastDay: LocalDate,
     dark: Boolean,
+    dragController: TimelineDragController,
+    lifted: Boolean,
+    ghosted: Boolean,
     onClick: () -> Unit,
+    onDrop: (StripDrop) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val title = event.title.ifBlank { stringResource(R.string.event_untitled) }
@@ -1198,8 +1309,29 @@ private fun AllDayBar(
     // A bar is one piece, so it dims once the last day it covers here has passed.
     val dimmed = dimCutoff != null && event.isPastOn(lastDay, dimCutoff)
     val paint = eventPaint(event, dark)
+    val zone = LocalTimelineZone.current
+    val draggable = eventDragAllowed(event)
+    // Long press lifts the bar: sideways moves its days, down into the grid makes it timed.
+    val dragModifier = rememberEventDragSource(
+        enabled = draggable,
+        key = event.instanceId,
+        onPickUp = { pointer, _, _ ->
+            dragController.beginStrip(event, zone, pointer)
+            if (dragController.stripDrag != null) PickUp.Drag else PickUp.None
+        },
+        onMove = dragController::move,
+        onDrop = { dragController.finishStrip()?.let(onDrop) },
+        onCancel = dragController::cancel,
+        onRelease = dragController::cancel,
+    )
+    // Ghosted while it hangs over the grid as a timed block, and until that drop lands.
+    val ghost = ghostAlpha(ghosted)
+    val raise = selectionLift(lifted)
     Box(
         modifier = (if (dimmed) modifier.alpha(EventDimAlpha) else modifier)
+            .alpha(ghost)
+            .selectionLift(raise, EventChipShape)
+            .then(dragModifier)
             .eventSurface(paint, EventChipShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 6.dp, vertical = 2.dp)
@@ -1254,7 +1386,9 @@ private fun Timeline(
             else Modifier.stableMorphViewport(animatedAllDayHeight, fullViewportHeight),
         ),
     ) {
-        val fitHeight = if (animatedAllDayHeight == null) maxHeight + allDayHeight else maxHeight
+        val fitHeight = dayFitHeight(
+            if (animatedAllDayHeight == null) maxHeight + allDayHeight else maxHeight,
+        )
         val hourHeight = zoom.scale.hourHeight(fitHeight)
         val totalHeight = hourHeight * 24
         // The pinch sits above the scroll viewport: it has to outrank the
@@ -1287,9 +1421,11 @@ private fun Timeline(
                 .fillMaxSize()
                 .then(pinch)
                 .padding(end = TIMELINE_CONTENT_END_INSET)
-                .clip(RoundedCornerShape(16.dp))
+                .clip(RoundedCornerShape(TIMELINE_CORNER))
                 .verticalScroll(scrollState)
-                .onGloballyPositioned { if (active) dragController.geometry.viewport = it },
+                .onGloballyPositioned { if (active) dragController.geometry.viewport = it }
+                // Past midnight, outside the columns: nothing there takes a tap or a drop.
+                .padding(bottom = FabClearance),
         ) {
             TimelineColumns(
                 geometry = geometry,
@@ -1325,12 +1461,26 @@ private fun Timeline(
                     visibleTop = visibleTop,
                     viewportHeight = visibleViewport,
                     actions = actions,
+                    shape = columnShape(day == geometry.dates.first(), day == geometry.dates.last()),
                     modifier = Modifier.fillMaxHeight(),
                 )
             }
         }
     }
 }
+
+/**
+ * The outer columns round their bottom corner at midnight: the room left below
+ * for the buttons means the rounded window no longer does it there.
+ */
+private fun columnShape(first: Boolean, last: Boolean): Shape =
+    if (!first && !last) RectangleShape
+    else RoundedCornerShape(
+        bottomStart = if (first) TIMELINE_CORNER else 0.dp,
+        bottomEnd = if (last) TIMELINE_CORNER else 0.dp,
+    )
+
+private val TIMELINE_CORNER = 16.dp
 
 @Composable
 private fun DayColumnCard(
@@ -1343,6 +1493,7 @@ private fun DayColumnCard(
     visibleTop: () -> Float,
     viewportHeight: () -> Float,
     actions: TimelineActions,
+    shape: Shape = RectangleShape,
     modifier: Modifier = Modifier,
 ) {
     val scrollState = actions.scrollState
@@ -1373,8 +1524,8 @@ private fun DayColumnCard(
     val draftSurface = rememberDraftSurface(date, edges, hourPx, dragController, actions.onDrop)
     Card(
         // Plain rectangular columns — the soft corners come from the outer
-        // rounded scroll viewport, so inner rounding would look odd at the edges.
-        shape = RectangleShape,
+        // rounded scroll viewport, apart from the outer ones' bottoms ([columnShape]).
+        shape = shape,
         colors = CardDefaults.cardColors(
             // With the grid on, the container colour moves onto the hour cells
             // and the column behind them recedes to surface, so the gap between
@@ -1414,7 +1565,6 @@ private fun DayColumnCard(
                 // block or handle on top can claim the press first.
                 .then(draftSurface),
         ) {
-            val minEventHeight = hourHeight * MIN_EVENT_FRACTION
             // Keyed by event, so a block that changes time or lane is the *same*
             // composable afterwards and tweens there. The ordinal disambiguates
             // a column holding two occurrences of one series.
@@ -1422,9 +1572,17 @@ private fun DayColumnCard(
             shown.forEach { block ->
                 val ordinal = ordinals.merge(block.event.eventId, 1, Int::plus)!! - 1
                 key(block.event.eventId, ordinal) {
-                    val top = hourHeight * (block.startMin / 60f)
-                    val rawHeight = hourHeight * ((block.endMin - block.startMin) / 60f)
-                    val height = if (rawHeight < minEventHeight) minEventHeight else rawHeight
+                    // Where this block is cut at midnight, which decides both
+                    // its shape and the half-gap it gives up to the hour cells.
+                    val cuts = remember(block, date, zone) {
+                        timedBlockCuts(
+                            block.continuesBefore(date, zone),
+                            block.continuesAfter,
+                        )
+                    }
+                    val span = remember(block) { block.renderedSpan() }
+                    val top = hourHeight * (span.topMin / 60f)
+                    val height = hourHeight * ((span.bottomMin - span.topMin) / 60f)
                     val place = animatedBlockPlacement(
                         xFraction = block.lane.toFloat() / block.laneCount,
                         widthFraction = 1f / block.laneCount,
@@ -1432,14 +1590,6 @@ private fun DayColumnCard(
                         height = height,
                         landing = dragController.ghosts(block),
                     )
-                    // Where this block is cut at midnight, which decides both
-                    // its shape and the half-gap it gives up to the hour cells.
-                    val cuts = remember(block, date, zone) {
-                        timedBlockCuts(
-                            block.continuesBefore(date, zone),
-                            block.continuesAfter(date, zone),
-                        )
-                    }
                     val topInset = hourCellBlockInset(showHourGrid, cuts.top)
                     val bottomInset = hourCellBlockInset(showHourGrid, cuts.bottom)
                     val blockHeight = (place.height - topInset - bottomInset)
@@ -1775,7 +1925,7 @@ private fun rememberDraftSurface(
                 block = block,
                 zone = zone,
                 pointerInRoot = pointer,
-                blockInRoot = node + Offset(0f, startMin / 60f * hour),
+                blockInRoot = node + Offset(0f, block.renderedSpan().topMin / 60f * hour),
             )
             true
         },
@@ -1823,8 +1973,10 @@ private fun WeekLoading(dayCount: Int) {
         BoxWithConstraints(modifier = Modifier.fillMaxSize()) {
             // Same scale resolution as the loaded timeline, so the skeleton's
             // columns don't resize the moment the real week arrives.
-            val fitHeight = maxHeight + SKELETON_HEADER_HEIGHT + SKELETON_HEADER_PADDING * 2 -
-                headerHeight - TIMELINE_TOP_GAP
+            val fitHeight = dayFitHeight(
+                maxHeight + SKELETON_HEADER_HEIGHT + SKELETON_HEADER_PADDING * 2 -
+                    headerHeight - TIMELINE_TOP_GAP,
+            )
             val hourHeight = scale.hourHeight(fitHeight)
             val totalHeight = hourHeight * 24
             // The skeleton wears the loaded columns' own ground, so the arrival
@@ -1837,7 +1989,8 @@ private fun WeekLoading(dayCount: Int) {
                 modifier = Modifier
                     .fillMaxSize()
                     .padding(end = TIMELINE_CONTENT_END_INSET)
-                    .verticalScroll(scrollState),
+                    .verticalScroll(scrollState)
+                    .padding(bottom = FabClearance),
             ) {
                 Spacer(Modifier.width(GUTTER_WIDTH))
                 repeat(dayCount) {

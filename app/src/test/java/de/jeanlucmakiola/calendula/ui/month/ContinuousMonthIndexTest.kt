@@ -1,5 +1,7 @@
 package de.jeanlucmakiola.calendula.ui.month
 
+import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.testEvent
 import de.jeanlucmakiola.calendula.ui.common.startOfWeek
 import com.google.common.truth.Truth.assertThat
 import kotlinx.datetime.DateTimeUnit
@@ -10,6 +12,7 @@ import kotlinx.datetime.TimeZone
 import kotlinx.datetime.YearMonth
 import kotlinx.datetime.minus
 import kotlinx.datetime.plus
+import kotlinx.datetime.yearMonth
 import org.junit.jupiter.api.Test
 
 /**
@@ -34,22 +37,22 @@ class ContinuousMonthIndexTest {
     @Test
     fun `index round-trips back to its month`() {
         listOf(
-            YearMonth(1900, Month.JANUARY),
+            YearMonth(1600, Month.JANUARY),
             jun26,
             YearMonth(2026, Month.DECEMBER),
-            YearMonth(2100, Month.DECEMBER),
+            YearMonth(2399, Month.DECEMBER),
         ).forEach { ym ->
             assertThat(yearMonthForIndex(monthIndexOf(ym))).isEqualTo(ym)
         }
     }
 
     @Test
-    fun `indices are non-negative and span 1900 through 2100`() {
-        assertThat(monthIndexOf(YearMonth(1900, Month.JANUARY))).isEqualTo(0)
+    fun `indices are non-negative and span 1600 through 2399`() {
+        assertThat(monthIndexOf(YearMonth(1600, Month.JANUARY))).isEqualTo(0)
         assertThat(monthIndexOf(jun26)).isGreaterThan(0)
-        assertThat(monthIndexOf(YearMonth(2100, Month.DECEMBER)))
+        assertThat(monthIndexOf(YearMonth(2399, Month.DECEMBER)))
             .isEqualTo(continuousMonthCount() - 1)
-        assertThat(continuousMonthCount()).isEqualTo(201 * 12)
+        assertThat(continuousMonthCount()).isEqualTo(800 * 12)
     }
 
     @Test
@@ -154,9 +157,9 @@ class ContinuousMonthIndexTest {
         DayOfWeek.entries.forEach { ws ->
             val index = weekIndexOf(wed, ws)
             assertThat(weekStartForIndex(index, ws)).isEqualTo(wed.startOfWeek(ws))
-            assertThat(weekIndexOf(LocalDate(1900, 1, 1), ws)).isAtLeast(0)
+            assertThat(weekIndexOf(LocalDate(1600, 1, 1), ws)).isAtLeast(0)
             assertThat(index).isLessThan(continuousWeekCount(ws))
-            assertThat(weekIndexOf(LocalDate(2100, 12, 31), ws))
+            assertThat(weekIndexOf(LocalDate(2399, 12, 31), ws))
                 .isLessThan(continuousWeekCount(ws))
         }
     }
@@ -235,5 +238,69 @@ class ContinuousMonthIndexTest {
             .isEqualTo(LocalDate(2026, 7, 1))
         assertThat(agendaStartForMonth(YearMonth(2025, Month.JUNE), today))
             .isEqualTo(LocalDate(2025, 6, 1))
+    }
+
+    private fun days(month: YearMonth, today: LocalDate, byDay: Map<LocalDate, List<EventInstance>>, showToday: Boolean = true) =
+        splitAgendaDays(month, today, byDay, showToday).map { it.date }
+
+    @Test
+    fun `the split agenda skips a free first day of another month`() {
+        val today = LocalDate(2026, 6, 10)
+        val byDay = mapOf(
+            LocalDate(2026, 7, 1) to emptyList(),
+            LocalDate(2026, 7, 3) to listOf(testEvent()),
+        )
+        assertThat(days(YearMonth(2026, Month.JULY), today, byDay)).containsExactly(LocalDate(2026, 7, 3))
+    }
+
+    @Test
+    fun `the split agenda keeps a free today`() {
+        val today = LocalDate(2026, 6, 10)
+        val byDay = mapOf(LocalDate(2026, 6, 12) to listOf(testEvent()))
+        assertThat(days(jun26, today, byDay)).containsExactly(today, LocalDate(2026, 6, 12)).inOrder()
+    }
+
+    @Test
+    fun `the split agenda drops a free today when the agenda would`() {
+        val today = LocalDate(2026, 6, 10)
+        val byDay = mapOf(LocalDate(2026, 6, 12) to listOf(testEvent()))
+        assertThat(days(jun26, today, byDay, showToday = false)).containsExactly(LocalDate(2026, 6, 12))
+    }
+
+    @Test
+    fun `the split agenda leaves out past days and the grid's other months`() {
+        val today = LocalDate(2026, 6, 10)
+        val byDay = mapOf(
+            LocalDate(2026, 5, 31) to listOf(testEvent()),
+            LocalDate(2026, 6, 9) to listOf(testEvent()),
+            LocalDate(2026, 6, 10) to listOf(testEvent()),
+            LocalDate(2026, 7, 1) to listOf(testEvent()),
+        )
+        assertThat(days(jun26, today, byDay)).containsExactly(today)
+        assertThat(days(YearMonth(2026, Month.JULY), today, byDay)).containsExactly(LocalDate(2026, 7, 1))
+    }
+
+    @Test
+    fun `an empty month lists no days`() {
+        assertThat(days(YearMonth(2026, Month.JULY), LocalDate(2026, 6, 10), emptyMap())).isEmpty()
+    }
+
+    @Test
+    fun `a date before 1600 is held at the first day of the grid`() {
+        val held = coerceToMonthRange(LocalDate(1599, 12, 31))
+        assertThat(held).isEqualTo(LocalDate(1600, 1, 1))
+        assertThat(monthIndexOf(held.yearMonth)).isEqualTo(0)
+    }
+
+    @Test
+    fun `a date after 2399 is held at the last day of the grid`() {
+        val held = coerceToMonthRange(LocalDate(2400, 1, 1))
+        assertThat(held).isEqualTo(LocalDate(2399, 12, 31))
+        assertThat(monthIndexOf(held.yearMonth)).isEqualTo(continuousMonthCount() - 1)
+    }
+
+    @Test
+    fun `a date inside the span is left alone`() {
+        assertThat(coerceToMonthRange(LocalDate(2026, 6, 10))).isEqualTo(LocalDate(2026, 6, 10))
     }
 }

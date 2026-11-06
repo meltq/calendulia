@@ -456,7 +456,7 @@
     <string name="calendars_restore_action">استعادة من ملف ‎.ics</string>
     <string name="calendars_restore_hint">استيراد الأحداث من نسخة احتياطية أو تطبيق تقويم آخر.</string>
     <string name="calendars_auto_backup">النسخ الاحتياطي التلقائي</string>
-    <string name="calendars_auto_backup_hint">قم بتصدير تقويماتك المحلية بشكل دوري إلى مجلد كـ ملف ‎.ics.</string>
+    <string name="calendars_auto_backup_hint">تصدير تقويماتك المحلية بشكل دوري إلى مجلد كـ ملف ‎.ics</string>
     <string name="calendars_auto_backup_folder">مجلد النسخ الاحتياطي</string>
     <string name="calendars_auto_backup_folder_unset">اضغط لاختيار مجلد</string>
     <string name="calendars_auto_backup_every">كل %1$s</string>
@@ -638,7 +638,7 @@
         <item quantity="many">يتم استيراد %d حدث</item>
         <item quantity="other">يتم استيراد %d حدث</item>
     </plurals>
-    <string name="event_move_recurring_title">نقل الحدث المتكرر</string>
+    <string name="event_move_recurring_title">نقل الحدث المتكرّر</string>
     <string name="event_edit_conflict_overwrite_hint">فقط الحقول التي عدلتها هي التي ستحل محل التغيير الخارجي</string>
     <string name="reorder_drag_handle">اسحب لإعادة الترتيب</string>
     <string name="settings_drawer_order_hint">اسحب لإعادة ترتيب طرق العرض المدرجة في قائمة التنقل.</string>
@@ -665,7 +665,7 @@
     <string name="duration_hours_minutes">%1$s %2$s</string>
     <string name="settings_widgets_hint">إعدادات لأدوات الشاشة الرئيسية وعنصر الإعدادات السريعة. أضف أداة عن طريق الضغط لفترة طويلة على شاشتك الرئيسية.</string>
     <string name="import_warning_attendees">لم يتم استيراد قوائم الضيوف.</string>
-    <string name="settings_reliable_delivery_exempt">معفى من تحسين البطارية — تصل التذكيرات في الوقت المحدد.</string>
+    <string name="settings_reliable_delivery_exempt">معفى من تحسين البطارية — تصل التذكيرات في الوقت المحدّد.</string>
     <string name="settings_reliable_delivery">توصيل موثوق</string>
     <string name="settings_allday_reminder_time_hint">تنطلق التذكيرات لأحداث التي تستمر طوال اليوم عند %1$s</string>
     <string name="agenda_range_override_hint">فقط للآن — يعيد التعيين للمدى المحفوظ خاصتك عند إعادة فتح Calendula.</string>
@@ -804,4 +804,30 @@
     <string name="reminder_day_today">اليوم</string>
     <string name="event_detail_open_in_maps">فتح في الخرائط</string>
     <string name="link_open_failed">لا تطبيق يمكنه فتح هذا الرابط</string>
+    <string name="settings_support_kofi">Ko-fi</string>
+    <string name="settings_support_liberapay">Liberapay</string>
+    <string name="settings_support_liberapay_hint">التبرعات المتكررة</string>
+    <string name="settings_support_kofi_hint">الإكراميات لمرة واحدة</string>
+    <string name="settings_theme_black">أسود</string>
+    <string name="settings_theme_black_summary">داكن مع خلفيات سوداء نقية، لشاشات AMOLED</string>
+    <string name="event_resize_done">تم التغيير إلى %1$s</string>
+    <string name="event_resize_recurring_title">تغيير الحدث المتكرّر</string>
+    <string name="event_selection_actions">إجراءات الحدث</string>
+    <string name="event_selection_hide">إخفاء إجراءات الحدث</string>
+    <string name="event_selection_close">إلغاء تحديد الحدث</string>
+    <string name="event_draft_create">إنشاء حدث</string>
+    <string name="event_draft_discard">تجاهل الحدث الجديد</string>
+    <string name="event_action_load_failed">تعذّر فتح الحدث</string>
+    <string name="event_edit_more_actions">المزيد من الإجراءات</string>
+    <string name="event_edit_unsaved_title">تغييرات غير محفوظة</string>
+    <string name="event_edit_unsaved_save">حفظ التغييرات</string>
+    <string name="event_edit_unsaved_discard">تجاهل التغييرات</string>
+    <string name="event_edit_create">إنشاء</string>
+    <string name="settings_tap_opens_details">التفاصيل</string>
+    <string name="settings_tap_opens_editor">نموذج التعديل</string>
+    <string name="process_text_create_event">إنشاء حدث</string>
+    <string name="settings_events_header">الأحداث</string>
+    <string name="settings_tap_opens">النقر بحدث يفتح</string>
+    <string name="settings_tap_opens_hint">الأحداث التي لا يمكنك تعديلها وإشعارات التذكير دائمًا تفتح التفاصيل.</string>
+    <string name="event_edit_unsaved_keep">متابعة التعديل</string>
 </resources>

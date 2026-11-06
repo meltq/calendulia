@@ -56,7 +56,8 @@ private const val DIMMED_HOUR_ALPHA = 0.3f
  * The timeline's hour gutter. Scrolls in sync with the day columns through the
  * shared [scrollState], and while [dragController] holds a lifted block it dims
  * the hour labels and floats a badge with the drag's current start time at the
- * row the block would land on.
+ * row the block would land on. Its content ends in the same [FabClearance]
+ * the day columns do, or the two drift apart at the bottom of the scroll.
  */
 @Composable
 fun HourGutter(
@@ -86,7 +87,8 @@ fun HourGutter(
             .width(GUTTER_WIDTH)
             .padding(start = GUTTER_CONTENT_START_INSET)
             .fillMaxHeight()
-            .verticalScroll(scrollState),
+            .verticalScroll(scrollState)
+            .padding(bottom = FabClearance),
     ) {
         Column {
             (0 until 24).forEach { h ->

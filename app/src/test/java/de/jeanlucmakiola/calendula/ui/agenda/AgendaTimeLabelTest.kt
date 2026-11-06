@@ -65,4 +65,14 @@ class AgendaTimeLabelTest {
         assertThat(labelOn(2026, 7, 1, e)).isEqualTo(AgendaTimeLabel.AllDay)
         assertThat(labelOn(2026, 7, 2, e)).isEqualTo(AgendaTimeLabel.Ends(e.end))
     }
+
+    @Test
+    fun `a timed event from midnight to midnight is all-day`() {
+        val oneDay = event(at(2026, 7, 2), at(2026, 7, 3))
+        val twoDays = event(at(2026, 7, 2), at(2026, 7, 4))
+
+        assertThat(labelOn(2026, 7, 2, oneDay)).isEqualTo(AgendaTimeLabel.AllDay)
+        assertThat(labelOn(2026, 7, 2, twoDays)).isEqualTo(AgendaTimeLabel.AllDay)
+        assertThat(labelOn(2026, 7, 3, twoDays)).isEqualTo(AgendaTimeLabel.AllDay)
+    }
 }

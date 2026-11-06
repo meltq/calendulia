@@ -10,14 +10,22 @@ import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlin.time.Instant
 
 interface CalendarRepository {
     fun calendars(): Flow<List<CalendarSource>>
     fun instances(range: ClosedRange<Instant>): Flow<List<EventInstance>>
 
+    /** One read of event [eventId]'s occurrences overlapping [range], soonest first, whatever calendar it is in. */
+    suspend fun eventOccurrences(eventId: Long, range: ClosedRange<Instant>): List<EventInstance>
+
     /** Re-query every open [calendars] / [instances] flow. */
     fun refresh()
+
+    /** Emits on the app's own writes and visibility changes; not on provider notifications or [refresh]. */
+    val localChanges: Flow<Unit>
+
     suspend fun eventDetail(eventId: Long): EventDetail
 
     /**
@@ -102,6 +110,12 @@ interface CalendarRepository {
     ): Long
 
     /**
+     * Every series split the app makes ([updateEventFromOccurrence]), so what
+     * follows a series by id can move on to the part that continues it.
+     */
+    val seriesSplits: Flow<SeriesSplit> get() = emptyFlow()
+
+    /**
      * Change a recurring event from [beginMillis] onwards (series split);
      * returns the new event's `Events._ID`.
      */
@@ -128,3 +142,6 @@ class NoSuchEventException(eventId: Long) :
 /** A ContentResolver write affected no rows or returned no URI. */
 class WriteFailedException(operation: String) :
     RuntimeException("Calendar write failed: $operation")
+
+/** A "this and following" edit: [oldEventId] now ends where [newEventId] picks up. */
+data class SeriesSplit(val oldEventId: Long, val newEventId: Long)

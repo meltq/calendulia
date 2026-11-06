@@ -7,4 +7,10 @@
         <item name="android:windowBackground">@color/window_background</item>
         <item name="android:windowLightStatusBar">true</item>
     </style>
+
+    <!-- Widget config: drawn over the wallpaper, so the preview shows the real home screen. -->
+    <style name="Theme.Calendula.WidgetConfig">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowShowWallpaper">true</item>
+    </style>
 </resources>

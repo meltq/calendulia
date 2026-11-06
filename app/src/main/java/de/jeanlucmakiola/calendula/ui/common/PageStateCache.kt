@@ -1,22 +1,26 @@
 package de.jeanlucmakiola.calendula.ui.common
 
-import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.ExperimentalForInheritanceCoroutinesApi
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.FlowCollector
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.plus
+import kotlinx.coroutines.launch
 
 /**
  * One shared state per pager page — a week, a day, a month — so a page and the
  * screen's anchor read the same query, and the pages either side stay loaded
  * across a swipe.
  *
- * Every entry shares on its own job, cancelled when [keep] lets it go: a
- * `stateIn` on the ViewModel's scope would stay running, holding its last state,
- * until the ViewModel itself was cleared. Main thread only.
+ * An entry queries only while something collects it, stopping [STOP_TIMEOUT_MILLIS]
+ * after the last collector leaves, and starts again when one comes back. Letting
+ * an entry go only forgets it: a page still holding it keeps a working state
+ * however far the pager composes or prefetches, and however long the screen sat
+ * stopped (#440, #454). A forgotten entry nobody collects holds no coroutine, so
+ * paging through a year doesn't keep a year of queries around. Main thread only.
  *
  * @param keep whether a cached key is still worth holding once [get] asks for another.
  */
@@ -26,28 +30,54 @@ class PageStateCache<K, S>(
     private val keep: (cached: K, requested: K) -> Boolean,
     private val load: (K) -> Flow<S>,
 ) {
-    private class Entry<S>(val state: StateFlow<S>, val job: Job)
-
-    private val entries = HashMap<K, Entry<S>>()
+    private val entries = HashMap<K, Entry>()
 
     /** The number of entries held, for tests. */
     internal val size: Int get() = entries.size
 
     fun get(key: K): StateFlow<S> {
-        val iterator = entries.iterator()
-        while (iterator.hasNext()) {
-            val (cached, entry) = iterator.next()
-            if (cached != key && !keep(cached, key)) {
-                entry.job.cancel()
-                iterator.remove()
+        // One still collected stays, so the anchor asking for it again shares its query.
+        entries.entries.removeAll { (cached, entry) ->
+            cached != key && !keep(cached, key) && !entry.isCollected
+        }
+        return entries.getOrPut(key) { Entry(key) }
+    }
+
+    @OptIn(ExperimentalForInheritanceCoroutinesApi::class)
+    private inner class Entry(private val key: K) : StateFlow<S> {
+        private val state = MutableStateFlow(initial)
+        private var collectors = 0
+        private var loading: Job? = null
+        private var stopping: Job? = null
+
+        val isCollected: Boolean get() = collectors > 0
+
+        override val value: S get() = state.value
+        override val replayCache: List<S> get() = state.replayCache
+
+        override suspend fun collect(collector: FlowCollector<S>): Nothing {
+            collectors++
+            stopping?.cancel()
+            stopping = null
+            if (loading?.isActive != true) {
+                loading = scope.launch { load(key).collect { state.value = it } }
+            }
+            try {
+                state.collect(collector)
+            } finally {
+                if (--collectors == 0) {
+                    stopping = scope.launch {
+                        delay(STOP_TIMEOUT_MILLIS)
+                        loading?.cancel()
+                        loading = null
+                    }
+                }
             }
         }
-        return entries.getOrPut(key) {
-            val job = SupervisorJob(scope.coroutineContext[Job])
-            Entry(
-                state = load(key).stateWhileSubscribed(scope + job, initial),
-                job = job,
-            )
-        }.state
+    }
+
+    private companion object {
+        /** Long enough to ride out a configuration change, as `stateWhileSubscribed` does. */
+        const val STOP_TIMEOUT_MILLIS = 5_000L
     }
 }

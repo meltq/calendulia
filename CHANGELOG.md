@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.0] — 2026-11-06
+
+### Added
+- **Six new home-screen widgets.** Quick add (1×1) opens a new event on today with the same defaults as the app's + button ([#435]). Date (1×1) shows today's weekday and day number on a rounded shape and opens today ([#376]). Week strip (4×1) shows this week's days with a dot in each event's colour and today filled ([#436]). Upcoming (2×2) shows today's date over your next events, as many as fit ([#437]). Today lists today's events; once they're over it says "Nothing left today" and shows tomorrow's first one or two ([#438]). Countdown counts down to your next timed event, or to an event or series you pick, like a holiday in 12 days ([#439]).
+- **A month and day widget.** A compact month grid sits beside the events of one day. Tap a day in the grid to see its events, and tap the list to open that day in the app ([#441]).
+- **Each widget has its own settings.** Placing a widget, or long-pressing it and choosing Edit, opens a settings screen with a live preview. Pick a solid, tinted or transparent background, a light or dark theme or the app's, and which calendars it shows. Widgets that list events also have their time range, text size and how past events look. Settings → Widgets lists the widgets on your home screen so you can change them from there. These options used to be shared by all widgets; widgets you already placed keep what you had set ([#292]).
+- **Turn off start times in the month view.** Settings → Views → Month → Start times hides the time in front of event titles, so narrow fonts keep more of the title. With it on, the time now only shows when the whole title, or at least its first 12 characters, still fits beside it ([#476]).
+- **Drag all-day events.** In the day, 3-day and week views, long-press an event in the all-day strip and move it sideways to another day, or down into the grid to turn it into a timed event ([#296]).
+- **Traditional Chinese**, started as a community translation through [Calendula's Weblate](https://weblate.dev.jeanlucmakiola.de/projects/calendula/). It covers only a few screens so far, so the rest still shows in English until it fills out. Pick it under Settings → Language. Thanks to AventineC.
+
+### Changed
+- **The agenda and month widgets have a new look.** The agenda puts each day in its own card, with a round date pill beside the first event and today's pill filled. The month widget has rounded day cells, weekday pills, shaded days outside the month and a + for a new event. The agenda's refresh button is gone, since widgets now update on their own ([#71], [#90]).
+- **Tapping a day in the month widget opens that day,** wherever in its cell you tap ([#386]).
+- **The widget picker shows what each widget looks like.** On Android 15 and later the previews are the real widgets with sample events, in your language and colours; on older versions they are redrawn to match.
+- **Widgets are listed by their name alone,** without "Calendula" in front, and each has a short description in the picker ([#71]).
+- **Past events in widgets stay readable when dimmed.** Their background fades further and their text less ([#90]).
+- **Events from midnight to midnight show as all-day events.** A timed event that starts and ends at midnight now sits in the all-day strip, shows as "All day" in the agenda and widgets, and its reminder names the day instead of 00:00 – 00:00. The event itself stays as it was saved ([#296]).
+- **Cancelled and tentative events are marked.** Cancelled events are struck through and listed last, like declined invites, and tentative ones get the outline used for unanswered invites. Cancelled one-off events and series no longer disappear ([#388]).
+- **One notification per event.** An event with several reminders now keeps a single notification, which each later reminder updates in place ([#463]).
+- **Go further back and forward in time.** Every view and the date picker now reach from 1600 to 2399 ([#457]).
+- **The split month agenda only lists days with events.** In other months it no longer starts with an empty 1st, and a month with nothing in it says so in one row ([#142]).
+
+### Fixed
+- **Widgets show your changes straight away.** After you added, edited or deleted an event, a widget could keep showing the old events until something else redrew it ([#420], [#229]).
+- **Widgets follow the app's language.** After you picked a language in Settings, widgets kept the old one until something redrew them ([#90]).
+- **The month widget handles busy months.** It could show "Can't show content", or only one or two events per day. Each day now shows as many events as its height fits, and the rest fold into +N ([#372]).
+- **Short events late in the day are fully visible.** An event like 23:58–23:59 used to be cut down to a sliver at the bottom of the day, week and 3-day views. It now keeps its usual minimum height and sits flush against midnight ([#483]).
+- **The month view no longer crashes after going before 1900** in the day or week view ([#457]).
+- **Month pages keep updating.** After a small swipe that snapped back, a month page could stop showing new or edited events, and opening an event from the split view could show its old times ([#440], [#454]).
+- **Smoother expand and collapse in the split month view.** The day cells morph cleanly between the two layouts, and week numbers now animate along with them ([#473]).
+- **Back clears the selected day in the split month view.** With a day picked, the back gesture used to close the app; it now goes back to the whole month's agenda first ([#142]).
+
 ## [2.23.1] — 2026-10-28
 
 ### Changed
@@ -1847,6 +1879,7 @@ automatically, with zero telemetry and no internet permission.
 [#146]: https://codeberg.org/jlmakiola/calendula/issues/146
 [#267]: https://codeberg.org/jlmakiola/calendula/issues/267
 [#239]: https://codeberg.org/jlmakiola/calendula/issues/239
+[#296]: https://codeberg.org/jlmakiola/calendula/issues/296
 [#297]: https://codeberg.org/jlmakiola/calendula/issues/297
 [#298]: https://codeberg.org/jlmakiola/calendula/issues/298
 [#309]: https://codeberg.org/jlmakiola/calendula/issues/309
@@ -1896,4 +1929,26 @@ automatically, with zero telemetry and no internet permission.
 [#306]: https://codeberg.org/jlmakiola/calendula/issues/306
 [#178]: https://codeberg.org/jlmakiola/calendula/issues/178
 [#116]: https://codeberg.org/jlmakiola/calendula/issues/116
+[#388]: https://codeberg.org/jlmakiola/calendula/issues/388
 [#413]: https://codeberg.org/jlmakiola/calendula/issues/413
+[#71]: https://codeberg.org/jlmakiola/calendula/issues/71
+[#90]: https://codeberg.org/jlmakiola/calendula/issues/90
+[#229]: https://codeberg.org/jlmakiola/calendula/issues/229
+[#292]: https://codeberg.org/jlmakiola/calendula/issues/292
+[#372]: https://codeberg.org/jlmakiola/calendula/issues/372
+[#376]: https://codeberg.org/jlmakiola/calendula/issues/376
+[#386]: https://codeberg.org/jlmakiola/calendula/issues/386
+[#420]: https://codeberg.org/jlmakiola/calendula/issues/420
+[#435]: https://codeberg.org/jlmakiola/calendula/issues/435
+[#436]: https://codeberg.org/jlmakiola/calendula/issues/436
+[#437]: https://codeberg.org/jlmakiola/calendula/issues/437
+[#438]: https://codeberg.org/jlmakiola/calendula/issues/438
+[#439]: https://codeberg.org/jlmakiola/calendula/issues/439
+[#440]: https://codeberg.org/jlmakiola/calendula/issues/440
+[#441]: https://codeberg.org/jlmakiola/calendula/issues/441
+[#454]: https://codeberg.org/jlmakiola/calendula/issues/454
+[#457]: https://codeberg.org/jlmakiola/calendula/issues/457
+[#463]: https://codeberg.org/jlmakiola/calendula/issues/463
+[#473]: https://codeberg.org/jlmakiola/calendula/issues/473
+[#476]: https://codeberg.org/jlmakiola/calendula/issues/476
+[#483]: https://codeberg.org/jlmakiola/calendula/issues/483

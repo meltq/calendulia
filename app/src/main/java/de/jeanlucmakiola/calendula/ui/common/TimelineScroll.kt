@@ -32,16 +32,21 @@ val LocalTimelineScroll = staticCompositionLocalOf<TimelineScrollMemory?> { null
 
 /** A timeline's scroll, and where it opens before it can scroll there. */
 @Stable
-class TimelineScroll(val state: ScrollState, noonPending: Boolean, private val openingHour: Int?) {
+class TimelineScroll(
+    val state: ScrollState,
+    noonPending: Boolean,
+    private val openingHour: Int?,
+    private val clearancePx: Float = 0f,
+) {
     /** Whether it is still to be put on noon, which it only can be once laid out. */
     var noonPending by mutableStateOf(noonPending)
         internal set
 
-    /** The top of what it shows, or will once open, over [content] pixels in a [viewport] pixels high. */
+    /** The top of what it shows, or will once open, over [content] pixels of day in a [viewport] pixels high. */
     fun top(viewport: Float, content: Float): Float =
         if (noonPending) {
             (openingHour?.let { it * content / 24f } ?: (content - viewport) / 2f)
-                .coerceIn(0f, (content - viewport).coerceAtLeast(0f))
+                .coerceIn(0f, (content + clearancePx - viewport).coerceAtLeast(0f))
         } else state.value.toFloat()
 }
 
@@ -58,6 +63,7 @@ fun rememberTimelineScrollState(timelineTop: Dp): TimelineScroll {
     val density = LocalDensity.current
     val zoom = LocalTimelineZoom.current
     val topPx = with(density) { timelineTop.toPx() }
+    val clearancePx = with(density) { FabClearance.roundToPx() }
     val remembered = memory?.midnightY
     val scrollState = rememberScrollState(
         initial = remembered?.let { (topPx - it).roundToInt().coerceAtLeast(0) } ?: 0,
@@ -67,6 +73,7 @@ fun rememberTimelineScrollState(timelineTop: Dp): TimelineScroll {
             scrollState,
             noonPending = remembered == null,
             openingHour = zoom.hours.takeIf { it.enabled }?.startHour,
+            clearancePx = clearancePx.toFloat(),
         )
     }
     val currentTop by rememberUpdatedState(topPx)
@@ -80,20 +87,20 @@ fun rememberTimelineScrollState(timelineTop: Dp): TimelineScroll {
         val startHour = zoom.open()
         if (startHour == null) {
             snapshotFlow { scrollState.maxValue }.first { it > 0 }
-            scrollState.scrollTo(scrollState.maxValue / 2)
+            scrollState.scrollTo(((scrollState.maxValue - clearancePx) / 2).coerceAtLeast(0))
         } else {
             // Fitted to the scroll viewport itself: the layout resolves scales
             // against the viewport plus the all-day strip, which would push the
             // end hour below the screen.
             val viewport = snapshotFlow { scrollState.viewportSize }.first { it > 0 }
-            val hourHeight = zoom.scale.hourHeight(with(density) { viewport.toDp() })
+            val hourHeight = zoom.scale.hourHeight(dayFitHeight(with(density) { viewport.toDp() }))
             zoom.holdFit(hourHeight)
             val hourPx = with(density) { hourHeight.toPx() }
             val target = withTimeoutOrNull(FIT_LAYOUT_TIMEOUT_MILLIS) {
                 snapshotFlow {
-                    startHourScroll(scrollState.maxValue, scrollState.viewportSize, startHour, hourPx)
+                    startHourScroll(scrollState.maxValue, scrollState.viewportSize, startHour, hourPx, clearancePx)
                 }.filterNotNull().first()
-            } ?: (startHour * (scrollState.maxValue + scrollState.viewportSize) / 24)
+            } ?: (startHour * (scrollState.maxValue + scrollState.viewportSize - clearancePx) / 24)
                 .coerceIn(0, scrollState.maxValue.coerceAtLeast(0))
             scrollState.scrollTo(target)
         }

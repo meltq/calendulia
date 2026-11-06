@@ -146,6 +146,7 @@ class SettingsPrefs @Inject constructor(
     val pastEventDisplay: Flow<PastEventDisplay> = prefs.flow(SettingsKeys.pastEventDisplay)
     val dimCompletedEvents: Flow<Boolean> = prefs.flow(SettingsKeys.dimCompletedEvents)
     val showWeekNumbers: Flow<Boolean> = prefs.flow(SettingsKeys.showWeekNumbers)
+    val monthShowStartTimes: Flow<Boolean> = prefs.flow(SettingsKeys.monthShowStartTimes)
     val monthViewStyle: Flow<MonthViewStyle> = prefs.flow(SettingsKeys.monthViewStyle)
     val timelineScale: Flow<TimelineScale> = prefs.flow(SettingsKeys.timelineScale)
     val multiDayCount: Flow<Int> = prefs.flow(SettingsKeys.multiDayCount)
@@ -154,8 +155,6 @@ class SettingsPrefs @Inject constructor(
     val dragToReschedule: Flow<Boolean> = prefs.flow(SettingsKeys.dragToReschedule)
     val tapOpensEditor: Flow<Boolean> = prefs.flow(SettingsKeys.tapOpensEditor)
     val agendaScreenRange: Flow<AgendaRange> = prefs.flow(SettingsKeys.agendaScreenRange)
-    val agendaWidgetRange: Flow<AgendaRange> = prefs.flow(SettingsKeys.agendaWidgetRange)
-    val widgetSize: Flow<WidgetSize> = prefs.flow(SettingsKeys.widgetSize)
     val agendaShowRangeBar: Flow<Boolean> = prefs.flow(SettingsKeys.agendaShowRangeBar)
     val agendaShowToday: Flow<Boolean> = prefs.flow(SettingsKeys.agendaShowToday)
     val defaultView: Flow<CalendarView> = prefs.flow(SettingsKeys.defaultView)
@@ -214,6 +213,7 @@ class SettingsPrefs @Inject constructor(
     suspend fun setPastEventDisplay(mode: PastEventDisplay) = prefs.set(SettingsKeys.pastEventDisplay, mode)
     suspend fun setDimCompletedEvents(enabled: Boolean) = prefs.set(SettingsKeys.dimCompletedEvents, enabled)
     suspend fun setShowWeekNumbers(enabled: Boolean) = prefs.set(SettingsKeys.showWeekNumbers, enabled)
+    suspend fun setMonthShowStartTimes(enabled: Boolean) = prefs.set(SettingsKeys.monthShowStartTimes, enabled)
     suspend fun setMonthViewStyle(style: MonthViewStyle) = prefs.set(SettingsKeys.monthViewStyle, style)
     suspend fun setTimelineScale(scale: TimelineScale) = prefs.set(SettingsKeys.timelineScale, scale)
     suspend fun setMultiDayCount(count: Int) = prefs.set(SettingsKeys.multiDayCount, count)
@@ -231,8 +231,6 @@ class SettingsPrefs @Inject constructor(
     suspend fun setDragToReschedule(enabled: Boolean) = prefs.set(SettingsKeys.dragToReschedule, enabled)
     suspend fun setTapOpensEditor(enabled: Boolean) = prefs.set(SettingsKeys.tapOpensEditor, enabled)
     suspend fun setAgendaScreenRange(range: AgendaRange) = prefs.set(SettingsKeys.agendaScreenRange, range)
-    suspend fun setAgendaWidgetRange(range: AgendaRange) = prefs.set(SettingsKeys.agendaWidgetRange, range)
-    suspend fun setWidgetSize(size: WidgetSize) = prefs.set(SettingsKeys.widgetSize, size)
     suspend fun setAgendaShowRangeBar(enabled: Boolean) = prefs.set(SettingsKeys.agendaShowRangeBar, enabled)
     suspend fun setAgendaShowToday(enabled: Boolean) = prefs.set(SettingsKeys.agendaShowToday, enabled)
     suspend fun setDefaultView(view: CalendarView) = prefs.set(SettingsKeys.defaultView, view)
@@ -449,6 +447,9 @@ object SettingsKeys {
      */
     val showWeekNumbers: Pref<Boolean> = booleanPref("show_week_numbers", false)
 
+    /** Whether Month chips may show the start time before the title when wide enough (#219, #476). */
+    val monthShowStartTimes: Pref<Boolean> = booleanPref("month_show_start_times", true)
+
     /** How the Month view lays itself out (#38, #53). */
     val monthViewStyle: Pref<MonthViewStyle> = enumPref("month_view_style", MonthViewStyle.Paged)
 
@@ -497,13 +498,16 @@ object SettingsKeys {
     /** How far ahead the in-app Agenda screen shows events (v2.11). */
     val agendaScreenRange: Pref<AgendaRange> = agendaRangePref("agenda_screen_range")
 
-    /** How far ahead the agenda **widget** shows events (v2.11). */
+    /**
+     * How far ahead the agenda **widget** shows events (v2.11). Read-only since
+     * widgets keep their own options (#292): the default for a widget that has
+     * none yet.
+     */
     val agendaWidgetRange: Pref<AgendaRange> = agendaRangePref("agenda_widget_range")
 
     /**
      * The size step the agenda widget draws its text at (#51). [WidgetSize.SMALL]
-     * reproduces its original metrics. The month widget takes no size setting —
-     * it divides the width it is given by seven (#103).
+     * reproduces its original metrics. Read-only like [agendaWidgetRange] (#292).
      */
     val widgetSize: Pref<WidgetSize> = enumPref("widget_size", WidgetSize.SMALL)
 
@@ -511,8 +515,8 @@ object SettingsKeys {
     val agendaShowRangeBar: Pref<Boolean> = booleanPref("agenda_show_range_bar", true)
 
     /**
-     * Whether the agenda (screen and widget) always anchors today at the top with
-     * a "nothing left today" placeholder (issue #35).
+     * Whether the agenda screen always anchors today at the top with a "nothing
+     * left today" placeholder (issue #35), and the default for a widget (#292).
      */
     val agendaShowToday: Pref<Boolean> = booleanPref("agenda_show_today", true)
 

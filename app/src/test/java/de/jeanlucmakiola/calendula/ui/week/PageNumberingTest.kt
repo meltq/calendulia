@@ -10,8 +10,9 @@ import kotlinx.datetime.plus
 import org.junit.jupiter.api.Test
 
 /**
- * Pins each grid's page numbering to the formulas it shipped with: a pager
- * restores its page by number, so a change here moves the user to another date.
+ * Pins each grid's page numbering: a pager restores its page by number, so a
+ * change here moves the user to another date. Page 0 holds the first day of
+ * the shared span, and the last page holds its last day (#457).
  */
 class PageNumberingTest {
 
@@ -26,6 +27,7 @@ class PageNumberingTest {
             add(e)
             e = e.plus(1, DateTimeUnit.DAY)
         }
+        addAll(listOf(FIRST, FIRST.minus(1, DateTimeUnit.DAY), LAST, LAST.plus(1, DateTimeUnit.DAY)))
     }
 
     private fun pages(count: Int): List<Int> =
@@ -36,13 +38,14 @@ class PageNumberingTest {
     fun `week pages keep their numbering for every first day`() {
         DayOfWeek.entries.forEach { firstDay ->
             val grid = DaysGrid.weeks(firstDay)
+            val phase = DAYS_EPOCH.daysUntil(WEEK_EPOCH.weekStart(firstDay))
             assertThat(grid.dayCount).isEqualTo(7)
-            assertThat(grid.pageCount).isEqualTo(LEGACY_WEEK_COUNT)
-            pages(LEGACY_WEEK_COUNT).forEach { page ->
-                assertThat(grid.startForPage(page)).isEqualTo(legacyWeekStart(page, firstDay))
+            assertThat(grid.pageCount).isEqualTo(expectedCount(7, phase))
+            pages(grid.pageCount).forEach { page ->
+                assertThat(grid.startForPage(page)).isEqualTo(expectedStart(page, 7, phase))
             }
             dates.forEach { date ->
-                assertThat(grid.pageFor(date)).isEqualTo(legacyWeekPage(date, firstDay))
+                assertThat(grid.pageFor(date)).isEqualTo(expectedPage(date, 7, phase))
             }
         }
     }
@@ -52,12 +55,12 @@ class PageNumberingTest {
         (1..7).forEach { count ->
             (-count..count * 2).forEach { phase ->
                 val grid = DaysGrid(count, phase)
-                assertThat(grid.pageCount).isEqualTo(LEGACY_DAYS_COUNT)
-                pages(LEGACY_DAYS_COUNT).forEach { page ->
-                    assertThat(grid.startForPage(page)).isEqualTo(legacyDaysStart(page, count, phase))
+                assertThat(grid.pageCount).isEqualTo(expectedCount(count, phase))
+                pages(grid.pageCount).forEach { page ->
+                    assertThat(grid.startForPage(page)).isEqualTo(expectedStart(page, count, phase))
                 }
                 dates.forEach { date ->
-                    assertThat(grid.pageFor(date)).isEqualTo(legacyDaysPage(date, count, phase))
+                    assertThat(grid.pageFor(date)).isEqualTo(expectedPage(date, count, phase))
                 }
             }
             dates.filter { it.year in 1950..2050 }.forEach { date ->
@@ -71,12 +74,21 @@ class PageNumberingTest {
     fun `day pages keep their numbering`() {
         val grid = DaysGrid.days
         assertThat(grid.dayCount).isEqualTo(1)
-        assertThat(grid.pageCount).isEqualTo(LEGACY_DAY_COUNT)
-        pages(LEGACY_DAY_COUNT).forEach { page ->
-            assertThat(grid.startForPage(page)).isEqualTo(legacyDayStart(page))
+        assertThat(grid.pageCount).isEqualTo(FIRST.daysUntil(LAST) + 1)
+        pages(grid.pageCount).forEach { page ->
+            assertThat(grid.startForPage(page)).isEqualTo(FIRST.plus(page, DateTimeUnit.DAY))
         }
         dates.forEach { date ->
-            assertThat(grid.pageFor(date)).isEqualTo(legacyDayPage(date))
+            assertThat(grid.pageFor(date)).isEqualTo(FIRST.daysUntil(date).coerceIn(0, grid.pageCount - 1))
+        }
+    }
+
+    @Test
+    fun `every grid reaches both ends of the span`() {
+        (DayOfWeek.entries.map { DaysGrid.weeks(it) } + DaysGrid.days + (1..7).map { DaysGrid(it, 0) }).forEach { grid ->
+            assertThat(grid.startForPage(grid.pageFor(FIRST))).isAtMost(FIRST)
+            val lastStart = grid.startForPage(grid.pageFor(LAST))
+            assertThat(lastStart.plus(grid.dayCount - 1, DateTimeUnit.DAY)).isAtLeast(LAST)
         }
     }
 
@@ -104,34 +116,28 @@ class PageNumberingTest {
     }
 
     private companion object {
-        const val LEGACY_WEEK_COUNT = 20_000
-        const val LEGACY_DAYS_COUNT = 40_000
-        const val LEGACY_DAY_COUNT = 140_000
+        val FIRST = LocalDate(1600, 1, 1)
+        val LAST = LocalDate(2399, 12, 31)
         val WEEK_EPOCH = LocalDate(2000, 1, 3)
         val DAYS_EPOCH = LocalDate(2000, 1, 1)
 
         fun LocalDate.weekStart(firstDay: DayOfWeek): LocalDate =
             minus(((dayOfWeek.ordinal - firstDay.ordinal) + 7) % 7, DateTimeUnit.DAY)
 
-        fun legacyWeekStart(page: Int, firstDay: DayOfWeek): LocalDate =
-            WEEK_EPOCH.weekStart(firstDay).plus((page - LEGACY_WEEK_COUNT / 2) * 7, DateTimeUnit.DAY)
-
-        fun legacyWeekPage(date: LocalDate, firstDay: DayOfWeek): Int {
-            val days = WEEK_EPOCH.weekStart(firstDay).daysUntil(date.weekStart(firstDay))
-            return (LEGACY_WEEK_COUNT / 2 + days / 7).coerceIn(0, LEGACY_WEEK_COUNT - 1)
+        /** Page 0 starts on the page boundary at or before [FIRST]. */
+        fun firstStart(count: Int, phase: Int): LocalDate {
+            val origin = DAYS_EPOCH.plus(phase, DateTimeUnit.DAY)
+            return origin.plus(Math.floorDiv(origin.daysUntil(FIRST), count) * count, DateTimeUnit.DAY)
         }
 
-        fun legacyDaysStart(page: Int, count: Int, phase: Int): LocalDate =
-            DAYS_EPOCH.plus(phase + (page - LEGACY_DAYS_COUNT / 2) * count, DateTimeUnit.DAY)
+        fun expectedStart(page: Int, count: Int, phase: Int): LocalDate =
+            firstStart(count, phase).plus(page * count, DateTimeUnit.DAY)
 
-        fun legacyDaysPage(date: LocalDate, count: Int, phase: Int): Int =
-            (LEGACY_DAYS_COUNT / 2 + Math.floorDiv(DAYS_EPOCH.daysUntil(date) - phase, count))
-                .coerceIn(0, LEGACY_DAYS_COUNT - 1)
+        fun expectedCount(count: Int, phase: Int): Int =
+            Math.floorDiv(firstStart(count, phase).daysUntil(LAST), count) + 1
 
-        fun legacyDayStart(page: Int): LocalDate =
-            DAYS_EPOCH.plus(page - LEGACY_DAY_COUNT / 2, DateTimeUnit.DAY)
-
-        fun legacyDayPage(date: LocalDate): Int =
-            (LEGACY_DAY_COUNT / 2 + DAYS_EPOCH.daysUntil(date)).coerceIn(0, LEGACY_DAY_COUNT - 1)
+        fun expectedPage(date: LocalDate, count: Int, phase: Int): Int =
+            Math.floorDiv(firstStart(count, phase).daysUntil(date), count)
+                .coerceIn(0, expectedCount(count, phase) - 1)
     }
 }

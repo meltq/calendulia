@@ -1,7 +1,9 @@
 package de.jeanlucmakiola.calendula.ui.week
 
+import de.jeanlucmakiola.calendula.ui.common.StripDrag
 import de.jeanlucmakiola.calendula.ui.common.startOfWeek
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.testEvent
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
@@ -107,6 +109,42 @@ class WeekLayoutTest {
     }
 
     @Test
+    fun `two short entries near midnight sit side by side`() {
+        // Both lift to end at midnight, so on real times alone the later one would hide the earlier (#483).
+        val a = event(at(wed, 23, 40), at(wed, 23, 41), id = 1L)
+        val b = event(at(wed, 23, 55), at(wed, 23, 56), id = 2L)
+        val blocks = layoutDay(listOf(a, b), wed, zone).sortedBy { it.lane }
+        assertThat(blocks.map { it.event.instanceId }).containsExactly(1L, 2L).inOrder()
+        assertThat(blocks.all { it.laneCount == 2 }).isTrue()
+    }
+
+    @Test
+    fun `a short entry lifted into the event before it takes its own lane`() {
+        val a = event(at(wed, 23), at(wed, 23, 45), id = 1L)
+        val b = event(at(wed, 23, 58), at(wed, 23, 59), id = 2L)
+        val blocks = layoutDay(listOf(a, b), wed, zone)
+        assertThat(blocks.map { it.lane }).containsExactly(0, 1)
+        assertThat(blocks.all { it.laneCount == 2 }).isTrue()
+    }
+
+    @Test
+    fun `a short entry clear of the next one keeps a single lane`() {
+        val a = event(at(wed, 9), at(wed, 9, 10), id = 1L)
+        val b = event(at(wed, 9, 30), at(wed, 10), id = 2L)
+        val blocks = layoutDay(listOf(a, b), wed, zone)
+        assertThat(blocks.all { it.lane == 0 && it.laneCount == 1 }).isTrue()
+    }
+
+    @Test
+    fun `a block knows whether its event carries on past midnight`() {
+        val overnight = event(at(wed, 23), at(wed.plusDays(1), 1))
+        assertThat(layoutDay(listOf(overnight), wed, zone).single().continuesAfter).isTrue()
+        assertThat(layoutDay(listOf(overnight), wed.plusDays(1), zone).single().continuesAfter).isFalse()
+        val toMidnight = event(at(wed, 23), at(wed.plusDays(1), 0))
+        assertThat(layoutDay(listOf(toMidnight), wed, zone).single().continuesAfter).isFalse()
+    }
+
+    @Test
     fun `event spanning midnight is clipped to the day`() {
         // Starts the previous evening, ends 02:00 on wed.
         val ev = event(at(mon.plusDays(1), 22), at(wed, 2))
@@ -126,9 +164,9 @@ class WeekLayoutTest {
     }
 
     @Test
-    fun `all-day events are excluded from the timed layout`() {
+    fun `all-day events are kept out of the timed layout`() {
         val ev = event(at(wed, 0), at(wed.plusDays(1), 0), allDay = true)
-        assertThat(layoutDay(listOf(ev), wed, zone)).isEmpty()
+        assertThat(listOf(ev).splitWholeDays(zone)).isEqualTo(listOf(ev) to emptyList<EventInstance>())
     }
 
     @Test
@@ -299,5 +337,31 @@ class WeekLayoutTest {
         // A run that starts on the second pass reads its plain wall clock.
         val second = event(Instant.parse("2026-10-25T01:10:00Z"), Instant.parse("2026-10-25T01:40:00Z"))
         assertThat(layoutDay(listOf(second), day, brussels).single().endMin).isEqualTo(2 * 60 + 40)
+    }
+
+    @Test
+    fun `a timed event from midnight to midnight stays out of the time grid`() {
+        val ev = testEvent(start = at(wed, 0), end = at(wed.plus(1, DateTimeUnit.DAY), 0))
+
+        assertThat(listOf(ev).splitWholeDays(zone)).isEqualTo(listOf(ev) to emptyList<EventInstance>())
+    }
+
+    @Test
+    fun `a bar held over another day makes room there`() {
+        val held = event(at(mon, 0), at(mon.plusDays(1), 0), allDay = true, id = 1, title = "A")
+        val there = event(at(wed, 0), at(wed.plusDays(1), 0), allDay = true, id = 2, title = "B")
+        val state = WeekUiState.Success(
+            weekStart = mon, today = mon, days = weekDays,
+            allDaySpans = layoutAllDay(listOf(held, there), weekDays, zone), timedByDay = emptyMap(),
+        )
+        assertThat(state.allDaySpans.map { it.lane }).containsExactly(0, 0)
+
+        val preview = state.withStripPreview(StripDrag(held, dayShift = 2), zone).allDaySpans
+        val moved = preview.single { it.event.instanceId == held.instanceId }
+
+        assertThat(moved.event).isEqualTo(held)
+        assertThat(moved.startCol).isEqualTo(2)
+        assertThat(preview.map { it.lane }).containsExactly(0, 1)
+        assertThat(state.withStripPreview(StripDrag(held, dayShift = 2, overGrid = true), zone)).isSameInstanceAs(state)
     }
 }

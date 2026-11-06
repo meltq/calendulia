@@ -346,6 +346,7 @@ class EventFormTest {
             rrule = "FREQ=DAILY",
             availability = Availability.Free,
             accessLevel = AccessLevel.Private,
+            status = EventStatus.Tentative,
             color = 0xFFD50000.toInt(),
         )
         assertThat(full.populatedFields()).containsExactly(
@@ -354,6 +355,7 @@ class EventFormTest {
             EventFormField.Reminders,
             EventFormField.Recurrence,
             EventFormField.Availability,
+            EventFormField.Status,
             EventFormField.Visibility,
             EventFormField.Color,
         )
@@ -569,5 +571,21 @@ class EventFormTest {
         assertThat(picked.end.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(3, 30)))
         val started = form.withStart(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(2, 30)), berlin)
         assertThat(started.start.dateTime).isEqualTo(LocalDateTime(LocalDate(2026, 3, 29), LocalTime(3, 30)))
+    }
+
+    @Test
+    fun `a cancelled form saves only as the whole series`() {
+        assertThat(form().canSaveApartFromSeries()).isTrue()
+        assertThat(form().copy(status = EventStatus.Tentative).canSaveApartFromSeries()).isTrue()
+        assertThat(form().copy(status = EventStatus.Cancelled).canSaveApartFromSeries()).isFalse()
+    }
+
+    @Test
+    fun `a copy of a cancelled event starts confirmed, a tentative one stays tentative`() {
+        val zone = TimeZone.of("Europe/Berlin")
+        assertThat(testDetail(status = EventStatus.Cancelled).toDuplicateForm(canModify = true, zone).status)
+            .isEqualTo(EventStatus.Confirmed)
+        assertThat(testDetail(status = EventStatus.Tentative).toDuplicateForm(canModify = true, zone).status)
+            .isEqualTo(EventStatus.Tentative)
     }
 }

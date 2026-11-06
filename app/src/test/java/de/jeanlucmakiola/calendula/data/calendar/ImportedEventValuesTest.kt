@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.data.calendar
 import android.provider.CalendarContract
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.EventColorOption
+import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import org.junit.jupiter.api.Test
 import kotlin.time.Instant
@@ -30,6 +31,12 @@ class ImportedEventValuesTest {
 
     private fun values(event: ParsedIcsEvent, palette: List<EventColorOption> = emptyList()) =
         buildImportedEventValues(event, calendarId = 7L, uid = "u@x", palette = palette)
+
+    @Test
+    fun `a cancelled event is imported confirmed`() {
+        assertThat(values(allDay().copy(status = EventStatus.Cancelled))[CalendarContract.Events.STATUS])
+            .isEqualTo(CalendarContract.Events.STATUS_CONFIRMED)
+    }
 
     @Test
     fun `a one-off carries DTEND and no recurrence`() {

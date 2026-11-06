@@ -295,7 +295,7 @@ Right before writing, the event is re-read and snapshots compared: a
 mismatch parks the save in an overwrite/discard dialog; a vanished event
 informs and closes. Overwrite still writes only dirty fields, so external
 changes to untouched fields survive either way. Fields the form cannot
-write (attendees, status, reminder methods) are excluded so sync noise
+write (your own response, reminder methods) are excluded so sync noise
 can't fake a conflict.
 
 A **dropped** event gets no conflict dialog, deliberately. Its blast radius is
@@ -333,7 +333,7 @@ sequenceDiagram
     Src-->>Sc: Instances ⋈ Reminders
     Sc->>P: planReminders / scheduleReminders(watermark, now)
     P-->>Sc: due + next alarm
-    Sc->>N: post(alert) — tag = reminder key
+    Sc->>N: post(alert) — tag = occurrence, so a later reminder replaces it
     Sc->>A: scheduleScan(next)
 ```
 

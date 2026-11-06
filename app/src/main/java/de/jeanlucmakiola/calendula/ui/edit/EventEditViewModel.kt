@@ -14,8 +14,10 @@ import de.jeanlucmakiola.calendula.data.time.ZoneSource
 import de.jeanlucmakiola.calendula.data.prefs.firstDayOfWeek
 import de.jeanlucmakiola.calendula.data.prefs.resolveDefaultEventDuration
 import de.jeanlucmakiola.calendula.data.prefs.resolveDefaultReminder
+import de.jeanlucmakiola.calendula.domain.canSaveApartFromSeries
 import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.Availability
+import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EditSnapshot
 import de.jeanlucmakiola.calendula.domain.EventAttendee
@@ -335,6 +337,7 @@ class EventEditViewModel @Inject constructor(
             // the scope dialog drops "only this event" after a rule change.
             recurrenceChanged = local.editTarget != null &&
                 resolved.rrule != local.editTarget.original.rrule,
+            offerCancelled = local.editTarget?.original?.status == EventStatus.Cancelled,
             colorPalette = palette,
             allowColorOnUnsupportedCalendars = external.allowColorOnUnsupported,
         )
@@ -671,6 +674,7 @@ class EventEditViewModel @Inject constructor(
         applyDefaultDuration(id)
     }
     fun setAvailability(value: Availability) = edit { it.copy(availability = value) }
+    fun setStatus(value: EventStatus) = edit { it.copy(status = value) }
     fun setAccessLevel(value: AccessLevel) = edit { it.copy(accessLevel = value) }
 
     /** Pick a palette colour (round-trips via its key); [argb] is its swatch. */
@@ -766,7 +770,10 @@ class EventEditViewModel @Inject constructor(
         // Managed events are a yearly series whose editable fields (reminders,
         // notes, location) live on the series row — never offer the scope dialog,
         // which would split the series into an exception the sync then reverts.
-        if (target != null && target.original.rrule != null && !current.isManaged && !movingCalendar) {
+        // A cancelled one only saves as the whole series (#388).
+        if (target != null && target.original.rrule != null && !current.isManaged && !movingCalendar &&
+            form.canSaveApartFromSeries()
+        ) {
             _saveState.value = SaveUiState.AwaitingScope
             return
         }

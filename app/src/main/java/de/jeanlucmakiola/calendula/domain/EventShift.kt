@@ -173,8 +173,11 @@ fun EventForm.shiftedByDays(days: Int, deviceZone: TimeZone): EventForm {
     return copy(start = movedStart, end = (startAt + span).toFormTime(zone))
 }
 
-/** The form with new start and end, each in the form's own zone — a resize. All-day is untouched. */
+/**
+ * The form with new start and end, each in the form's own zone — a resize. An
+ * all-day event becomes timed: one dragged out of the all-day strip.
+ */
 fun EventForm.resizedTo(newStart: Instant, newEnd: Instant, deviceZone: TimeZone): EventForm {
-    if (isAllDay) return this
-    return withTimes(newStart, newEnd, resolvedZone(deviceZone))
+    val timed = copy(isAllDay = false)
+    return timed.withTimes(newStart, newEnd, timed.resolvedZone(deviceZone))
 }

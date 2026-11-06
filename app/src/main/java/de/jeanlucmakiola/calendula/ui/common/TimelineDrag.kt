@@ -78,6 +78,9 @@ import kotlin.time.Instant
 /** Start granularity a dragged block snaps to, matching the big calendar apps. */
 const val DRAG_SNAP_MINUTES: Int = 15
 
+/** How far below a strip drag's timed block top the finger holds it, in minutes. */
+private const val STRIP_GRAB_MINUTES = 15
+
 /** How close to a timeline edge the finger must get before the view scrolls. */
 private val AUTO_SCROLL_EDGE = 64.dp
 
@@ -124,6 +127,21 @@ data class TimelineDrag(
      * Carries the length, which is all a bottom-edge resize changes.
      */
     val slot: Triple<LocalDate, Int, Int> get() = Triple(date, startMin, eventSpanMin)
+}
+
+/**
+ * An event lifted off the all-day strip: held over the strip it moves [dayShift]
+ * days and stays whole-day, held over the time grid it becomes a timed block.
+ */
+data class StripDrag(val event: EventInstance, val dayShift: Int = 0, val overGrid: Boolean = false)
+
+/** Where a strip drag asks its event to go. */
+sealed interface StripDrop {
+    val event: EventInstance
+
+    data class Days(override val event: EventInstance, val days: Int) : StripDrop
+
+    data class Timed(override val event: EventInstance, val start: Instant, val end: Instant) : StripDrop
 }
 
 /** The event a long press left selected (#141). */
@@ -249,9 +267,10 @@ internal fun dragPieceBounds(
 ): DragPieceBounds {
     val top = if (slice.continuesBefore) 0f else insetPx
     val bottom = if (slice.continuesAfter) 0f else insetPx
-    val full = maxOf(slice.spanMin / 60f * hourPx, MIN_EVENT_FRACTION * hourPx)
+    val span = renderedSpan(slice.startMin, slice.startMin + slice.spanMin, slice.continuesAfter)
+    val full = (span.bottomMin - span.topMin) / 60f * hourPx
     return DragPieceBounds(
-        top = slice.startMin / 60f * hourPx + top,
+        top = span.topMin / 60f * hourPx + top,
         height = (full - top - bottom).coerceAtLeast(0f),
     )
 }
@@ -309,12 +328,13 @@ internal fun draftStartMin(minutes: Float): Int =
 internal fun draftBlock(draft: EventInstance, date: LocalDate, zone: TimeZone): TimedBlock? {
     // Clipped to the day the way the grid lays out events, so it's drawn the same across a DST change (#387).
     // The end is exclusive, so a draft ending at midnight belongs to the day before.
+    val dayEnd = date.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone)
     val start = maxOf(draft.start, date.atStartOfDayIn(zone))
-    val end = minOf(draft.end, date.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone))
+    val end = minOf(draft.end, dayEnd)
     if (end <= start) return null
     val startMin = wallClockMinutes(start, date, zone)
     val endMin = wallClockEndMinutes(startMin, start, end, date, zone).coerceAtMost(MINUTES_PER_DAY)
-    return TimedBlock(draft, startMin, endMin, lane = 0, laneCount = 1)
+    return TimedBlock(draft, startMin, endMin, lane = 0, laneCount = 1, continuesAfter = draft.end > dayEnd)
 }
 
 /** Which end of an event a resize handle moves (#141). */
@@ -629,6 +649,28 @@ class TimelineDragController {
     /** The resize in progress, or null for a plain drag (#141). */
     private var resize: ResizeSession? = null
 
+    /** The strip drag in progress; over the grid it drives [drag] through a timed stand-in. */
+    var stripDrag: StripDrag? by mutableStateOf(null)
+        private set
+
+    /** A strip drop held at its new days until the strip redraws the event there. */
+    var stripSettling: StripDrag? by mutableStateOf(null)
+        private set
+
+    /** Whether the strip now draws [stripSettling] at its new days itself. */
+    var stripSeated: Boolean by mutableStateOf(false)
+        private set
+
+    /** What [abandonedTicks] stood at when [stripSettling] was let go. */
+    var stripAbandonedMark: Int = 0
+        private set
+
+    /** The shown day the finger picked the strip bar up on. */
+    private var stripGrabIndex = 0
+
+    /** Whether a strip drag over the grid has cleared its top edge, and may now scroll up. */
+    private var stripScrollArmed = false
+
     fun begin(
         block: TimedBlock,
         clipOffsetMin: Int,
@@ -667,6 +709,69 @@ class TimelineDragController {
         begin(block, clipOffsetMin = 0, zone, titleLines = 1, pointerInRoot = pointerInRoot, blockInRoot = blockInRoot)
     }
 
+    /**
+     * Lift [event] off the all-day strip. Over the time grid it is dragged as a
+     * block [draftMinutes] long, whose top sits a little above the finger.
+     */
+    fun beginStrip(event: EventInstance, zone: TimeZone, pointerInRoot: Offset) {
+        val grid = geometry.grid?.takeIf { it.isAttached } ?: return
+        if (geometry.columnWidthPx <= 0f || geometry.days.isEmpty()) return
+        deselect()
+        if (stripSettling?.event?.instanceId == event.instanceId) releaseStrip()
+        stripScrollArmed = false
+        val timed = event.copy(isAllDay = false, end = event.start + draftMinutes.minutes)
+        source = TimedBlock(timed, 0, draftMinutes, lane = 0, laneCount = 1)
+        clipOffsetMin = 0
+        dragZone = zone
+        dragDuration = draftMinutes.minutes
+        dragKept = null
+        titleLines = 1
+        settling = null
+        isDragging = true
+        liftedInstanceId = event.instanceId
+        grab = Offset(0f, geometry.hourPx * STRIP_GRAB_MINUTES / 60f)
+        pointer = pointerInRoot
+        pickupPointer = pointerInRoot
+        pointerMoved = false
+        originSlot = null
+        stripGrabIndex = dayIndexAt(pointerInRoot.x, grid.positionInRoot().x)
+        stripDrag = StripDrag(event)
+    }
+
+    /** The shown day under [x], clamped to the days on screen. */
+    private fun dayIndexAt(x: Float, originX: Float): Int =
+        column(((x - originX) / geometry.columnWidthPx).toInt().coerceIn(0, geometry.days.lastIndex))
+
+    /** End a strip drag, handing back where it landed — null when it went nowhere. */
+    fun finishStrip(): StripDrop? {
+        val held = stripDrag ?: return null
+        val landed = drag
+        val zone = dragZone
+        cancel()
+        if (held.overGrid && landed != null && zone != null && !landed.edgeOnly) {
+            settle(landed)
+            val start = TimelineDrop(landed.event, landed.date, landed.startMin).startInstant(zone)
+            return StripDrop.Timed(held.event, start, start + draftMinutes.minutes)
+        }
+        if (held.overGrid || held.dayShift == 0) return null
+        stripSettling = held
+        stripSeated = false
+        stripAbandonedMark = abandonedTicks?.value ?: 0
+        drops++
+        return StripDrop.Days(held.event, held.dayShift)
+    }
+
+    /** Let the held strip drop go, once the strip shows the event at its new days or the move failed. */
+    fun releaseStrip() {
+        stripSettling = null
+        stripSeated = false
+    }
+
+    /** Note that the strip draws the settling drop at its new days. */
+    fun seatStrip() {
+        if (stripSettling != null) stripSeated = true
+    }
+
     fun move(pointerInRoot: Offset) {
         pointer = pointerInRoot
         if (!pointerMoved && (pointerInRoot - pickupPointer).getDistance() > slopPx) pointerMoved = true
@@ -675,6 +780,7 @@ class TimelineDragController {
 
     fun cancel() {
         resize = null
+        stripDrag = null
         source = null
         clipOffsetMin = 0
         dragZone = null
@@ -755,12 +861,16 @@ class TimelineDragController {
 
     /** Keep [landed]'s copy on the target as [settling] until [release]; [end] is a resize's. */
     private fun settle(landed: TimelineDrag, end: Instant? = null) {
+        // Landed on midnight to midnight, the event moves to the all-day strip (#296).
+        val leavesGrid = !landed.event.isDraft && landed.eventSpanMin > 0 &&
+            landed.eventStartMin.mod(MINUTES_PER_DAY) == 0 &&
+            landed.eventSpanMin % MINUTES_PER_DAY == 0
         settlingSelected = selection?.event?.instanceId == landed.event.instanceId
         // An edge piece is a hint for the finger, not a preview of the landing
         // slot: the event belongs to a day this timeline has no column for, so
         // [noteGrid] can never seat it and it would sit at the top of today for
         // the whole settle timeout, long after the event moved off-screen.
-        settling = if (landed.edgeOnly) landed.copy(pieces = emptyList()) else landed
+        settling = if (landed.edgeOnly || leavesGrid) landed.copy(pieces = emptyList()) else landed
         liftedInstanceId = landed.event.instanceId
         settledOrigin = landed.event.eventId to landed.event.start
         settledAbandonedMark = abandonedTicks?.value ?: 0
@@ -795,7 +905,9 @@ class TimelineDragController {
         val edgeIndex = geometry.days.indexOf(span.day.plus(edgeDay, DateTimeUnit.DAY))
         session.column = edgeIndex.takeIf { it >= 0 }
             ?.let { column(it) }
-        session.grabMin = (pointerResizeMinutes(session) ?: 0f) -
+        // The top handle sits on the drawn top, which a short block near midnight lifts (#483).
+        val lift = if (edge == ResizeEdge.Top) block.startMin - block.renderedSpan().topMin else 0f
+        session.grabMin = (pointerResizeMinutes(session) ?: 0f) + lift -
             if (edge == ResizeEdge.Top) session.startMin else session.endMin
         originSlot = null
         recompute()
@@ -855,7 +967,9 @@ class TimelineDragController {
         session.column = held
         val dayOffset = (days[column(held)].toEpochDays() - session.day.toEpochDays()).toInt()
         session.edgeDay = dayOffset
-        return dayOffset * MINUTES_PER_DAY + (pointer.y - origin.y) / hourPx * 60f
+        // Held to its column's midnight: the clearance under it is not the next day.
+        val minutes = ((pointer.y - origin.y) / hourPx * 60f).coerceAtMost(MINUTES_PER_DAY.toFloat())
+        return dayOffset * MINUTES_PER_DAY + minutes
     }
 
     private fun recomputeResize(session: ResizeSession) {
@@ -928,6 +1042,29 @@ class TimelineDragController {
             recomputeResize(it)
             return
         }
+        stripDrag?.let {
+            recomputeStrip(it)
+            return
+        }
+        recomputeDrag()
+    }
+
+    /** Over the strip the bar moves by whole days; past its bottom edge it is a timed block. */
+    private fun recomputeStrip(held: StripDrag) {
+        val grid = geometry.grid?.takeIf { it.isAttached } ?: return
+        val viewport = geometry.viewport?.takeIf { it.isAttached } ?: return
+        if (geometry.columnWidthPx <= 0f || geometry.days.isEmpty()) return
+        if (pointer.y >= viewport.boundsInRoot().top) {
+            stripDrag = held.copy(overGrid = true)
+            recomputeDrag()
+        } else {
+            drag = null
+            val shift = dayIndexAt(pointer.x, grid.positionInRoot().x) - stripGrabIndex
+            stripDrag = held.copy(dayShift = shift, overGrid = false)
+        }
+    }
+
+    private fun recomputeDrag() {
         val block = source ?: return
         val grid = geometry.grid?.takeIf { it.isAttached } ?: return
         val hourPx = geometry.hourPx
@@ -1013,11 +1150,18 @@ class TimelineDragController {
     }
 
     private fun edgeStep(): Float {
+        val strip = stripDrag
+        if (strip?.overGrid == false) return 0f
         val viewport = geometry.viewport?.takeIf { it.isAttached } ?: return 0f
         val edge = geometry.edgePx
         if (edge <= 0f) return 0f
         val bounds = viewport.boundsInRoot()
         val fromTop = pointer.y - bounds.top
+        // Coming down out of the strip the finger starts inside the top edge.
+        if (strip != null && !stripScrollArmed) {
+            if (fromTop < edge) return 0f
+            stripScrollArmed = true
+        }
         val fromBottom = bounds.bottom - pointer.y
         return when {
             fromTop < edge -> -(edge - fromTop) / edge * geometry.stepPx
@@ -1076,10 +1220,6 @@ fun TimedBlock.clipOffsetMinutes(day: LocalDate, zone: TimeZone): Int {
  */
 fun TimedBlock.continuesBefore(day: LocalDate, zone: TimeZone): Boolean =
     event.start < day.atStartOfDayIn(zone)
-
-/** True when the event runs past [day]'s midnight, so this block is cut there. */
-fun TimedBlock.continuesAfter(day: LocalDate, zone: TimeZone): Boolean =
-    event.end > day.plus(1, DateTimeUnit.DAY).atStartOfDayIn(zone)
 
 /**
  * The instant a drop asks for — the *event's* new start, so the tail of an
@@ -1177,7 +1317,7 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
 
     // Both live here rather than beside the controller: they read [drag], which
     // changes every frame, and this composable is the one that is meant to.
-    DragSnapHaptics(controller.drag?.slot, controller.drops)
+    DragSnapHaptics(controller.drag?.slot ?: controller.stripDrag?.dayShift, controller.drops)
     // Only once the finger has moved: a long press held near an edge must not
     // scroll the drop target out from under a finger that only means to select.
     LaunchedEffect(controller.isDragging && controller.pointerMoved) {
@@ -1199,6 +1339,15 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
         controller.handOver()
         delay(SETTLE_FADE_MILLIS.toLong())
         controller.release()
+    }
+
+    // The same hold for a bar moved along the all-day strip.
+    LaunchedEffect(controller.stripSettling, moveInFlight, controller.stripSeated, abandoned) {
+        if (controller.stripSettling == null || moveInFlight) return@LaunchedEffect
+        if (abandoned == controller.stripAbandonedMark) {
+            delay(if (controller.stripSeated) SETTLE_GRACE_MILLIS else SETTLE_TIMEOUT_MILLIS)
+        }
+        controller.releaseStrip()
     }
 
     Box(

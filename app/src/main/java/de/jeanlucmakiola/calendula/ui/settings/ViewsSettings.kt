@@ -160,6 +160,13 @@ internal fun ViewsScreen(
             checked = state.showWeekNumbers,
             onCheckedChange = viewModel::setShowWeekNumbers,
             summary = stringResource(R.string.settings_week_numbers_summary),
+            position = Position.Middle,
+        )
+        GroupedSwitchRow(
+            title = stringResource(R.string.settings_month_start_times),
+            checked = state.monthShowStartTimes,
+            onCheckedChange = viewModel::setMonthShowStartTimes,
+            summary = stringResource(R.string.settings_month_start_times_summary),
             position = Position.Bottom,
         )
 
@@ -296,6 +303,7 @@ internal fun ViewsScreen(
             selected = state.monthViewStyle,
             // The preview is a real grid, so it uses the real week start too.
             weekStart = state.weekStart.resolveFirstDay(currentLocale()),
+            showStartTimes = state.monthShowStartTimes,
             onSelect = viewModel::setMonthViewStyle,
             onDismiss = { showMonthStyle = false },
         )
@@ -324,6 +332,7 @@ internal fun ViewsScreen(
             selected = state.weekStart,
             // The preview is a real grid, so it uses the user's own month style.
             monthStyle = state.monthViewStyle,
+            showStartTimes = state.monthShowStartTimes,
             options = WEEK_START_OPTIONS,
             onSelect = viewModel::setWeekStart,
             onDismiss = { showWeekStart = false },

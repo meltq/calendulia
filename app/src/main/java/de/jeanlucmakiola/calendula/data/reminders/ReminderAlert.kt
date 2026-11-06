@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.data.reminders
 
 import de.jeanlucmakiola.calendula.domain.reminders.PlannedReminder
+import de.jeanlucmakiola.calendula.domain.reminders.occurrenceKey
 
 /**
  * One reminder as the notification layer needs it: what to show, and the stable
@@ -19,6 +20,13 @@ data class ReminderAlert(
     val location: String?,
     val isAllDay: Boolean,
 )
+
+/**
+ * The occurrence [ReminderAlert] belongs to. Keys the notification and the
+ * snooze alarm, so a later reminder for the same occurrence replaces the earlier
+ * one instead of stacking beside it (#463).
+ */
+val ReminderAlert.occurrenceKey: Long get() = occurrenceKey(eventId, beginMillis)
 
 fun PlannedReminder.toAlert(): ReminderAlert = ReminderAlert(
     key = key,

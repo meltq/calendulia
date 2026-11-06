@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.week
 
+import de.jeanlucmakiola.calendula.ui.common.CalendarSpan
 import de.jeanlucmakiola.calendula.ui.common.startOfWeek
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.DayOfWeek
@@ -7,16 +8,7 @@ import kotlinx.datetime.LocalDate
 import kotlinx.datetime.daysUntil
 import kotlinx.datetime.plus
 
-/** Pages the week pager spans — a little under four centuries. */
-internal const val WEEK_PAGE_COUNT: Int = 20_000
-
-/** Pages the multi-day pager spans — over three centuries at the widest page. */
-internal const val DAYS_PAGE_COUNT: Int = 40_000
-
-/** Pages the day pager spans — a little under four centuries. */
-internal const val DAY_PAGE_COUNT: Int = 140_000
-
-/** A fixed day every grid's pages are counted from, at its middle page. */
+/** A fixed day every grid's pages are counted from. */
 private val DAYS_EPOCH = LocalDate(2000, 1, 1)
 
 /** The week the week pager's middle page shows; any date works, it only has to stay fixed. */
@@ -24,13 +16,19 @@ private val WEEK_EPOCH = LocalDate(2000, 1, 3)
 
 /**
  * How a timeline pager cuts the calendar: runs of [dayCount] days, offset
- * [phase] days from a fixed epoch, over [pageCount] pages centred on it. The
- * multi-day view's phase (#193) stays put while paging and only changes when a
- * jump moves another date to the first column.
+ * [phase] days from a fixed epoch, over as many pages as cover [CalendarSpan].
+ * The multi-day view's phase (#193) stays put while paging and only changes when
+ * a jump moves another date to the first column.
  */
-data class DaysGrid(val dayCount: Int, val phase: Int, val pageCount: Int = DAYS_PAGE_COUNT) {
+data class DaysGrid(val dayCount: Int, val phase: Int) {
 
-    private val epochPage: Int get() = pageCount / 2
+    /** The page showing the epoch; page 0 is the one holding [CalendarSpan.FIRST_DAY]. */
+    private val epochPage: Int get() = -pagesFromEpoch(CalendarSpan.FIRST_DAY)
+
+    val pageCount: Int get() = epochPage + pagesFromEpoch(CalendarSpan.LAST_DAY) + 1
+
+    private fun pagesFromEpoch(date: LocalDate): Int =
+        Math.floorDiv(DAYS_EPOCH.daysUntil(date) - phase, dayCount)
 
     /** First day shown on pager [page]. */
     fun startForPage(page: Int): LocalDate =
@@ -38,18 +36,16 @@ data class DaysGrid(val dayCount: Int, val phase: Int, val pageCount: Int = DAYS
 
     /** The pager page showing [date]. */
     fun pageFor(date: LocalDate): Int =
-        (epochPage + Math.floorDiv(DAYS_EPOCH.daysUntil(date) - phase, dayCount))
-            .coerceIn(0, pageCount - 1)
+        (epochPage + pagesFromEpoch(date)).coerceIn(0, pageCount - 1)
 
     companion object {
         /** Single days: every date starts a page of its own. */
-        val days: DaysGrid = DaysGrid(dayCount = 1, phase = 0, pageCount = DAY_PAGE_COUNT)
+        val days: DaysGrid = DaysGrid(dayCount = 1, phase = 0)
 
         /** Whole weeks, starting on [firstDay]. */
         fun weeks(firstDay: DayOfWeek): DaysGrid = DaysGrid(
             dayCount = 7,
             phase = DAYS_EPOCH.daysUntil(WEEK_EPOCH.startOfWeek(firstDay)),
-            pageCount = WEEK_PAGE_COUNT,
         )
 
         /** The grid of [dayCount]-day pages on which [date] is a page's first day. */

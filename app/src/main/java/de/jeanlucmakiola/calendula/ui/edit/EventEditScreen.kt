@@ -37,6 +37,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.IconInfoCard
+import de.jeanlucmakiola.floret.components.SegmentedChoiceCard
 import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import kotlinx.coroutines.launch
 import de.jeanlucmakiola.calendula.ui.common.sendEventShare
@@ -119,6 +120,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.Availability
+import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventAttendee
 import de.jeanlucmakiola.calendula.domain.EventColorOption
@@ -892,6 +894,15 @@ private fun EventEditContent(
             AvailabilityCard(availability = form.availability, onSelect = viewModel::setAvailability)
         }
 
+        OptionalFormSection(visible = EventFormField.Status in state.visibleFields) {
+            Spacer(Modifier.height(gap))
+            StatusCard(
+                status = form.status,
+                offerCancelled = state.offerCancelled,
+                onSelect = viewModel::setStatus,
+            )
+        }
+
         OptionalFormSection(visible = EventFormField.Visibility in state.visibleFields) {
             Spacer(Modifier.height(gap))
             IconInfoCard(
@@ -1314,33 +1325,33 @@ private fun RecurrenceCard(state: EventEditUiState, locale: Locale, onClick: (()
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun AvailabilityCard(availability: Availability, onSelect: (Availability) -> Unit) {
-    IconInfoCard(
+    SegmentedChoiceCard(
         icon = Icons.Default.EventAvailable,
-        iconContentDescription = null,
-        header = {
-            Text(
-                text = stringResource(R.string.event_edit_availability),
-                style = MaterialTheme.typography.titleMedium,
-            )
-        },
-    ) {
-        Spacer(Modifier.height(8.dp))
-        SingleChoiceSegmentedButtonRow(modifier = Modifier.fillMaxWidth()) {
-            SegmentedButton(
-                selected = availability == Availability.Busy,
-                onClick = { onSelect(Availability.Busy) },
-                shape = SegmentedButtonDefaults.itemShape(index = 0, count = 2),
-            ) { Text(stringResource(R.string.event_availability_busy)) }
-            SegmentedButton(
-                selected = availability == Availability.Free,
-                onClick = { onSelect(Availability.Free) },
-                shape = SegmentedButtonDefaults.itemShape(index = 1, count = 2),
-            ) { Text(stringResource(R.string.event_availability_free)) }
-        }
-    }
+        title = stringResource(R.string.event_edit_availability),
+        options = listOf(
+            Availability.Busy to stringResource(R.string.event_availability_busy),
+            Availability.Free to stringResource(R.string.event_availability_free),
+        ),
+        selected = availability,
+        onSelect = onSelect,
+    )
+}
+
+@Composable
+private fun StatusCard(status: EventStatus, offerCancelled: Boolean, onSelect: (EventStatus) -> Unit) {
+    SegmentedChoiceCard(
+        icon = eventFormFieldIcon(EventFormField.Status),
+        title = stringResource(R.string.event_edit_status),
+        options = listOfNotNull(
+            EventStatus.Confirmed to stringResource(R.string.event_status_confirmed),
+            EventStatus.Tentative to stringResource(R.string.event_status_tentative),
+            (EventStatus.Cancelled to stringResource(R.string.event_status_cancelled)).takeIf { offerCancelled },
+        ),
+        selected = status,
+        onSelect = onSelect,
+    )
 }
 
 /**

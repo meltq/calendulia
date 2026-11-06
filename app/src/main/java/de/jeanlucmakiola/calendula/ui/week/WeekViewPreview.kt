@@ -61,6 +61,7 @@ internal fun WeekViewPreview(
                 onCreateAt = { _, _ -> },
                 onDrop = {},
                 onResize = {},
+                onStripDrop = {},
             ),
         )
     }
@@ -75,12 +76,12 @@ private fun sampleWeekState(
 ): WeekUiState.Success {
     val start = if (dayCount == 7) today.startOfWeek(weekStart) else today
     val days = (0 until dayCount).map { start.plus(it, DateTimeUnit.DAY) }
-    val events = sampleTimelineEvents(days, today, zone)
+    val (allDay, timed) = sampleTimelineEvents(days, today, zone).splitWholeDays(zone)
     return WeekUiState.Success(
         weekStart = start,
         today = today,
         days = days,
-        allDaySpans = layoutAllDay(events.filter { it.isAllDay }, days, zone),
-        timedByDay = days.associateWith { layoutDay(events, it, zone) },
+        allDaySpans = layoutAllDay(allDay, days, zone),
+        timedByDay = days.associateWith { layoutDay(timed, it, zone) },
     )
 }

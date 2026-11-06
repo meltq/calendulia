@@ -47,4 +47,40 @@ class MonthChipTimeTest {
         val time = monthChipTime(timed(9, 5), continuesLeft = true, zone, is24Hour = true, locale)
         assertThat(time).isNull()
     }
+
+    @Test
+    fun `switched off, no chip shows a time however wide`() {
+        assertThat(monthChipShowsTime(enabled = false, availableWidth = 1000f, labelWidth = 10f)).isFalse()
+    }
+
+    @Test
+    fun `the time shows only while the label fits beside it`() {
+        assertThat(monthChipShowsTime(enabled = true, availableWidth = 80f, labelWidth = 80f)).isTrue()
+        assertThat(monthChipShowsTime(enabled = true, availableWidth = 79f, labelWidth = 80f)).isFalse()
+    }
+
+    @Test
+    fun `a short title has to fit whole`() {
+        assertThat(monthTitleToKeep("Lunch")).isEqualTo("Lunch")
+        assertThat(monthTitleToKeep("Appointments")).isEqualTo("Appointments")
+    }
+
+    @Test
+    fun `a long title only has to keep its first twelve characters`() {
+        assertThat(monthTitleToKeep("Quarterly planning review")).isEqualTo("Quarterly pl")
+    }
+
+    @Test
+    fun `an emoji at the cut is kept whole`() {
+        val title = "Birthday 🎂 party at home"
+        val kept = monthTitleToKeep(title)
+        assertThat(kept).isEqualTo("Birthday 🎂 p")
+        assertThat(Character.isHighSurrogate(kept.last())).isFalse()
+    }
+
+    @Test
+    fun `an emoji as the twelfth character is not split`() {
+        val kept = monthTitleToKeep("Team dinner🍕 tonight")
+        assertThat(kept).isEqualTo("Team dinner🍕")
+    }
 }

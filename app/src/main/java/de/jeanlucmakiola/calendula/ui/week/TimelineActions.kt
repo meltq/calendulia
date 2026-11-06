@@ -6,6 +6,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.ui.common.StripDrop
 import de.jeanlucmakiola.calendula.ui.common.TimelineDragController
 import de.jeanlucmakiola.calendula.ui.common.TimelineDrop
 import de.jeanlucmakiola.calendula.ui.common.TimelineResizeDrop
@@ -25,6 +26,7 @@ internal class TimelineActions(
     val onCreateAt: (LocalDate, Int) -> Unit,
     val onDrop: (TimelineDrop) -> Unit,
     val onResize: (TimelineResizeDrop) -> Unit,
+    val onStripDrop: (StripDrop) -> Unit,
 )
 
 /** The callbacks are read through their latest values, so the holder outlives them. */
@@ -37,12 +39,14 @@ internal fun rememberTimelineActions(
     onCreateAt: (LocalDate, Int) -> Unit,
     onDrop: (TimelineDrop) -> Unit,
     onResize: (TimelineResizeDrop) -> Unit,
+    onStripDrop: (StripDrop) -> Unit,
 ): TimelineActions {
     val eventClick = rememberUpdatedState(onEventClick)
     val openDay = rememberUpdatedState(onOpenDay)
     val createAt = rememberUpdatedState(onCreateAt)
     val drop = rememberUpdatedState(onDrop)
     val resize = rememberUpdatedState(onResize)
+    val stripDrop = rememberUpdatedState(onStripDrop)
     return remember(scrollState, dragController) {
         TimelineActions(
             scrollState = scrollState,
@@ -52,6 +56,7 @@ internal fun rememberTimelineActions(
             onCreateAt = { date, minutes -> createAt.value(date, minutes) },
             onDrop = { drop.value(it) },
             onResize = { resize.value(it) },
+            onStripDrop = { stripDrop.value(it) },
         )
     }
 }

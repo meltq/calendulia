@@ -63,6 +63,7 @@ internal fun ViewStep(
                 CalendarView.Month -> MonthStylePreview(
                     style = choice.monthViewStyle,
                     weekStart = weekStart,
+                    showStartTimes = choice.monthShowStartTimes,
                     height = PREVIEW_HEIGHT,
                 )
                 CalendarView.Week -> WeekViewPreview(weekStart = weekStart, height = PREVIEW_HEIGHT)
@@ -118,7 +119,12 @@ internal fun MonthStyleStep(
         navigationIcon = navigationIcon,
     ) {
         StepPreview(selected = choice.monthViewStyle) { style ->
-            MonthStylePreview(style = style, weekStart = weekStart, height = PREVIEW_HEIGHT)
+            MonthStylePreview(
+                style = style,
+                weekStart = weekStart,
+                showStartTimes = choice.monthShowStartTimes,
+                height = PREVIEW_HEIGHT,
+            )
         }
         GroupedHint(stringResource(choice.monthViewStyle.descriptionRes), verticalPadding = 8.dp)
         options.forEachIndexed { index, style ->

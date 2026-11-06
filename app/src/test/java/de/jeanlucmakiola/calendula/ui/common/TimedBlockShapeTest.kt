@@ -37,7 +37,7 @@ class TimedBlockShapeTest {
         val block = layoutDay(listOf(ev), day1, zone).single()
 
         assertThat(block.continuesBefore(day1, zone)).isFalse()
-        assertThat(block.continuesAfter(day1, zone)).isFalse()
+        assertThat(block.continuesAfter).isFalse()
     }
 
     @Test
@@ -46,11 +46,11 @@ class TimedBlockShapeTest {
 
         val head = layoutDay(listOf(ev), day1, zone).single()
         assertThat(head.continuesBefore(day1, zone)).isFalse()
-        assertThat(head.continuesAfter(day1, zone)).isTrue()
+        assertThat(head.continuesAfter).isTrue()
 
         val tail = layoutDay(listOf(ev), day2, zone).single()
         assertThat(tail.continuesBefore(day2, zone)).isTrue()
-        assertThat(tail.continuesAfter(day2, zone)).isFalse()
+        assertThat(tail.continuesAfter).isFalse()
     }
 
     @Test
@@ -59,7 +59,7 @@ class TimedBlockShapeTest {
         val middle = layoutDay(listOf(ev), day2, zone).single()
 
         assertThat(middle.continuesBefore(day2, zone)).isTrue()
-        assertThat(middle.continuesAfter(day2, zone)).isTrue()
+        assertThat(middle.continuesAfter).isTrue()
     }
 
     @Test
@@ -67,7 +67,7 @@ class TimedBlockShapeTest {
         val ev = event(at(day1, 20), at(day2, 0))
         val block = layoutDay(listOf(ev), day1, zone).single()
 
-        assertThat(block.continuesAfter(day1, zone)).isFalse()
+        assertThat(block.continuesAfter).isFalse()
     }
 
     @Test

@@ -708,4 +708,37 @@
     <string name="onboarding_hidden_failed">Гэты не атрымалася ўключыць. У мэню Налады → Календары знаходзяцца такія самыя перамыкачы.</string>
     <string name="onboarding_calendars_create_failed">Не атрымалася стварыць каляндар з-за адмовы сховішча вашай прылады.</string>
     <string name="reminder_day_today">Сёньня</string>
+    <string name="event_resize_done">Зьменена на %1$s</string>
+    <string name="event_resize_recurring_title">Зьмяніць пэрыядычную падзею</string>
+    <string name="event_selection_actions">Дзеяньні падзеі</string>
+    <string name="event_selection_hide">Схаваць дзеяньні падзеі</string>
+    <string name="event_selection_close">Адмяніць выбар падзеі</string>
+    <string name="event_draft_create">Стварыць падзею</string>
+    <string name="event_draft_discard">Адкінуць новую падзею</string>
+    <string name="event_action_load_failed">Не атрымалася адкрыць падзею</string>
+    <string name="event_edit_more_actions">Іншыя дзеяньні</string>
+    <string name="event_edit_unsaved_title">Незахаваныя зьмены</string>
+    <string name="event_edit_unsaved_save">Захаваць зьмены</string>
+    <string name="event_edit_unsaved_discard">Адкінуць зьмены</string>
+    <string name="event_edit_unsaved_keep">Працягнуць рэдагаваньне</string>
+    <string name="event_edit_create">Стварыць</string>
+    <plurals name="view_multi_day">
+        <item quantity="one">%d суткі</item>
+        <item quantity="few">%d сутак</item>
+        <item quantity="many">%d сутак</item>
+        <item quantity="other">%d сутак</item>
+    </plurals>
+    <string name="settings_theme_black">Чорная</string>
+    <string name="settings_theme_black_summary">Цёмная з чыста чорным тлом для экранаў AMOLED</string>
+    <string name="settings_multi_day_count">Паказ некалькіх сутак</string>
+    <string name="settings_multi_day_count_hint">Сколькі сутак бачныя ў рэжыме паказу некалькіх сутак. Сёньня адкрываецца ў першым слупку.</string>
+    <string name="settings_timeline_scale_by_visible_hours">Задаецца праз бачныя гадзіны</string>
+    <string name="settings_visible_hours">Бачныя гадзіны</string>
+    <string name="settings_visible_hours_summary">Упісваць дыяпазон гадзін на экране пры праглядзе тыдня, некалькіх сутак або адных сутак</string>
+    <string name="settings_visible_hours_on_summary">Пры адкрыцьці прагляду на экране зьявіцца дыяпазон %1$s—%2$s</string>
+    <string name="settings_visible_hours_start">Ад</string>
+    <string name="settings_visible_hours_end">Да</string>
+    <string name="settings_visible_hours_start_hint">Гадзіна зьверху экрана ў рэжыме прагляду тыдня, некалькіх сутак або сутак. Каб пабачыць ранейшыя гадзіны, трэба прагортка.</string>
+    <string name="settings_visible_hours_end_hint">Апошняя гадзіна ўнізе экрану ў рэжыме прагляду. Каб пабачыць пазьнейшыя гадзіны трэба прагортка. Таксама зьвядзеньнем пальцаў па экране можна зьмяніць маштаб да наступнага адкрыцьця рэжыму.</string>
+    <string name="settings_events_header">Падзеі</string>
 </resources>

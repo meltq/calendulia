@@ -33,6 +33,7 @@ import kotlinx.datetime.DayOfWeek
 internal fun MonthViewStylePicker(
     selected: MonthViewStyle,
     weekStart: DayOfWeek,
+    showStartTimes: Boolean,
     onSelect: (MonthViewStyle) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -50,6 +51,7 @@ internal fun MonthViewStylePicker(
             MonthStylePreview(
                 style = shown,
                 weekStart = weekStart,
+                showStartTimes = showStartTimes,
                 height = PREVIEW_HEIGHT,
             )
         }

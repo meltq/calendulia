@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.domain
 
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.atStartOfDayIn
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.milliseconds
 import kotlin.time.Instant
@@ -72,6 +73,8 @@ data class EventInstance(
      * (#180, #230).
      */
     val response: EventResponse = EventResponse.Going,
+    /** The event's own Confirmed / Tentative / Cancelled (`Events.STATUS`, #388). */
+    val status: EventStatus = EventStatus.Confirmed,
 )
 
 /**
@@ -94,16 +97,33 @@ enum class EventResponse {
     Declined,
 }
 
-/** Shorthand for the declined case, which most surfaces test on its own (#180). */
-val EventInstance.isDeclined: Boolean get() = response == EventResponse.Declined
+/**
+ * Struck through on every surface and sorted last: an invitation you declined
+ * (#180), or an event its organizer cancelled (#388). Neither plans reminders.
+ */
+val EventInstance.isCrossedOut: Boolean
+    get() = response == EventResponse.Declined || status == EventStatus.Cancelled
+
+/**
+ * Drawn as an outline, still undecided: an invitation you have not answered
+ * (#230), or a tentative event (#388).
+ */
+val EventInstance.isOutlined: Boolean
+    get() = !isCrossedOut && (response == EventResponse.Invited || status == EventStatus.Tentative)
 
 /**
  * Whether this event has finished relative to [now] — its end is at or before
  * the current instant. An in-progress event (already started but not yet ended)
- * is *not* considered ended. All-day events end at the exclusive next-midnight,
- * so they only count as ended once their day is fully over.
+ * is *not* considered ended. All-day events end at the exclusive next-midnight
+ * in [zone] rather than the UTC midnight they are stored on, so they only count
+ * as ended once their local day is fully over.
  */
-fun EventInstance.hasEnded(now: Instant): Boolean = end <= now
+fun EventInstance.hasEnded(now: Instant, zone: TimeZone = TimeZone.currentSystemDefault()): Boolean =
+    localEnd(zone) <= now
+
+/** [EventInstance.end], with an all-day event's UTC midnight moved to local midnight in [zone]. */
+fun EventInstance.localEnd(zone: TimeZone): Instant =
+    if (isAllDay) end.toLocalDateTime(TimeZone.UTC).date.atStartOfDayIn(zone) else end
 
 /**
  * The zone this event's calendar dates live in: the device [zone] for timed
@@ -129,6 +149,20 @@ fun EventInstance.spanLastDay(zone: TimeZone): LocalDate {
 /** Whether this event occupies more than one calendar day in [zone]. */
 fun EventInstance.spansMultipleDays(zone: TimeZone): Boolean =
     spanFirstDay(zone) != spanLastDay(zone)
+
+/**
+ * Whether this event fills whole days in [zone], so the grids and lists lay it
+ * out with the all-day events: an all-day event, or a timed one running from
+ * local midnight to local midnight (#296). The event itself stays timed.
+ */
+fun EventInstance.coversWholeDays(zone: TimeZone): Boolean = isAllDay || runsMidnightToMidnight(start, end, zone)
+
+/** Whether a timed span from [start] to [end] runs from local midnight to local midnight in [zone] (#296). */
+fun runsMidnightToMidnight(start: Instant, end: Instant, zone: TimeZone): Boolean =
+    end > start && start.isStartOfDay(zone) && end.isStartOfDay(zone)
+
+private fun Instant.isStartOfDay(zone: TimeZone): Boolean =
+    this == toLocalDateTime(zone).date.atStartOfDayIn(zone)
 
 data class EventDetail(
     val instance: EventInstance,

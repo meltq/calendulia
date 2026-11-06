@@ -42,6 +42,8 @@ data class EventForm(
     val reminders: List<Int> = emptyList(),
     val availability: Availability = Availability.Busy,
     val accessLevel: AccessLevel = AccessLevel.Default,
+    /** Confirmed / Tentative / Cancelled (#388). */
+    val status: EventStatus = EventStatus.Confirmed,
     /**
      * Bare RRULE value (`Events.RRULE` convention, no "RRULE:" prefix); null
      * means a one-off event. May hold rules the simple picker can't express —
@@ -113,6 +115,7 @@ enum class EventFormField {
     Reminders,
     Recurrence,
     Availability,
+    Status,
     Visibility,
     Color,
     Attendees,
@@ -178,6 +181,7 @@ fun EventDetail.toEditForm(beginMillis: Long, endMillis: Long, zone: TimeZone): 
         reminders = reminders.map { it.minutes }.distinct().sorted(),
         availability = availability,
         accessLevel = accessLevel,
+        status = status,
         rrule = rrule.normalizedRrule(),
         // The provider fills EVENT_COLOR from the key, so [color] is the
         // swatch either way; a null colour means the event inherits its
@@ -213,7 +217,7 @@ fun EventDetail.toEditForm(beginMillis: Long, endMillis: Long, zone: TimeZone): 
  * re-deriving with the same occurrence would mask an externally moved
  * event. Guests are covered (the form writes editable attendees), so an
  * external attendee change now also trips the conflict check. Still not
- * covered: status, the user's own response, reminder methods, the
+ * covered: the user's own response, reminder methods, the
  * organizer/resource rows, and a recurring event's duration.
  */
 data class EditSnapshot(
@@ -244,6 +248,22 @@ internal fun allDayFormTimes(start: LocalDate, endExclusive: LocalDate?): Pair<F
 internal fun String?.normalizedRrule(): String? = this?.removePrefix("RRULE:")?.takeIf { it.isNotBlank() }
 
 /**
+ * Whether this form may be saved apart from its series, as one modified
+ * occurrence or as a split-off "this & following" tail. A cancelled exception
+ * row is how Android records a deleted occurrence, and Google reads an inserted
+ * cancelled event as deleted, so either would vanish rather than show struck
+ * through (#388).
+ */
+fun EventForm.canSaveApartFromSeries(): Boolean = status != EventStatus.Cancelled
+
+/**
+ * The status a newly inserted row may carry. Google reads an inserted cancelled
+ * event as deleted, so every new row (a copy, an import, a calendar move or an
+ * exception) starts confirmed instead (#388).
+ */
+fun EventStatus.forNewEvent(): EventStatus = if (this == EventStatus.Cancelled) EventStatus.Confirmed else this
+
+/**
  * Whether this form's times mean something else in [target] — a timed event
  * pinned to another zone. False when there's nothing to disambiguate: an
  * unpinned event (already in [target]), one pinned to [target] itself, an
@@ -269,6 +289,7 @@ fun EventForm.populatedFields(): Set<EventFormField> = buildSet {
     if (reminders.isNotEmpty()) add(EventFormField.Reminders)
     if (rrule != null) add(EventFormField.Recurrence)
     if (availability != Availability.Busy) add(EventFormField.Availability)
+    if (status != EventStatus.Confirmed) add(EventFormField.Status)
     if (accessLevel != AccessLevel.Default) add(EventFormField.Visibility)
     if (colorKey != null || color != null) add(EventFormField.Color)
     if (attendees.isNotEmpty()) add(EventFormField.Attendees)
@@ -311,4 +332,5 @@ fun EventDetail.toDuplicateForm(canModify: Boolean, zone: TimeZone): EventForm =
     ).copy(
         rrule = null,
         calendarId = instance.calendarId.takeIf { canModify },
+        status = status.forNewEvent(),
     )

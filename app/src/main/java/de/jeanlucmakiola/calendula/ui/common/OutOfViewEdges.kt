@@ -70,27 +70,24 @@ data class OutOfViewEvents(val above: TimedBlock?, val below: TimedBlock?) {
 /** Which edge of the viewport a hidden event sits past. */
 enum class ViewportEdge { Top, Bottom }
 
-/** Where [block]'s rendered bottom lands, in minutes — short blocks keep a floor. */
-internal fun renderedEndMin(block: TimedBlock): Float =
-    maxOf(block.endMin.toFloat(), block.startMin + MIN_EVENT_FRACTION * 60f)
-
 /**
  * The blocks of one column lying out of a viewport spanning [topMin]..[bottomMin]
  * (minutes of the day), nearest first. A block leaves this set as soon as any
- * part of its rendered height enters the viewport.
+ * part of its [renderedSpan] enters the viewport.
  */
 fun outOfViewEvents(
     blocks: List<TimedBlock>,
     topMin: Float,
     bottomMin: Float,
 ): OutOfViewEvents {
-    val above = blocks
-        .filter { renderedEndMin(it) <= topMin }
-        .maxWithOrNull(compareBy<TimedBlock>({ renderedEndMin(it) }, { it.startMin }))
-    val below = blocks
-        .filter { it.startMin >= bottomMin }
-        .minWithOrNull(compareBy<TimedBlock>({ it.startMin }, { -renderedEndMin(it) }))
-    return OutOfViewEvents(above, below)
+    val spans = blocks.map { it to it.renderedSpan() }
+    val above = spans
+        .filter { (_, span) -> span.bottomMin <= topMin }
+        .maxWithOrNull(compareBy({ it.second.bottomMin }, { it.first.startMin }))
+    val below = spans
+        .filter { (_, span) -> span.topMin >= bottomMin }
+        .minWithOrNull(compareBy({ it.second.topMin }, { -it.second.bottomMin }))
+    return OutOfViewEvents(above?.first, below?.first)
 }
 
 /**
@@ -107,8 +104,9 @@ fun revealScrollTarget(
     marginPx: Float,
     maxScroll: Int,
 ): Int {
-    val startPx = block.startMin / 60f * hourPx
-    val endPx = renderedEndMin(block) / 60f * hourPx
+    val span = block.renderedSpan()
+    val startPx = span.topMin / 60f * hourPx
+    val endPx = span.bottomMin / 60f * hourPx
     val target = when (edge) {
         ViewportEdge.Top -> startPx - marginPx
         ViewportEdge.Bottom -> minOf(endPx + marginPx - viewportPx, startPx - marginPx)
@@ -293,6 +291,7 @@ private fun EdgeBar(
     modifier: Modifier = Modifier,
 ) {
     block ?: return
+    val span = remember(block) { block.renderedSpan() }
     val color = eventFill(block.event.color, dark, LocalSoftenColors.current)
     val label = stringResource(
         if (edge == ViewportEdge.Top) R.string.timeline_earlier_events else R.string.timeline_later_events,
@@ -303,8 +302,8 @@ private fun EdgeBar(
             .height(EDGE_TOUCH_HEIGHT)
             .graphicsLayer {
                 val gapPx = when (edge) {
-                    ViewportEdge.Top -> scrollState.value - renderedEndMin(block) / 60f * hourPx
-                    ViewportEdge.Bottom -> block.startMin / 60f * hourPx -
+                    ViewportEdge.Top -> scrollState.value - span.bottomMin / 60f * hourPx
+                    ViewportEdge.Bottom -> span.topMin / 60f * hourPx -
                         (scrollState.value + scrollState.viewportSize)
                 }
                 alpha = edgeBarAlpha(gapPx, fadeLeadPx)

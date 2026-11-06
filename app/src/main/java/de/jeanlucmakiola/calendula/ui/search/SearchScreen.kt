@@ -75,7 +75,7 @@ import de.jeanlucmakiola.calendula.domain.MatchSpan
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.SearchHit
 import de.jeanlucmakiola.calendula.domain.SearchMonth
-import de.jeanlucmakiola.calendula.domain.isDeclined
+import de.jeanlucmakiola.calendula.domain.isCrossedOut
 import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.animateItemMotion
 import de.jeanlucmakiola.floret.identity.fadeThrough
@@ -94,6 +94,7 @@ import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
 import de.jeanlucmakiola.calendula.ui.common.RecurringScopeDialog
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
+import de.jeanlucmakiola.calendula.domain.coversWholeDays
 import de.jeanlucmakiola.calendula.domain.spanFirstDay
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.timeOfDayFormatter
@@ -499,7 +500,7 @@ private fun SearchResultRow(
         // Faded like a past event anywhere else in the app — search reaches back
         // through the whole history.
         modifier = if (hit.isPast) modifier.alpha(EventDimAlpha) else modifier,
-        title = declinedTitle(marked(title, hit.titleSpans, highlight), event.isDeclined),
+        title = declinedTitle(marked(title, hit.titleSpans, highlight), event.isCrossedOut),
         summary = searchSummary(hit, highlight),
         position = position,
         minHeight = 64.dp,
@@ -609,7 +610,7 @@ private fun searchSummary(hit: SearchHit, highlight: SpanStyle): AnnotatedString
             .format(event.spanFirstDay(TimeZone.currentSystemDefault()).toJavaLocalDate())
     }
     val use24Hour = LocalUse24HourFormat.current
-    val timeText = if (event.isAllDay) {
+    val timeText = if (event.coversWholeDays(TimeZone.currentSystemDefault())) {
         stringResource(R.string.event_detail_all_day)
     } else {
         remember(locale, use24Hour) { timeOfDayFormatter(use24Hour, locale) }.format(start)

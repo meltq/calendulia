@@ -321,4 +321,18 @@ class MonthLayoutTest {
     private fun declinedTimed(date: LocalDate) =
         timed(date, 7, 8, id = 4L, title = "Declined early")
             .copy(response = EventResponse.Declined)
+
+    @Test
+    fun `a timed event from midnight to midnight is a bar, not a timed chip`() {
+        val ev = timedEvent(
+            LocalDate(2026, 6, 10), 0, 0, zone = zone, id = 3L,
+            endDate = LocalDate(2026, 6, 11),
+        )
+        val week = layoutCalendarWeek(weekOf8th, listOf(ev), zone)
+
+        assertThat(week.spans.map { it.event }).containsExactly(ev)
+        assertThat(week.spans.single().startCol).isEqualTo(2)
+        assertThat(week.spans.single().endCol).isEqualTo(2)
+        assertThat(week.timedByDay.values.flatten()).isEmpty()
+    }
 }

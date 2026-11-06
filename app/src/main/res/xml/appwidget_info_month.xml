@@ -8,7 +8,9 @@
     android:minResizeHeight="150dp"
     android:resizeMode="horizontal|vertical"
     android:widgetCategory="home_screen"
-    android:description="@string/widget_month_label"
+    android:configure="de.jeanlucmakiola.calendula.widget.config.WidgetConfigActivity"
+    android:widgetFeatures="reconfigurable"
+    android:description="@string/widget_month_description"
     android:updatePeriodMillis="1800000"
     android:previewLayout="@layout/widget_preview_month"
     android:initialLayout="@layout/glance_default_loading_layout" />

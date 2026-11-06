@@ -32,19 +32,26 @@ data class PlannedReminder(
     val minutes: Int,
     val alarmMillis: Long,
 ) {
+    /** The occurrence this reminder belongs to; it shares one notification with its siblings (#463). */
+    val occurrenceKey: Long = occurrenceKey(instance.eventId, instance.beginMillis)
+
     /**
-     * Stable identity, keying the notification tag and the snooze/dismiss
+     * Stable identity of this one reminder, keying the snooze/dismiss
      * `PendingIntent`s. Survives reboot, re-scan and reinstall.
      */
-    val key: Long = key(instance.eventId, instance.beginMillis, minutes)
+    val key: Long = mix64(occurrenceKey + minutes)
+}
 
-    private companion object {
-        fun key(eventId: Long, beginMillis: Long, minutes: Int): Long {
-            var h = eventId * 1_000_003L
-            h = (h xor beginMillis) * 31L
-            return h + minutes
-        }
-    }
+/** Stable identity of one occurrence, shared by every reminder on it. */
+fun occurrenceKey(eventId: Long, beginMillis: Long): Long =
+    mix64(mix64(eventId) + beginMillis)
+
+/** SplitMix64's finaliser: spreads close inputs across all 64 bits. */
+private fun mix64(value: Long): Long {
+    var z = value + -0x61c8864680b583ebL
+    z = (z xor (z ushr 30)) * -0x40a7b892e31b1a47L
+    z = (z xor (z ushr 27)) * -0x6b2fb644ecceee15L
+    return z xor (z ushr 31)
 }
 
 /** What one scan concluded: post these now, and wake up again at [nextAlarmMillis]. */
@@ -146,7 +153,8 @@ private fun allDayAlarmMillis(
  *
  * Due means the fire instant falls in `(lastFiredMillis, nowMillis]`, so a scan
  * running twice cannot post twice while a late one still catches up. Reminders
- * whose event has ended are dropped ([isStillRelevant]). [nextAlarmMillis] is
+ * whose event has ended are dropped ([isStillRelevant]), and of several due on
+ * one occurrence only the latest is kept — they'd replace each other anyway (#463). [nextAlarmMillis] is
  * capped at [horizonMillis] so the lookahead window keeps rolling forward.
  */
 fun scheduleReminders(
@@ -158,7 +166,8 @@ fun scheduleReminders(
     val due = planned
         .filter { it.alarmMillis in (lastFiredMillis + 1)..nowMillis }
         .filter { it.instance.isStillRelevant(nowMillis) }
-        .distinctBy { it.key }
+        .groupBy { it.occurrenceKey }
+        .values.map { siblings -> siblings.maxBy { it.alarmMillis } }
         .sortedWith(compareBy({ it.instance.beginMillis }, { it.key }))
     val nextPending = planned
         .filter { it.alarmMillis > nowMillis }

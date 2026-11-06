@@ -10,9 +10,12 @@ import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesScheduler
 import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesSyncWorker
 import de.jeanlucmakiola.calendula.data.reminders.ReminderMaintenanceScheduler
 import de.jeanlucmakiola.calendula.data.reminders.ReminderMaintenanceWorker
-import de.jeanlucmakiola.calendula.widget.WidgetRolloverScheduler
+import de.jeanlucmakiola.calendula.widget.publishCalendulaWidgetPreviews
+import de.jeanlucmakiola.calendula.widget.syncWidgetRollover
+import de.jeanlucmakiola.calendula.widget.widgetEntryPoint
 import de.jeanlucmakiola.floret.crash.CrashConfig
 import de.jeanlucmakiola.floret.crash.CrashReporter
+import de.jeanlucmakiola.floret.locale.AppLanguage
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -43,6 +46,11 @@ class CalendulaApp : Application() {
                 chooseIssueUrl = getString(R.string.report_issue_choose_url),
             ),
         )
+        // Below API 33 only AppCompat activities get the app language; a process
+        // woken for a widget formats in it too (#90).
+        AppLanguage.applyDefault(this)
+        // Before anything that writes, so the widgets see every change (#420).
+        widgetEntryPoint().widgetRefreshCoordinator().start()
         reconcileAutoBackup()
         reconcileSpecialDates()
         reconcileCalendarVisibility()
@@ -55,10 +63,12 @@ class CalendulaApp : Application() {
      * (#228). Idempotent, and it covers what no broadcast reaches — an alarm
      * dropped by a force-stop is armed again the next time the app is opened.
      * Off the main thread: a handful of binder calls on every process start.
+     * The picker previews are republished here too, once per update.
      */
     private fun reconcileWidgetRollover() {
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
-            WidgetRolloverScheduler.sync(this@CalendulaApp)
+            syncWidgetRollover(this@CalendulaApp)
+            publishCalendulaWidgetPreviews(this@CalendulaApp)
         }
     }
 

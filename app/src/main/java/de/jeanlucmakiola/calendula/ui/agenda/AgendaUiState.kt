@@ -1,7 +1,8 @@
 package de.jeanlucmakiola.calendula.ui.agenda
 
 import de.jeanlucmakiola.calendula.domain.EventInstance
-import de.jeanlucmakiola.calendula.domain.eventDisplayComparator
+import de.jeanlucmakiola.calendula.domain.coversWholeDays
+import de.jeanlucmakiola.calendula.domain.sortedForDisplay
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.spanFirstDay
 import de.jeanlucmakiola.calendula.domain.spanLastDay
@@ -18,7 +19,7 @@ import kotlin.time.Instant
  * surface only formats the instants into its own locale/24h string.
  */
 sealed interface AgendaTimeLabel {
-    /** An all-day event, or a whole in-between day of a multi-day span. */
+    /** An event filling whole days (#296), or a whole in-between day of a multi-day span. */
     data object AllDay : AgendaTimeLabel
     /** The first day of a multi-day timed event: when it begins. */
     data class Starts(val start: Instant) : AgendaTimeLabel
@@ -30,7 +31,7 @@ sealed interface AgendaTimeLabel {
 
 /** The [AgendaTimeLabel] for [event] as it appears on [day], resolved in [zone]. */
 fun agendaTimeLabel(event: EventInstance, day: LocalDate, zone: TimeZone): AgendaTimeLabel {
-    if (event.isAllDay) return AgendaTimeLabel.AllDay
+    if (event.coversWholeDays(zone)) return AgendaTimeLabel.AllDay
     val firstDay = event.spanFirstDay(zone)
     val lastDay = event.spanLastDay(zone)
     return when {
@@ -87,7 +88,7 @@ fun groupAgendaDays(
     return byDay.map { (date, dayEvents) ->
         AgendaDay(
             date = date,
-            events = dayEvents.sortedWith(eventDisplayComparator(zone)),
+            events = dayEvents.sortedForDisplay(zone),
         )
     }
 }

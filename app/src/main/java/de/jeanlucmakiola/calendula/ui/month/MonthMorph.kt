@@ -34,6 +34,10 @@ internal sealed interface MonthMorphKey {
 
     data class DayNumber(val date: LocalDate) : MonthMorphKey
 
+    data class WeekNumber(val weekStart: LocalDate) : MonthMorphKey
+
+    data class CellRipple(val date: LocalDate) : MonthMorphKey
+
     /**
      * One event *on one day*. Keyed by date as well as instance because a
      * multi-day event has a dot on every day it covers but only one bar, drawn
@@ -111,8 +115,8 @@ internal fun morphInFlight(): Boolean {
  *
  * Rendering in place puts everything back in one z-order and one clip, which is
  * what makes the grid read as a single surface changing shape rather than a
- * stack of pieces sliding past each other. Nothing here needs to escape its
- * ancestors: the cells, marks and markers all travel within the grid.
+ * stack of pieces sliding past each other. Event marks are the exception: they
+ * render in the overlay so the expanding day backgrounds cannot cover them.
  */
 @OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
@@ -141,6 +145,7 @@ internal fun Modifier.morphElement(key: MonthMorphKey): Modifier {
 @Composable
 internal fun Modifier.morphBounds(key: MonthMorphKey): Modifier {
     val morph = LocalMonthMorph.current ?: return this
+    val isEvent = key is MonthMorphKey.Event
     return with(morph.shared) {
         this@morphBounds.sharedBounds(
             sharedContentState = rememberSharedContentState(key),
@@ -148,7 +153,8 @@ internal fun Modifier.morphBounds(key: MonthMorphKey): Modifier {
             enter = fadeIn(),
             exit = fadeOut(),
             resizeMode = SharedTransitionScope.ResizeMode.RemeasureToBounds,
-            renderInOverlayDuringTransition = false,
+            renderInOverlayDuringTransition = isEvent,
+            zIndexInOverlay = if (isEvent) 1f else 0f,
         )
     }
 }

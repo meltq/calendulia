@@ -21,8 +21,8 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.domain.EventInstance
-import de.jeanlucmakiola.calendula.domain.EventResponse
-import de.jeanlucmakiola.calendula.domain.isDeclined
+import de.jeanlucmakiola.calendula.domain.isCrossedOut
+import de.jeanlucmakiola.calendula.domain.isOutlined
 
 /** Stroke an invitation you have not answered is outlined with. */
 val EVENT_OUTLINE_WIDTH = 1.dp
@@ -60,13 +60,13 @@ fun timedBlockCuts(continuesBefore: Boolean, continuesAfter: Boolean): ChipCuts 
 
 /**
  * How one event's chip or block is painted, which turns on your answer to its
- * invitation (#180, #230).
+ * invitation (#180, #230) and on the event's own status (#388).
  *
- * An invitation you have not answered is drawn as an outline: its calendar's
- * colour on the border and on the title, over the surface the chip sits on. So
- * it holds a chip's shape and a chip's weight without claiming the filled
- * container an event you are going to gets. A declined one keeps the fill and
- * its strike-through.
+ * An invitation you have not answered, or a tentative event, is drawn as an
+ * outline: its calendar's colour on the border and on the title, over the
+ * surface the chip sits on. So it holds a chip's shape and a chip's weight
+ * without claiming the filled container an event you are going to gets. A
+ * declined or cancelled one keeps the fill and its strike-through.
  */
 @Immutable
 data class EventPaint(
@@ -87,7 +87,7 @@ data class EventPaint(
 @Composable
 fun eventPaint(event: EventInstance, dark: Boolean): EventPaint {
     val soften = LocalSoftenColors.current
-    if (event.response == EventResponse.Invited) {
+    if (event.isOutlined) {
         // Harmonised even when the setting is off. Raw mode exists so a filled
         // container matches what the sync source paints, and an outlined chip
         // has no container — what it has is coloured *text*, which needs the
@@ -117,7 +117,7 @@ fun eventPaint(event: EventInstance, dark: Boolean): EventPaint {
         outline = null,
         titleInk = eventInk(fill, alpha = TITLE_INK_ALPHA),
         secondaryInk = eventInk(fill, alpha = SECONDARY_INK_ALPHA),
-        decoration = declinedDecoration(event.isDeclined),
+        decoration = declinedDecoration(event.isCrossedOut),
         titleWeight = null,
     )
 }

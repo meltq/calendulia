@@ -35,5 +35,6 @@ internal fun ColumnReader.toSearchResult(): EventInstance? {
         isRecurring = !getString(SearchProjection.IDX_RRULE).isNullOrEmpty() ||
             !getString(SearchProjection.IDX_RDATE).isNullOrEmpty(),
         response = mapEventResponse(getInt(SearchProjection.IDX_SELF_ATTENDEE_STATUS)),
+        status = eventStatus(SearchProjection.IDX_STATUS),
     )
 }

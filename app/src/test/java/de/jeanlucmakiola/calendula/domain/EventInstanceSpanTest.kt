@@ -82,4 +82,39 @@ class EventInstanceSpanTest {
         val timed = instance(utc(2026, 7, 19, 12), utc(2026, 7, 19, 13), isAllDay = false)
         assertThat(timed.dateZone(newYork)).isEqualTo(newYork)
     }
+
+    @Test
+    fun `a timed event from local midnight to local midnight covers whole days`() {
+        // Stored as 22:00Z, the shape ICSx5 gives a date-only feed event (#296).
+        val oneDay = instance(utc(2026, 7, 18, 22), utc(2026, 7, 19, 22), isAllDay = false)
+        val twoDays = instance(utc(2026, 7, 18, 22), utc(2026, 7, 20, 22), isAllDay = false)
+        assertThat(oneDay.coversWholeDays(berlin)).isTrue()
+        assertThat(twoDays.coversWholeDays(berlin)).isTrue()
+    }
+
+    @Test
+    fun `local midnight is read in the device zone`() {
+        val event = instance(utc(2026, 7, 18, 22), utc(2026, 7, 19, 22), isAllDay = false)
+        assertThat(event.coversWholeDays(newYork)).isFalse()
+    }
+
+    @Test
+    fun `a timed event off midnight at either end does not cover whole days`() {
+        assertThat(instance(utc(2026, 7, 19), utc(2026, 7, 19, 23), isAllDay = false).coversWholeDays(TimeZone.UTC))
+            .isFalse()
+        assertThat(instance(utc(2026, 7, 19, 1), utc(2026, 7, 20), isAllDay = false).coversWholeDays(TimeZone.UTC))
+            .isFalse()
+    }
+
+    @Test
+    fun `a zero-length event at midnight does not cover whole days`() {
+        assertThat(instance(utc(2026, 7, 19), utc(2026, 7, 19), isAllDay = false).coversWholeDays(TimeZone.UTC))
+            .isFalse()
+    }
+
+    @Test
+    fun `an all-day event covers whole days in any zone`() {
+        assertThat(allDayJul19().coversWholeDays(newYork)).isTrue()
+        assertThat(allDayJul19().coversWholeDays(berlin)).isTrue()
+    }
 }

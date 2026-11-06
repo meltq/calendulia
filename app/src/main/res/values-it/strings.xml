@@ -244,7 +244,7 @@
     <string name="settings_time_format_12h">12 ore</string>
     <string name="settings_time_format_24h">24 ore</string>
     <string name="settings_hour_lines">Grglia oraria</string>
-    <string name="settings_hour_lines_summary">Mostra una riga separatrice per ogni ora nella vista Settimana e Giorno</string>
+    <string name="settings_hour_lines_summary">Mostra una linea di separazione per ogni ora in una cella a sé stante nella visualizzazione settimanale e giornaliera</string>
     <string name="settings_dim_completed">Attenua gli eventi completati</string>
     <string name="settings_dim_completed_summary">Attenua gli eventi conclusi nella vista Mese e Settimana</string>
     <string name="settings_past_events">Eventi passati</string>
@@ -422,7 +422,7 @@
     <string name="settings_font_import_failed">Impossibile leggere il file come font</string>
     <string name="settings_section_views">Vista</string>
     <string name="settings_quick_switch_header">Pulsante di cambio rapido</string>
-    <string name="settings_quick_switch_hint">Scegli attraverso quali viste scorrere col pulsante in alto a destra, trascinale per riordinarle. Le viste disattivate rimangono raggiungibili dal menù di navigazione.</string>
+    <string name="settings_quick_switch_hint">Scegli attraverso quali viste scorrere col pulsante in alto a destra, trascinale per riordinarle. Se sono attive meno di due schermate, il pulsante viene nascosto. Le viste disattivate rimangono accessibili dal menu di navigazione.</string>
     <string name="settings_drawer_order_header">Menù di navigazione</string>
     <string name="settings_drawer_order_hint">Trascina per riordinare le viste elencate nel menù di navigazione.</string>
     <string name="reorder_drag_handle">Trascina per riordinare</string>
@@ -551,12 +551,14 @@
     <string name="search_select_all">Seleziona tutti</string>
     <string name="search_delete_selected">Elimina i selezionati</string>
     <plurals name="search_delete_title">
-        <item quantity="one">Eliminare l\'evento?</item>
-        <item quantity="other">Eliminare l\'evento?</item>
+        <item quantity="one">Eliminare %d l\'evento?</item>
+        <item quantity="many">Eliminare %d gli eventi?</item>
+        <item quantity="other">Eliminare %d eventi?</item>
     </plurals>
     <plurals name="search_delete_done">
-        <item quantity="one">Evento eliminato</item>
-        <item quantity="other">Evento eliminato</item>
+        <item quantity="one">%d evento eliminato</item>
+        <item quantity="many">%d eventi eliminati</item>
+        <item quantity="other">%d eventi eliminati</item>
     </plurals>
     <string name="search_delete_partial">%1$d eliminati, %2$d no</string>
     <string name="search_delete_denied_partial">%1$d eliminati, poi permessi di scrittura negati</string>
@@ -598,7 +600,7 @@
     <string name="settings_month_header">Vista Mese</string>
     <string name="settings_month_view_style">Stile vista Mese</string>
     <string name="month_style_paged">Pagine</string>
-    <string name="month_style_paged_summary">Viene mostrato un singolo mese. Scorri a destra o a sinistra per cambiare mese.</string>
+    <string name="month_style_paged_summary">Viene mostrato un singolo mese. Scorri a destra o a sinistra per cambiare mese oppure scorri verso l\'alto per visualizzare l\'agenda mensile.</string>
     <string name="month_style_continuous">Scorrimento</string>
     <string name="settings_past_events_hint">Ciò che fa l\'Agenda con eventi conclusi.</string>
     <string name="settings_dynamic_color_summary">Deduci il colore dell\'app dallo sfondo.</string>
@@ -696,9 +698,9 @@
     <string name="onboarding_calendars_create_failed">Impossibile creare il calendario. La memoria del calendario del tuo telefono non lo ha accettato.</string>
     <string name="reminder_day_today">Oggi</string>
     <plurals name="view_multi_day">
-        <item quantity="one">Giorno</item>
-        <item quantity="many">Giorni</item>
-        <item quantity="other">Giorno</item>
+        <item quantity="one">%d giorno</item>
+        <item quantity="many">%d giorni</item>
+        <item quantity="other">%d giorni</item>
     </plurals>
     <string name="settings_multi_day_count">Visualizzazione su più giorni</string>
     <string name="settings_multi_day_count_hint">La vista più giorni mostra, affiancati, i giorni. La data odierna è visualizzata nella prima colonna.</string>
@@ -736,4 +738,30 @@
         <item quantity="many">Non è stato possibile aggiungere gli eventi %d.</item>
         <item quantity="other">Non è stato possibile aggiungere l\'evento %d.</item>
     </plurals>
+    <string name="event_draft_create">Crea evento</string>
+    <string name="event_draft_discard">Scarta nuovo evento</string>
+    <string name="event_action_load_failed">Impossibile aprire l\'evento</string>
+    <string name="event_selection_close">Deseleziona evento</string>
+    <string name="event_edit_more_actions">Più azioni</string>
+    <string name="event_edit_unsaved_title">Modifiche non salvate</string>
+    <string name="event_edit_unsaved_save">Salva modifiche</string>
+    <string name="event_edit_unsaved_discard">Scarta modifiche</string>
+    <string name="event_edit_unsaved_keep">Continua a modificare</string>
+    <string name="event_edit_create">Crea</string>
+    <string name="event_resize_done">Modificato in %1$s</string>
+    <string name="event_resize_recurring_title">Modifica evento ricorrente</string>
+    <string name="event_selection_actions">Azioni evento</string>
+    <string name="event_selection_hide">Nascondi azioni evento</string>
+    <string name="settings_theme_black">Nero</string>
+    <string name="settings_theme_black_summary">Scuro con sfondi completamente neri, per schermi AMOLED</string>
+    <string name="settings_events_header">Eventi</string>
+    <string name="settings_tap_opens">Cliccando su un evento si apre</string>
+    <string name="settings_tap_opens_details">Dettagli</string>
+    <string name="settings_tap_opens_editor">Modifica modulo</string>
+    <string name="settings_tap_opens_hint">Gli eventi che non è possibile modificare e le notifiche di promemoria, aprono sempre la pagina dei dettagli.</string>
+    <string name="settings_support_kofi">Ko-fi</string>
+    <string name="settings_support_kofi_hint">Contributi una tantum</string>
+    <string name="settings_support_liberapay">Liberapay</string>
+    <string name="settings_support_liberapay_hint">Donazioni ricorrenti</string>
+    <string name="process_text_create_event">Crea evento</string>
 </resources>

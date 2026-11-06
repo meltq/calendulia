@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.domain.ics
 
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.allDayFormTimes
+import de.jeanlucmakiola.calendula.domain.forNewEvent
 import de.jeanlucmakiola.calendula.domain.normalizedRrule
 import de.jeanlucmakiola.calendula.domain.toFormTime
 import kotlinx.datetime.TimeZone
@@ -35,6 +36,7 @@ fun ParsedIcsEvent.toEventForm(zone: TimeZone): EventForm {
         description = description.orEmpty(),
         reminders = semanticReminderMinutes(),
         availability = availability,
+        status = status.forNewEvent(),
         rrule = recurrenceRule.normalizedRrule(),
     )
 }

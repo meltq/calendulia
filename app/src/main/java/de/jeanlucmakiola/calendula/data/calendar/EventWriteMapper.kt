@@ -9,6 +9,7 @@ import de.jeanlucmakiola.calendula.domain.EventColorOption
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.FormTime
 import de.jeanlucmakiola.calendula.domain.EventStatus
+import de.jeanlucmakiola.calendula.domain.forNewEvent
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import de.jeanlucmakiola.calendula.domain.nearestTo
 import kotlinx.datetime.toJavaLocalDate
@@ -132,6 +133,8 @@ internal fun buildEventInsertValues(
     put(CalendarContract.Events.EVENT_TIMEZONE, times.timezone)
     put(CalendarContract.Events.AVAILABILITY, form.availability.toProviderValue())
     put(CalendarContract.Events.ACCESS_LEVEL, form.accessLevel.toProviderValue())
+    form.status.forNewEvent().takeIf { it != EventStatus.Confirmed }
+        ?.let { put(CalendarContract.Events.STATUS, it.toProviderStatus()) }
     form.location.trim().takeIf { it.isNotEmpty() }
         ?.let { put(CalendarContract.Events.EVENT_LOCATION, it) }
     form.description.trim().takeIf { it.isNotEmpty() }
@@ -178,6 +181,9 @@ internal fun buildEventUpdateValues(
     }
     if (updated.accessLevel != original.accessLevel) {
         put(CalendarContract.Events.ACCESS_LEVEL, updated.accessLevel.toProviderValue())
+    }
+    if (updated.status != original.status) {
+        put(CalendarContract.Events.STATUS, updated.status.toProviderStatus())
     }
     if (updated.colorKey != original.colorKey || updated.color != original.color) {
         putAll(eventColorColumns(updated.colorKey, updated.color))
@@ -279,6 +285,7 @@ internal fun buildOccurrenceExceptionValues(
     put(CalendarContract.Events.EVENT_TIMEZONE, times.timezone)
     put(CalendarContract.Events.AVAILABILITY, form.availability.toProviderValue())
     put(CalendarContract.Events.ACCESS_LEVEL, form.accessLevel.toProviderValue())
+    put(CalendarContract.Events.STATUS, form.status.forNewEvent().toProviderStatus())
     put(CalendarContract.Events.EVENT_LOCATION, form.location.trim().ifEmpty { null })
     put(CalendarContract.Events.DESCRIPTION, form.description.trim().ifEmpty { null })
     if (form.colorKey == null) putAll(eventColorColumns(null, form.color))
@@ -354,7 +361,8 @@ internal fun buildMovedMasterValues(
     }
     put(CalendarContract.Events.AVAILABILITY, snapshot.availability)
     put(CalendarContract.Events.ACCESS_LEVEL, snapshot.accessLevel)
-    snapshot.status?.let { put(CalendarContract.Events.STATUS, it) }
+    snapshot.status?.takeIf { it != CalendarContract.Events.STATUS_CANCELED }
+        ?.let { put(CalendarContract.Events.STATUS, it) }
     put(CalendarContract.Events.EVENT_LOCATION, snapshot.location?.ifEmpty { null })
     put(CalendarContract.Events.DESCRIPTION, snapshot.description?.ifEmpty { null })
 }
@@ -858,7 +866,7 @@ internal fun buildImportedEventValues(
     // timed rows keep the event's own zone.
     put(CalendarContract.Events.EVENT_TIMEZONE, if (event.isAllDay) "UTC" else event.zoneId)
     put(CalendarContract.Events.AVAILABILITY, event.availability.toProviderValue())
-    put(CalendarContract.Events.STATUS, event.status.toProviderStatus())
+    put(CalendarContract.Events.STATUS, event.status.forNewEvent().toProviderStatus())
     event.location?.trim()?.takeIf { it.isNotEmpty() }
         ?.let { put(CalendarContract.Events.EVENT_LOCATION, it) }
     event.description?.trim()?.takeIf { it.isNotEmpty() }

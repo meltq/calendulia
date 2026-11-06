@@ -6,6 +6,7 @@ import de.jeanlucmakiola.calendula.data.time.FakeZoneSource
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventDetail
+import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.testDetail
 import de.jeanlucmakiola.calendula.testEvent
@@ -27,6 +28,8 @@ import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.extension.RegisterExtension
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
+import kotlinx.datetime.atStartOfDayIn
+import kotlin.time.Duration.Companion.hours
 import kotlin.time.Instant
 
 /**
@@ -63,6 +66,7 @@ class RescheduleViewModelTest {
         isAllDay: Boolean = false,
         isException: Boolean = false,
         anchorMillis: Long = beginMillis,
+        status: EventStatus = EventStatus.Confirmed,
     ): EventDetail = testDetail(
         instance = testEvent(
             id = 42L, title = "Standup",
@@ -72,6 +76,7 @@ class RescheduleViewModelTest {
         ),
         rrule = rrule,
         isException = isException,
+        status = status,
     )
 
     private fun viewModel(tempDir: Path, fake: FakeCalendarDataSource): RescheduleViewModel {
@@ -670,5 +675,110 @@ class RescheduleViewModelTest {
         // Not a whole-day shift, so the series anchor can't follow.
         assertThat(vm.scopePrompt.value)
             .isEqualTo(MoveScopePrompt(occurrenceOnly = true, resize = true))
+    }
+
+    @Test
+    fun `a cancelled series moves as a whole without asking`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = { detail(rrule = "FREQ=WEEKLY", status = EventStatus.Cancelled) }
+        }
+        val vm = viewModel(tempDir, fake)
+
+        vm.move(oneHourLater())
+        advanceUntilIdle()
+
+        assertThat(vm.scopePrompt.value).isNull()
+        assertThat(fake.updatedEvents).hasSize(1)
+        assertThat(fake.updatedOccurrences).isEmpty()
+        assertThat(fake.updatedFromOccurrences).isEmpty()
+    }
+
+    @Test
+    fun `a cancelled series whose rule cannot be realigned is not moved at all`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = { detail(rrule = "FREQ=WEEKLY;BYDAY=MO,WE", status = EventStatus.Cancelled) }
+        }
+        val vm = viewModel(tempDir, fake)
+
+        vm.move(toWednesday())
+        advanceUntilIdle()
+
+        assertThat(vm.scopePrompt.value).isNull()
+        assertThat(vm.outcome.value).isEqualTo(MoveOutcome.BlockedCancelledSeries)
+        assertThat(vm.abandoned.value).isEqualTo(1)
+        assertThat(fake.updatedEvents).isEmpty()
+        assertThat(fake.updatedOccurrences).isEmpty()
+    }
+
+    @Test
+    fun `an all-day event dropped into the time grid becomes timed`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val dayStart = monday.atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds()
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = {
+                testDetail(
+                    instance = testEvent(
+                        id = 42L, title = "Offsite", isAllDay = true,
+                        start = Instant.fromEpochMilliseconds(dayStart),
+                        end = Instant.fromEpochMilliseconds(dayStart + 86_400_000L),
+                    ),
+                )
+            }
+        }
+        val vm = viewModel(tempDir, fake)
+        val start = Instant.fromEpochMilliseconds(beginMillis)
+
+        vm.move(
+            MoveRequest(
+                eventId = 42L,
+                beginMillis = dayStart,
+                endMillis = dayStart + 86_400_000L,
+                target = MoveTarget.Span(start, Instant.fromEpochMilliseconds(endMillis)),
+            ),
+        )
+        advanceUntilIdle()
+
+        val updated = fake.updatedEvents.single().third
+        assertThat(updated.isAllDay).isFalse()
+        assertThat(updated.start.dateTime).isEqualTo(LocalDateTime(monday, LocalTime(12, 0)))
+        assertThat(updated.end.dateTime).isEqualTo(LocalDateTime(monday, LocalTime(13, 0)))
+    }
+
+    @Test
+    fun `a recurring all-day event dropped into the grid early on its own day can still move the series`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val dayStart = monday.atStartOfDayIn(TimeZone.UTC).toEpochMilliseconds()
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = {
+                testDetail(
+                    instance = testEvent(
+                        id = 42L, title = "Offsite", isAllDay = true,
+                        start = Instant.fromEpochMilliseconds(dayStart),
+                        end = Instant.fromEpochMilliseconds(dayStart + 86_400_000L),
+                    ),
+                    rrule = "FREQ=WEEKLY;BYDAY=MO",
+                )
+            }
+        }
+        val vm = viewModel(tempDir, fake)
+        val eight = LocalDateTime(monday, LocalTime(8, 0)).toInstant(TimeZone.currentSystemDefault())
+
+        vm.move(
+            MoveRequest(
+                eventId = 42L,
+                beginMillis = dayStart,
+                endMillis = dayStart + 86_400_000L,
+                target = MoveTarget.Span(eight, eight + 1.hours),
+            ),
+        )
+        advanceUntilIdle()
+
+        assertThat(vm.scopePrompt.value).isEqualTo(MoveScopePrompt(occurrenceOnly = false))
     }
 }

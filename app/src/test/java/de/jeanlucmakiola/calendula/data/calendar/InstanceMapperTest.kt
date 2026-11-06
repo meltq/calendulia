@@ -3,7 +3,9 @@ package de.jeanlucmakiola.calendula.data.calendar
 import android.provider.CalendarContract
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.EventResponse
-import de.jeanlucmakiola.calendula.domain.isDeclined
+import de.jeanlucmakiola.calendula.domain.EventStatus
+import de.jeanlucmakiola.calendula.domain.isCrossedOut
+import de.jeanlucmakiola.calendula.domain.isOutlined
 import kotlin.time.Instant
 import org.junit.jupiter.api.Test
 
@@ -21,6 +23,7 @@ class InstanceMapperTest {
         calendarColor: Int = 0xFFAABBCC.toInt(),
         location: String? = null,
         selfAttendeeStatus: Int = CalendarContract.Attendees.ATTENDEE_STATUS_NONE,
+        status: Int? = null,
     ): MapColumnReader = MapColumnReader(
         InstanceProjection.IDX_INSTANCE_ID to instanceId,
         InstanceProjection.IDX_EVENT_ID to eventId,
@@ -33,6 +36,7 @@ class InstanceMapperTest {
         InstanceProjection.IDX_CALENDAR_COLOR to calendarColor,
         InstanceProjection.IDX_LOCATION to location,
         InstanceProjection.IDX_SELF_ATTENDEE_STATUS to selfAttendeeStatus,
+        InstanceProjection.IDX_STATUS to status,
     )
 
     @Test
@@ -98,17 +102,17 @@ class InstanceMapperTest {
 
     @Test
     fun `a declined invitation is marked, any other answer is not`() {
-        assertThat(reader().toEventInstance()!!.isDeclined).isFalse()
+        assertThat(reader().toEventInstance()!!.isCrossedOut).isFalse()
         assertThat(
             reader(selfAttendeeStatus = CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED)
-                .toEventInstance()!!.isDeclined,
+                .toEventInstance()!!.isCrossedOut,
         ).isTrue()
         listOf(
             CalendarContract.Attendees.ATTENDEE_STATUS_ACCEPTED,
             CalendarContract.Attendees.ATTENDEE_STATUS_TENTATIVE,
             CalendarContract.Attendees.ATTENDEE_STATUS_INVITED,
         ).forEach { status ->
-            assertThat(reader(selfAttendeeStatus = status).toEventInstance()!!.isDeclined).isFalse()
+            assertThat(reader(selfAttendeeStatus = status).toEventInstance()!!.isCrossedOut).isFalse()
         }
     }
 
@@ -128,5 +132,43 @@ class InstanceMapperTest {
             assertThat(reader(selfAttendeeStatus = status).toEventInstance()!!.response)
                 .isEqualTo(expected)
         }
+    }
+
+    @Test
+    fun `the event status is read, a missing one is confirmed`() {
+        assertThat(reader().toEventInstance()!!.status).isEqualTo(EventStatus.Confirmed)
+        assertThat(reader(status = CalendarContract.Events.STATUS_TENTATIVE).toEventInstance()!!.status)
+            .isEqualTo(EventStatus.Tentative)
+        assertThat(reader(status = CalendarContract.Events.STATUS_CANCELED).toEventInstance()!!.status)
+            .isEqualTo(EventStatus.Cancelled)
+    }
+
+    @Test
+    fun `a cancelled event is crossed out, a tentative one outlined`() {
+        val cancelled = reader(status = CalendarContract.Events.STATUS_CANCELED).toEventInstance()!!
+        val tentative = reader(status = CalendarContract.Events.STATUS_TENTATIVE).toEventInstance()!!
+        assertThat(cancelled.isCrossedOut).isTrue()
+        assertThat(cancelled.isOutlined).isFalse()
+        assertThat(tentative.isCrossedOut).isFalse()
+        assertThat(tentative.isOutlined).isTrue()
+    }
+
+    @Test
+    fun `a cancelled unanswered invitation is crossed out rather than outlined`() {
+        val event = reader(
+            selfAttendeeStatus = CalendarContract.Attendees.ATTENDEE_STATUS_INVITED,
+            status = CalendarContract.Events.STATUS_CANCELED,
+        ).toEventInstance()!!
+        assertThat(event.isCrossedOut).isTrue()
+        assertThat(event.isOutlined).isFalse()
+    }
+
+    @Test
+    fun `a cancelled one-off from the events table gets a negated id`() {
+        val inst = reader(instanceId = 7L, eventId = 7L, status = CalendarContract.Events.STATUS_CANCELED)
+            .toCancelledOneOff()
+        assertThat(inst?.instanceId).isEqualTo(-7L)
+        assertThat(inst?.eventId).isEqualTo(7L)
+        assertThat(inst?.isCrossedOut).isTrue()
     }
 }

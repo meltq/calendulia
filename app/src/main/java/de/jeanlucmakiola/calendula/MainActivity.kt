@@ -30,6 +30,7 @@ import androidx.lifecycle.lifecycleScope
 import dagger.hilt.android.AndroidEntryPoint
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.floret.locale.AppLanguage
 import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.floret.prefs.isDark
 import de.jeanlucmakiola.floret.prefs.isPureBlack
@@ -278,6 +279,7 @@ class MainActivity : AppCompatActivity() {
         super.onResume()
         // Reaching a running UI means startup succeeded; reset the loop trail.
         CrashReporter.markHealthy(this)
+        AppLanguage.syncMirror(this)
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -593,7 +595,9 @@ class MainActivity : AppCompatActivity() {
          */
         fun openDateIntent(context: Context, date: LocalDate, source: CalendarView): Intent =
             Intent(context, MainActivity::class.java).apply {
-                data = "calendula://date/$date".toUri()
+                // The source is part of the URI so widgets of different kinds
+                // tapping the same date don't share one PendingIntent.
+                data = "calendula://date/$date/${source.name}".toUri()
                 putExtra(EXTRA_DATE_ISO, date.toString())
                 putExtra(EXTRA_SOURCE_VIEW, source.name)
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
@@ -612,6 +616,7 @@ class MainActivity : AppCompatActivity() {
             endMillis: Long,
             source: CalendarView,
         ): Intent = eventDetailIntent(context, eventId, beginMillis, endMillis).apply {
+            data = "calendula://event/$eventId/$beginMillis/${source.name}".toUri()
             putExtra(EXTRA_SOURCE_VIEW, source.name)
         }
 

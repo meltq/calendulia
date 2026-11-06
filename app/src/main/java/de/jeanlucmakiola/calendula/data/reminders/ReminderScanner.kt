@@ -43,6 +43,7 @@ class ReminderScanner @Inject constructor(
     private val source: ReminderInstanceSource,
     private val calendarDataSource: CalendarDataSource,
     private val notifier: ReminderNotifier,
+    private val snoozes: ReminderSnoozeScheduler,
     private val alarms: ReminderAlarmScheduler,
     private val state: ReminderStatePrefs,
     private val settingsPrefs: SettingsPrefs,
@@ -104,7 +105,11 @@ class ReminderScanner @Inject constructor(
         )
 
         if (notifier.canPost()) {
-            schedule.due.forEach { notifier.post(it.toAlert()) }
+            schedule.due.forEach {
+                val alert = it.toAlert()
+                snoozes.cancel(alert)
+                notifier.post(alert)
+            }
         }
         // Advance even when nothing could be posted, so muting notifications
         // doesn't build a backlog.

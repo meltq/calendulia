@@ -56,6 +56,10 @@ import javax.inject.Singleton
 interface CalendarDataSource {
     fun calendars(): List<CalendarSource>
     fun instances(beginMillis: Long, endMillis: Long): List<EventInstance>
+
+    /** [instances] of event [eventId] alone, soonest first. */
+    fun eventInstances(eventId: Long, beginMillis: Long, endMillis: Long): List<EventInstance> =
+        instances(beginMillis, endMillis).filter { it.eventId == eventId }
     /**
      * [allDayReminderTimeMinutes]: the hour all-day reminders fire at, needed to
      * decode their stored offsets back to whole-day lead times (see
@@ -564,20 +568,60 @@ class AndroidCalendarDataSource @Inject constructor(
     }
 
     override fun instances(beginMillis: Long, endMillis: Long): List<EventInstance> {
+        val listed = queryInstances(beginMillis, endMillis, null, null)
+        // A provider that does expand cancelled events already listed them.
+        val shown = listed.mapTo(HashSet()) { it.eventId }
+        val cancelled = queryCancelledOneOffs(beginMillis, endMillis).filter { it.eventId !in shown }
+        return if (cancelled.isEmpty()) listed else (listed + cancelled).sortedBy { it.start }
+    }
+
+    /** Cancelled one-off events overlapping the window, which AOSP leaves out of Instances (#388). */
+    private fun queryCancelledOneOffs(beginMillis: Long, endMillis: Long): List<EventInstance> {
+        val selection = "${CalendarContract.Events.STATUS} = ${CalendarContract.Events.STATUS_CANCELED} AND " +
+            "${CalendarContract.Events.DELETED} = 0 AND " +
+            "${CalendarContract.Events.RRULE} IS NULL AND ${CalendarContract.Events.RDATE} IS NULL AND " +
+            "${CalendarContract.Events.ORIGINAL_ID} IS NULL AND " +
+            "${CalendarContract.Events.ORIGINAL_SYNC_ID} IS NULL AND " +
+            "${CalendarContract.Events.DTSTART} < ? AND " +
+            "COALESCE(${CalendarContract.Events.DTEND}, ${CalendarContract.Events.DTSTART}) >= ?"
+        return resolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            CancelledEventProjection.COLUMNS,
+            selection,
+            arrayOf(endMillis.toString(), beginMillis.toString()),
+            null,
+        )?.use { c -> c.mapRowsNotNull { toCancelledOneOff() } } ?: emptyList()
+    }
+
+    override fun eventInstances(eventId: Long, beginMillis: Long, endMillis: Long): List<EventInstance> =
+        // The series' own rows plus its exceptions, so an occurrence edited on
+        // its own is still one of the series' occurrences.
+        queryInstances(
+            beginMillis,
+            endMillis,
+            "(${CalendarContract.Instances.EVENT_ID} = ? OR ${CalendarContract.Instances.ORIGINAL_ID} = ?)",
+            arrayOf(eventId.toString(), eventId.toString()),
+        )
+
+    private fun queryInstances(
+        beginMillis: Long,
+        endMillis: Long,
+        extraSelection: String?,
+        args: Array<String>?,
+    ): List<EventInstance> {
         ensureObserversRegistered()
+        // Hide deleted occurrences (cancelled exceptions, #47) but keep a cancelled
+        // event of its own (#388); NULL status is a normal event. DELETED: #364.
+        val visible = "(${CalendarContract.Instances.STATUS} IS NULL OR " +
+            "${CalendarContract.Instances.STATUS} != ${CalendarContract.Events.STATUS_CANCELED} OR " +
+            "(${CalendarContract.Instances.ORIGINAL_ID} IS NULL AND " +
+            "${CalendarContract.Instances.ORIGINAL_SYNC_ID} IS NULL)) AND " +
+            "${CalendarContract.Events.DELETED} = 0"
         return resolver.query(
             instancesUri(beginMillis, endMillis),
             InstanceProjection.COLUMNS,
-            // Hide cancelled occurrences: "delete only this event" writes a
-            // cancelled exception for the one instance (#47). A NULL status is a
-            // normal, un-cancelled event, so it must survive the filter — a bare
-            // `!= CANCELED` would drop it (NULL != 2 is NULL, not true).
-            // DELETED = 0: a provider that soft-deletes may keep the row's
-            // instances until a purge (#364).
-            "(${CalendarContract.Instances.STATUS} IS NULL OR " +
-                "${CalendarContract.Instances.STATUS} != ${CalendarContract.Events.STATUS_CANCELED}) AND " +
-                "${CalendarContract.Events.DELETED} = 0",
-            null,
+            if (extraSelection == null) visible else "$visible AND $extraSelection",
+            args,
             CalendarContract.Instances.BEGIN + " ASC",
         )?.use { c -> c.mapRowsNotNull { toEventInstance() } } ?: emptyList()
     }
@@ -601,7 +645,8 @@ class AndroidCalendarDataSource @Inject constructor(
             .toTypedArray()
         val selection = "($match) AND " +
             "${CalendarContract.Events.DELETED} = 0 AND " +
-            "${CalendarContract.Events.ORIGINAL_ID} IS NULL"
+            "${CalendarContract.Events.ORIGINAL_ID} IS NULL AND " +
+            "${CalendarContract.Events.ORIGINAL_SYNC_ID} IS NULL"
         return resolver.query(
             CalendarContract.Events.CONTENT_URI,
             SearchProjection.COLUMNS,

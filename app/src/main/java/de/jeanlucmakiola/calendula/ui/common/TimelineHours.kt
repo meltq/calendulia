@@ -43,14 +43,21 @@ data class TimelineHours(
 
 /**
  * The scroll offset that puts [startHour] at the top of a timeline laid out
- * with [maxValue] scroll range over a [viewportPx] viewport, or null while that
+ * with [maxValue] scroll range over a [viewportPx] viewport, [clearancePx] of
+ * which is the empty inset under midnight, or null while that
  * layout is not yet at [hourPx] per hour — the scale changes a frame before the
  * content grows to match it, and scrolling against the old layout would land on
  * the wrong hour.
  */
-internal fun startHourScroll(maxValue: Int, viewportPx: Int, startHour: Int, hourPx: Float): Int? {
+internal fun startHourScroll(
+    maxValue: Int,
+    viewportPx: Int,
+    startHour: Int,
+    hourPx: Float,
+    clearancePx: Int = 0,
+): Int? {
     if (viewportPx <= 0 || maxValue < 0 || maxValue == Int.MAX_VALUE) return null
-    val laidOutHourPx = (maxValue + viewportPx) / 24f
+    val laidOutHourPx = (maxValue + viewportPx - clearancePx) / 24f
     if (abs(laidOutHourPx - hourPx) > 1f) return null
     return (startHour * laidOutHourPx).roundToInt().coerceIn(0, maxValue)
 }

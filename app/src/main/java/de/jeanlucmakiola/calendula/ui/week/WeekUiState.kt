@@ -15,6 +15,8 @@ import kotlinx.datetime.LocalDate
  *                 minimum tap-target height)
  * @param lane     0-based column within [laneCount]
  * @param laneCount number of columns the event's overlap-cluster needs
+ * @param continuesAfter whether the event runs past this day's midnight, so the
+ *                 block is cut there
  */
 data class TimedBlock(
     val event: EventInstance,
@@ -22,6 +24,7 @@ data class TimedBlock(
     val endMin: Int,
     val lane: Int,
     val laneCount: Int,
+    val continuesAfter: Boolean = false,
 )
 
 /**

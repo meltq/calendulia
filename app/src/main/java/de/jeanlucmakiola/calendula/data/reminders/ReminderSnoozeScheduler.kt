@@ -33,4 +33,16 @@ class ReminderSnoozeScheduler @Inject constructor(
         )
         alarmManager.setWakeup(triggerAtMillis, pendingIntent)
     }
+
+    /** Drop a snooze still pending for [alert]'s occurrence, so it can't re-show over a newer reminder. */
+    fun cancel(alert: ReminderAlert) {
+        val pendingIntent = PendingIntent.getBroadcast(
+            context,
+            ReminderActionReceiver.requestCode(alert, ReminderActionReceiver.ACTION_SHOW),
+            ReminderActionReceiver.intent(context, ReminderActionReceiver.ACTION_SHOW, alert),
+            PendingIntent.FLAG_NO_CREATE or PendingIntent.FLAG_IMMUTABLE,
+        ) ?: return
+        context.getSystemService<AlarmManager>()?.cancel(pendingIntent)
+        pendingIntent.cancel()
+    }
 }

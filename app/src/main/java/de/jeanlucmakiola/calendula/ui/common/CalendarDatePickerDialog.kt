@@ -30,7 +30,9 @@ fun CalendarDatePickerDialog(
     onDismiss: () -> Unit,
 ) {
     val state = rememberDatePickerState(
-        initialSelectedDateMillis = initial.toEpochDays() * MILLIS_PER_DAY,
+        initialSelectedDateMillis = initial.coerceIn(CalendarSpan.FIRST_DAY, CalendarSpan.LAST_DAY)
+            .toEpochDays() * MILLIS_PER_DAY,
+        yearRange = CalendarSpan.years,
     )
     DatePickerDialog(
         onDismissRequest = onDismiss,

@@ -1,5 +1,7 @@
 package de.jeanlucmakiola.calendula.domain
 
+import kotlinx.datetime.toLocalDateTime
+import kotlin.time.Duration.Companion.hours
 import com.google.common.truth.Truth.assertThat
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -195,11 +197,13 @@ class EventShiftTest {
     }
 
     @Test
-    fun `an all-day event ignores a resize`() {
+    fun `a resized all-day event becomes timed`() {
         val allDay = form(isAllDay = true)
         val start = allDay.start.dateTime.toInstant(berlin)
 
-        assertThat(allDay.resizedTo(start, start, berlin)).isEqualTo(allDay)
+        val timed = allDay.resizedTo(start, start + 1.hours, berlin)
+        assertThat(timed.isAllDay).isFalse()
+        assertThat(timed.end.dateTime).isEqualTo(allDay.start.dateTime.toInstant(berlin).plus(1.hours).toLocalDateTime(berlin))
     }
 
     // 02:00 CEST to 02:00 CET on 2026-10-25: one real hour, one wall-clock value.

@@ -38,6 +38,9 @@ import de.jeanlucmakiola.calendula.R
 /** The standard FAB's size, shared by the selection bar that unrolls from it (#141). */
 val FabSize = 56.dp
 
+/** Bottom inset that lets a scrolling view's last row or hour scroll clear of the FAB. */
+val FabClearance = 96.dp
+
 /** What the FAB is while an event is selected (#141): the toggle for its action bar. */
 @Stable
 class FabSelection(

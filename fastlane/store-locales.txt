@@ -19,3 +19,4 @@ pt-rBR   pt-BR
 ru       ru-RU
 sk       sk
 zh-rCN   zh-CN
+zh-rTW   zh-TW

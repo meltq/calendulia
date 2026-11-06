@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
+import android.os.Bundle
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -28,13 +29,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Posts one notification per due reminder on a dedicated channel. Tapping opens
+ * Posts one notification per occurrence on a dedicated channel. Tapping opens
  * the event's detail screen.
  *
- * The tag is the reminder's stable key, so a scan that posts the same reminder
- * again — a catch-up pass overlapping the alarm that already fired — replaces
- * its notification silently ([NotificationCompat.Builder.setOnlyAlertOnce])
- * instead of stacking a second one.
+ * The tag is the [occurrenceKey], so each reminder for an occurrence replaces
+ * the one before it in place (#463). A different reminder alerts afresh; the
+ * same one posted again — a catch-up pass overlapping the alarm that already
+ * fired — replaces its notification silently.
  */
 @Singleton
 class ReminderNotifier @Inject constructor(
@@ -65,7 +66,7 @@ class ReminderNotifier @Inject constructor(
     suspend fun post(alert: ReminderAlert) {
         if (isSilenced(alert.calendarId)) return
         ensureChannel()
-        val title = alert.title.ifBlank { context.getString(R.string.event_untitled) }
+        val title = displayTitle(alert)
         val is24Hour = settingsPrefs.timeFormat.first()
             .is24Hour(android.text.format.DateFormat.is24HourFormat(context))
         val zone = ZoneId.systemDefault()
@@ -96,7 +97,8 @@ class ReminderNotifier @Inject constructor(
             .setCategory(NotificationCompat.CATEGORY_EVENT)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
-            .setOnlyAlertOnce(true)
+            .setOnlyAlertOnce(shownKey(alert) == alert.key)
+            .addExtras(Bundle().apply { putLong(EXTRA_REMINDER_KEY, alert.key) })
             .setContentIntent(detailIntent(alert))
             .addAction(
                 R.drawable.ic_notification_snooze,
@@ -109,19 +111,57 @@ class ReminderNotifier @Inject constructor(
                 actionIntent(alert, ReminderActionReceiver.ACTION_DISMISS),
             )
             .build()
+        val manager = NotificationManagerCompat.from(context)
+        cancelLegacy(alert)
         try {
-            NotificationManagerCompat.from(context)
-                .notify(alert.key.toString(), NOTIFICATION_ID, notification)
+            manager.notify(alert.occurrenceKey.toString(), NOTIFICATION_ID, notification)
         } catch (e: SecurityException) {
             // POST_NOTIFICATIONS was revoked between canPost() and here.
             Log.w(TAG, "Could not post reminder for event ${alert.eventId}", e)
         }
     }
 
-    /** Remove a posted reminder (snooze re-shows it later; dismiss is final). */
+    /**
+     * Remove [alert]'s notification (snooze re-shows it later; dismiss is final),
+     * unless a later reminder has replaced it — an action tapped on a stale view
+     * mustn't take the newer one with it.
+     */
     fun cancel(alert: ReminderAlert) {
-        NotificationManagerCompat.from(context).cancel(alert.key.toString(), NOTIFICATION_ID)
+        val manager = NotificationManagerCompat.from(context)
+        if (shownKey(alert) == alert.key) manager.cancel(alert.occurrenceKey.toString(), NOTIFICATION_ID)
+        // Posted before reminders shared a notification, under the reminder's own key.
+        manager.cancel(alert.key.toString(), NOTIFICATION_ID)
     }
+
+    /** Whether a different reminder for [alert]'s occurrence is on screen now. */
+    fun isSuperseded(alert: ReminderAlert): Boolean = shownKey(alert).let { it != null && it != alert.key }
+
+    /** The key of the reminder showing for [alert]'s occurrence, if any. */
+    private fun shownKey(alert: ReminderAlert): Long? {
+        val tag = alert.occurrenceKey.toString()
+        return NotificationManagerCompat.from(context).activeNotifications
+            .firstOrNull { it.tag == tag && it.id == NOTIFICATION_ID }
+            ?.notification?.extras
+            ?.takeIf { it.containsKey(EXTRA_REMINDER_KEY) }
+            ?.getLong(EXTRA_REMINDER_KEY)
+    }
+
+    /**
+     * Remove a reminder for the same occurrence posted before reminders shared a
+     * notification. It carries no reminder key; its time and title identify it.
+     */
+    private fun cancelLegacy(alert: ReminderAlert) {
+        val manager = NotificationManagerCompat.from(context)
+        manager.activeNotifications
+            .filter { it.id == NOTIFICATION_ID && it.notification.channelId == CHANNEL_ID }
+            .filter { !it.notification.extras.containsKey(EXTRA_REMINDER_KEY) }
+            .filter { it.notification.`when` == alert.beginMillis }
+            .filter { it.notification.extras.getCharSequence(NotificationCompat.EXTRA_TITLE)?.toString() == displayTitle(alert) }
+            .forEach { manager.cancel(it.tag, it.id) }
+    }
+
+    private fun displayTitle(alert: ReminderAlert): String =
+        alert.title.ifBlank { context.getString(R.string.event_untitled) }
 
     private fun actionIntent(alert: ReminderAlert, action: String): PendingIntent =
         PendingIntent.getBroadcast(
@@ -157,8 +197,10 @@ class ReminderNotifier @Inject constructor(
         const val TAG = "ReminderNotifier"
         const val CHANNEL_ID = "reminders"
 
-        // One id, distinct tags: the tag (alert id) already keys the
+        // One id, distinct tags: the tag (occurrence) already keys the
         // notification, so a fixed id keeps cancellation/replacement simple.
         const val NOTIFICATION_ID = 1
+
+        const val EXTRA_REMINDER_KEY = "de.jeanlucmakiola.calendula.reminder_key"
     }
 }

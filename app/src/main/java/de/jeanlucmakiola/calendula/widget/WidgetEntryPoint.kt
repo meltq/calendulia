@@ -21,6 +21,7 @@ import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 interface WidgetEntryPoint {
     fun calendarRepository(): CalendarRepository
     fun settingsPrefs(): SettingsPrefs
+    fun widgetRefreshCoordinator(): WidgetRefreshCoordinator
 }
 
 internal fun Context.widgetEntryPoint(): WidgetEntryPoint =
