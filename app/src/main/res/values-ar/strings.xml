@@ -292,7 +292,7 @@
     <string name="settings_dim_completed_summary">تعتيم الأحداث التي انتهت بالفعل في عرض الشهر والأسبوع</string>
     <string name="settings_today_toolbar">زر اليوم في شريط الأدوات</string>
     <string name="settings_today_toolbar_summary">إظهار زر الانتقال إلى اليوم في شريط الأدوات بدلاً من زر عائم</string>
-    <string name="settings_app_name_summary">اعرض Calendula كـ ”Calendar“ في مشغّل التطبيقات الخاص بك. فقط الاسم في المشغّل يتغير؛ وقد ينتقل الرمز إلى مكان جديد بعد التبديل.</string>
+    <string name="settings_app_name_summary">اعرض Calendula كـ ”التقويم“ في مشغّل التطبيقات الخاص بك. فقط الاسم في المشغّل يتغير؛ وقد ينتقل الرمز إلى مكان جديد بعد التبديل.</string>
     <string name="settings_past_events_dim">تعتيم</string>
     <string name="settings_past_events">الأحداث السابقة</string>
     <string name="settings_agenda_range">مدى الجدول</string>
