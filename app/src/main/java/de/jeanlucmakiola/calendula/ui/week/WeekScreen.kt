@@ -221,6 +221,7 @@ import kotlinx.datetime.toLocalDateTime
 import java.time.format.TextStyle as JavaTextStyle
 import java.util.Locale
 import kotlinx.datetime.yearMonth
+import java.time.temporal.WeekFields
 
 /** One lane of the all-day strip, sized to a trimmed bar line (#190). */
 private val ALL_DAY_ROW_HEIGHT = 20.dp
@@ -1137,7 +1138,8 @@ private fun WeekDayHeader(
  */
 @Composable
 private fun WeekNumberCell(weekStart: LocalDate, showBadge: Boolean, modifier: Modifier = Modifier) {
-    val weekNumber = remember(weekStart) { weekStart.toJavaLocalDate().rowWeekNumber() }
+    val locale = currentLocale()
+    val weekNumber = remember(weekStart, locale) { weekStart.toJavaLocalDate().rowWeekNumber(WeekFields.of(locale)) }
     Column(
         modifier = modifier
             .fillMaxWidth()

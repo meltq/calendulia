@@ -205,6 +205,7 @@ import java.time.format.TextStyle as JavaTextStyle
 import java.util.Locale
 import kotlinx.datetime.toJavaMonth
 import kotlinx.datetime.yearMonth
+import java.time.temporal.WeekFields
 
 private val LocalTodayPulse = staticCompositionLocalOf { 0 }
 
@@ -2701,13 +2702,14 @@ private fun monthChipDragModifier(
 /**
  * Left-gutter calendar-week cell (#25): a full-height tonal pill mirroring the
  * day cells' geometry, set apart by the secondaryContainer tint (matching the
- * Week view's badge), with the ISO week number centred like a day number. The
- * number comes from the row's Thursday, as in the Week view, so it is right for
- * any first weekday (#493).
+ * Week view's badge), with the week number centred like a day number. It is
+ * numbered the locale's way from the row's mid-week day, as in the Week view,
+ * so it is right for any first weekday (#493).
  */
 @Composable
 private fun WeekNumberGutter(weekStart: LocalDate, modifier: Modifier = Modifier) {
-    val weekNumber = remember(weekStart) { weekStart.toJavaLocalDate().rowWeekNumber() }
+    val locale = currentLocale()
+    val weekNumber = remember(weekStart, locale) { weekStart.toJavaLocalDate().rowWeekNumber(WeekFields.of(locale)) }
     val label = stringResource(R.string.week_number_label)
     val openLabel = stringResource(R.string.month_open_week, weekNumber)
     val onOpenWeek = LocalOpenWeek.current
