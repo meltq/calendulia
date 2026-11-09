@@ -187,7 +187,6 @@ import de.jeanlucmakiola.floret.identity.itemEnter
 import de.jeanlucmakiola.floret.identity.rememberReduceMotion
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.calendula.ui.common.next
-import de.jeanlucmakiola.floret.time.isoWeekNumber
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
@@ -205,6 +204,7 @@ import java.time.format.TextStyle as JavaTextStyle
 import java.util.Locale
 import kotlinx.datetime.toJavaMonth
 import kotlinx.datetime.yearMonth
+import de.jeanlucmakiola.calendula.ui.common.rememberRowWeekNumber
 
 private val LocalTodayPulse = staticCompositionLocalOf { 0 }
 
@@ -2701,13 +2701,13 @@ private fun monthChipDragModifier(
 /**
  * Left-gutter calendar-week cell (#25): a full-height tonal pill mirroring the
  * day cells' geometry, set apart by the secondaryContainer tint (matching the
- * Week view's badge), with the ISO week number centred like a day number. The
- * week is computed on the row's first day — the same basis as the Week view — so
- * the two agree.
+ * Week view's badge), with the week number centred like a day number. It is
+ * numbered by the device region from the row's mid-week day, as in the Week
+ * view, so it is right for any first weekday (#493).
  */
 @Composable
 private fun WeekNumberGutter(weekStart: LocalDate, modifier: Modifier = Modifier) {
-    val weekNumber = remember(weekStart) { weekStart.toJavaLocalDate().isoWeekNumber() }
+    val weekNumber = rememberRowWeekNumber(weekStart)
     val label = stringResource(R.string.week_number_label)
     val openLabel = stringResource(R.string.month_open_week, weekNumber)
     val onOpenWeek = LocalOpenWeek.current

@@ -42,33 +42,80 @@ class MonthGridTest {
 
     @Test
     fun `a week that fits keeps every lane`() {
-        val layouts = fitWeeks(busyWeeks(perDay = 2), lanes = 3)
+        val layouts = fitWeeks(busyWeeks(perDay = 2), LaneFit(3))
         assertThat(layouts.map { it.laneCap }.distinct()).containsExactly(3)
         assertThat(layouts.all { it.overflow.isEmpty() }).isTrue()
     }
 
     @Test
     fun `a week that doesn't fit gives its last lane to the overflow`() {
-        val layouts = fitWeeks(busyWeeks(perDay = 5), lanes = 3)
+        val layouts = fitWeeks(busyWeeks(perDay = 5), LaneFit(3))
         assertThat(layouts.map { it.laneCap }.distinct()).containsExactly(2)
         assertThat(layouts.all { it.overflow.isNotEmpty() }).isTrue()
     }
 
     @Test
     fun `a taller week fits more lanes`() {
-        assertThat(lanesFitting(19.dp)).isEqualTo(0)
-        assertThat(lanesFitting(50.dp)).isEqualTo(2)
-        assertThat(lanesFitting(100.dp)).isEqualTo(5)
+        assertThat(lanesFitting(19.dp, fontScale = 1f)).isEqualTo(LaneFit(0))
+        assertThat(lanesFitting(50.dp, fontScale = 1f)).isEqualTo(LaneFit(2))
+        assertThat(lanesFitting(100.dp, fontScale = 1f)).isEqualTo(LaneFit(5))
+    }
+
+    @Test
+    fun `a row too short for a full lane gets a compact one`() {
+        assertThat(lanesFitting(34.dp, fontScale = 1f)).isEqualTo(LaneFit(1, compact = true))
+        assertThat(lanesFitting(32.dp, fontScale = 1f)).isEqualTo(LaneFit(1, compact = true))
+        assertThat(lanesFitting(31.dp, fontScale = 1f)).isEqualTo(LaneFit(0))
+        assertThat(lanesFitting(35.dp, fontScale = 1f)).isEqualTo(LaneFit(1))
+    }
+
+    @Test
+    fun `no compact lane at a large font scale`() {
+        assertThat(lanesFitting(34.dp, fontScale = 1.1f)).isEqualTo(LaneFit(0))
+    }
+
+    @Test
+    fun `a single lane shows counts on busy days`() {
+        val layouts = fitWeeks(busyWeeks(perDay = 5), LaneFit(1))
+        assertThat(layouts.all { it.mixedLane == List(7) { GridCell<LaneItem>(LaneItem.Count(5), 1) } }).isTrue()
+    }
+
+    @Test
+    fun `a single lane keeps bars on days that fit`() {
+        val lone = timedEvent(monday.plus(1, DateTimeUnit.DAY), 9, zone = zone, id = 1, title = "Lone")
+        val busy = (2L..4L).map { timedEvent(monday.plus(3, DateTimeUnit.DAY), it.toInt() + 8, zone = zone, id = it, title = "B$it") }
+        val week = fitWeeks(weeks(listOf(lone) + busy), LaneFit(1, compact = true))[1]
+        assertThat(week.compact).isTrue()
+        assertThat(week.mixedLane).containsExactly(
+            GridCell<LaneItem>(null, 1),
+            GridCell<LaneItem>(LaneItem.Bar(lone), 1),
+            GridCell<LaneItem>(null, 1),
+            GridCell<LaneItem>(LaneItem.Count(3), 1),
+            GridCell<LaneItem>(null, 3),
+        ).inOrder()
+    }
+
+    @Test
+    fun `a single lane cuts a multi-day bar around a busy day`() {
+        val trip = allDayEvent(monday, monday.plus(3, DateTimeUnit.DAY), id = 1, title = "Trip")
+        val busy = timedEvent(monday.plus(1, DateTimeUnit.DAY), 9, zone = zone, id = 2, title = "Busy")
+        val week = fitWeeks(weeks(listOf(trip, busy)), LaneFit(1))[1]
+        assertThat(week.mixedLane).containsExactly(
+            GridCell<LaneItem>(LaneItem.Bar(trip), 1),
+            GridCell<LaneItem>(LaneItem.Count(2), 1),
+            GridCell<LaneItem>(LaneItem.Bar(trip), 2),
+            GridCell<LaneItem>(null, 3),
+        ).inOrder()
     }
 
     @Test
     fun `lanes stop at the cap however tall the week`() {
-        assertThat(lanesFitting(1000.dp)).isEqualTo(MAX_LANES)
+        assertThat(lanesFitting(1000.dp, fontScale = 1f)).isEqualTo(LaneFit(MAX_LANES))
     }
 
     @Test
     fun `a week with no room for a lane draws no overflow row either`() {
-        val layouts = fitWeeks(busyWeeks(perDay = 5), lanes = 0)
+        val layouts = fitWeeks(busyWeeks(perDay = 5), LaneFit(0))
         assertThat(layouts.none { it.showsOverflow }).isTrue()
         assertThat(layouts.all { it.lanes.isEmpty() }).isTrue()
     }

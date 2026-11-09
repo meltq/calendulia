@@ -12,6 +12,15 @@ internal val ROW_H_PAD = 12.dp
 /** Space between the date-pill gutter and a day's card. */
 internal val GUTTER_GAP = 6.dp
 
+/** The classic style's row inset, colour stripe and the gap after it (#489). */
+internal val CLASSIC_ROW_H_PAD = 4.dp
+internal val STRIPE_WIDTH = 5.dp
+internal val STRIPE_GAP = 10.dp
+
+/** The stripe and its gap, and where the classic style's event text starts, so its placeholder lines up with the titles. */
+internal val STRIPE_INSET = STRIPE_WIDTH + STRIPE_GAP
+internal val TEXT_INDENT = CLASSIC_ROW_H_PAD + STRIPE_INSET
+
 /**
  * Every size the agenda widget varies by [WidgetSize]. Values that genuinely
  * shouldn't grow (the horizontal row constants above, corner radii) stay
@@ -29,6 +38,8 @@ internal data class AgendaMetrics(
     val rowVPad: Dp,            // event row vertical padding
     val dayGap: Dp,             // space between two days' cards
     val monthLabel: TextUnit,   // month name above a new month's first day
+    val dayHeader: TextUnit,    // classic style's day label ("Today · …")
+    val dayHeaderTopPad: Dp,    // classic style's space above a day label
 ) {
     /** One event row's height, shared by the date pill beside it and the placeholder row. */
     val rowHeight: Dp get() = contentH + rowVPad * 2
@@ -61,6 +72,8 @@ private val SMALL_METRICS = AgendaMetrics(
     rowVPad = 4.dp,
     dayGap = 8.dp,
     monthLabel = 12.sp,
+    dayHeader = 13.sp,
+    dayHeaderTopPad = 10.dp,
 )
 
 private val MEDIUM_METRICS = AgendaMetrics(
@@ -75,6 +88,8 @@ private val MEDIUM_METRICS = AgendaMetrics(
     rowVPad = 5.dp,
     dayGap = 9.dp,
     monthLabel = 14.sp,
+    dayHeader = 14.sp,   // M3 Title Small
+    dayHeaderTopPad = 11.dp,
 )
 
 private val LARGE_METRICS = AgendaMetrics(
@@ -89,6 +104,8 @@ private val LARGE_METRICS = AgendaMetrics(
     rowVPad = 6.dp,
     dayGap = 10.dp,
     monthLabel = 14.sp,
+    dayHeader = 16.sp,   // M3 Title Medium
+    dayHeaderTopPad = 12.dp,
 )
 
 private val EXTRA_LARGE_METRICS = AgendaMetrics(
@@ -103,6 +120,8 @@ private val EXTRA_LARGE_METRICS = AgendaMetrics(
     rowVPad = 8.dp,
     dayGap = 12.dp,
     monthLabel = 16.sp,
+    dayHeader = 18.sp,   // †
+    dayHeaderTopPad = 14.dp,
 )
 
 /** Indexed by [WidgetSize.ordinal] so lookup allocates nothing per recomposition. */

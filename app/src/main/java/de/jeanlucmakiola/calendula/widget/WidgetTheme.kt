@@ -34,7 +34,7 @@ fun CalendulaGlanceTheme(mode: WidgetThemeMode, content: @Composable () -> Unit)
 @Composable
 internal fun CalendulaWidgetRoot(appearance: WidgetAppearance, appTheme: ThemeMode, content: @Composable () -> Unit) {
     CalendulaGlanceTheme(appearance.theme.resolve(appTheme)) {
-        WidgetSurface(background = appearance.background, content = content)
+        WidgetSurface(background = appearance.background, opacity = appearance.opacity, content = content)
     }
 }
 

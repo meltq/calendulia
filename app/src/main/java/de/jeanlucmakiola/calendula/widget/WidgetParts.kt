@@ -19,6 +19,9 @@ import kotlinx.datetime.toJavaDayOfWeek
 import kotlinx.datetime.toJavaLocalDate
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Instant
+import de.jeanlucmakiola.calendula.MainActivity
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import androidx.glance.appwidget.action.actionStartActivity
 
 /** Cards sit one tone off the root fill, and stay opaque over a wallpaper (#292). */
 @Composable
@@ -26,6 +29,19 @@ internal fun widgetCardColor(): ColorProvider = when (LocalWidgetBackground.curr
     WidgetBackground.SOLID -> GlanceTheme.colors.surfaceVariant
     WidgetBackground.TINTED, WidgetBackground.TRANSPARENT -> GlanceTheme.colors.widgetBackground
 }
+
+/** Opens this occurrence in the app, backing out to [source]. */
+internal fun EventInstance.openIntent(context: Context, source: CalendarView) = MainActivity.openEventIntent(
+    context = context,
+    eventId = eventId,
+    beginMillis = start.toEpochMilliseconds(),
+    endMillis = end.toEpochMilliseconds(),
+    source = source,
+)
+
+/** Opens [date] in the app's agenda. */
+internal fun openDayAction(context: Context, date: LocalDate) =
+    actionStartActivity(MainActivity.openDateIntent(context, date, CalendarView.Agenda))
 
 /** An event's time on [day]: "All day", "Starts 14:00", "Ends 9:00" or "14:00 – 15:30". */
 internal fun widgetTimeLabel(context: Context, event: EventInstance, day: LocalDate, is24Hour: Boolean): String =

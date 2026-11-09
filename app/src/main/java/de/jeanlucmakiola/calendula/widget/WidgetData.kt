@@ -126,6 +126,8 @@ sealed interface AgendaWidgetData {
         /** "Always show today" (#35): anchor today at the top even with no events left. */
         val showToday: Boolean,
         val textSize: WidgetSize,
+        val style: AgendaWidgetStyle = AgendaWidgetStyle.CARDS,
+        val invertText: Boolean = false,
         /** Snapshot instant the data was read at, for "has this event ended?" tests. */
         val now: Instant,
     ) : AgendaWidgetData
@@ -184,6 +186,8 @@ internal suspend fun Context.loadAgendaWidgetData(
         pastDisplay = options.pastDisplay,
         showToday = options.showToday,
         textSize = options.textSize,
+        style = options.style,
+        invertText = options.invertText,
         now = Clock.System.now(),
     )
 }
