@@ -56,7 +56,7 @@ import de.jeanlucmakiola.calendula.ui.agenda.anchorTodayIfMissing
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.formatCalendarTitle
 import de.jeanlucmakiola.floret.locale.localizedDateFormatter
-import de.jeanlucmakiola.calendula.ui.common.eventFill
+import de.jeanlucmakiola.calendula.widget.widgetEventFill
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
 import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetStyle
@@ -65,7 +65,6 @@ import de.jeanlucmakiola.floret.glance.LocalWidgetSeeThrough
 import androidx.compose.runtime.CompositionLocalProvider
 import de.jeanlucmakiola.floret.glance.WidgetBackground
 import de.jeanlucmakiola.floret.glance.withAlpha
-import de.jeanlucmakiola.calendula.widget.WidgetDimFillAlpha
 import de.jeanlucmakiola.calendula.widget.widgetEventInk
 import de.jeanlucmakiola.calendula.ui.common.SECONDARY_INK_ALPHA
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetData
@@ -592,7 +591,7 @@ private fun PlaceholderRow(date: LocalDate, metrics: AgendaMetrics) {
 }
 
 /** An event row's light and dark fill: its calendar's container tone, faded when the row is dimmed. */
-private data class EventFill(val day: Color, val night: Color)
+private data class EventFill(val day: Color, val night: Color, val dimmed: Boolean)
 
 /** Whether this row is drawn faded as a finished event. */
 private fun AgendaRow.Event.dimmed(data: AgendaWidgetData.Ready): Boolean =
@@ -600,10 +599,11 @@ private fun AgendaRow.Event.dimmed(data: AgendaWidgetData.Ready): Boolean =
 
 private fun AgendaRow.Event.fill(data: AgendaWidgetData.Ready): EventFill {
     val dimmed = dimmed(data)
-    fun tone(dark: Boolean) = eventFill(event.color, dark, data.soften).let {
-        if (dimmed) it.copy(alpha = WidgetDimFillAlpha) else it
-    }
-    return EventFill(day = tone(dark = false), night = tone(dark = true))
+    return EventFill(
+        day = widgetEventFill(event.color, dark = false, data.soften, dimmed),
+        night = widgetEventFill(event.color, dark = true, data.soften, dimmed),
+        dimmed = dimmed,
+    )
 }
 
 @Composable
@@ -616,10 +616,10 @@ private fun EventRow(
 ) {
     val context = androidx.glance.LocalContext.current
     val title = event.title.ifBlank { context.getString(R.string.event_untitled) }
-    val titleInk = themedColor(day = widgetEventInk(fill.day, 1f), night = widgetEventInk(fill.night, 1f))
+    val titleInk = themedColor(day = widgetEventInk(fill.day, 1f, fill.dimmed), night = widgetEventInk(fill.night, 1f, fill.dimmed))
     val timeInk = themedColor(
-        day = widgetEventInk(fill.day, SECONDARY_INK_ALPHA),
-        night = widgetEventInk(fill.night, SECONDARY_INK_ALPHA),
+        day = widgetEventInk(fill.day, SECONDARY_INK_ALPHA, fill.dimmed),
+        night = widgetEventInk(fill.night, SECONDARY_INK_ALPHA, fill.dimmed),
     )
     Column(
         modifier = GlanceModifier
