@@ -2702,8 +2702,8 @@ private fun monthChipDragModifier(
  * Left-gutter calendar-week cell (#25): a full-height tonal pill mirroring the
  * day cells' geometry, set apart by the secondaryContainer tint (matching the
  * Week view's badge), with the ISO week number centred like a day number. The
- * week is computed on the row's first day — the same basis as the Week view — so
- * the two agree.
+ * number comes from the row's Thursday, as in the Week view, so it is right for
+ * any first weekday (#493).
  */
 @Composable
 private fun WeekNumberGutter(weekStart: LocalDate, modifier: Modifier = Modifier) {
