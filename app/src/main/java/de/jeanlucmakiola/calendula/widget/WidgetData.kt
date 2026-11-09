@@ -127,6 +127,7 @@ sealed interface AgendaWidgetData {
         val showToday: Boolean,
         val textSize: WidgetSize,
         val style: AgendaWidgetStyle = AgendaWidgetStyle.CARDS,
+        val invertText: Boolean = false,
         /** Snapshot instant the data was read at, for "has this event ended?" tests. */
         val now: Instant,
     ) : AgendaWidgetData
@@ -186,6 +187,7 @@ internal suspend fun Context.loadAgendaWidgetData(
         showToday = options.showToday,
         textSize = options.textSize,
         style = options.style,
+        invertText = options.invertText,
         now = Clock.System.now(),
     )
 }

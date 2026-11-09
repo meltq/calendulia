@@ -60,7 +60,10 @@ import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
 import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetStyle
+import de.jeanlucmakiola.floret.glance.LocalWidgetBackground
 import de.jeanlucmakiola.floret.glance.LocalWidgetSeeThrough
+import androidx.compose.runtime.CompositionLocalProvider
+import de.jeanlucmakiola.floret.glance.WidgetBackground
 import de.jeanlucmakiola.floret.glance.withAlpha
 import de.jeanlucmakiola.calendula.widget.WidgetDimFillAlpha
 import de.jeanlucmakiola.calendula.widget.widgetEventInk
@@ -177,16 +180,21 @@ private fun AgendaWidgetBody(data: AgendaWidgetData, preview: Boolean) {
     val size = (data as? AgendaWidgetData.Ready)?.textSize ?: WidgetSize.SMALL
     val fontScale = androidx.glance.LocalContext.current.resources.configuration.fontScale
     val metrics = metricsFor(size).scaledForFont(fontScale)
-    Column(
-        modifier = GlanceModifier
-            .fillMaxSize()
-            .padding(horizontal = 8.dp, vertical = 6.dp),
-    ) {
-        AgendaHeader()
-        Spacer(GlanceModifier.height(6.dp))
-        when (data) {
-            AgendaWidgetData.NeedsPermission -> WidgetMessage(R.string.widget_needs_permission, metrics)
-            is AgendaWidgetData.Ready -> AgendaRows(data = data, metrics = metrics, preview = preview)
+    // The classic style adds no backings for a faded fill, only on a transparent one (#489).
+    val classic = (data as? AgendaWidgetData.Ready)?.style == AgendaWidgetStyle.CLASSIC
+    val seeThrough = if (classic) LocalWidgetBackground.current == WidgetBackground.TRANSPARENT else LocalWidgetSeeThrough.current
+    CompositionLocalProvider(LocalWidgetSeeThrough provides seeThrough) {
+        Column(
+            modifier = GlanceModifier
+                .fillMaxSize()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+        ) {
+            AgendaHeader()
+            Spacer(GlanceModifier.height(6.dp))
+            when (data) {
+                AgendaWidgetData.NeedsPermission -> WidgetMessage(R.string.widget_needs_permission, metrics)
+                is AgendaWidgetData.Ready -> AgendaRows(data = data, metrics = metrics, preview = preview)
+            }
         }
     }
 }
@@ -314,13 +322,15 @@ internal fun classicItems(rows: List<AgendaRow>, limit: Int = MAX_AGENDA_ROWS): 
 
 /**
  * v2.23's look (#489): a label line per day over plain rows with a colour
- * stripe. On a see-through root each day sits on its own backing card, so the
- * text stays readable over the wallpaper.
+ * stripe. On a transparent root each day sits on its own backing card, so the
+ * text stays readable over the wallpaper; a faded fill is left to the opacity
+ * and "Invert text colour" options.
  */
 @Composable
 private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, metrics: AgendaMetrics, preview: Boolean) {
     val items = classicItems(rows, if (preview) PREVIEW_ROWS else MAX_AGENDA_ROWS)
-    val backed = LocalWidgetSeeThrough.current
+    val backed = LocalWidgetBackground.current == WidgetBackground.TRANSPARENT
+    val ink = classicInk(inverted = data.invertText && !backed)
     val positions = if (backed) dayPositions(items.map { it.date }) else emptyList()
     val cardColor = widgetCardColor()
     val item: @Composable (Int) -> Unit = { index ->
@@ -336,11 +346,12 @@ private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, met
                         index == 0 -> 0.dp
                         else -> metrics.dayHeaderTopPad
                     },
+                    ink = ink,
                     metrics = metrics,
                 )
                 is ClassicItem.Entry -> when (val row = entry.row) {
-                    is AgendaRow.Placeholder -> ClassicPlaceholderRow(row.date, backed, metrics)
-                    is AgendaRow.Event -> ClassicEventRow(row, data, backed, metrics)
+                    is AgendaRow.Placeholder -> ClassicPlaceholderRow(row.date, backed, ink, metrics)
+                    is AgendaRow.Event -> ClassicEventRow(row, data, backed, ink, metrics)
                 }
             }
         }
@@ -360,15 +371,27 @@ private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, met
     RowList(items.size, preview, item)
 }
 
+/** The classic style's text colours: the theme's, or its inverse for the "Invert text colour" option. */
+private data class ClassicInk(val title: ColorProvider, val secondary: ColorProvider, val today: ColorProvider)
+
+@Composable
+private fun classicInk(inverted: Boolean): ClassicInk = with(GlanceTheme.colors) {
+    if (inverted) {
+        ClassicInk(inverseOnSurface, inverseOnSurface.withAlpha(INVERTED_SECONDARY_INK), inversePrimary)
+    } else {
+        ClassicInk(onSurface, onSurfaceVariant, primary)
+    }
+}
+
 /** A classic day label, "Today · Wed, 17 Jun"; opens that day in the app. */
 @Composable
-private fun DayHeaderRow(date: LocalDate, today: LocalDate, startPad: Dp, topPad: Dp, metrics: AgendaMetrics) {
+private fun DayHeaderRow(date: LocalDate, today: LocalDate, startPad: Dp, topPad: Dp, ink: ClassicInk, metrics: AgendaMetrics) {
     val context = androidx.glance.LocalContext.current
     Text(
         text = agendaDayLabel(context, date, today),
         maxLines = 1,
         style = TextStyle(
-            color = if (date == today) GlanceTheme.colors.primary else GlanceTheme.colors.onSurfaceVariant,
+            color = if (date == today) ink.today else ink.secondary,
             fontSize = metrics.dayHeader,
             fontWeight = FontWeight.Medium,
         ),
@@ -381,12 +404,12 @@ private fun DayHeaderRow(date: LocalDate, today: LocalDate, startPad: Dp, topPad
 
 /** "No more events today" as a muted line under an anchored, event-less today (#35), indented to the titles. */
 @Composable
-private fun ClassicPlaceholderRow(date: LocalDate, backed: Boolean, metrics: AgendaMetrics) {
+private fun ClassicPlaceholderRow(date: LocalDate, backed: Boolean, ink: ClassicInk, metrics: AgendaMetrics) {
     val context = androidx.glance.LocalContext.current
     Text(
         text = context.getString(R.string.agenda_no_more_today),
         maxLines = 1,
-        style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = metrics.placeholder),
+        style = TextStyle(color = ink.secondary, fontSize = metrics.placeholder),
         modifier = GlanceModifier
             .fillMaxWidth()
             .padding(start = if (backed) CLASSIC_CARD_H_PAD + STRIPE_INSET else TEXT_INDENT, end = 8.dp, top = 2.dp, bottom = metrics.rowVPad + 2.dp)
@@ -396,7 +419,7 @@ private fun ClassicPlaceholderRow(date: LocalDate, backed: Boolean, metrics: Age
 
 /** A classic event row: the calendar's colour stripe beside the title and time; a dimmed one fades both. */
 @Composable
-private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, backed: Boolean, metrics: AgendaMetrics) {
+private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, backed: Boolean, ink: ClassicInk, metrics: AgendaMetrics) {
     val context = androidx.glance.LocalContext.current
     val event = row.event
     val dimmed = row.dimmed(data)
@@ -423,7 +446,7 @@ private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, 
                 text = event.title.ifBlank { context.getString(R.string.event_untitled) },
                 maxLines = 1,
                 style = TextStyle(
-                    color = if (dimmed) GlanceTheme.colors.onSurface.withAlpha(CLASSIC_DIM_INK) else GlanceTheme.colors.onSurface,
+                    color = if (dimmed) ink.title.withAlpha(CLASSIC_DIM_INK) else ink.title,
                     fontSize = metrics.eventTitle,
                     textDecoration = glanceDeclinedDecoration(event.isCrossedOut),
                 ),
@@ -432,11 +455,7 @@ private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, 
                 text = eventTimeSummary(context, event, row.date, data.is24Hour),
                 maxLines = 1,
                 style = TextStyle(
-                    color = if (dimmed) {
-                        GlanceTheme.colors.onSurfaceVariant.withAlpha(CLASSIC_DIM_INK)
-                    } else {
-                        GlanceTheme.colors.onSurfaceVariant
-                    },
+                    color = if (dimmed) ink.secondary.withAlpha(CLASSIC_DIM_INK) else ink.secondary,
                     fontSize = metrics.eventTime,
                 ),
             )
@@ -450,6 +469,9 @@ private val CLASSIC_CARD_H_PAD = 10.dp
 
 /** How strongly a finished event's text shows in the classic style, on any fill. */
 private const val CLASSIC_DIM_INK = 0.5f
+
+/** The inverted secondary text's strength, as `onSurfaceVariant` sits below `onSurface`. */
+private const val INVERTED_SECONDARY_INK = 0.75f
 
 /** Where each row sits among the rows of its day, from each row's date, for the grouped-card shapes. */
 private fun dayPositions(dates: List<LocalDate>): List<Position> = buildList {

@@ -518,6 +518,11 @@
     <string name="widget_config_background_transparent">Transparent</string>
     <string name="widget_config_theme_follow_app">Follow app</string>
     <string name="widget_config_opacity">Opacity</string>
+    <string name="widget_config_invert_text">Invert text colour</string>
+    <string name="widget_config_invert_text_summary">Light text on a dark theme turns dark, and the other way round</string>
+    <string name="widget_config_readability_info">About readability</string>
+    <string name="widget_config_readability_hint">At low opacity the wallpaper shows through, so some text may be harder to read. Raise the opacity if it is.</string>
+    <string name="widget_config_readability_hint_classic">At low opacity the wallpaper shows through, so some text may be hard to read. If it is, raise the opacity or invert the text colour.</string>
     <string name="widget_config_style">Style</string>
     <string name="widget_config_style_cards">Cards</string>
     <string name="widget_config_style_classic">Classic</string>

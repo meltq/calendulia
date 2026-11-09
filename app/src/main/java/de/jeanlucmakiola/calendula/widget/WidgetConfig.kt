@@ -41,6 +41,8 @@ data class AgendaWidgetOptions(
     val showToday: Boolean,
     val pastDisplay: PastEventDisplay,
     val style: AgendaWidgetStyle = AgendaWidgetStyle.CARDS,
+    /** Classic style only: draw the text in the opposite theme's colours, for a faded fill over the wallpaper. */
+    val invertText: Boolean = false,
 )
 
 internal fun WidgetTheme.resolve(app: ThemeMode): WidgetThemeMode = when (this) {
@@ -57,6 +59,7 @@ private val BackgroundKey = stringPreferencesKey("cfg_background")
 private val ThemeKey = stringPreferencesKey("cfg_theme")
 private val OpacityKey = floatPreferencesKey("cfg_opacity")
 private val AgendaStyleKey = stringPreferencesKey("cfg_agenda_style")
+private val InvertTextKey = booleanPreferencesKey("cfg_invert_text")
 private val AgendaRangeKey = stringPreferencesKey("cfg_agenda_range")
 private val TextSizeKey = stringPreferencesKey("cfg_text_size")
 private val ShowTodayKey = booleanPreferencesKey("cfg_show_today")
@@ -81,6 +84,7 @@ internal fun Preferences.agendaWidgetOptions(defaults: AgendaWidgetOptions) = Ag
     showToday = this[ShowTodayKey] ?: defaults.showToday,
     pastDisplay = this[PastDisplayKey].toEnum(defaults.pastDisplay),
     style = this[AgendaStyleKey].toEnum(defaults.style),
+    invertText = this[InvertTextKey] ?: defaults.invertText,
 )
 
 /** Whether this widget has agenda options of its own, rather than following the app's. */
@@ -98,6 +102,7 @@ internal fun MutablePreferences.putAgendaOptions(options: AgendaWidgetOptions) {
     this[ShowTodayKey] = options.showToday
     this[PastDisplayKey] = options.pastDisplay.name
     this[AgendaStyleKey] = options.style.name
+    this[InvertTextKey] = options.invertText
 }
 
 /**

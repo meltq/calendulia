@@ -74,6 +74,10 @@ import de.jeanlucmakiola.calendula.widget.AgendaWidgetStyle
 import java.text.NumberFormat
 import de.jeanlucmakiola.floret.locale.currentLocale
 import androidx.compose.runtime.remember
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.layout.Row
 
 private val PreviewMaxHeight = 280.dp
 
@@ -241,7 +245,11 @@ private fun ConfigOptions(
             onSelect = { onAppearance(state.appearance.copy(background = it)) },
             position = Position.Top,
         )
-        if (state.appearance.background != WidgetBackground.TRANSPARENT) {
+        var showReadability by rememberSaveable { mutableStateOf(false) }
+        val faded = state.appearance.background != WidgetBackground.TRANSPARENT
+        val content = state.draft.content
+        val classic = state.kind == WidgetKind.AGENDA && content.style == AgendaWidgetStyle.CLASSIC
+        if (faded) {
             val opacity = state.appearance.opacity
             GroupedSliderRow(
                 title = stringResource(R.string.widget_config_opacity),
@@ -253,6 +261,21 @@ private fun ConfigOptions(
                 },
                 valueRange = MIN_OPACITY..1f,
                 steps = OPACITY_STEPS,
+                trailing = { ReadabilityInfoButton { showReadability = !showReadability } },
+            )
+        }
+        if (faded && classic) {
+            GroupedRow(
+                title = stringResource(R.string.widget_config_invert_text),
+                summary = stringResource(R.string.widget_config_invert_text_summary),
+                position = Position.Middle,
+                trailing = {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        ReadabilityInfoButton { showReadability = !showReadability }
+                        Switch(checked = content.invertText, onCheckedChange = { onContent(content.copy(invertText = it)) })
+                    }
+                },
+                onClick = { onContent(content.copy(invertText = !content.invertText)) },
             )
         }
         GroupedChoiceRow(
@@ -263,6 +286,12 @@ private fun ConfigOptions(
             onSelect = { onAppearance(state.appearance.copy(theme = it)) },
             position = Position.Bottom,
         )
+        AnimatedVisibility(visible = faded && showReadability) {
+            GroupedHint(
+                stringResource(if (classic) R.string.widget_config_readability_hint_classic else R.string.widget_config_readability_hint),
+                verticalPadding = 8.dp,
+            )
+        }
         if (state.kind == WidgetKind.COUNTDOWN) {
             CountdownOptionsSection(
                 options = state.draft.countdown,
@@ -389,6 +418,18 @@ private fun ContentOptions(
             label = { stringResource(pastEventDisplayLabelRes(it)) },
             onSelect = { onChange(options.copy(pastDisplay = it)) },
             onDismiss = { showPast = false },
+        )
+    }
+}
+
+/** The "i" beside the opacity and text-colour options; toggles the readability hint below them. */
+@Composable
+private fun ReadabilityInfoButton(onClick: () -> Unit) {
+    IconButton(onClick = onClick) {
+        Icon(
+            Icons.Outlined.Info,
+            contentDescription = stringResource(R.string.widget_config_readability_info),
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
         )
     }
 }
