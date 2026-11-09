@@ -85,12 +85,13 @@ internal fun lanesFitting(weekHeight: Dp, fontScale: Float = 1f): LaneFit {
 
 /**
  * Seats each week in [fit]'s lanes. A week whose events need more gives its
- * last lane to the "+N" row instead, unless that would leave it no lane at all:
- * a single lane keeps its bars and drops the count (#491).
+ * last lane to the "+N" row instead. A compact lane has no room for that row,
+ * so it keeps its bars (#491).
  */
 internal fun fitWeeks(weeks: List<MonthWeek>, fit: LaneFit): List<WeekLayout> = weeks.map { week ->
     val lanes = fit.lanes
-    if (lanes <= 1) return@map WeekLayout(week, laneCap = lanes, showsOverflow = false, compact = fit.compact)
+    if (lanes == 0) return@map WeekLayout(week, laneCap = 0, showsOverflow = false)
+    if (fit.compact) return@map WeekLayout(week, laneCap = lanes, showsOverflow = false, compact = true)
     val needed = WeekLayout(week, UNCAPPED_LANES).usedLanes
     WeekLayout(week, if (needed <= lanes) lanes else lanes - 1)
 }
@@ -103,5 +104,5 @@ private const val LANES_TOP_DP = 2f
 private const val LANE_ROW_DP = 15f
 /** Matches `widget_month_lane_compact`'s height; its 9sp text clips past [COMPACT_MAX_FONT_SCALE]. */
 private const val COMPACT_LANE_ROW_DP = 12f
-private const val COMPACT_MAX_FONT_SCALE = 1.1f
+private const val COMPACT_MAX_FONT_SCALE = 1f
 private const val UNCAPPED_LANES = 64

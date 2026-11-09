@@ -100,7 +100,7 @@ private fun weekViews(
         week.addView(R.id.week_lanes, lane)
     }
     if (layout.showsOverflow && layout.overflow.isNotEmpty()) {
-        val lane = laneViews(context, layout.compact)
+        val lane = laneViews(context)
         layout.overflow.forEach { cell ->
             val count = cell.item
             if (count == null) {
@@ -117,7 +117,7 @@ private fun weekViews(
     return week
 }
 
-private fun laneViews(context: Context, compact: Boolean) =
+private fun laneViews(context: Context, compact: Boolean = false) =
     RemoteViews(context.packageName, if (compact) R.layout.widget_month_lane_compact else R.layout.widget_month_lane)
         .apply { removeAllViews(R.id.lane) }
 

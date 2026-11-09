@@ -71,11 +71,17 @@ class MonthGridTest {
 
     @Test
     fun `no compact lane at a large font scale`() {
-        assertThat(lanesFitting(34.dp, fontScale = 1.3f)).isEqualTo(LaneFit(0))
+        assertThat(lanesFitting(34.dp, fontScale = 1.1f)).isEqualTo(LaneFit(0))
     }
 
     @Test
-    fun `a single lane keeps its bars in a busy week`() {
+    fun `a single full lane still folds a busy week into the count`() {
+        val layouts = fitWeeks(busyWeeks(perDay = 5), LaneFit(1))
+        assertThat(layouts.all { it.laneCap == 0 && it.showsOverflow && it.overflow.isNotEmpty() }).isTrue()
+    }
+
+    @Test
+    fun `a compact lane keeps its bars in a busy week`() {
         val layouts = fitWeeks(busyWeeks(perDay = 5), LaneFit(1, compact = true))
         assertThat(layouts.all { it.laneCap == 1 && it.lanes.size == 1 && it.compact }).isTrue()
         assertThat(layouts.none { it.showsOverflow }).isTrue()
