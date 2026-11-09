@@ -62,12 +62,20 @@ internal class WeekLayout(val week: MonthWeek, val laneCap: Int, val showsOverfl
     }
 }
 
+/** How many lanes a week row holds, and whether they're the [compact] height. */
+internal data class LaneFit(val lanes: Int, val compact: Boolean = false)
+
 /**
  * Event lanes a week row [weekHeight] tall holds under its day number, held to
- * [MAX_LANES] so a tall widget's payload stays bounded (#214).
+ * [MAX_LANES] so a tall widget's payload stays bounded (#214). The last lane's
+ * bottom gap may be cut off, and a row too short for one full lane still gets
+ * one compact lane when that fits (#491).
  */
-internal fun lanesFitting(weekHeight: Dp): Int =
-    ((weekHeight.value - DAY_ROW_DP - LANES_TOP_DP) / LANE_ROW_DP).toInt().coerceIn(0, MAX_LANES)
+internal fun lanesFitting(weekHeight: Dp): LaneFit {
+    val room = weekHeight.value - DAY_ROW_DP - LANES_TOP_DP + LANE_GAP_DP
+    val full = (room / LANE_ROW_DP).toInt().coerceIn(0, MAX_LANES)
+    return if (full == 0 && room >= COMPACT_LANE_ROW_DP) LaneFit(1, compact = true) else LaneFit(full)
+}
 
 /**
  * Seats each week in [lanes] lanes. A week whose events need more gives its
@@ -85,4 +93,6 @@ internal const val MAX_LANES = 8
 private const val DAY_ROW_DP = 18f
 private const val LANES_TOP_DP = 2f
 private const val LANE_ROW_DP = 15f
+private const val COMPACT_LANE_ROW_DP = 12f
+private const val LANE_GAP_DP = 1f
 private const val UNCAPPED_LANES = 64
