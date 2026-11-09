@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.booleanPreferencesKey
+import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.core.stringSetPreferencesKey
 import androidx.glance.GlanceId
@@ -26,7 +27,12 @@ enum class WidgetTheme { FOLLOW_APP, LIGHT, DARK }
 data class WidgetAppearance(
     val background: WidgetBackground = WidgetBackground.TINTED,
     val theme: WidgetTheme = WidgetTheme.FOLLOW_APP,
+    /** How opaque a Solid or Tinted fill is (#489). */
+    val opacity: Float = 1f,
 )
+
+/** The agenda widget's look: the 2.24 day cards, or v2.23's plain day headers and stripes (#489). */
+enum class AgendaWidgetStyle { CARDS, CLASSIC }
 
 /** What the agenda widget lists, per placed widget. */
 data class AgendaWidgetOptions(
@@ -34,6 +40,7 @@ data class AgendaWidgetOptions(
     val textSize: WidgetSize,
     val showToday: Boolean,
     val pastDisplay: PastEventDisplay,
+    val style: AgendaWidgetStyle = AgendaWidgetStyle.CARDS,
 )
 
 internal fun WidgetTheme.resolve(app: ThemeMode): WidgetThemeMode = when (this) {
@@ -48,6 +55,8 @@ internal fun WidgetTheme.resolve(app: ThemeMode): WidgetThemeMode = when (this) 
 
 private val BackgroundKey = stringPreferencesKey("cfg_background")
 private val ThemeKey = stringPreferencesKey("cfg_theme")
+private val OpacityKey = floatPreferencesKey("cfg_opacity")
+private val AgendaStyleKey = stringPreferencesKey("cfg_agenda_style")
 private val AgendaRangeKey = stringPreferencesKey("cfg_agenda_range")
 private val TextSizeKey = stringPreferencesKey("cfg_text_size")
 private val ShowTodayKey = booleanPreferencesKey("cfg_show_today")
@@ -58,6 +67,7 @@ internal val Preferences.widgetAppearance: WidgetAppearance
     get() = WidgetAppearance(
         background = this[BackgroundKey].toEnum(WidgetBackground.TINTED),
         theme = this[ThemeKey].toEnum(WidgetTheme.FOLLOW_APP),
+        opacity = this[OpacityKey] ?: 1f,
     )
 
 /**
@@ -70,6 +80,7 @@ internal fun Preferences.agendaWidgetOptions(defaults: AgendaWidgetOptions) = Ag
     textSize = this[TextSizeKey].toEnum(defaults.textSize),
     showToday = this[ShowTodayKey] ?: defaults.showToday,
     pastDisplay = this[PastDisplayKey].toEnum(defaults.pastDisplay),
+    style = this[AgendaStyleKey].toEnum(defaults.style),
 )
 
 /** Whether this widget has agenda options of its own, rather than following the app's. */
@@ -78,6 +89,7 @@ internal val Preferences.hasAgendaOptions: Boolean get() = this[AgendaRangeKey] 
 internal fun MutablePreferences.putAppearance(appearance: WidgetAppearance) {
     this[BackgroundKey] = appearance.background.name
     this[ThemeKey] = appearance.theme.name
+    this[OpacityKey] = appearance.opacity
 }
 
 internal fun MutablePreferences.putAgendaOptions(options: AgendaWidgetOptions) {
@@ -85,6 +97,7 @@ internal fun MutablePreferences.putAgendaOptions(options: AgendaWidgetOptions) {
     this[TextSizeKey] = options.textSize.name
     this[ShowTodayKey] = options.showToday
     this[PastDisplayKey] = options.pastDisplay.name
+    this[AgendaStyleKey] = options.style.name
 }
 
 /**

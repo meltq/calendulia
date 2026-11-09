@@ -517,6 +517,11 @@
     <string name="widget_config_background_tinted">Tinted</string>
     <string name="widget_config_background_transparent">Transparent</string>
     <string name="widget_config_theme_follow_app">Follow app</string>
+    <string name="widget_config_opacity">Opacity</string>
+    <string name="widget_config_opacity_value">%1$d%%</string>
+    <string name="widget_config_style">Style</string>
+    <string name="widget_config_style_cards">Cards</string>
+    <string name="widget_config_style_classic">Classic</string>
     <string name="widget_config_content">Content</string>
     <string name="widget_config_range">Time range</string>
     <string name="widget_config_text_size">Text size</string>

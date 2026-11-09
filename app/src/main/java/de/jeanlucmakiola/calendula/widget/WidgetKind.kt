@@ -26,7 +26,7 @@ import de.jeanlucmakiola.calendula.widget.split.MonthDayWidget
 import de.jeanlucmakiola.calendula.widget.split.MonthDayWidgetReceiver
 
 /** A content option a widget's config screen offers, besides background and theme. */
-enum class WidgetOption { RANGE, TEXT_SIZE, PAST_DISPLAY, SHOW_TODAY, CALENDARS }
+enum class WidgetOption { STYLE, RANGE, TEXT_SIZE, PAST_DISPLAY, SHOW_TODAY, CALENDARS }
 
 /**
  * Every widget the app ships, told apart by their receiver: what redraws,
@@ -42,7 +42,14 @@ enum class WidgetKind(
     AGENDA(
         AgendaWidgetReceiver::class.java,
         R.string.widget_agenda_label,
-        setOf(WidgetOption.RANGE, WidgetOption.TEXT_SIZE, WidgetOption.PAST_DISPLAY, WidgetOption.SHOW_TODAY, WidgetOption.CALENDARS),
+        setOf(
+            WidgetOption.STYLE,
+            WidgetOption.RANGE,
+            WidgetOption.TEXT_SIZE,
+            WidgetOption.PAST_DISPLAY,
+            WidgetOption.SHOW_TODAY,
+            WidgetOption.CALENDARS,
+        ),
         DpSize(260.dp, 280.dp),
     ),
     MONTH(
