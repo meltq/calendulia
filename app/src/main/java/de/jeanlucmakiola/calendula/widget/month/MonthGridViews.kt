@@ -46,7 +46,6 @@ internal data class GridColors(
 internal fun monthGridViews(
     context: Context,
     layouts: List<WeekLayout>,
-    compact: Boolean,
     currentMonth: Month,
     today: LocalDate,
     soften: Boolean,
@@ -55,14 +54,13 @@ internal fun monthGridViews(
 ): RemoteViews {
     val grid = RemoteViews(context.packageName, R.layout.widget_month_grid)
     grid.removeAllViews(R.id.month_grid)
-    layouts.forEach { grid.addView(R.id.month_grid, weekViews(context, it, compact, currentMonth, today, soften, colors, mode)) }
+    layouts.forEach { grid.addView(R.id.month_grid, weekViews(context, it, currentMonth, today, soften, colors, mode)) }
     return grid
 }
 
 private fun weekViews(
     context: Context,
     layout: WeekLayout,
-    compact: Boolean,
     currentMonth: Month,
     today: LocalDate,
     soften: Boolean,
@@ -94,7 +92,7 @@ private fun weekViews(
         if (isToday) week.setImageTint(context, TODAY_IDS[col], colors.primary)
     }
     layout.lanes.forEach { cells ->
-        val lane = laneViews(context, compact)
+        val lane = laneViews(context, layout.compact)
         cells.forEach { cell ->
             val event = cell.item
             lane.addView(R.id.lane, if (event == null) gap(context, cell.cols) else bar(context, event, cell.cols, soften, mode))
@@ -102,7 +100,7 @@ private fun weekViews(
         week.addView(R.id.week_lanes, lane)
     }
     if (layout.showsOverflow && layout.overflow.isNotEmpty()) {
-        val lane = laneViews(context, compact)
+        val lane = laneViews(context, layout.compact)
         layout.overflow.forEach { cell ->
             val count = cell.item
             if (count == null) {

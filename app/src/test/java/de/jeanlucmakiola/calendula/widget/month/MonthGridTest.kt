@@ -42,14 +42,14 @@ class MonthGridTest {
 
     @Test
     fun `a week that fits keeps every lane`() {
-        val layouts = fitWeeks(busyWeeks(perDay = 2), lanes = 3)
+        val layouts = fitWeeks(busyWeeks(perDay = 2), LaneFit(3))
         assertThat(layouts.map { it.laneCap }.distinct()).containsExactly(3)
         assertThat(layouts.all { it.overflow.isEmpty() }).isTrue()
     }
 
     @Test
     fun `a week that doesn't fit gives its last lane to the overflow`() {
-        val layouts = fitWeeks(busyWeeks(perDay = 5), lanes = 3)
+        val layouts = fitWeeks(busyWeeks(perDay = 5), LaneFit(3))
         assertThat(layouts.map { it.laneCap }.distinct()).containsExactly(2)
         assertThat(layouts.all { it.overflow.isNotEmpty() }).isTrue()
     }
@@ -62,15 +62,23 @@ class MonthGridTest {
     }
 
     @Test
-    fun `the last lane may lose its bottom gap`() {
-        assertThat(lanesFitting(34.dp)).isEqualTo(LaneFit(1))
-        assertThat(lanesFitting(49.dp)).isEqualTo(LaneFit(2))
+    fun `a row too short for a full lane gets a compact one`() {
+        assertThat(lanesFitting(34.dp)).isEqualTo(LaneFit(1, compact = true))
+        assertThat(lanesFitting(32.dp)).isEqualTo(LaneFit(1, compact = true))
+        assertThat(lanesFitting(31.dp)).isEqualTo(LaneFit(0))
+        assertThat(lanesFitting(35.dp)).isEqualTo(LaneFit(1))
     }
 
     @Test
-    fun `a row too short for a full lane gets a compact one`() {
-        assertThat(lanesFitting(31.dp)).isEqualTo(LaneFit(1, compact = true))
-        assertThat(lanesFitting(30.dp)).isEqualTo(LaneFit(0))
+    fun `no compact lane at a large font scale`() {
+        assertThat(lanesFitting(34.dp, fontScale = 1.3f)).isEqualTo(LaneFit(0))
+    }
+
+    @Test
+    fun `a single lane keeps its bars in a busy week`() {
+        val layouts = fitWeeks(busyWeeks(perDay = 5), LaneFit(1, compact = true))
+        assertThat(layouts.all { it.laneCap == 1 && it.lanes.size == 1 && it.compact }).isTrue()
+        assertThat(layouts.none { it.showsOverflow }).isTrue()
     }
 
     @Test
@@ -80,7 +88,7 @@ class MonthGridTest {
 
     @Test
     fun `a week with no room for a lane draws no overflow row either`() {
-        val layouts = fitWeeks(busyWeeks(perDay = 5), lanes = 0)
+        val layouts = fitWeeks(busyWeeks(perDay = 5), LaneFit(0))
         assertThat(layouts.none { it.showsOverflow }).isTrue()
         assertThat(layouts.all { it.lanes.isEmpty() }).isTrue()
     }

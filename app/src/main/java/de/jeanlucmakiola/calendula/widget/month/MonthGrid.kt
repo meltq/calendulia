@@ -37,10 +37,16 @@ internal fun <T : Any> mergeGaps(columns: Int, cellAt: (Int) -> GridCell<T>?): L
 }
 
 /**
- * One week of the grid seated with [laneCap] lanes. [showsOverflow] is off when
- * the week has no room for even the "+N" row.
+ * One week of the grid seated with [laneCap] lanes, drawn [compact] when the
+ * row is too short for a full one. [showsOverflow] is off when the week has no
+ * room for the "+N" row.
  */
-internal class WeekLayout(val week: MonthWeek, val laneCap: Int, val showsOverflow: Boolean = true) {
+internal class WeekLayout(
+    val week: MonthWeek,
+    val laneCap: Int,
+    val showsOverflow: Boolean = true,
+    val compact: Boolean = false,
+) {
     private val seating: List<DaySeating> = week.days.indices.map { week.seating(it, laneCap) }
 
     /** Lanes filled from the top; empty lanes below are not drawn. */
@@ -67,22 +73,24 @@ internal data class LaneFit(val lanes: Int, val compact: Boolean = false)
 
 /**
  * Event lanes a week row [weekHeight] tall holds under its day number, held to
- * [MAX_LANES] so a tall widget's payload stays bounded (#214). The last lane's
- * bottom gap may be cut off, and a row too short for one full lane still gets
- * one compact lane when that fits (#491).
+ * [MAX_LANES] so a tall widget's payload stays bounded (#214). A row too short
+ * for one full lane still gets a compact one when its text fits at [fontScale] (#491).
  */
-internal fun lanesFitting(weekHeight: Dp): LaneFit {
-    val room = weekHeight.value - DAY_ROW_DP - LANES_TOP_DP + LANE_GAP_DP
+internal fun lanesFitting(weekHeight: Dp, fontScale: Float = 1f): LaneFit {
+    val room = weekHeight.value - DAY_ROW_DP - LANES_TOP_DP
     val full = (room / LANE_ROW_DP).toInt().coerceIn(0, MAX_LANES)
-    return if (full == 0 && room >= COMPACT_LANE_ROW_DP) LaneFit(1, compact = true) else LaneFit(full)
+    val compactFits = room >= COMPACT_LANE_ROW_DP && fontScale <= COMPACT_MAX_FONT_SCALE
+    return if (full == 0 && compactFits) LaneFit(1, compact = true) else LaneFit(full)
 }
 
 /**
- * Seats each week in [lanes] lanes. A week whose events need more gives its
- * last lane to the "+N" row instead.
+ * Seats each week in [fit]'s lanes. A week whose events need more gives its
+ * last lane to the "+N" row instead, unless that would leave it no lane at all:
+ * a single lane keeps its bars and drops the count (#491).
  */
-internal fun fitWeeks(weeks: List<MonthWeek>, lanes: Int): List<WeekLayout> = weeks.map { week ->
-    if (lanes == 0) return@map WeekLayout(week, laneCap = 0, showsOverflow = false)
+internal fun fitWeeks(weeks: List<MonthWeek>, fit: LaneFit): List<WeekLayout> = weeks.map { week ->
+    val lanes = fit.lanes
+    if (lanes <= 1) return@map WeekLayout(week, laneCap = lanes, showsOverflow = false, compact = fit.compact)
     val needed = WeekLayout(week, UNCAPPED_LANES).usedLanes
     WeekLayout(week, if (needed <= lanes) lanes else lanes - 1)
 }
@@ -93,6 +101,7 @@ internal const val MAX_LANES = 8
 private const val DAY_ROW_DP = 18f
 private const val LANES_TOP_DP = 2f
 private const val LANE_ROW_DP = 15f
+/** Matches `widget_month_lane_compact`'s height; its 9sp text clips past [COMPACT_MAX_FONT_SCALE]. */
 private const val COMPACT_LANE_ROW_DP = 12f
-private const val LANE_GAP_DP = 1f
+private const val COMPACT_MAX_FONT_SCALE = 1.1f
 private const val UNCAPPED_LANES = 64

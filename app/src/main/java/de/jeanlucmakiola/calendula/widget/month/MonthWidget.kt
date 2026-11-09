@@ -254,8 +254,7 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
                 val context = LocalContext.current
                 val fontScale = context.resources.configuration.fontScale
                 val weekHeight = (LocalSize.current.height - gridChromeHeight(fontScale)) / weeks.size
-                val fit = lanesFitting(weekHeight)
-                val layouts = fitWeeks(weeks, fit.lanes)
+                val layouts = fitWeeks(weeks, lanesFitting(weekHeight, fontScale))
                 val mode = LocalWidgetThemeMode.current
                 val colors = GridColors(
                     onSurface = remoteColor(WidgetColorRole.ON_SURFACE),
@@ -273,7 +272,7 @@ private fun MonthWidgetBody(source: MonthWidgetSource, index: Int) {
                 Column(modifier = GlanceModifier.fillMaxWidth().defaultWeight()) {
                     WeekdayHeader(weekStart = source.weekStart)
                     AndroidRemoteViews(
-                        remoteViews = monthGridViews(context, layouts, fit.compact, ym.month, source.today, source.soften, colors, mode),
+                        remoteViews = monthGridViews(context, layouts, ym.month, source.today, source.soften, colors, mode),
                         modifier = GlanceModifier.fillMaxWidth().defaultWeight(),
                     )
                 }
