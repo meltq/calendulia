@@ -72,6 +72,7 @@ import de.jeanlucmakiola.calendula.widget.WidgetAppearance
 import de.jeanlucmakiola.calendula.widget.widgetCardColor
 import de.jeanlucmakiola.calendula.widget.widgetTimeLabel
 import de.jeanlucmakiola.calendula.widget.openIntent
+import de.jeanlucmakiola.calendula.widget.openDayAction
 import de.jeanlucmakiola.calendula.widget.loadAgendaWidget
 import de.jeanlucmakiola.calendula.widget.widgetAppearance
 import de.jeanlucmakiola.floret.components.Position
@@ -229,7 +230,7 @@ private fun AgendaRows(
             }
         }
         when (data.style) {
-            AgendaWidgetStyle.CARDS -> CardRows(rows.take(MAX_AGENDA_ROWS), data, metrics, preview)
+            AgendaWidgetStyle.CARDS -> CardRows(rows, data, metrics, preview)
             AgendaWidgetStyle.CLASSIC -> ClassicRows(rows, data, metrics, preview)
         }
     }
@@ -237,7 +238,8 @@ private fun AgendaRows(
 
 /** Each day is one card of grouped rows (#71), with its date pill beside the first row. */
 @Composable
-private fun CardRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, metrics: AgendaMetrics, preview: Boolean) {
+private fun CardRows(allRows: List<AgendaRow>, data: AgendaWidgetData.Ready, metrics: AgendaMetrics, preview: Boolean) {
+    val rows = allRows.take(MAX_AGENDA_ROWS)
     val positions = dayPositions(rows.map { it.date })
     val cardColor = widgetCardColor()
     val item: @Composable (Int) -> Unit = { index ->
@@ -328,11 +330,15 @@ private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, met
                 is ClassicItem.Header -> DayHeaderRow(
                     date = entry.date,
                     today = data.today,
-                    topPad = if (backed) CLASSIC_CARD_TOP_PAD else metrics.dayHeaderTopPad,
+                    topPad = when {
+                        backed -> CLASSIC_CARD_TOP_PAD
+                        index == 0 -> 0.dp
+                        else -> metrics.dayHeaderTopPad
+                    },
                     metrics = metrics,
                 )
                 is ClassicItem.Entry -> when (val row = entry.row) {
-                    is AgendaRow.Placeholder -> ClassicPlaceholderRow(row.date, metrics)
+                    is AgendaRow.Placeholder -> ClassicPlaceholderRow(row.date, backed, metrics)
                     is AgendaRow.Event -> ClassicEventRow(row, data, backed, metrics)
                 }
             }
@@ -368,13 +374,13 @@ private fun DayHeaderRow(date: LocalDate, today: LocalDate, topPad: Dp, metrics:
         modifier = GlanceModifier
             .fillMaxWidth()
             .padding(start = 8.dp, end = 8.dp, top = topPad, bottom = metrics.rowVPad)
-            .clickable(actionStartActivity(MainActivity.openDateIntent(context, date, CalendarView.Agenda))),
+            .clickable(openDayAction(context, date)),
     )
 }
 
 /** "No more events today" as a muted line under an anchored, event-less today (#35), indented to the titles. */
 @Composable
-private fun ClassicPlaceholderRow(date: LocalDate, metrics: AgendaMetrics) {
+private fun ClassicPlaceholderRow(date: LocalDate, backed: Boolean, metrics: AgendaMetrics) {
     val context = androidx.glance.LocalContext.current
     Text(
         text = context.getString(R.string.agenda_no_more_today),
@@ -382,8 +388,8 @@ private fun ClassicPlaceholderRow(date: LocalDate, metrics: AgendaMetrics) {
         style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = metrics.placeholder),
         modifier = GlanceModifier
             .fillMaxWidth()
-            .padding(start = TEXT_INDENT, end = 8.dp, top = 2.dp, bottom = metrics.rowVPad + 2.dp)
-            .clickable(actionStartActivity(MainActivity.openDateIntent(context, date, CalendarView.Agenda))),
+            .padding(start = if (backed) CLASSIC_CARD_H_PAD + STRIPE_INSET else TEXT_INDENT, end = 8.dp, top = 2.dp, bottom = metrics.rowVPad + 2.dp)
+            .clickable(openDayAction(context, date)),
     )
 }
 
@@ -512,7 +518,7 @@ private fun DatePill(date: LocalDate, today: LocalDate, cardColor: ColorProvider
             .height(metrics.rowHeight)
             .cornerRadius(metrics.pillWidth / 2)
             .background(container)
-            .clickable(actionStartActivity(MainActivity.openDateIntent(context, date, CalendarView.Agenda)))
+            .clickable(openDayAction(context, date))
             .semantics { contentDescription = label },
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalAlignment = Alignment.CenterVertically,
@@ -544,11 +550,7 @@ private fun PlaceholderRow(date: LocalDate, metrics: AgendaMetrics) {
             .fillMaxWidth()
             .height(metrics.rowHeight)
             .padding(horizontal = ROW_H_PAD)
-            .clickable(
-                actionStartActivity(
-                    MainActivity.openDateIntent(context, date, CalendarView.Agenda),
-                ),
-            ),
+            .clickable(openDayAction(context, date)),
         contentAlignment = Alignment.CenterStart,
     ) {
         Text(

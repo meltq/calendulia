@@ -17,8 +17,9 @@ internal val CLASSIC_ROW_H_PAD = 4.dp
 internal val STRIPE_WIDTH = 5.dp
 internal val STRIPE_GAP = 10.dp
 
-/** Where the classic style's event text starts, so its placeholder lines up with the titles. */
-internal val TEXT_INDENT = CLASSIC_ROW_H_PAD + STRIPE_WIDTH + STRIPE_GAP
+/** The stripe and its gap, and where the classic style's event text starts, so its placeholder lines up with the titles. */
+internal val STRIPE_INSET = STRIPE_WIDTH + STRIPE_GAP
+internal val TEXT_INDENT = CLASSIC_ROW_H_PAD + STRIPE_INSET
 
 /**
  * Every size the agenda widget varies by [WidgetSize]. Values that genuinely
