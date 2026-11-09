@@ -330,6 +330,7 @@ private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, met
                 is ClassicItem.Header -> DayHeaderRow(
                     date = entry.date,
                     today = data.today,
+                    startPad = if (backed) CLASSIC_CARD_H_PAD else 8.dp,
                     topPad = when {
                         backed -> CLASSIC_CARD_TOP_PAD
                         index == 0 -> 0.dp
@@ -361,7 +362,7 @@ private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, met
 
 /** A classic day label, "Today · Wed, 17 Jun"; opens that day in the app. */
 @Composable
-private fun DayHeaderRow(date: LocalDate, today: LocalDate, topPad: Dp, metrics: AgendaMetrics) {
+private fun DayHeaderRow(date: LocalDate, today: LocalDate, startPad: Dp, topPad: Dp, metrics: AgendaMetrics) {
     val context = androidx.glance.LocalContext.current
     Text(
         text = agendaDayLabel(context, date, today),
@@ -373,7 +374,7 @@ private fun DayHeaderRow(date: LocalDate, today: LocalDate, topPad: Dp, metrics:
         ),
         modifier = GlanceModifier
             .fillMaxWidth()
-            .padding(start = 8.dp, end = 8.dp, top = topPad, bottom = metrics.rowVPad)
+            .padding(start = startPad, end = 8.dp, top = topPad, bottom = metrics.rowVPad)
             .clickable(openDayAction(context, date)),
     )
 }
