@@ -42,6 +42,7 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.coversWholeDays
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.widget.openIntent
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
 import de.jeanlucmakiola.calendula.widget.CalendulaWidgetReceiver
 import de.jeanlucmakiola.calendula.widget.CalendulaWidgetRoot
@@ -132,13 +133,7 @@ private fun EventCountdown(event: EventInstance, data: CountdownData.Ready) {
     val context = LocalContext.current
     val label = countdownLabel(event.counted(systemZone()), data.now, systemZone())
     val open = actionStartActivity(
-        MainActivity.openEventIntent(
-            context = context,
-            eventId = event.eventId,
-            beginMillis = event.start.toEpochMilliseconds(),
-            endMillis = event.end.toEpochMilliseconds(),
-            source = CalendarView.Agenda,
-        ),
+        event.openIntent(context, CalendarView.Agenda),
     )
     // Over a wallpaper the text sits on its own card, as every other widget's rows do.
     val card = GlanceModifier.wallpaperBacking(radius = 16.dp)

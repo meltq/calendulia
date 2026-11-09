@@ -18,7 +18,6 @@ import androidx.glance.layout.padding
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
-import de.jeanlucmakiola.calendula.MainActivity
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.isCrossedOut
@@ -84,13 +83,7 @@ internal fun WidgetEventRow(
                 .padding(horizontal = 12.dp)
                 .clickable(
                     actionStartActivity(
-                        MainActivity.openEventIntent(
-                            context = context,
-                            eventId = event.eventId,
-                            beginMillis = event.start.toEpochMilliseconds(),
-                            endMillis = event.end.toEpochMilliseconds(),
-                            source = source,
-                        ),
+                        event.openIntent(context, source),
                     ),
                 ),
             verticalAlignment = Alignment.CenterVertically,
