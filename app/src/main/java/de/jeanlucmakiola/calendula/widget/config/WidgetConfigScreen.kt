@@ -72,6 +72,7 @@ import kotlin.math.roundToInt
 import de.jeanlucmakiola.floret.components.GroupedSliderRow
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetStyle
 import java.text.NumberFormat
+import de.jeanlucmakiola.floret.locale.currentLocale
 import androidx.compose.runtime.remember
 
 private val PreviewMaxHeight = 280.dp
@@ -247,7 +248,9 @@ private fun ConfigOptions(
                 value = opacity,
                 onValueChange = { onAppearance(state.appearance.copy(opacity = it)) },
                 position = Position.Middle,
-                valueLabel = remember(opacity) { NumberFormat.getPercentInstance().format(opacity) },
+                valueLabel = currentLocale().let { locale ->
+                    remember(opacity, locale) { NumberFormat.getPercentInstance(locale).format(opacity) }
+                },
                 valueRange = MIN_OPACITY..1f,
                 steps = OPACITY_STEPS,
             )

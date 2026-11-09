@@ -61,6 +61,7 @@ import de.jeanlucmakiola.calendula.ui.common.eventAccent
 import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetStyle
 import de.jeanlucmakiola.floret.glance.LocalWidgetSeeThrough
+import de.jeanlucmakiola.floret.glance.withAlpha
 import de.jeanlucmakiola.calendula.widget.WidgetDimFillAlpha
 import de.jeanlucmakiola.calendula.widget.widgetEventInk
 import de.jeanlucmakiola.calendula.ui.common.SECONDARY_INK_ALPHA
@@ -422,7 +423,7 @@ private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, 
                 text = event.title.ifBlank { context.getString(R.string.event_untitled) },
                 maxLines = 1,
                 style = TextStyle(
-                    color = if (dimmed) GlanceTheme.colors.outline else GlanceTheme.colors.onSurface,
+                    color = if (dimmed) GlanceTheme.colors.onSurface.withAlpha(CLASSIC_DIM_INK) else GlanceTheme.colors.onSurface,
                     fontSize = metrics.eventTitle,
                     textDecoration = glanceDeclinedDecoration(event.isCrossedOut),
                 ),
@@ -431,7 +432,11 @@ private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, 
                 text = eventTimeSummary(context, event, row.date, data.is24Hour),
                 maxLines = 1,
                 style = TextStyle(
-                    color = if (dimmed) GlanceTheme.colors.outline else GlanceTheme.colors.onSurfaceVariant,
+                    color = if (dimmed) {
+                        GlanceTheme.colors.onSurfaceVariant.withAlpha(CLASSIC_DIM_INK)
+                    } else {
+                        GlanceTheme.colors.onSurfaceVariant
+                    },
                     fontSize = metrics.eventTime,
                 ),
             )
@@ -442,6 +447,9 @@ private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, 
 /** Space above a day's label on its own backing card, and its rows' inset, clear of the card's corners. */
 private val CLASSIC_CARD_TOP_PAD = 8.dp
 private val CLASSIC_CARD_H_PAD = 10.dp
+
+/** How strongly a finished event's text shows in the classic style, on any fill. */
+private const val CLASSIC_DIM_INK = 0.5f
 
 /** Where each row sits among the rows of its day, from each row's date, for the grouped-card shapes. */
 private fun dayPositions(dates: List<LocalDate>): List<Position> = buildList {
@@ -639,7 +647,7 @@ private fun agendaDayLabel(context: Context, date: LocalDate, today: LocalDate):
     val java = java.time.LocalDate.of(date.year, date.month.ordinal + 1, date.day)
     // Weekday + date in the locale's own field order (compact: no year), rather
     // than a hardcoded day-month layout.
-    val formatted = localizedDateFormatter(locale, "EEEdMMM").format(java)
+    val formatted = localizedDateFormatter(locale, if (date.year == today.year) "EEEdMMM" else "EEEdMMMy").format(java)
     return if (relative != null) "$relative · $formatted" else formatted
 }
 
