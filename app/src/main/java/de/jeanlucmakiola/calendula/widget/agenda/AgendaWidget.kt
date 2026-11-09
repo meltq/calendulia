@@ -60,8 +60,7 @@ import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
 import de.jeanlucmakiola.calendula.ui.common.EventDimAlpha
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetStyle
-import de.jeanlucmakiola.floret.glance.LocalWidgetBackground
-import de.jeanlucmakiola.floret.glance.WidgetBackground
+import de.jeanlucmakiola.floret.glance.LocalWidgetSeeThrough
 import de.jeanlucmakiola.calendula.widget.WidgetDimFillAlpha
 import de.jeanlucmakiola.calendula.widget.widgetEventInk
 import de.jeanlucmakiola.calendula.ui.common.SECONDARY_INK_ALPHA
@@ -314,13 +313,13 @@ internal fun classicItems(rows: List<AgendaRow>, limit: Int = MAX_AGENDA_ROWS): 
 
 /**
  * v2.23's look (#489): a label line per day over plain rows with a colour
- * stripe. On a transparent root each day sits on its own backing card, so the
+ * stripe. On a see-through root each day sits on its own backing card, so the
  * text stays readable over the wallpaper.
  */
 @Composable
 private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, metrics: AgendaMetrics, preview: Boolean) {
     val items = classicItems(rows, if (preview) PREVIEW_ROWS else MAX_AGENDA_ROWS)
-    val backed = LocalWidgetBackground.current == WidgetBackground.TRANSPARENT
+    val backed = LocalWidgetSeeThrough.current
     val positions = if (backed) dayPositions(items.map { it.date }) else emptyList()
     val cardColor = widgetCardColor()
     val item: @Composable (Int) -> Unit = { index ->
