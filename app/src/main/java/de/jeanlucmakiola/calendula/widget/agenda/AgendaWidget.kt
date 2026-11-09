@@ -71,6 +71,7 @@ import de.jeanlucmakiola.calendula.widget.CalendulaWidgetRoot
 import de.jeanlucmakiola.calendula.widget.WidgetAppearance
 import de.jeanlucmakiola.calendula.widget.widgetCardColor
 import de.jeanlucmakiola.calendula.widget.widgetTimeLabel
+import de.jeanlucmakiola.calendula.widget.openIntent
 import de.jeanlucmakiola.calendula.widget.loadAgendaWidget
 import de.jeanlucmakiola.calendula.widget.widgetAppearance
 import de.jeanlucmakiola.floret.components.Position
@@ -156,10 +157,10 @@ private const val PREVIEW_ROWS = 10
  * user scrolling a home-screen widget past a hundred rows is not a case worth
  * risking a failed update for.
  */
-private const val MAX_AGENDA_ROWS = 100
+internal const val MAX_AGENDA_ROWS = 100
 
 /** Flat row model: one [LazyColumn] item per event or placeholder, a day's first one carrying its date pill. */
-private sealed interface AgendaRow {
+internal sealed interface AgendaRow {
     val date: LocalDate
 
     data class Event(override val date: LocalDate, val event: EventInstance) : AgendaRow
@@ -288,7 +289,7 @@ private fun RowList(count: Int, preview: Boolean, item: @Composable (Int) -> Uni
 }
 
 /** A classic list entry: a day's label line, or one of its rows. */
-private sealed interface ClassicItem {
+internal sealed interface ClassicItem {
     val date: LocalDate
 
     data class Header(override val date: LocalDate) : ClassicItem
@@ -298,20 +299,27 @@ private sealed interface ClassicItem {
 }
 
 /**
+ * [rows] with a label before each day's first, held to [limit] items in all,
+ * headers included; a label the cut leaves with nothing under it is dropped.
+ */
+internal fun classicItems(rows: List<AgendaRow>, limit: Int = MAX_AGENDA_ROWS): List<ClassicItem> = buildList {
+    rows.forEachIndexed { index, row ->
+        if (index == 0 || row.date != rows[index - 1].date) add(ClassicItem.Header(row.date))
+        add(ClassicItem.Entry(row))
+    }
+}.take(limit).dropLastWhile { it is ClassicItem.Header }
+
+/**
  * v2.23's look (#489): a label line per day over plain rows with a colour
  * stripe. On a transparent root each day sits on its own backing card, so the
  * text stays readable over the wallpaper.
  */
 @Composable
 private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, metrics: AgendaMetrics, preview: Boolean) {
-    val items = buildList {
-        rows.forEachIndexed { index, row ->
-            if (index == 0 || row.date != rows[index - 1].date) add(ClassicItem.Header(row.date))
-            add(ClassicItem.Entry(row))
-        }
-    }
+    val items = classicItems(rows)
     val backed = LocalWidgetBackground.current == WidgetBackground.TRANSPARENT
-    val positions = dayPositions(items.map { it.date })
+    val positions = if (backed) dayPositions(items.map { it.date }) else emptyList()
+    val cardColor = widgetCardColor()
     val item: @Composable (Int) -> Unit = { index ->
         val entry = items[index]
         val content: @Composable () -> Unit = {
@@ -333,7 +341,8 @@ private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, met
             WidgetGroupedRow(
                 position = positions[index],
                 modifier = GlanceModifier.padding(top = gap),
-                color = GlanceTheme.colors.widgetBackground,
+                color = cardColor,
+                gapBelow = false,
                 content = content,
             )
         } else {
@@ -390,7 +399,7 @@ private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, 
         modifier = GlanceModifier
             .fillMaxWidth()
             .padding(horizontal = CLASSIC_ROW_H_PAD, vertical = metrics.rowVPad)
-            .clickable(actionStartActivity(event.openIntent(context))),
+            .clickable(actionStartActivity(event.openIntent(context, CalendarView.Agenda))),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Box(
@@ -406,7 +415,7 @@ private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, 
                 text = event.title.ifBlank { context.getString(R.string.event_untitled) },
                 maxLines = 1,
                 style = TextStyle(
-                    color = if (dimmed) GlanceTheme.colors.onSurfaceVariant else GlanceTheme.colors.onSurface,
+                    color = if (dimmed) GlanceTheme.colors.outline else GlanceTheme.colors.onSurface,
                     fontSize = metrics.eventTitle,
                     textDecoration = glanceDeclinedDecoration(event.isCrossedOut),
                 ),
@@ -414,7 +423,10 @@ private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, 
             Text(
                 text = eventTimeSummary(context, event, row.date, data.is24Hour),
                 maxLines = 1,
-                style = TextStyle(color = GlanceTheme.colors.onSurfaceVariant, fontSize = metrics.eventTime),
+                style = TextStyle(
+                    color = if (dimmed) GlanceTheme.colors.outline else GlanceTheme.colors.onSurfaceVariant,
+                    fontSize = metrics.eventTime,
+                ),
             )
         }
     }
@@ -422,14 +434,6 @@ private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, 
 
 /** Space above a day's label on its own backing card. */
 private val CLASSIC_CARD_TOP_PAD = 8.dp
-
-private fun EventInstance.openIntent(context: Context) = MainActivity.openEventIntent(
-    context = context,
-    eventId = eventId,
-    beginMillis = start.toEpochMilliseconds(),
-    endMillis = end.toEpochMilliseconds(),
-    source = CalendarView.Agenda,
-)
 
 /** Where each row sits among the rows of its day, from each row's date, for the grouped-card shapes. */
 private fun dayPositions(dates: List<LocalDate>): List<Position> = buildList {
@@ -584,7 +588,7 @@ private fun EventRow(
             .fillMaxWidth()
             .height(metrics.rowHeight)
             .padding(horizontal = ROW_H_PAD)
-            .clickable(actionStartActivity(event.openIntent(context))),
+            .clickable(actionStartActivity(event.openIntent(context, CalendarView.Agenda))),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(

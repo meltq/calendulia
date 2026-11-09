@@ -71,6 +71,8 @@ import de.jeanlucmakiola.floret.glance.WidgetBackground
 import kotlin.math.roundToInt
 import de.jeanlucmakiola.floret.components.GroupedSliderRow
 import de.jeanlucmakiola.calendula.widget.AgendaWidgetStyle
+import java.text.NumberFormat
+import androidx.compose.runtime.remember
 
 private val PreviewMaxHeight = 280.dp
 
@@ -245,7 +247,7 @@ private fun ConfigOptions(
                 value = opacity,
                 onValueChange = { onAppearance(state.appearance.copy(opacity = it)) },
                 position = Position.Middle,
-                valueLabel = stringResource(R.string.widget_config_opacity_value, (opacity * 100).roundToInt()),
+                valueLabel = remember(opacity) { NumberFormat.getPercentInstance().format(opacity) },
                 valueRange = MIN_OPACITY..1f,
                 steps = OPACITY_STEPS,
             )
