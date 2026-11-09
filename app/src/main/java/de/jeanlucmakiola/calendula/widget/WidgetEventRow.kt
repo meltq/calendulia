@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.widget
 
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
@@ -26,20 +27,33 @@ import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.SECONDARY_INK_ALPHA
 import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.calendula.ui.common.eventInk
+import de.jeanlucmakiola.calendula.ui.theme.CalendulaDarkFallback
 import de.jeanlucmakiola.calendula.widget.agenda.metricsFor
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.glance.WidgetGroupedRow
 import de.jeanlucmakiola.floret.glance.themedColor
 
-/** A past event's fill when dimmed: fainter than the app's whole-row dim, so its text can stay readable (#90). */
-internal const val WidgetDimFillAlpha = 0.3f
+/** How much of a past event's tone stays in its dimmed fill (#90). */
+private const val WidgetDimFillAlpha = 0.3f
 
 /** A dimmed event's ink, held above its fill. */
 private const val WidgetDimInkAlpha = 0.65f
 
-/** Ink for an event on [fill], picked against the opaque tone and faded when the fill is dimmed. */
-internal fun widgetEventInk(fill: Color, alpha: Float): Color =
-    eventInk(fill.copy(alpha = 1f), if (fill.alpha < 1f) alpha * WidgetDimInkAlpha else alpha)
+/**
+ * An event's fill in the light or [dark] theme. A dimmed one is its tone faded
+ * into that theme's surface, kept opaque: a translucent tint lands on the row
+ * shape's white, not on the widget, and its ink would be picked for the wrong tone (#475).
+ */
+internal fun widgetEventFill(rawArgb: Int, dark: Boolean, soften: Boolean, dimmed: Boolean): Color {
+    val tone = eventFill(rawArgb, dark, soften)
+    if (!dimmed) return tone
+    val surface = if (dark) CalendulaDarkFallback.surface else Color.White
+    return tone.copy(alpha = WidgetDimFillAlpha).compositeOver(surface)
+}
+
+/** Ink for an event on [fill], faded when the row is [dimmed]. */
+internal fun widgetEventInk(fill: Color, alpha: Float, dimmed: Boolean): Color =
+    eventInk(fill, if (dimmed) alpha * WidgetDimInkAlpha else alpha)
 
 /** Text and row sizes of a compact event list, from a widget's [WidgetSize]. */
 internal data class EventRowMetrics(val title: TextUnit, val time: TextUnit, val rowHeight: Dp, val message: TextUnit)
@@ -72,9 +86,8 @@ internal fun WidgetEventRow(
     quiet: Boolean = false,
 ) {
     val context = LocalContext.current
-    fun tone(dark: Boolean): Color = eventFill(event.color, dark, soften).let { if (dimmed) it.copy(alpha = WidgetDimFillAlpha) else it }
-    val day = tone(dark = false)
-    val night = tone(dark = true)
+    val day = widgetEventFill(event.color, dark = false, soften, dimmed)
+    val night = widgetEventFill(event.color, dark = true, soften, dimmed)
     val card = widgetCardColor()
     WidgetGroupedRow(position = position, color = if (quiet) card else themedColor(day = day, night = night)) {
         Column(
@@ -98,12 +111,12 @@ internal fun WidgetEventRow(
             val titleInk = if (quiet) {
                 GlanceTheme.colors.onSurface
             } else {
-                themedColor(day = widgetEventInk(day, 1f), night = widgetEventInk(night, 1f))
+                themedColor(day = widgetEventInk(day, 1f, dimmed), night = widgetEventInk(night, 1f, dimmed))
             }
             val timeInk = if (quiet) {
                 GlanceTheme.colors.onSurfaceVariant
             } else {
-                themedColor(day = widgetEventInk(day, SECONDARY_INK_ALPHA), night = widgetEventInk(night, SECONDARY_INK_ALPHA))
+                themedColor(day = widgetEventInk(day, SECONDARY_INK_ALPHA, dimmed), night = widgetEventInk(night, SECONDARY_INK_ALPHA, dimmed))
             }
             Text(
                 text = event.title.ifBlank { context.getString(R.string.event_untitled) },
