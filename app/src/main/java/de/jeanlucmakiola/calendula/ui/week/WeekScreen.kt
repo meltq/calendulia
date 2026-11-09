@@ -209,7 +209,7 @@ import de.jeanlucmakiola.calendula.ui.common.TIMELINE_CONTENT_END_INSET
 import de.jeanlucmakiola.calendula.ui.common.hourCellBlockInset
 import de.jeanlucmakiola.calendula.ui.common.hourGridCells
 import de.jeanlucmakiola.calendula.ui.common.tappedMinuteOfDay
-import de.jeanlucmakiola.floret.time.isoWeekNumber
+import de.jeanlucmakiola.floret.time.rowWeekNumber
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
@@ -1137,7 +1137,7 @@ private fun WeekDayHeader(
  */
 @Composable
 private fun WeekNumberCell(weekStart: LocalDate, showBadge: Boolean, modifier: Modifier = Modifier) {
-    val weekNumber = remember(weekStart) { weekStart.toJavaLocalDate().isoWeekNumber() }
+    val weekNumber = remember(weekStart) { weekStart.toJavaLocalDate().rowWeekNumber() }
     Column(
         modifier = modifier
             .fillMaxWidth()

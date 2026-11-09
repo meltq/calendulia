@@ -187,7 +187,7 @@ import de.jeanlucmakiola.floret.identity.itemEnter
 import de.jeanlucmakiola.floret.identity.rememberReduceMotion
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.calendula.ui.common.next
-import de.jeanlucmakiola.floret.time.isoWeekNumber
+import de.jeanlucmakiola.floret.time.rowWeekNumber
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.filterNotNull
@@ -2707,7 +2707,7 @@ private fun monthChipDragModifier(
  */
 @Composable
 private fun WeekNumberGutter(weekStart: LocalDate, modifier: Modifier = Modifier) {
-    val weekNumber = remember(weekStart) { weekStart.toJavaLocalDate().isoWeekNumber() }
+    val weekNumber = remember(weekStart) { weekStart.toJavaLocalDate().rowWeekNumber() }
     val label = stringResource(R.string.week_number_label)
     val openLabel = stringResource(R.string.month_open_week, weekNumber)
     val onOpenWeek = LocalOpenWeek.current
