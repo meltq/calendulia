@@ -209,7 +209,6 @@ import de.jeanlucmakiola.calendula.ui.common.TIMELINE_CONTENT_END_INSET
 import de.jeanlucmakiola.calendula.ui.common.hourCellBlockInset
 import de.jeanlucmakiola.calendula.ui.common.hourGridCells
 import de.jeanlucmakiola.calendula.ui.common.tappedMinuteOfDay
-import de.jeanlucmakiola.floret.time.isoWeekNumber
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
@@ -221,6 +220,7 @@ import kotlinx.datetime.toLocalDateTime
 import java.time.format.TextStyle as JavaTextStyle
 import java.util.Locale
 import kotlinx.datetime.yearMonth
+import de.jeanlucmakiola.calendula.ui.common.rememberRowWeekNumber
 
 /** One lane of the all-day strip, sized to a trimmed bar line (#190). */
 private val ALL_DAY_ROW_HEIGHT = 20.dp
@@ -1137,7 +1137,7 @@ private fun WeekDayHeader(
  */
 @Composable
 private fun WeekNumberCell(weekStart: LocalDate, showBadge: Boolean, modifier: Modifier = Modifier) {
-    val weekNumber = remember(weekStart) { weekStart.toJavaLocalDate().isoWeekNumber() }
+    val weekNumber = rememberRowWeekNumber(weekStart)
     Column(
         modifier = modifier
             .fillMaxWidth()
