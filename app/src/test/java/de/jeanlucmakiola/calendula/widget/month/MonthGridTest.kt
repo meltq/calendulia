@@ -56,17 +56,17 @@ class MonthGridTest {
 
     @Test
     fun `a taller week fits more lanes`() {
-        assertThat(lanesFitting(19.dp)).isEqualTo(LaneFit(0))
-        assertThat(lanesFitting(50.dp)).isEqualTo(LaneFit(2))
-        assertThat(lanesFitting(100.dp)).isEqualTo(LaneFit(5))
+        assertThat(lanesFitting(19.dp, fontScale = 1f)).isEqualTo(LaneFit(0))
+        assertThat(lanesFitting(50.dp, fontScale = 1f)).isEqualTo(LaneFit(2))
+        assertThat(lanesFitting(100.dp, fontScale = 1f)).isEqualTo(LaneFit(5))
     }
 
     @Test
     fun `a row too short for a full lane gets a compact one`() {
-        assertThat(lanesFitting(34.dp)).isEqualTo(LaneFit(1, compact = true))
-        assertThat(lanesFitting(32.dp)).isEqualTo(LaneFit(1, compact = true))
-        assertThat(lanesFitting(31.dp)).isEqualTo(LaneFit(0))
-        assertThat(lanesFitting(35.dp)).isEqualTo(LaneFit(1))
+        assertThat(lanesFitting(34.dp, fontScale = 1f)).isEqualTo(LaneFit(1, compact = true))
+        assertThat(lanesFitting(32.dp, fontScale = 1f)).isEqualTo(LaneFit(1, compact = true))
+        assertThat(lanesFitting(31.dp, fontScale = 1f)).isEqualTo(LaneFit(0))
+        assertThat(lanesFitting(35.dp, fontScale = 1f)).isEqualTo(LaneFit(1))
     }
 
     @Test
@@ -89,7 +89,7 @@ class MonthGridTest {
 
     @Test
     fun `lanes stop at the cap however tall the week`() {
-        assertThat(lanesFitting(1000.dp)).isEqualTo(LaneFit(MAX_LANES))
+        assertThat(lanesFitting(1000.dp, fontScale = 1f)).isEqualTo(LaneFit(MAX_LANES))
     }
 
     @Test

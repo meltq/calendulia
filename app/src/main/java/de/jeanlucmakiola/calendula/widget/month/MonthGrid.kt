@@ -76,7 +76,7 @@ internal data class LaneFit(val lanes: Int, val compact: Boolean = false)
  * [MAX_LANES] so a tall widget's payload stays bounded (#214). A row too short
  * for one full lane still gets a compact one when its text fits at [fontScale] (#491).
  */
-internal fun lanesFitting(weekHeight: Dp, fontScale: Float = 1f): LaneFit {
+internal fun lanesFitting(weekHeight: Dp, fontScale: Float): LaneFit {
     val room = weekHeight.value - DAY_ROW_DP - LANES_TOP_DP
     val full = (room / LANE_ROW_DP).toInt().coerceIn(0, MAX_LANES)
     val compactFits = room >= COMPACT_LANE_ROW_DP && fontScale <= COMPACT_MAX_FONT_SCALE
@@ -90,8 +90,7 @@ internal fun lanesFitting(weekHeight: Dp, fontScale: Float = 1f): LaneFit {
  */
 internal fun fitWeeks(weeks: List<MonthWeek>, fit: LaneFit): List<WeekLayout> = weeks.map { week ->
     val lanes = fit.lanes
-    if (lanes == 0) return@map WeekLayout(week, laneCap = 0, showsOverflow = false)
-    if (fit.compact) return@map WeekLayout(week, laneCap = lanes, showsOverflow = false, compact = true)
+    if (lanes == 0 || fit.compact) return@map WeekLayout(week, laneCap = lanes, showsOverflow = false, compact = fit.compact)
     val needed = WeekLayout(week, UNCAPPED_LANES).usedLanes
     WeekLayout(week, if (needed <= lanes) lanes else lanes - 1)
 }
