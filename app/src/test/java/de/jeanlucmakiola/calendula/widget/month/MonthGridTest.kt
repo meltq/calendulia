@@ -75,16 +75,24 @@ class MonthGridTest {
     }
 
     @Test
-    fun `a single full lane still folds a busy week into the count`() {
+    fun `a single lane shows counts on busy days`() {
         val layouts = fitWeeks(busyWeeks(perDay = 5), LaneFit(1))
-        assertThat(layouts.all { it.laneCap == 0 && it.showsOverflow && it.overflow.isNotEmpty() }).isTrue()
+        assertThat(layouts.all { it.mixedLane == List(7) { GridCell<LaneItem>(LaneItem.Count(5), 1) } }).isTrue()
     }
 
     @Test
-    fun `a compact lane keeps its bars in a busy week`() {
-        val layouts = fitWeeks(busyWeeks(perDay = 5), LaneFit(1, compact = true))
-        assertThat(layouts.all { it.laneCap == 1 && it.lanes.size == 1 && it.compact }).isTrue()
-        assertThat(layouts.none { it.showsOverflow }).isTrue()
+    fun `a single lane keeps bars on days that fit`() {
+        val lone = timedEvent(monday.plus(1, DateTimeUnit.DAY), 9, zone = zone, id = 1, title = "Lone")
+        val busy = (2L..4L).map { timedEvent(monday.plus(3, DateTimeUnit.DAY), it.toInt() + 8, zone = zone, id = it, title = "B$it") }
+        val week = fitWeeks(weeks(listOf(lone) + busy), LaneFit(1, compact = true))[1]
+        assertThat(week.compact).isTrue()
+        assertThat(week.mixedLane).containsExactly(
+            GridCell<LaneItem>(null, 1),
+            GridCell<LaneItem>(LaneItem.Bar(lone), 1),
+            GridCell<LaneItem>(null, 1),
+            GridCell<LaneItem>(LaneItem.Count(3), 1),
+            GridCell<LaneItem>(null, 3),
+        ).inOrder()
     }
 
     @Test

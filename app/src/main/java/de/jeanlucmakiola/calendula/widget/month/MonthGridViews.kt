@@ -91,6 +91,21 @@ private fun weekViews(
         week.setViewVisibility(TODAY_IDS[col], if (isToday) View.VISIBLE else View.GONE)
         if (isToday) week.setImageTint(context, TODAY_IDS[col], colors.primary)
     }
+    layout.mixedLane?.let { cells ->
+        val lane = laneViews(context, layout.compact)
+        cells.forEach { cell ->
+            lane.addView(
+                R.id.lane,
+                when (val item = cell.item) {
+                    null -> gap(context, cell.cols)
+                    is LaneItem.Bar -> bar(context, item.event, cell.cols, soften, mode)
+                    is LaneItem.Count -> more(context, item.count, colors)
+                },
+            )
+        }
+        week.addView(R.id.week_lanes, lane)
+        return week
+    }
     layout.lanes.forEach { cells ->
         val lane = laneViews(context, layout.compact)
         cells.forEach { cell ->
@@ -106,16 +121,19 @@ private fun weekViews(
             if (count == null) {
                 lane.addView(R.id.lane, gap(context, cell.cols))
             } else {
-                val more = RemoteViews(context.packageName, R.layout.widget_month_more)
-                more.setTextViewText(R.id.more, "+$count")
-                more.setTextColor(context, R.id.more, colors.onSurfaceVariant)
-                lane.addView(R.id.lane, more)
+                lane.addView(R.id.lane, more(context, count, colors))
             }
         }
         week.addView(R.id.week_lanes, lane)
     }
     return week
 }
+
+private fun more(context: Context, count: Int, colors: GridColors) =
+    RemoteViews(context.packageName, R.layout.widget_month_more).apply {
+        setTextViewText(R.id.more, "+$count")
+        setTextColor(context, R.id.more, colors.onSurfaceVariant)
+    }
 
 private fun laneViews(context: Context, compact: Boolean = false) =
     RemoteViews(context.packageName, if (compact) R.layout.widget_month_lane_compact else R.layout.widget_month_lane)

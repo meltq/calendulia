@@ -36,16 +36,24 @@ internal fun <T : Any> mergeGaps(columns: Int, cellAt: (Int) -> GridCell<T>?): L
     return cells
 }
 
+/** What a cell of the single mixed lane shows: an event's bar, or a day's event count. */
+internal sealed interface LaneItem {
+    data class Bar(val event: EventInstance) : LaneItem
+    data class Count(val count: Int) : LaneItem
+}
+
 /**
  * One week of the grid seated with [laneCap] lanes, drawn [compact] when the
  * row is too short for a full one. [showsOverflow] is off when the week has no
- * room for the "+N" row.
+ * room for the "+N" row; a [mixed] single lane then shows each day's count in
+ * place of its bar where the day has more than fits (#491).
  */
 internal class WeekLayout(
     val week: MonthWeek,
     val laneCap: Int,
     val showsOverflow: Boolean = true,
     val compact: Boolean = false,
+    val mixed: Boolean = false,
 ) {
     private val seating: List<DaySeating> = week.days.indices.map { week.seating(it, laneCap) }
 
@@ -59,6 +67,16 @@ internal class WeekLayout(
             val endCol = if (seat.bar) week.spanAt(col, lane)?.endCol ?: col else col
             GridCell(seat.event, endCol - col + 1)
         }
+    }
+
+    /** The single lane of a [mixed] week, bars cut short where a day shows its count instead; null otherwise. */
+    val mixedLane: List<GridCell<LaneItem>>? = if (!mixed) null else mergeGaps(week.days.size) { col ->
+        val day = seating[col]
+        if (day.hidden.isNotEmpty()) return@mergeGaps GridCell(LaneItem.Count(day.seated.size + day.hidden.size), 1)
+        val seat = day.seated.firstOrNull() ?: return@mergeGaps null
+        val spanEnd = if (seat.bar) week.spanAt(col, seat.lane)?.endCol ?: col else col
+        val end = (col + 1..spanEnd).firstOrNull { seating[it].hidden.isNotEmpty() }?.minus(1) ?: spanEnd
+        GridCell(LaneItem.Bar(seat.event), end - col + 1)
     }
 
     /** The "+N" row as counts and merged gaps; empty when everything fits. */
@@ -85,12 +103,14 @@ internal fun lanesFitting(weekHeight: Dp, fontScale: Float): LaneFit {
 
 /**
  * Seats each week in [fit]'s lanes. A week whose events need more gives its
- * last lane to the "+N" row instead. A compact lane has no room for that row,
- * so it keeps its bars (#491).
+ * last lane to the "+N" row instead. A single lane has no room for that row,
+ * so it mixes bars and per-day counts (#491).
  */
 internal fun fitWeeks(weeks: List<MonthWeek>, fit: LaneFit): List<WeekLayout> = weeks.map { week ->
     val lanes = fit.lanes
-    if (lanes == 0 || fit.compact) return@map WeekLayout(week, laneCap = lanes, showsOverflow = false, compact = fit.compact)
+    if (lanes <= 1) {
+        return@map WeekLayout(week, laneCap = lanes, showsOverflow = false, compact = fit.compact, mixed = lanes == 1)
+    }
     val needed = WeekLayout(week, UNCAPPED_LANES).usedLanes
     WeekLayout(week, if (needed <= lanes) lanes else lanes - 1)
 }
