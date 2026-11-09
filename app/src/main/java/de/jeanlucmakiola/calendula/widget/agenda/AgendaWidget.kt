@@ -94,7 +94,8 @@ import kotlinx.datetime.toJavaDayOfWeek
 
 /**
  * "Upcoming" agenda widget — a continuously scrolling list of the next ~30 days
- * of events, each day one card of grouped rows with its date pill beside it.
+ * of events: each day one card of grouped rows with its date pill beside it, or
+ * in the classic style a label line over plain colour-stripe rows (#489).
  * Reuses the app's [groupAgendaDays] grouping so it matches the in-app agenda.
  */
 class AgendaWidget : GlanceAppWidget() {
@@ -226,9 +227,9 @@ private fun AgendaRows(
                     day.events.forEach { add(AgendaRow.Event(day.date, it)) }
                 }
             }
-        }.take(MAX_AGENDA_ROWS)
+        }
         when (data.style) {
-            AgendaWidgetStyle.CARDS -> CardRows(rows, data, metrics, preview)
+            AgendaWidgetStyle.CARDS -> CardRows(rows.take(MAX_AGENDA_ROWS), data, metrics, preview)
             AgendaWidgetStyle.CLASSIC -> ClassicRows(rows, data, metrics, preview)
         }
     }
@@ -316,7 +317,7 @@ internal fun classicItems(rows: List<AgendaRow>, limit: Int = MAX_AGENDA_ROWS): 
  */
 @Composable
 private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, metrics: AgendaMetrics, preview: Boolean) {
-    val items = classicItems(rows)
+    val items = classicItems(rows, if (preview) PREVIEW_ROWS else MAX_AGENDA_ROWS)
     val backed = LocalWidgetBackground.current == WidgetBackground.TRANSPARENT
     val positions = if (backed) dayPositions(items.map { it.date }) else emptyList()
     val cardColor = widgetCardColor()
@@ -332,7 +333,7 @@ private fun ClassicRows(rows: List<AgendaRow>, data: AgendaWidgetData.Ready, met
                 )
                 is ClassicItem.Entry -> when (val row = entry.row) {
                     is AgendaRow.Placeholder -> ClassicPlaceholderRow(row.date, metrics)
-                    is AgendaRow.Event -> ClassicEventRow(row, data, metrics)
+                    is AgendaRow.Event -> ClassicEventRow(row, data, backed, metrics)
                 }
             }
         }
@@ -388,17 +389,17 @@ private fun ClassicPlaceholderRow(date: LocalDate, metrics: AgendaMetrics) {
 
 /** A classic event row: the calendar's colour stripe beside the title and time; a dimmed one fades both. */
 @Composable
-private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, metrics: AgendaMetrics) {
+private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, backed: Boolean, metrics: AgendaMetrics) {
     val context = androidx.glance.LocalContext.current
     val event = row.event
-    val dimmed = data.pastDisplay == PastEventDisplay.DIM && event.hasEnded(data.now)
+    val dimmed = row.dimmed(data)
     fun accent(dark: Boolean) = eventAccent(event.color, dark, data.soften).let {
         if (dimmed) it.copy(alpha = EventDimAlpha) else it
     }
     Row(
         modifier = GlanceModifier
             .fillMaxWidth()
-            .padding(horizontal = CLASSIC_ROW_H_PAD, vertical = metrics.rowVPad)
+            .padding(horizontal = if (backed) CLASSIC_CARD_H_PAD else CLASSIC_ROW_H_PAD, vertical = metrics.rowVPad)
             .clickable(actionStartActivity(event.openIntent(context, CalendarView.Agenda))),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -432,8 +433,9 @@ private fun ClassicEventRow(row: AgendaRow.Event, data: AgendaWidgetData.Ready, 
     }
 }
 
-/** Space above a day's label on its own backing card. */
+/** Space above a day's label on its own backing card, and its rows' inset, clear of the card's corners. */
 private val CLASSIC_CARD_TOP_PAD = 8.dp
+private val CLASSIC_CARD_H_PAD = 10.dp
 
 /** Where each row sits among the rows of its day, from each row's date, for the grouped-card shapes. */
 private fun dayPositions(dates: List<LocalDate>): List<Position> = buildList {
@@ -560,8 +562,12 @@ private fun PlaceholderRow(date: LocalDate, metrics: AgendaMetrics) {
 /** An event row's light and dark fill: its calendar's container tone, faded when the row is dimmed. */
 private data class EventFill(val day: Color, val night: Color)
 
+/** Whether this row is drawn faded as a finished event. */
+private fun AgendaRow.Event.dimmed(data: AgendaWidgetData.Ready): Boolean =
+    data.pastDisplay == PastEventDisplay.DIM && event.hasEnded(data.now)
+
 private fun AgendaRow.Event.fill(data: AgendaWidgetData.Ready): EventFill {
-    val dimmed = data.pastDisplay == PastEventDisplay.DIM && event.hasEnded(data.now)
+    val dimmed = dimmed(data)
     fun tone(dark: Boolean) = eventFill(event.color, dark, data.soften).let {
         if (dimmed) it.copy(alpha = WidgetDimFillAlpha) else it
     }
