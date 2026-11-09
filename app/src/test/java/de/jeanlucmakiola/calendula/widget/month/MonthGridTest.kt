@@ -96,6 +96,19 @@ class MonthGridTest {
     }
 
     @Test
+    fun `a single lane cuts a multi-day bar around a busy day`() {
+        val trip = allDayEvent(monday, monday.plus(3, DateTimeUnit.DAY), id = 1, title = "Trip")
+        val busy = timedEvent(monday.plus(1, DateTimeUnit.DAY), 9, zone = zone, id = 2, title = "Busy")
+        val week = fitWeeks(weeks(listOf(trip, busy)), LaneFit(1))[1]
+        assertThat(week.mixedLane).containsExactly(
+            GridCell<LaneItem>(LaneItem.Bar(trip), 1),
+            GridCell<LaneItem>(LaneItem.Count(2), 1),
+            GridCell<LaneItem>(LaneItem.Bar(trip), 2),
+            GridCell<LaneItem>(null, 3),
+        ).inOrder()
+    }
+
+    @Test
     fun `lanes stop at the cap however tall the week`() {
         assertThat(lanesFitting(1000.dp, fontScale = 1f)).isEqualTo(LaneFit(MAX_LANES))
     }

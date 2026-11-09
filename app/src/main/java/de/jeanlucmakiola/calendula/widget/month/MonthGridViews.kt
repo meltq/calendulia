@@ -107,7 +107,7 @@ private fun weekViews(
         return week
     }
     layout.lanes.forEach { cells ->
-        val lane = laneViews(context, layout.compact)
+        val lane = laneViews(context)
         cells.forEach { cell ->
             val event = cell.item
             lane.addView(R.id.lane, if (event == null) gap(context, cell.cols) else bar(context, event, cell.cols, soften, mode))

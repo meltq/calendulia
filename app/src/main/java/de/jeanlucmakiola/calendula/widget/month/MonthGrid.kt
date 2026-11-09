@@ -72,7 +72,7 @@ internal class WeekLayout(
     /** The single lane of a [mixed] week, bars cut short where a day shows its count instead; null otherwise. */
     val mixedLane: List<GridCell<LaneItem>>? = if (!mixed) null else mergeGaps(week.days.size) { col ->
         val day = seating[col]
-        if (day.hidden.isNotEmpty()) return@mergeGaps GridCell(LaneItem.Count(day.seated.size + day.hidden.size), 1)
+        if (day.hidden.isNotEmpty()) return@mergeGaps GridCell(LaneItem.Count(week.countByDay[week.days[col]] ?: day.hidden.size), 1)
         val seat = day.seated.firstOrNull() ?: return@mergeGaps null
         val spanEnd = if (seat.bar) week.spanAt(col, seat.lane)?.endCol ?: col else col
         val end = (col + 1..spanEnd).firstOrNull { seating[it].hidden.isNotEmpty() }?.minus(1) ?: spanEnd
