@@ -786,4 +786,12 @@
     <string name="settings_tap_opens_editor">Formulář pro úpravu</string>
     <string name="settings_tap_opens_hint">U upomínek a událostí, které nelze upravit, se vždy otevře stránka s podrobnostmi.</string>
     <string name="process_text_create_event">Vytvořit událost</string>
+    <string name="about_license_url" translatable="false"></string>
+    <string name="about_privacy_url" translatable="false"></string>
+    <string name="about_source_url" translatable="false"></string>
+    <string name="about_support_kofi_url" translatable="false"></string>
+    <string name="about_support_liberapay_url" translatable="false"></string>
+    <string name="about_translate_url" translatable="false"></string>
+    <string name="report_issue_url" translatable="false"></string>
+    <string name="report_issue_choose_url" translatable="false"></string>
 </resources>
