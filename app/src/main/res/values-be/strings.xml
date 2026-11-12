@@ -741,4 +741,49 @@
     <string name="settings_visible_hours_start_hint">Гадзіна зьверху экрана ў рэжыме прагляду тыдня, некалькіх сутак або сутак. Каб пабачыць ранейшыя гадзіны, трэба прагортка.</string>
     <string name="settings_visible_hours_end_hint">Апошняя гадзіна ўнізе экрану ў рэжыме прагляду. Каб пабачыць пазьнейшыя гадзіны трэба прагортка. Таксама зьвядзеньнем пальцаў па экране можна зьмяніць маштаб да наступнага адкрыцьця рэжыму.</string>
     <string name="settings_events_header">Падзеі</string>
+    <string name="color_name_teal"></string>
+    <string name="color_name_cyan"></string>
+    <string name="color_name_blue"></string>
+    <string name="color_name_indigo"></string>
+    <string name="color_name_purple"></string>
+    <string name="color_name_pink"></string>
+    <string name="calendars_restore_unavailable"></string>
+    <string name="import_done_failed_label"></string>
+    <string name="import_done_failed_note"></string>
+    <string name="import_done_stopped_title"></string>
+    <plurals name="import_done_stopped">
+    </plurals>
+    <plurals name="import_done_failed">
+    </plurals>
+    <string name="settings_tap_opens"></string>
+    <string name="settings_tap_opens_details"></string>
+    <string name="settings_tap_opens_editor"></string>
+    <string name="settings_tap_opens_hint"></string>
+    <string name="process_text_create_event"></string>
+    <string name="calendars_description_label"></string>
+    <string name="color_name_mauve"></string>
+    <string name="settings_licences"></string>
+    <string name="settings_licences_subtitle"></string>
+    <string name="settings_support_kofi"></string>
+    <string name="settings_support_kofi_hint"></string>
+    <string name="settings_support_liberapay"></string>
+    <string name="settings_support_liberapay_hint"></string>
+    <string name="licences_title"></string>
+    <string name="licences_intro"></string>
+    <string name="licences_footer"></string>
+    <string name="color_name_red"></string>
+    <string name="color_name_orange"></string>
+    <string name="color_name_amber"></string>
+    <string name="color_name_olive"></string>
+    <string name="color_name_green"></string>
+    <string name="about_source_url" translatable="false"></string>
+    <string name="about_support_kofi_url" translatable="false"></string>
+    <string name="about_support_liberapay_url" translatable="false"></string>
+    <string name="report_issue_url" translatable="false"></string>
+    <string name="report_issue_choose_url" translatable="false"></string>
+    <string name="import_warning_tasks"></string>
+    <string name="import_warning_recurrence_repaired"></string>
+    <string name="about_license_url" translatable="false"></string>
+    <string name="about_privacy_url" translatable="false"></string>
+    <string name="about_translate_url" translatable="false"></string>
 </resources>
