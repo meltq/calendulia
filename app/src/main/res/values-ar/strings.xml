@@ -830,12 +830,4 @@
     <string name="settings_tap_opens">النقر بحدث يفتح</string>
     <string name="settings_tap_opens_hint">الأحداث التي لا يمكنك تعديلها وإشعارات التذكير دائمًا تفتح التفاصيل.</string>
     <string name="event_edit_unsaved_keep">متابعة التعديل</string>
-    <string name="about_support_kofi_url" translatable="false"></string>
-    <string name="about_support_liberapay_url" translatable="false"></string>
-    <string name="about_source_url" translatable="false"></string>
-    <string name="about_license_url" translatable="false"></string>
-    <string name="about_privacy_url" translatable="false"></string>
-    <string name="about_translate_url" translatable="false"></string>
-    <string name="report_issue_url" translatable="false"></string>
-    <string name="report_issue_choose_url" translatable="false"></string>
 </resources>
