@@ -697,7 +697,7 @@
     <string name="onboarding_calendars_benefit_sync_title">Або наладзьце сынхранізацыю з уліковым запісам</string>
     <string name="onboarding_calendars_created_more_title">Прастора для іншых</string>
     <string name="onboarding_calendars_created_title">«%1$s» гатовы</string>
-    <string name="onboarding_calendars_benefit_sync_body">Calendula паказвае ўліковыя запісы, якія ўжо сынхранізуюцца. Для выкананьня сынхранізацыі сэрвэры CalDAV патрабуець DAVx\\u2075.</string>
+    <string name="onboarding_calendars_benefit_sync_body">Calendula паказвае ўліковыя запісы, якія ўжо сынхранізуюцца. Для выкананьня сынхранізацыі сэрвэры CalDAV патрабуець DAVx.</string>
     <string name="onboarding_calendars_created_body">Ён застаецца на гэтай прыладзе. У ім будуць запісвацца новыя падзеі, пакуль ня будзе выбраны іншы каляндар.</string>
     <string name="onboarding_calendars_created_more_body">Праз мэню Налады → Календары можна задаць колькасьць, назвы і колеры наяўных календароў.</string>
     <string name="onboarding_calendars_created_continue">Далей</string>
