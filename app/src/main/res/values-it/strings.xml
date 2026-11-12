@@ -764,4 +764,12 @@
     <string name="settings_support_liberapay">Liberapay</string>
     <string name="settings_support_liberapay_hint">Donazioni ricorrenti</string>
     <string name="process_text_create_event">Crea evento</string>
+    <string name="about_support_kofi_url" translatable="false"></string>
+    <string name="about_support_liberapay_url" translatable="false"></string>
+    <string name="about_source_url" translatable="false"></string>
+    <string name="about_translate_url" translatable="false"></string>
+    <string name="report_issue_url" translatable="false"></string>
+    <string name="report_issue_choose_url" translatable="false"></string>
+    <string name="about_license_url" translatable="false"></string>
+    <string name="about_privacy_url" translatable="false"></string>
 </resources>
