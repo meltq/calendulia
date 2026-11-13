@@ -376,6 +376,30 @@ class SettingsBackupTest {
     }
 
     @Test
+    fun `two file entries naming the same calendar are both skipped`() {
+        val text = """{"format":"calendula-settings","version":1,"exportedAt":1,"settings":{},"calendars":[
+            {"account_name":"me@example.org","account_type":"com.google","display_name":"Work","hidden":true},
+            {"account_name":"me@example.org","account_type":"com.google","display_name":"Work","event_duration_minutes":90}]}"""
+        val backup = (decodeSettingsBackup(text) as BackupResult.Success).value
+
+        val target = mutablePreferencesOf()
+        val plan = import(backup, target)
+
+        assertThat(target[CalendarPrefKeys.hiddenCalendarIds]).isEmpty()
+        assertThat(plan.skipped).containsExactly(SkippedSetting.Calendar("Work", "me@example.org", ambiguous = true))
+    }
+
+    @Test
+    fun `reminder lists are cleaned the way the setters store them`() {
+        val text = """{"format":"calendula-settings","version":1,"exportedAt":1,"settings":{},"calendars":[
+            {"account_name":"a","account_type":"t","display_name":"d","reminders":[60,-5,30,30]}]}"""
+
+        val backup = (decodeSettingsBackup(text) as BackupResult.Success).value
+
+        assertThat(backup.calendars.single().reminders).containsExactly(30, 60).inOrder()
+    }
+
+    @Test
     fun `a newer schema is refused`() {
         val result = decodeSettingsBackup("""{"format":"calendula-settings","version":2,"exportedAt":1}""")
 

@@ -27,7 +27,7 @@ import de.jeanlucmakiola.floret.di.IoDispatcher
 import de.jeanlucmakiola.floret.locale.AppLanguage
 import de.jeanlucmakiola.floret.prefs.get
 import de.jeanlucmakiola.floret.prefs.rawValue
-import de.jeanlucmakiola.floret.reminders.ReminderOverride
+import de.jeanlucmakiola.floret.reminders.reminderOverrideFor
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -79,7 +79,9 @@ class SettingsBackupEngine @Inject constructor(
         }
         val current = store.data.first()
         val supported = supportedLanguages()
-        val plan = planSettingsImport(backup, current, environment(current, backup, supported))
+        val environment = environment(current, backup, supported)
+        val plan = planSettingsImport(backup, current, environment)
+        val existingMirrors = environment.managed.map { it.id }.toSet()
         // Once the write starts, the side effects have to follow it, whoever cancels.
         withContext(NonCancellable) {
             try {
@@ -88,7 +90,7 @@ class SettingsBackupEngine @Inject constructor(
                 Log.w(TAG, "Settings import could not be written", e)
                 return@withContext BackupResult.Failure(BackupProblem.NOT_APPLIED, e.message.orEmpty())
             }
-            val lateSkips = afterImport(plan, current, supported)
+            val lateSkips = afterImport(plan, current, supported, existingMirrors)
             BackupResult.Success(plan.summary(plan.calendars.orEmpty().size + lateSkips.matched, lateSkips.skipped))
         }
     }
@@ -104,6 +106,7 @@ class SettingsBackupEngine @Inject constructor(
         plan: SettingsImportPlan,
         before: Preferences,
         supported: List<String>,
+        existingMirrors: Set<Long>,
     ): LateMatches {
         val after = store.data.first()
         val wasMirroring = before[SettingsKeys.specialDatesEnabled]
@@ -118,9 +121,7 @@ class SettingsBackupEngine @Inject constructor(
                         .takeIf { result == SpecialDatesSyncResult.PermissionMissing }
                     settingsPrefs.recordSpecialDatesRun(System.currentTimeMillis(), stalled)
                 }
-                if (result == SpecialDatesSyncResult.Success) {
-                    late = matchSpecialDates(plan, before.takeIf { plan.calendars != null })
-                }
+                late = matchSpecialDates(plan, before, existingMirrors, synced = result == SpecialDatesSyncResult.Success)
             } else if (wasMirroring) {
                 SpecialDatesScheduler.apply(context, enabled = false)
                 specialDates.teardown()
@@ -150,39 +151,48 @@ class SettingsBackupEngine @Inject constructor(
     }
 
     /**
-     * The mirror's calendars exist now, so the entries for them get their ids.
-     * Each mirror's all-day reminders go through the mirror, which rewrites
-     * its events too; one the file doesn't override inherits again.
+     * Gives late-created mirror calendars their entries (only after a
+     * successful [synced] run), then rewrites each mirror whose all-day
+     * reminders differ from what its events carry: the pre-import override for
+     * a calendar that already existed, the sync's seed for a new one. A mirror
+     * the file doesn't override inherits again.
      */
-    private suspend fun matchSpecialDates(plan: SettingsImportPlan, before: Preferences?): LateMatches {
+    private suspend fun matchSpecialDates(
+        plan: SettingsImportPlan,
+        before: Preferences,
+        existingMirrors: Set<Long>,
+        synced: Boolean,
+    ): LateMatches {
         val managed = calendars.findManagedCalendars()
         val skipped = mutableListOf<SkippedSetting>()
         var matched = 0
-        val resolved = plan.pendingSpecialDates.mapNotNull { entry ->
-            val id = managed.firstOrNull { it.type == entry.calendar.specialDates }?.id
-            if (id == null) skipped += entry.calendar.skipped() else matched++
-            id?.let { it to entry }
+        val resolved = if (!synced) {
+            skipped += plan.pendingSpecialDates.map { it.calendar.skipped() }
+            emptyList()
+        } else {
+            plan.pendingSpecialDates.mapNotNull { entry ->
+                val id = managed.firstOrNull { it.type == entry.calendar.specialDates }?.id
+                if (id == null) skipped += entry.calendar.skipped() else matched++
+                id?.let { it to entry }
+            }
         }
         if (resolved.isNotEmpty()) {
             store.edit { prefs ->
                 resolved.forEach { (id, entry) -> prefs.addCalendarSettings(id, entry.copy(allDayReminders = null)) }
             }
         }
-        if (before != null) {
-            val entries = (plan.calendars.orEmpty().values + resolved.map { it.second })
-                .mapNotNull { entry -> entry.calendar.specialDates?.let { it to entry } }
+        if (plan.calendars != null) {
+            val wanted = (plan.calendars.values + resolved.map { it.second })
+                .mapNotNull { entry -> entry.calendar.specialDates?.let { it to entry.allDayReminders } }
                 .toMap()
-            val stored = before[SettingsKeys.perCalendarAllDayReminderOverride]
+            val carried = before[SettingsKeys.perCalendarAllDayReminderOverride]
+            val seeded = store.data.first()[SettingsKeys.perCalendarAllDayReminderOverride]
             managed.distinctBy { it.type }.forEach { (id, type) ->
-                val minutes = entries[type]?.allDayReminders
-                // The events carry the override from before the import; only a change needs rewriting.
-                if (stored[id] == minutes) return@forEach
-                val override = when {
-                    minutes == null -> ReminderOverride.Inherit
-                    minutes.isEmpty() -> ReminderOverride.None
-                    else -> ReminderOverride.Minutes(minutes)
-                }
-                specialDates.applyReminders(type, override)
+                val minutes = wanted[type]
+                val onEvents = if (id in existingMirrors) carried[id] else seeded[id]
+                if (onEvents == minutes) return@forEach
+                val desired = minutes?.let { mapOf(id to it) }.orEmpty()
+                specialDates.applyReminders(type, desired.reminderOverrideFor(id))
             }
         }
         return LateMatches(matched, skipped)
@@ -196,7 +206,12 @@ class SettingsBackupEngine @Inject constructor(
         backup: SettingsBackup,
         supported: List<String>,
     ): ImportEnvironment = ImportEnvironment(
-        calendars = if (backup.calendars.isEmpty()) emptyList() else runCatching { calendars.calendars() }.getOrNull(),
+        // An empty list here is a failed read as far as the import can tell, never "wipe them all".
+        calendars = if (backup.calendars.isEmpty()) {
+            emptyList()
+        } else {
+            runCatching { calendars.calendars() }.getOrNull()?.takeIf { it.isNotEmpty() }
+        },
         managed = runCatching { calendars.findManagedCalendars() }.getOrDefault(emptyList()),
         contactsPermission = contacts.hasPermission(),
         customFonts = FontRole.entries.filter { CustomFontStore.exists(context, it) }.toSet(),

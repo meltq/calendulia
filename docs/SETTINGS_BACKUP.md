@@ -89,7 +89,9 @@ identity instead:
 
 On import an entry matches the one calendar here with the same account name,
 account type and display name. No match, or more than one, skips it and the
-summary names it. A mirror calendar matches by `special_dates` instead, since
+summary names it, as does a calendar the file itself lists twice under one
+identity. Reminder lists are stored the way the setters store them (no
+negative values, each once, ascending). A mirror calendar matches by `special_dates` instead, since
 its name is localised, and only when the imported settings keep the mirror on
 and the type (otherwise the import tears that calendar down). When the mirror has not created it yet,
 it is matched after the import's sync. Every mirror's all-day reminders are

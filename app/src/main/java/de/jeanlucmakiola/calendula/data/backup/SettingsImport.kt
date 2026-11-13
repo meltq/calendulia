@@ -122,6 +122,7 @@ fun planSettingsImport(
     if (available == null) {
         if (backup.calendars.isNotEmpty()) skipped += SkippedSetting.CalendarsUnavailable
     } else {
+        val repeated = backup.calendars.groupingBy { it.calendar }.eachCount().filterValues { it > 1 }.keys
         backup.calendars.forEach { entry ->
             val type = entry.calendar.specialDates
             if (type != null) {
@@ -130,6 +131,12 @@ fun planSettingsImport(
                 if (!mirroring || !typeOn) return@forEach
                 val id = environment.managed.firstOrNull { it.type == type }?.id
                 if (id != null) calendars[id] = entry else pending += entry
+                return@forEach
+            }
+            if (entry.calendar in repeated) {
+                // Two calendars on the exporting phone that this one can't tell apart.
+                val reported = SkippedSetting.Calendar(entry.calendar.displayName, entry.calendar.accountName, ambiguous = true)
+                if (reported !in skipped) skipped += reported
                 return@forEach
             }
             val candidates = available.filter { !it.isManaged && it.matches(entry.calendar) }
@@ -161,20 +168,8 @@ fun SettingsImportPlan.applyTo(target: MutablePreferences) {
  * last-used calendar only counts from the first entry claiming it.
  */
 fun MutablePreferences.writeCalendarSettings(calendars: Map<Long, CalendarSettings>) {
-    this[CalendarPrefKeys.hiddenCalendarIds] = calendars.filterValues { it.hidden }.keys
-    this[CalendarPrefKeys.lastUsedCalendarId] = calendars.entries.firstOrNull { it.value.lastUsed }?.key
-    setMapOrClear(
-        SettingsKeys.perCalendarEventDuration,
-        calendars.mapNotNull { (id, entry) -> entry.eventDurationMinutes?.let { id to it.clampDuration() } }.toMap(),
-    )
-    setMapOrClear(
-        SettingsKeys.perCalendarReminderOverride,
-        calendars.mapNotNull { (id, entry) -> entry.reminders?.let { id to it } }.toMap(),
-    )
-    setMapOrClear(
-        SettingsKeys.perCalendarAllDayReminderOverride,
-        calendars.mapNotNull { (id, entry) -> entry.allDayReminders?.let { id to it } }.toMap(),
-    )
+    SettingsBackupSchema.perCalendar.forEach { setRawValue(it, null) }
+    calendars.forEach { (id, entry) -> addCalendarSettings(id, entry) }
 }
 
 /** Adds one late-matched calendar's settings to what [writeCalendarSettings] stored. */
@@ -209,11 +204,6 @@ private fun CalendarSource.matches(identity: CalendarIdentity): Boolean =
     accountType == identity.accountType &&
         accountName == identity.accountName &&
         displayName == identity.displayName
-
-/** An empty map removes the key; its codec would otherwise store an empty string. */
-private fun <V> MutablePreferences.setMapOrClear(pref: Pref<Map<Long, V>>, value: Map<Long, V>) {
-    if (value.isEmpty()) setRawValue(pref, null) else this[pref] = value
-}
 
 /** The same range the per-calendar duration setter clamps to. */
 private fun Int.clampDuration(): Int = coerceIn(SettingsPrefs.MIN_EVENT_DURATION, SettingsPrefs.MAX_EVENT_DURATION)

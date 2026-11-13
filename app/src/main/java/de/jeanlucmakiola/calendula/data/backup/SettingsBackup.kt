@@ -174,10 +174,13 @@ private fun JsonObject.toCalendarSettings(): CalendarSettings {
         hidden = optBoolean(KEY_HIDDEN) ?: false,
         lastUsed = optBoolean(KEY_LAST_USED) ?: false,
         eventDurationMinutes = optInt(KEY_EVENT_DURATION),
-        reminders = optIntList(KEY_REMINDERS),
-        allDayReminders = optIntList(KEY_ALL_DAY_REMINDERS),
+        reminders = optIntList(KEY_REMINDERS)?.cleanReminders(),
+        allDayReminders = optIntList(KEY_ALL_DAY_REMINDERS)?.cleanReminders(),
     )
 }
+
+/** As the reminder setters store them: no negative leads, each once, ascending. */
+private fun List<Int>.cleanReminders(): List<Int> = filter { it >= 0 }.distinct().sorted()
 
 private const val KEY_SETTINGS = "settings"
 private const val KEY_CALENDARS = "calendars"
