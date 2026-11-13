@@ -57,7 +57,7 @@ fun CalendarFilterList(
             groups = s.groups,
             hidden = s.hidden,
             onSetVisible = viewModel::setVisible,
-            onSetGroupVisible = viewModel::setGroupVisible,
+            onToggleGroup = viewModel::toggleGroup,
             modifier = modifier,
         )
     }
@@ -73,7 +73,7 @@ private fun FilterList(
     groups: List<CalendarAccountGroup>,
     hidden: Set<Long>,
     onSetVisible: (Long, Boolean) -> Unit,
-    onSetGroupVisible: (List<Long>, Boolean) -> Unit,
+    onToggleGroup: (List<Long>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
@@ -82,7 +82,7 @@ private fun FilterList(
             GroupHeader(
                 title = accountGroupTitle(group),
                 state = groupVisibility(ids, hidden),
-                onToggle = { visible -> onSetGroupVisible(ids, visible) },
+                onToggle = { onToggleGroup(ids) },
             )
             group.calendars.forEachIndexed { index, cal ->
                 val visible = cal.id !in hidden
@@ -113,7 +113,7 @@ private fun FilterList(
 private fun GroupHeader(
     title: String,
     state: ToggleableState,
-    onToggle: (Boolean) -> Unit,
+    onToggle: () -> Unit,
 ) {
     val label = stringResource(
         if (state.nextGroupVisible()) R.string.filter_group_show_all else R.string.filter_group_hide_all,
@@ -124,7 +124,7 @@ private fun GroupHeader(
             .fillMaxWidth()
             .padding(horizontal = GroupedListInset / 2)
             .clip(MaterialTheme.shapes.large)
-            .clickable(onClickLabel = label, role = Role.Checkbox) { onToggle(state.nextGroupVisible()) }
+            .clickable(onClickLabel = label, role = Role.Checkbox) { onToggle() }
             .semantics { toggleableState = state }
             .padding(start = GroupedListInset / 2, end = GroupedListInset / 2 + 16.dp),
     ) {

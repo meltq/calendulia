@@ -33,4 +33,17 @@ class GroupVisibilityTest {
     fun `empty group is off`() {
         assertThat(groupVisibility(emptyList(), hidden = emptySet())).isEqualTo(ToggleableState.Off)
     }
+
+    @Test
+    fun `toggling twice from the stored set alternates`() {
+        val hidden = setOf(9L)
+        val once = toggledGroup(hidden, group)
+        assertThat(once).isEqualTo(setOf(1L, 2L, 3L, 9L))
+        assertThat(toggledGroup(once, group)).isEqualTo(setOf(9L))
+    }
+
+    @Test
+    fun `toggling a partly shown group shows all`() {
+        assertThat(toggledGroup(setOf(2L, 9L), group)).isEqualTo(setOf(9L))
+    }
 }

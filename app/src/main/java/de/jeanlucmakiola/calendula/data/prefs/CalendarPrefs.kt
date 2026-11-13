@@ -33,8 +33,12 @@ class CalendarPrefs @Inject constructor(
     suspend fun setHiddenCalendarIds(ids: Set<Long>) = prefs.set(HIDDEN_IDS, ids)
 
     /** Hide or show [ids] in the drawer filter in one atomic write. */
-    suspend fun setCalendarsHidden(ids: Collection<Long>, hidden: Boolean) {
-        prefs.update(HIDDEN_IDS) { if (hidden) it + ids else it - ids.toSet() }
+    suspend fun setCalendarsHidden(ids: Collection<Long>, hidden: Boolean) =
+        updateHiddenCalendarIds { if (hidden) it + ids else it - ids.toSet() }
+
+    /** Rewrite the drawer's hidden set atomically from its current value. */
+    suspend fun updateHiddenCalendarIds(transform: (Set<Long>) -> Set<Long>) {
+        prefs.update(HIDDEN_IDS, transform)
     }
 
     /**
