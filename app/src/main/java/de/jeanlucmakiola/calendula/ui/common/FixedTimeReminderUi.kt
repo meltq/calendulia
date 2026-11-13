@@ -47,21 +47,26 @@ fun fixedTimeReminderLabel(reminder: FixedTimeReminder): String = stringResource
 
 /**
  * The "N days before at HH:MM" editor (#459): a day count and a time, read as
- * one sentence, plus a confirm. Seeded from [initial]; [onConfirm] gets the
- * finished reminder. [connected] gives it the shape that meets a row above it.
+ * one sentence. Seeded from [initial]; [onValueChange] follows every edit (null
+ * while the day count is out of range). With a [confirmLabel] it carries its own
+ * confirm, reporting through [onConfirm]; without one the host picker commits
+ * from its actions slot. [connected] gives it the shape that meets a row above it.
  */
 @Composable
 fun FixedTimeReminderEditor(
     initial: FixedTimeReminder,
-    confirmLabel: String,
-    onConfirm: (FixedTimeReminder) -> Unit,
     modifier: Modifier = Modifier,
+    confirmLabel: String? = null,
+    onConfirm: (FixedTimeReminder) -> Unit = {},
+    onValueChange: (FixedTimeReminder?) -> Unit = {},
     connected: Boolean = true,
 ) {
     var daysText by rememberSaveable { mutableStateOf(initial.daysBefore.toString()) }
     var minuteOfDay by rememberSaveable { mutableStateOf(initial.minuteOfDay) }
     var pickingTime by rememberSaveable { mutableStateOf(false) }
     val days = daysText.toIntOrNull()?.takeIf { it in 1..FixedTimeReminder.MAX_DAYS_BEFORE }
+    val value = days?.let { FixedTimeReminder(it, minuteOfDay) }
+    LaunchedEffect(value) { onValueChange(value) }
 
     Surface(
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
@@ -82,7 +87,7 @@ fun FixedTimeReminderEditor(
                 DialogAmountField(value = daysText, onValueChange = { daysText = it }, placeholder = "1")
                 Spacer(Modifier.width(12.dp))
                 Text(
-                    text = pluralStringResource(R.plurals.reminder_fixed_days_before_at, days ?: 1),
+                    text = stringResource(R.string.reminder_fixed_days_before_at),
                     style = MaterialTheme.typography.bodyLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f, fill = false),
@@ -94,17 +99,19 @@ fun FixedTimeReminderEditor(
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    text = days?.let { fixedTimeReminderLabel(FixedTimeReminder(it, minuteOfDay)) }
+                    text = value?.let { fixedTimeReminderLabel(it) }
                         ?: stringResource(R.string.reminder_fixed_days_range, FixedTimeReminder.MAX_DAYS_BEFORE),
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.weight(1f),
                 )
-                Spacer(Modifier.width(16.dp))
-                FilledTonalButton(
-                    enabled = days != null,
-                    onClick = { days?.let { onConfirm(FixedTimeReminder(it, minuteOfDay)) } },
-                ) { Text(confirmLabel) }
+                if (confirmLabel != null) {
+                    Spacer(Modifier.width(16.dp))
+                    FilledTonalButton(
+                        enabled = value != null,
+                        onClick = { value?.let(onConfirm) },
+                    ) { Text(confirmLabel) }
+                }
             }
         }
     }
@@ -123,8 +130,8 @@ fun FixedTimeReminderEditor(
 /**
  * Picker for a fixed-time default (#459), full-screen: off, or a reminder at a
  * set time edited in place — and, on a per-calendar picker ([inheritedLabel]
- * non-null), deferring to the global default. Applies live; the user leaves via
- * back.
+ * non-null), deferring to the global default, [inherited], which also seeds the
+ * editor. Applies live; the user leaves via back.
  */
 @Composable
 fun FixedTimeReminderPicker(
@@ -133,6 +140,7 @@ fun FixedTimeReminderPicker(
     onSelect: (FixedTimeOverride) -> Unit,
     onDismiss: () -> Unit,
     inheritedLabel: String? = null,
+    inherited: FixedTimeReminder? = null,
 ) {
     var current by rememberSaveable(stateSaver = FixedTimeOverrideSaver) { mutableStateOf(selected) }
     var editing by rememberSaveable { mutableStateOf(false) }
@@ -176,7 +184,7 @@ fun FixedTimeReminderPicker(
             checked = chosen != null,
         ) {
             FixedTimeReminderEditor(
-                initial = chosen ?: DEFAULT_FIXED_TIME_REMINDER,
+                initial = chosen ?: inherited ?: DEFAULT_FIXED_TIME_REMINDER,
                 confirmLabel = stringResource(R.string.reminder_custom_set),
                 onConfirm = {
                     apply(FixedTimeOverride.At(it))

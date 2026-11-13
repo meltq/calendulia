@@ -100,6 +100,11 @@ class DailyDigestNotifier @Inject constructor(
         }
     }
 
+    /** Withdraw the summary showing, if any. */
+    fun cancel() {
+        NotificationManagerCompat.from(context).cancel(TAG_DIGEST, NOTIFICATION_ID)
+    }
+
     /** The summary's channel id, created if missing — for the settings deep-link. */
     fun channelId(): String {
         ensureChannel()

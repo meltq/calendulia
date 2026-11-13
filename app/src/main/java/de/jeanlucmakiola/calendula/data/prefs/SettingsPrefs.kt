@@ -351,7 +351,8 @@ class SettingsPrefs @Inject constructor(
     /** The replaced default stays a known pattern, so events that got it keep reading as it. */
     suspend fun setDefaultFixedTimeReminder(reminder: FixedTimeReminder?) {
         prefs.edit {
-            retireFixedTimeReminder(it, it[SettingsKeys.defaultFixedTimeReminder])
+            val old = it[SettingsKeys.defaultFixedTimeReminder]
+            if (old != reminder) retireFixedTimeReminder(it, old)
             it[SettingsKeys.defaultFixedTimeReminder] = reminder
         }
     }
@@ -360,7 +361,8 @@ class SettingsPrefs @Inject constructor(
     suspend fun setCalendarFixedTimeReminderOverride(calendarId: Long, override: FixedTimeOverride) {
         prefs.edit {
             val current = it[SettingsKeys.perCalendarFixedTimeReminderOverride]
-            retireFixedTimeReminder(it, current[calendarId])
+            val old = current[calendarId]
+            if (old != (override as? FixedTimeOverride.At)?.reminder) retireFixedTimeReminder(it, old)
             it[SettingsKeys.perCalendarFixedTimeReminderOverride] = when (override) {
                 FixedTimeOverride.Inherit -> current - calendarId
                 FixedTimeOverride.Off -> current + (calendarId to null)
@@ -384,8 +386,12 @@ class SettingsPrefs @Inject constructor(
         }
     }
 
+    /** Keep a default being replaced known, unless it still is a default elsewhere. */
     private fun retireFixedTimeReminder(preferences: MutablePreferences, reminder: FixedTimeReminder?) {
         if (reminder == null) return
+        val defaults = listOfNotNull(preferences[SettingsKeys.defaultFixedTimeReminder]) +
+            preferences[SettingsKeys.perCalendarFixedTimeReminderOverride].values.filterNotNull()
+        if (defaults.count { it == reminder } > 1) return
         preferences[SettingsKeys.recentFixedTimeReminders] =
             (listOf(reminder) + preferences[SettingsKeys.recentFixedTimeReminders]).distinct()
     }

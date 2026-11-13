@@ -52,7 +52,8 @@ data class FixedTimeReminder(val daysBefore: Int, val minuteOfDay: Int) {
     fun toToken(): String = "$daysBefore$TOKEN_SEP$minuteOfDay"
 
     companion object {
-        const val MAX_DAYS_BEFORE = 28
+        /** Two weeks, well inside the four weeks Google Calendar takes for a reminder. */
+        const val MAX_DAYS_BEFORE = 14
         private const val TOKEN_SEP = "@"
 
         /** [toToken] read back; null for anything malformed or out of range. */

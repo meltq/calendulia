@@ -877,6 +877,17 @@ class EventEditViewModel @Inject constructor(
                     return@launch
                 }
             }
+            // Remembered before the write, so the rows read back as these
+            // reminders from the first re-read on (#459).
+            if (!form.isAllDay && form.fixedReminders.isNotEmpty()) {
+                try {
+                    settingsPrefs.rememberFixedTimeReminders(form.fixedReminders)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not remember the set-time reminders", e)
+                }
+            }
             val result = try {
                 if (target == null) {
                     repository.createEvent(form)
@@ -927,10 +938,6 @@ class EventEditViewModel @Inject constructor(
                 // id only — never the form's content.
                 Log.w(TAG, "Save failed (scope=$scope, eventId=${target?.eventId})", e)
                 SaveUiState.Failed
-            }
-            // Remembered once saved, so the rows read back as these reminders (#459).
-            if (result == SaveUiState.Saved && !form.isAllDay && form.fixedReminders.isNotEmpty()) {
-                runCatching { settingsPrefs.rememberFixedTimeReminders(form.fixedReminders) }
             }
             settle(result)
         }

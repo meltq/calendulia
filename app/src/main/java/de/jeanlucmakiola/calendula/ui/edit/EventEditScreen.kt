@@ -1616,6 +1616,7 @@ private fun ReminderPickerDialog(
 ) {
     var customMode by rememberSaveable { mutableStateOf(false) }
     var fixedMode by rememberSaveable { mutableStateOf(false) }
+    var pendingFixed by remember { mutableStateOf<FixedTimeReminder?>(null) }
     var amountText by rememberSaveable { mutableStateOf("") }
     var unit by rememberSaveable { mutableStateOf(ReminderUnit.Minutes) }
     val customMinutes = amountText.toIntOrNull()
@@ -1626,11 +1627,16 @@ private fun ReminderPickerDialog(
         title = stringResource(R.string.event_edit_add_reminder),
         onDismiss = onDismiss,
         actions = {
-            // The quick-pick list adds on tap; only the custom step needs Add.
+            // The quick-pick list adds on tap; only the custom steps need Add.
             if (customMode) {
                 TextButton(
                     enabled = customMinutes != null && customMinutes !in alreadyChosen,
                     onClick = { customMinutes?.let(onSelect) },
+                ) { Text(stringResource(R.string.event_edit_add)) }
+            } else if (fixedMode) {
+                TextButton(
+                    enabled = pendingFixed != null,
+                    onClick = { pendingFixed?.let(onSelectFixed) },
                 ) { Text(stringResource(R.string.event_edit_add)) }
             }
         },
@@ -1640,8 +1646,7 @@ private fun ReminderPickerDialog(
             Spacer(Modifier.height(8.dp))
             FixedTimeReminderEditor(
                 initial = DEFAULT_FIXED_TIME_REMINDER,
-                confirmLabel = stringResource(R.string.event_edit_add),
-                onConfirm = onSelectFixed,
+                onValueChange = { pendingFixed = it },
                 connected = false,
             )
         } else if (!customMode) {

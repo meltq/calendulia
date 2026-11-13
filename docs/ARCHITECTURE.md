@@ -436,11 +436,13 @@ counts after a long gap, and it is dropped once the day it lists has passed.
 It is independent of the event-reminder switch, posts on its own channel
 (`DailyDigestNotifier`), lists switched-on calendars minus its own exclusions,
 and replaces the previous summary — or withdraws it when the day is empty.
-Two guards keep it to one per moment: the moment posted is recorded at once
-(`ReminderStatePrefs.lastDigestMillis`), so a pass failing later can't post it
-again, and changing the switch, time or day stamps `dailyDigestArmedAt`, so a
-moment that passed before the change is not owed by it. A failing summary is
-logged and skipped; it never costs the event reminders of the same pass.
+Each day is listed once: the day is recorded as soon as it is posted
+(`ReminderStatePrefs.lastDigestDay`), so neither a pass failing later nor a later
+time picked the same evening lists it twice, and changing the switch, time or
+day stamps `dailyDigestArmedAt`, so a moment that passed before the change is
+not owed by it. A failing summary is logged and skipped; it never costs the
+event reminders of the same pass, and a failing reminder pass still arms a retry
+and the summary's next moment.
 The per-calendar reminder mute does not apply: a calendar too noisy to ping per
 event can still belong in the overview, and the summary has its own
 per-calendar switch next to it.

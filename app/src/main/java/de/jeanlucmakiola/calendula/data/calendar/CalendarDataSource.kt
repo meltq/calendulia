@@ -1236,8 +1236,9 @@ class AndroidCalendarDataSource @Inject constructor(
             )
         }
         // Whether the provider copied the parent's reminder rows is its
-        // business — reconciling against the actual rows handles both ways.
-        reconcileReminders(exceptionId, encodedReminders(form, allDayReminderTimeMinutes))
+        // business — reconciling against the actual rows handles both ways. The
+        // exception is a one-off, so a fixed-time reminder takes real minutes.
+        reconcileReminders(exceptionId, encodedReminders(form.toDetachedOccurrence(), allDayReminderTimeMinutes))
         reconcileAttendees(exceptionId, form.attendees)
         return exceptionId
     }

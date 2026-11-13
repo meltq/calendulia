@@ -276,6 +276,7 @@ internal fun NotificationsScreen(
             onSelect = { viewModel.setCalendarFixedTimeReminderOverride(calendarId, it) },
             onDismiss = { fixedOverrideFor = null },
             inheritedLabel = fixedReminderChoiceLabel(state.defaultFixedTimeReminder),
+            inherited = state.defaultFixedTimeReminder,
         )
     }
     if (showDigestDay) {

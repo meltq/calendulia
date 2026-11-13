@@ -417,7 +417,11 @@ class SettingsViewModel @Inject constructor(
         save { setCalendarFixedTimeReminderOverride(calendarId, override) }
 
     /** Every summary change re-plans, so the next one is armed for its new moment (#459). */
-    fun setDailyDigestEnabled(enabled: Boolean) = saveAndScan { setDailyDigestEnabled(enabled) }
+    fun setDailyDigestEnabled(enabled: Boolean) {
+        saveAndScan { setDailyDigestEnabled(enabled) }
+        // A summary left showing would go stale with nothing to replace it.
+        if (!enabled) digestNotifier.cancel()
+    }
 
     fun setDailyDigestTimeMinutes(minutesOfDay: Int) = saveAndScan { setDailyDigestTimeMinutes(minutesOfDay) }
 

@@ -25,20 +25,19 @@ data class DailyDigestSettings(
 )
 
 /**
- * What one scan concluded for the summary: list [dueDay] now — the summary of
- * the moment [dueAtMillis] — or nothing when it is null, and wake up again at
- * [nextAlarmMillis].
+ * What one scan concluded for the summary: list [dueDay] now (null when nothing
+ * is owed), and wake up again at [nextAlarmMillis].
  */
 data class DigestSchedule(
     val dueDay: LocalDate?,
-    val dueAtMillis: Long,
     val nextAlarmMillis: Long,
 )
 
 /**
  * When the summary is owed: a moment in `(lastFiredMillis, nowMillis]` is due.
  * Only the latest such moment counts — a phone off for three evenings gets one
- * summary, not three — and only while the day it lists has not passed.
+ * summary, not three — and only while the day it lists has not passed and is
+ * not [lastListedDay]: each day is listed once.
  */
 fun scheduleDigest(
     timeMinutes: Int,
@@ -46,6 +45,7 @@ fun scheduleDigest(
     zone: ZoneId,
     lastFiredMillis: Long,
     nowMillis: Long,
+    lastListedDay: LocalDate? = null,
 ): DigestSchedule {
     val time = LocalTime.of(timeMinutes / 60, timeMinutes % 60)
     val fireAt = { date: LocalDate -> date.atTime(time).atZone(zone).toInstant().toEpochMilli() }
@@ -53,8 +53,8 @@ fun scheduleDigest(
     val latestDate = if (fireAt(today) <= nowMillis) today else today.minusDays(1)
     val listed = latestDate.plusDays(day.daysAhead)
     val dueAt = fireAt(latestDate)
-    val dueDay = listed.takeIf { dueAt > lastFiredMillis && !it.isBefore(today) }
-    return DigestSchedule(dueDay = dueDay, dueAtMillis = dueAt, nextAlarmMillis = fireAt(latestDate.plusDays(1)))
+    val dueDay = listed.takeIf { dueAt > lastFiredMillis && !it.isBefore(today) && it != lastListedDay }
+    return DigestSchedule(dueDay = dueDay, nextAlarmMillis = fireAt(latestDate.plusDays(1)))
 }
 
 /**
