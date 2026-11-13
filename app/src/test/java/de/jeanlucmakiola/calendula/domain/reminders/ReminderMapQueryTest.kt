@@ -21,6 +21,14 @@ class ReminderMapQueryTest {
         assertThat(reminderMapQuery("https://meet.google.com/abc-defg-hij")).isNull()
         assertThat(reminderMapQuery("HTTP://example.com")).isNull()
         assertThat(reminderMapQuery("www.example.com/room")).isNull()
+        assertThat(reminderMapQuery("zoom.us/j/123")).isNull()
+        assertThat(reminderMapQuery("<https://teams.microsoft.com/l/meetup-join/x>")).isNull()
+        assertThat(reminderMapQuery("https://a.example\nhttps://b.example")).isNull()
+    }
+
+    @Test
+    fun `an address with a house number fraction is still a place`() {
+        assertThat(reminderMapQuery("Hauptstr. 12/3, Wien")).isEqualTo("Hauptstr. 12/3, Wien")
     }
 
     @Test
