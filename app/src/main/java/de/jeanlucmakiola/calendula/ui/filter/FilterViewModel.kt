@@ -47,15 +47,17 @@ class FilterViewModel @Inject constructor(
                 initialValue = FilterUiState.Loading,
             )
 
-    /** Show or hide a single calendar; persists the new hidden set. */
-    fun setVisible(calendarId: Long, visible: Boolean) {
-        viewModelScope.launch { prefs.setCalendarsHidden(listOf(calendarId), hidden = !visible) }
+    /**
+     * Flip one calendar, or a whole group from its header (#143). Both decide
+     * against the stored set rather than the last drawn state, so quick repeated
+     * taps still alternate.
+     */
+    fun toggleCalendar(calendarId: Long) {
+        viewModelScope.launch {
+            prefs.updateHiddenCalendarIds { if (calendarId in it) it - calendarId else it + calendarId }
+        }
     }
 
-    /**
-     * The group header's tap (#143), decided against the stored set rather than
-     * the last drawn state so quick repeated taps still alternate.
-     */
     fun toggleGroup(calendarIds: List<Long>) {
         viewModelScope.launch { prefs.updateHiddenCalendarIds { toggledGroup(it, calendarIds) } }
     }

@@ -56,7 +56,7 @@ fun CalendarFilterList(
         is FilterUiState.Success -> FilterList(
             groups = s.groups,
             hidden = s.hidden,
-            onSetVisible = viewModel::setVisible,
+            onToggleCalendar = viewModel::toggleCalendar,
             onToggleGroup = viewModel::toggleGroup,
             modifier = modifier,
         )
@@ -72,7 +72,7 @@ fun CalendarFilterList(
 private fun FilterList(
     groups: List<CalendarAccountGroup>,
     hidden: Set<Long>,
-    onSetVisible: (Long, Boolean) -> Unit,
+    onToggleCalendar: (Long) -> Unit,
     onToggleGroup: (List<Long>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -94,10 +94,10 @@ private fun FilterList(
                     trailing = {
                         Checkbox(
                             checked = visible,
-                            onCheckedChange = { onSetVisible(cal.id, it) },
+                            onCheckedChange = { onToggleCalendar(cal.id) },
                         )
                     },
-                    onClick = { onSetVisible(cal.id, !visible) },
+                    onClick = { onToggleCalendar(cal.id) },
                 )
             }
         }

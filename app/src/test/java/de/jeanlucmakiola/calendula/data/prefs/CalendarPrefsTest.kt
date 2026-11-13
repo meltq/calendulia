@@ -35,14 +35,12 @@ class CalendarPrefsTest {
     }
 
     @Test
-    fun `setCalendarsHidden adds and removes only the given ids`(@TempDir tempDir: Path) = runTest {
+    fun `updateHiddenCalendarIds transforms the stored set`(@TempDir tempDir: Path) = runTest {
         val prefs = testPrefs(tempDir)
         prefs.setHiddenCalendarIds(setOf(9L))
-        prefs.setCalendarsHidden(listOf(1L, 2L), hidden = true)
+        prefs.updateHiddenCalendarIds { it + listOf(1L, 2L) }
         assertThat(prefs.hiddenCalendarIds.first()).isEqualTo(setOf(1L, 2L, 9L))
-        prefs.setCalendarsHidden(listOf(2L, 3L), hidden = false)
-        assertThat(prefs.hiddenCalendarIds.first()).isEqualTo(setOf(1L, 9L))
-        prefs.setCalendarsHidden(listOf(1L, 9L), hidden = false)
+        prefs.updateHiddenCalendarIds { emptySet() }
         assertThat(prefs.hiddenCalendarIds.first()).isEmpty()
     }
 
