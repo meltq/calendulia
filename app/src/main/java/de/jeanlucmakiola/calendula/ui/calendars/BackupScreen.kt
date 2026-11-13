@@ -188,7 +188,10 @@ fun BackupScreen(
                 calendars = ready.exportable,
                 selection = autoBackup.selection,
                 onCheckedChange = viewModel::setAutoBackupCalendar,
-                onDismiss = { showBackupCalendars = false },
+                onDismiss = {
+                    showBackupCalendars = false
+                    viewModel.autoBackupCalendarsChosen()
+                },
             )
         }
     }

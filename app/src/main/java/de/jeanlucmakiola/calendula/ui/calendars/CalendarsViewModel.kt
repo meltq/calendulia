@@ -133,9 +133,13 @@ class CalendarsViewModel @Inject constructor(
             _backupResult.value = try {
                 val count = withContext(io) {
                     val events = repository.exportEvents(calendarIds)
+                    // A one-calendar file is named after it, as the automatic backup's are.
+                    val name = calendarIds.singleOrNull()?.let { id ->
+                        repository.calendars().first().firstOrNull { it.id == id }?.displayName
+                    }
                     icsExporter.writeDocument(
                         uri = uri,
-                        content = IcsWriter().writeCalendar(events, Clock.System.now()),
+                        content = IcsWriter().writeCalendar(events, Clock.System.now(), name),
                     )
                     events.size
                 }
@@ -218,11 +222,28 @@ class CalendarsViewModel @Inject constructor(
     }
 
     fun setAutoBackupCombined(combined: Boolean) {
-        viewModelScope.launch { settingsPrefs.setAutoBackupCombined(combined) }
+        viewModelScope.launch {
+            settingsPrefs.setAutoBackupCombined(combined)
+            runBackupIfActive()
+        }
     }
 
     fun setAutoBackupKeep(keep: Int) {
-        viewModelScope.launch { settingsPrefs.setAutoBackupKeep(keep) }
+        viewModelScope.launch {
+            settingsPrefs.setAutoBackupKeep(keep)
+            runBackupIfActive()
+        }
+    }
+
+    /** After the calendar choice is closed, back up what is now selected rather than at the next interval. */
+    fun autoBackupCalendarsChosen() {
+        viewModelScope.launch { runBackupIfActive() }
+    }
+
+    private suspend fun runBackupIfActive() {
+        if (settingsPrefs.autoBackupEnabled.first() && settingsPrefs.autoBackupFolderUri.first() != null) {
+            BackupScheduler.runNow(context)
+        }
     }
 
     private suspend fun reschedule() {

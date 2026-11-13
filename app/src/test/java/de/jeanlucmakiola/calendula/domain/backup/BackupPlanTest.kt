@@ -200,6 +200,7 @@ class BackupPlanTest {
             keep = 1,
         )
         assertThat(plans[0].staleLatest).isEmpty()
+        assertThat(plans[0].handOff).containsExactly("Work.ics")
         assertThat(plans[1].latestName).isEqualTo("Work.ics")
     }
 

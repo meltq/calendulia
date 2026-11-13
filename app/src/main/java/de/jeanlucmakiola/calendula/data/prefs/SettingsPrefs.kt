@@ -195,7 +195,6 @@ class SettingsPrefs @Inject constructor(
     val autoBackupSelection: Flow<BackupSelection> = prefs.snapshot { it.autoBackupSelection }
     val autoBackupCombined: Flow<Boolean> = prefs.snapshot { it.autoBackupCombined }
     val autoBackupKeep: Flow<Int> = prefs.flow(SettingsKeys.autoBackupKeep)
-    val autoBackupLegacyInstall: Flow<Boolean> = prefs.snapshot { it.autoBackupLegacyInstall }
     val autoBackupLedger: Flow<BackupLedger> = prefs.flow(SettingsKeys.autoBackupLedger)
     val specialDatesEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.specialDatesEnabled)
     val specialDatesTypes: Flow<Set<SpecialDateType>> = prefs.snapshot { it.specialDatesTypes }
@@ -370,9 +369,17 @@ class SettingsPrefs @Inject constructor(
 
     suspend fun setAutoBackupKeep(keep: Int) = prefs.set(SettingsKeys.autoBackupKeep, keep)
 
-    /** Atomic, so a run's ledger writes never undo one made meanwhile (pinning the layout). */
-    suspend fun updateAutoBackupLedger(transform: (BackupLedger) -> BackupLedger) {
-        prefs.update(SettingsKeys.autoBackupLedger, transform)
+    /**
+     * Atomic, so a run's ledger writes never undo one made meanwhile (pinning
+     * the layout). Dropped when the folder is no longer [folder]: a run still
+     * finishing must not carry the old folder's names into the new one's ledger.
+     */
+    suspend fun updateAutoBackupLedger(folder: String, transform: (BackupLedger) -> BackupLedger) {
+        prefs.edit {
+            if (it[SettingsKeys.autoBackupFolderUri] == folder) {
+                it[SettingsKeys.autoBackupLedger] = transform(it[SettingsKeys.autoBackupLedger])
+            }
+        }
     }
 
     /** Record a pre-#411 install's old file as its combined series' stable copy (see [pinBackupLayout]). */

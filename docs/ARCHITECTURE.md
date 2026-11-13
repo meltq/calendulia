@@ -479,8 +479,8 @@ Each series also keeps a stable undated copy (`<calendar name>.ics`, or
 `calendula-backup.ics` combined) overwritten every run, so sync tools and
 subscriptions can follow one path. Retention never touches it, and it is only
 written over a file the series itself (or a series renaming away from that name
-in the same run) recorded. A renamed calendar's old copy is deleted, and so is a
-copy the layout switch replaced (per-calendar ↔ combined); a calendar taken out
+in the same run) recorded. A renamed calendar's old copy is deleted once the new
+one has landed, and so is a copy the layout switch replaced (per-calendar ↔ combined); a calendar taken out
 of the backup keeps its last one. The pre-#411 fixed `calendula-backup.ics` is
 the combined series' stable copy for the install that wrote it, and an
 install that already had a folder stays on the combined layout.

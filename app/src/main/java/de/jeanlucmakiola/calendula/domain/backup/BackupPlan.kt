@@ -76,6 +76,11 @@ data class BackupFilePlan(
     val latestName: String?,
     /** This series' earlier stable copies under a name it no longer uses (a rename), to delete. */
     val staleLatest: List<String> = emptyList(),
+    /**
+     * Stable copies this series held that another series of the run now takes
+     * over: kept on record until that series has claimed them.
+     */
+    val handOff: List<String> = emptyList(),
 )
 
 /**
@@ -190,6 +195,8 @@ fun planBackupFiles(
             latestName = latest.takeIf { writable },
             staleLatest = ledger[latestLedgerKey(target.key)].orEmpty()
                 .filter { it in existing && it != latest && it !in currentLatest },
+            handOff = ledger[latestLedgerKey(target.key)].orEmpty()
+                .filter { it in existing && it != latest && it in currentLatest },
         )
     }
 }

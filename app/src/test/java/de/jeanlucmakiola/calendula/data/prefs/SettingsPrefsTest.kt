@@ -726,13 +726,11 @@ class SettingsPrefsTest {
         }
         assertThat(prefs.autoBackupCombined.first()).isTrue()
 
-        assertThat(prefs.autoBackupLegacyInstall.first()).isTrue()
 
         // Picking another folder pins the layout instead of flipping it, and
         // keeps the old file recognised as this install's own.
         prefs.setAutoBackupFolderUri("content://tree/new")
         assertThat(prefs.autoBackupCombined.first()).isTrue()
-        assertThat(prefs.autoBackupLegacyInstall.first()).isFalse()
         // A new folder starts a new ledger: the old file there isn't known to be ours.
         assertThat(prefs.autoBackupLedger.first()).isEmpty()
 

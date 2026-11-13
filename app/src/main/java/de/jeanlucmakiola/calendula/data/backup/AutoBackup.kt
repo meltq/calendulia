@@ -174,7 +174,7 @@ class BackupWorker(
         val stamp = Clock.System.now()
         val liveKeys = all.map { it.id.toString() }.toSet()
         suspend fun record(key: String, files: List<String>) =
-            prefs.updateAutoBackupLedger { withLedgerEntry(it, key, files, liveKeys) }
+            prefs.updateAutoBackupLedger(folder.toString()) { withLedgerEntry(it, key, files, liveKeys) }
         var written = 0
         val landedLatest = mutableSetOf<String>()
         for (plan in plans) {
@@ -203,23 +203,28 @@ class BackupWorker(
                 }
                 // Best-effort: the stable copy never holds up the dated backup,
                 // its pruning or the run's status. An old copy goes only once the
-                // new one has landed.
+                // new one has landed, so a series is never left without one.
                 try {
                     val latest = plan.latestName ?: return@withContext
                     val latestKey = latestLedgerKey(target.key)
-                    // A provider that renamed it leaves a copy to clean up next run.
                     val landed = exporter.writeToFolder(folder, listing, latest, bytes)
-                    record(latestKey, plan.staleLatest + landed)
+                    // A provider that renamed it leaves a copy to clean up next
+                    // run; the intended name stays ours only if it already was.
+                    val ownsLatest = landed == latest || latest in listing.files ||
+                        latest in ledger[latestKey].orEmpty()
+                    val current = listOfNotNull(landed, latest.takeIf { ownsLatest })
+                    record(latestKey, plan.staleLatest + plan.handOff + current)
                     if (landed == latest) landedLatest += target.key
                     val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
-                    record(latestKey, plan.staleLatest.filter { it in staleLeft } + landed)
+                    record(latestKey, plan.staleLatest.filter { it in staleLeft } + plan.handOff + current)
                 } catch (e: Exception) {
                     Log.w(TAG, "Stable copy of one series failed", e)
                 }
             }
         }
         // A layout switch retires the other layout's copies once every new one is there.
-        if (landedLatest.size == plans.size) {
+        val stableCopies = plans.count { it.latestName != null }
+        if (stableCopies > 0 && landedLatest.size == stableCopies) {
             replacedLatestCopies(targets, prefs.autoBackupLedger.first(), existing).forEach { (key, names) ->
                 withContext(NonCancellable) {
                     val left = exporter.deleteFromFolder(listing, names)
