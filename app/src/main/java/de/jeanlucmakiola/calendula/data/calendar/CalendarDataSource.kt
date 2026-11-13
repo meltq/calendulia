@@ -821,7 +821,6 @@ class AndroidCalendarDataSource @Inject constructor(
         } ?: emptyList()
     }
 
-
     override fun existingUids(calendarId: Long): Set<String> = resolver.query(
         CalendarContract.Events.CONTENT_URI,
         arrayOf(CalendarContract.Events.UID_2445),

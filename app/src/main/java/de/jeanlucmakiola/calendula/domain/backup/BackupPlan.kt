@@ -169,24 +169,20 @@ fun planBackupFiles(
 }
 
 /**
- * The ledger after a run: each written series records what it kept, what it
- * failed to delete ([undeleted]) and the file it just wrote ([writtenNames],
- * by key, as the provider named it). Series not written this run keep their
- * entry while their calendar still exists ([liveKeys]), so a calendar taken
- * out of the backup still has its files pruned if it's ever put back.
+ * The ledger once [plan]'s new file landed as [writtenName]: the series records
+ * what it kept, what it failed to delete ([undeleted]) and the new file. Other
+ * series keep their entry while their calendar still exists ([liveKeys]), so a
+ * calendar taken out of the backup still has its files pruned if it's put back.
  */
 fun updatedBackupLedger(
     previous: BackupLedger,
-    written: List<BackupFilePlan>,
-    writtenNames: Map<String, String>,
-    undeleted: Set<String>,
+    plan: BackupFilePlan,
+    writtenName: String,
+    undeleted: Collection<String>,
     liveKeys: Set<String>,
 ): BackupLedger {
     val next = previous.filterKeys { it in liveKeys || it == COMBINED_SERIES }.toMutableMap()
-    written.forEach { plan ->
-        val name = writtenNames[plan.target.key] ?: return@forEach
-        next[plan.target.key] = plan.prune.filter { it in undeleted } + plan.keep + name
-    }
+    next[plan.target.key] = (plan.prune.filter { it in undeleted } + plan.keep + writtenName).distinct()
     return next.filterValues { it.isNotEmpty() }
 }
 

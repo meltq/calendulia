@@ -7,6 +7,7 @@ import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
@@ -705,6 +706,7 @@ class SettingsPrefsTest {
         prefs.recordSpecialDatesRun(2000L, null)
         assertThat(prefs.specialDatesStatus.first()).isEqualTo(SpecialDatesStatus(2000L, null))
     }
+
     @Test
     fun `a fresh install backs up one file per calendar, keeping three`(@TempDir tempDir: Path) = runTest {
         val prefs = testSettings(tempDir)
@@ -757,7 +759,7 @@ class SettingsPrefsTest {
         assertThat(prefs.autoBackupKeep.first()).isEqualTo(10)
     }
 
-    private fun backupCalendar(id: Long, local: Boolean) = de.jeanlucmakiola.calendula.domain.CalendarSource(
+    private fun backupCalendar(id: Long, local: Boolean) = CalendarSource(
         id = id,
         displayName = "C$id",
         accountName = "a",

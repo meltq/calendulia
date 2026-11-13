@@ -2,10 +2,13 @@ package de.jeanlucmakiola.calendula.data.ics
 
 import android.content.Context
 import android.net.Uri
-import android.provider.DocumentsContract
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import dagger.hilt.android.qualifiers.ApplicationContext
+import de.jeanlucmakiola.floret.android.TreeListing
+import de.jeanlucmakiola.floret.android.deleteTreeFiles
+import de.jeanlucmakiola.floret.android.listTreeFiles
+import de.jeanlucmakiola.floret.android.writeTreeFile
 import java.io.File
 import java.io.IOException
 import javax.inject.Inject
@@ -30,66 +33,25 @@ class IcsExporter @Inject constructor(
         } ?: throw IOException("Could not open output stream for export (scheme=${uri.scheme})")
     }
 
-    /**
-     * The files directly inside the persisted SAF tree [folder] (the
-     * automatic-backup destination), by display name — one provider query, so
-     * a run over many calendars doesn't pay a lookup per file. Throws when the
-     * folder is gone or not writable.
-     */
-    fun listFolder(folder: Uri): FolderListing {
+    /** The files in the persisted SAF tree [folder], the automatic-backup destination. Throws when unusable. */
+    fun listFolder(folder: Uri): TreeListing {
         writableFolder(folder)
-        val treeId = DocumentsContract.getTreeDocumentId(folder)
-        val children = DocumentsContract.buildChildDocumentsUriUsingTree(folder, treeId)
-        val columns = arrayOf(
-            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
-            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
-            DocumentsContract.Document.COLUMN_MIME_TYPE,
+        return context.contentResolver.listTreeFiles(folder)
+    }
+
+    /** Write [content] as [fileName] into [folder]; returns the name the file ended up with. */
+    fun writeToFolder(folder: Uri, listing: TreeListing, fileName: String, content: String): String =
+        context.contentResolver.writeTreeFile(
+            tree = folder,
+            listing = listing,
+            name = fileName,
+            mimeType = MIME_CALENDAR,
+            bytes = content.toByteArray(Charsets.UTF_8),
         )
-        val cursor = context.contentResolver.query(children, columns, null, null, null)
-            ?: throw IOException("Backup folder can't be listed")
-        return cursor.use { c ->
-            val files = buildMap {
-                while (c.moveToNext()) {
-                    if (c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) continue
-                    val name = c.getString(1) ?: continue
-                    put(name, DocumentsContract.buildDocumentUriUsingTree(folder, c.getString(0)))
-                }
-            }
-            FolderListing(files, complete = !c.extras.getBoolean(DocumentsContract.EXTRA_LOADING, false))
-        }
-    }
 
-    /**
-     * Write [content] to [fileName] in [folder], overwriting the file of that
-     * name if [listing] (from [listFolder]) has one. Returns the name the file
-     * ended up with — a provider may de-duplicate it. Throws on failure.
-     */
-    fun writeToFolder(folder: Uri, listing: FolderListing, fileName: String, content: String): String {
-        listing.files[fileName]?.let { uri ->
-            writeDocument(uri, content)
-            return fileName
-        }
-        val uri = DocumentsContract.createDocument(
-            context.contentResolver,
-            DocumentsContract.buildDocumentUriUsingTree(folder, DocumentsContract.getTreeDocumentId(folder)),
-            MIME_CALENDAR,
-            fileName,
-        ) ?: throw IOException("Could not create backup file in the chosen folder")
-        try {
-            writeDocument(uri, content)
-        } catch (e: IOException) {
-            runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
-            throw e
-        }
-        return DocumentFile.fromSingleUri(context, uri)?.name ?: fileName
-    }
-
-    /** Delete the [names] files of [listing]; returns the ones that didn't go, or weren't listed. */
-    fun deleteFromFolder(listing: FolderListing, names: Collection<String>): Set<String> =
-        names.filterTo(mutableSetOf()) { name ->
-            val uri = listing.files[name] ?: return@filterTo true
-            !runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }.getOrDefault(false)
-        }
+    /** Delete [names] from the listed folder; returns the ones that didn't go. */
+    fun deleteFromFolder(listing: TreeListing, names: Collection<String>): Set<String> =
+        context.contentResolver.deleteTreeFiles(listing, names)
 
     private fun writableFolder(folder: Uri): DocumentFile {
         val dir = DocumentFile.fromTreeUri(context, folder)
@@ -117,9 +79,3 @@ class IcsExporter @Inject constructor(
         const val MIME_CALENDAR = "text/calendar"
     }
 }
-
-/**
- * A backup folder's files by name. A cloud provider may still be loading
- * ([complete] false), so a name missing from [files] isn't proof it's gone.
- */
-data class FolderListing(val files: Map<String, Uri>, val complete: Boolean)

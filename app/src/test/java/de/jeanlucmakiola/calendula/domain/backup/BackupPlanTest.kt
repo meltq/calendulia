@@ -156,8 +156,8 @@ class BackupPlanTest {
         ).single()
         val next = updatedBackupLedger(
             previous = mapOf("1" to listOf("Work_a.ics", "Work_b.ics"), "2" to listOf("Home_a.ics"), "7" to listOf("Gone.ics")),
-            written = listOf(plan),
-            writtenNames = mapOf("1" to "Work_new (1).ics"),
+            plan = plan,
+            writtenName = "Work_new (1).ics",
             undeleted = setOf("Work_a.ics"),
             liveKeys = setOf("1", "2"),
         )
@@ -168,16 +168,11 @@ class BackupPlanTest {
     }
 
     @Test
-    fun `a series whose write failed keeps its old entry`() {
+    fun `a pruned file leaves the ledger once it is deleted`() {
         val plan = planBackupFiles(listOf(work), mapOf("1" to listOf("Work_a.ics")), setOf("Work_a.ics"), at, keep = 1)
-        val next = updatedBackupLedger(
-            previous = mapOf("1" to listOf("Work_a.ics")),
-            written = plan,
-            writtenNames = emptyMap(),
-            undeleted = emptySet(),
-            liveKeys = setOf("1"),
-        )
-        assertThat(next).containsExactly("1", listOf("Work_a.ics"))
+            .single()
+        val next = updatedBackupLedger(mapOf("1" to listOf("Work_a.ics")), plan, "Work_new.ics", emptySet(), setOf("1"))
+        assertThat(next).containsExactly("1", listOf("Work_new.ics"))
     }
 
     @Test

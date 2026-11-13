@@ -4,7 +4,7 @@ import android.content.ContentResolver
 import android.provider.CalendarContract
 
 /** Ids per `IN (…)` list: they go into the SQL literally, which SQLite bounds. */
-private const val EVENT_ID_BATCH = 500
+private const val EVENT_ID_BATCH = 50
 
 /**
  * Reminder minutes of [eventIds], keyed by event, a batched query at a time
