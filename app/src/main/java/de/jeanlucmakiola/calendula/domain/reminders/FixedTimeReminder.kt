@@ -16,7 +16,7 @@ import kotlin.time.Instant
  * The provider only knows lead times, so it is stored as an ordinary `Reminders`
  * row whose offset is the distance from that wall-clock moment to the start
  * ([offsetMinutes]) — it fires on every device and in every app. The pattern is
- * only known to Calendula while it can be read back ([splitTimedReminders]); the
+ * only known to Calendula while it can be read back ([classifyTimedReminder]); the
  * editor then re-derives the offset whenever the start moves.
  */
 data class FixedTimeReminder(val daysBefore: Int, val minuteOfDay: Int) {
@@ -41,7 +41,6 @@ data class FixedTimeReminder(val daysBefore: Int, val minuteOfDay: Int) {
 
     companion object {
         const val MAX_DAYS_BEFORE = 28
-        private const val MINUTES_PER_DAY = 1_440
         private const val TOKEN_SEP = "@"
 
         /** [toToken] read back; null for anything malformed or out of range. */
@@ -77,35 +76,33 @@ data class TimedReminders(
 )
 
 /**
- * Sort a timed event's raw offsets into lead times and "N days before at HH:MM"
- * reminders. The provider can't say which an offset was meant as, so:
- *
- * - one landing on a pattern in [known] (the configured defaults) is fixed-time;
- * - otherwise one reaching back past the start's own day is fixed-time, unless it
- *   is a whole number of days or one of [plainLeadMinutes] — those read as the
- *   lead time they look like.
- *
- * The cost of guessing wrong is small: the reminder fires at the same moment
- * either way, and only a later change of the start's time of day treats it
- * differently. A hand-entered "3 hours before" on an event at 01:00 does read as
- * "1 day before at 22:00".
+ * The fixed-time reminder [offsetMinutes] stands for on an event starting at
+ * [start], or null when it reads as a plain lead time. The provider can't say
+ * which an offset was meant as, so only the patterns in [known] — the configured
+ * defaults and the ones picked by hand on this device — are recognised: guessing
+ * from the offset's shape alone would turn ordinary leads ("12 hours before")
+ * into fixed-time ones. A wrong reading never moves an alarm; it only changes
+ * what a later edit of the start's time does.
  */
+fun classifyTimedReminder(
+    offsetMinutes: Int,
+    start: Instant,
+    zone: TimeZone,
+    known: Set<FixedTimeReminder>,
+): FixedTimeReminder? = fixedTimeReminderAt(offsetMinutes, start, zone)?.takeIf { it in known }
+
+/** Sort a timed event's raw offsets into lead times and fixed-time reminders ([classifyTimedReminder]). */
 fun splitTimedReminders(
     offsets: List<Int>,
     start: Instant,
     zone: TimeZone,
     known: Set<FixedTimeReminder>,
-    plainLeadMinutes: Collection<Int> = PLAIN_LEAD_MINUTES,
 ): TimedReminders {
     val leads = mutableListOf<Int>()
     val fixed = mutableListOf<FixedTimeReminder>()
     offsets.distinct().forEach { offset ->
-        val pattern = fixedTimeReminderAt(offset, start, zone)
-        val isFixed = pattern != null && (
-            pattern in known ||
-                (offset % MINUTES_PER_DAY != 0 && offset !in plainLeadMinutes)
-            )
-        if (isFixed) fixed += pattern!! else leads += offset
+        val pattern = classifyTimedReminder(offset, start, zone, known)
+        if (pattern != null) fixed += pattern else leads += offset
     }
     return TimedReminders(leads.sorted(), fixed.distinct().sortedWith(FIXED_ORDER))
 }
@@ -113,8 +110,5 @@ fun splitTimedReminders(
 /** Most days before first, then by time — the order they fire in. */
 val FIXED_ORDER: Comparator<FixedTimeReminder> =
     compareByDescending<FixedTimeReminder> { it.daysBefore }.thenBy { it.minuteOfDay }
-
-/** Lead times offered as presets: always read as what they look like. */
-private val PLAIN_LEAD_MINUTES = setOf(5, 10, 15, 30, 45, 60, 90, 120)
 
 private const val MINUTES_PER_DAY = 1_440

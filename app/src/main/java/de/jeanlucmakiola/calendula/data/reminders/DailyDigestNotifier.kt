@@ -1,22 +1,18 @@
 package de.jeanlucmakiola.calendula.data.reminders
 
-import android.Manifest
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
-import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.MainActivity
 import de.jeanlucmakiola.calendula.R
-import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.domain.reminders.ReminderEventInstance
-import de.jeanlucmakiola.floret.android.hasPermission
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.toKotlinLocalDate
 import java.time.DayOfWeek
@@ -36,23 +32,13 @@ import javax.inject.Singleton
 class DailyDigestNotifier @Inject constructor(
     @ApplicationContext private val context: Context,
     private val settingsPrefs: SettingsPrefs,
-    private val calendarPrefs: CalendarPrefs,
 ) {
 
-    /** False when the user declined `POST_NOTIFICATIONS` or muted the app. */
-    fun canPost(): Boolean {
-        val granted = Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            context.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
-        return granted && NotificationManagerCompat.from(context).areNotificationsEnabled()
-    }
-
     /**
-     * Post the summary of [day] listing [entries], or withdraw the last one when
+     * Post the summary of [day] listing [listed], or withdraw the last one when
      * there is nothing to list — yesterday's would otherwise stand in for it.
      */
-    suspend fun post(day: LocalDate, entries: List<ReminderEventInstance>) {
-        val switchedOff = calendarPrefs.pendingDisabledCalendarIds.first()
-        val listed = entries.filter { it.calendarId !in switchedOff }
+    suspend fun post(day: LocalDate, listed: List<ReminderEventInstance>) {
         val manager = NotificationManagerCompat.from(context)
         if (listed.isEmpty()) {
             manager.cancel(TAG_DIGEST, NOTIFICATION_ID)
@@ -69,8 +55,11 @@ class DailyDigestNotifier @Inject constructor(
             today.plusDays(1) -> context.getString(R.string.reminder_day_tomorrow)
             else -> DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale).format(day)
         }
+        val allDay = context.getString(R.string.event_detail_all_day)
         val lines = listed.map { entry ->
-            val time = reminderTimeText(
+            // Read against the listed day, so a timed event on it shows its bare
+            // range and one crossing midnight its dates; the week start never shows.
+            val time = if (entry.isAllDay) allDay else reminderTimeText(
                 beginMillis = entry.beginMillis,
                 endMillis = entry.endMillis,
                 isAllDay = entry.isAllDay,
@@ -78,9 +67,8 @@ class DailyDigestNotifier @Inject constructor(
                 locale = locale,
                 is24Hour = is24Hour,
                 today = day,
-                // Only cross-day spans name a date, so the week start never shows.
                 firstDayOfWeek = DayOfWeek.MONDAY,
-                todayLabel = context.getString(R.string.event_detail_all_day),
+                todayLabel = allDay,
                 tomorrowLabel = context.getString(R.string.reminder_day_tomorrow),
                 yesterdayLabel = context.getString(R.string.reminder_day_yesterday),
             )
@@ -115,9 +103,9 @@ class DailyDigestNotifier @Inject constructor(
         return CHANNEL_ID
     }
 
+    /** Creates the channel, or renames it after a language change; the user's settings on it stay. */
     private fun ensureChannel() {
         val manager = context.getSystemService(NotificationManager::class.java)
-        if (manager.getNotificationChannel(CHANNEL_ID) != null) return
         manager.createNotificationChannel(
             NotificationChannel(
                 CHANNEL_ID,

@@ -448,7 +448,7 @@ class EventEditViewModel @Inject constructor(
         if (source.ownsDuration) _durationTouched.value = true else applyDefaultDuration()
         when (source) {
             ImportSource.Insert, ImportSource.InsertOpenEnded ->
-                if (form.reminders.isNotEmpty()) _remindersTouched.value = true
+                if (form.reminders.isNotEmpty() || form.fixedReminders.isNotEmpty()) _remindersTouched.value = true
                 else applyDefaultReminder()
 
             ImportSource.File -> {
@@ -491,14 +491,21 @@ class EventEditViewModel @Inject constructor(
     }
 
     /** Snapshot the settings-default reminder flows into one value. */
-    private suspend fun reminderDefaults(): ReminderDefaults = ReminderDefaults(
-        timed = settingsPrefs.defaultReminderMinutes.first(),
-        allDay = settingsPrefs.defaultAllDayReminderMinutes.first(),
-        timedOverrides = settingsPrefs.perCalendarReminderOverride.first(),
-        allDayOverrides = settingsPrefs.perCalendarAllDayReminderOverride.first(),
-        fixed = settingsPrefs.defaultFixedTimeReminder.first(),
-        fixedOverrides = settingsPrefs.perCalendarFixedTimeReminderOverride.first(),
-    )
+    private suspend fun reminderDefaults(): ReminderDefaults = combine(
+        combine(
+            settingsPrefs.defaultReminderMinutes,
+            settingsPrefs.defaultAllDayReminderMinutes,
+            settingsPrefs.perCalendarReminderOverride,
+            settingsPrefs.perCalendarAllDayReminderOverride,
+            ::Quadruple,
+        ),
+        settingsPrefs.defaultFixedTimeReminder,
+        settingsPrefs.perCalendarFixedTimeReminderOverride,
+    ) { (timed, allDay, timedOv, allDayOv), fixed, fixedOv ->
+        ReminderDefaults(timed, allDay, timedOv, allDayOv, fixed, fixedOv)
+    }.first()
+
+    private data class Quadruple<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
     /**
      * Stretch a new timed event to the configured default length (#54) — the
@@ -658,11 +665,7 @@ class EventEditViewModel @Inject constructor(
         // A kept pass of a repeated hour stays, so switching back out of all-day
         // lands where the event was — unless dropping the pin changed the zone.
         edit {
-            if (value) {
-                it.withTimezone(null, zoneSource.current()).copy(isAllDay = true, fixedReminders = emptyList())
-            } else {
-                it.copy(isAllDay = false)
-            }
+            if (value) it.withTimezone(null, zoneSource.current()).copy(isAllDay = true) else it.copy(isAllDay = false)
         }
         // The default reminder differs for all-day vs timed; re-apply the
         // type-appropriate default unless the user has hand-edited it (guarded).
@@ -728,6 +731,8 @@ class EventEditViewModel @Inject constructor(
         edit {
             if (it.isAllDay) it else it.copy(fixedReminders = (it.fixedReminders + reminder).distinct().sortedWith(FIXED_ORDER))
         }
+        // Remembered so the row reads back as this reminder when reopened.
+        viewModelScope.launch { withContext(io) { settingsPrefs.addRecentFixedTimeReminder(reminder) } }
     }
 
     fun removeFixedReminder(reminder: FixedTimeReminder) {

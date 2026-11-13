@@ -6,6 +6,7 @@ import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
 import de.jeanlucmakiola.calendula.data.calendar.withoutProviderDefaults
+import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.ReminderStatePrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.reminders.DailyDigestSettings
@@ -51,6 +52,7 @@ class ReminderScanner @Inject constructor(
     private val snoozes: ReminderSnoozeScheduler,
     private val alarms: ReminderAlarmScheduler,
     private val state: ReminderStatePrefs,
+    private val calendarPrefs: CalendarPrefs,
     private val settingsPrefs: SettingsPrefs,
     @IoDispatcher private val io: kotlinx.coroutines.CoroutineDispatcher,
 ) {
@@ -138,17 +140,30 @@ class ReminderScanner @Inject constructor(
      */
     private suspend fun postDigest(settings: DailyDigestSettings, lastFired: Long, now: Long): Long {
         val zone = ZoneId.systemDefault()
-        val schedule = scheduleDigest(settings.timeMinutes, settings.day, zone, lastFired, now)
+        val schedule = scheduleDigest(
+            timeMinutes = settings.timeMinutes,
+            day = settings.day,
+            zone = zone,
+            // A moment that passed before the summary was set up is not owed.
+            lastFiredMillis = maxOf(lastFired, settings.armedAtMillis),
+            nowMillis = now,
+            lastPostedDay = state.lastDigestDay(),
+        )
         val day = schedule.dueDay ?: return schedule.nextAlarmMillis
         // A failed summary must not cost the event reminders this pass owes.
-        if (digestNotifier.canPost()) runCatching {
-            // A day either side: all-day occurrences sit at UTC midnight, which
-            // can fall outside the local day they stand for.
-            val from = day.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
-            val to = day.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
-            val entries = digestEntries(source.occurrences(from, to), day, zone, settings.excludedCalendarIds)
-            digestNotifier.post(day, entries)
-        }.onFailure { Log.w(TAG, "Daily summary failed", it) }
+        if (notifier.canPost()) {
+            try {
+                // A day either side: all-day occurrences sit at UTC midnight, which
+                // can fall outside the local day they stand for.
+                val from = day.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+                val to = day.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
+                val left = settings.excludedCalendarIds + calendarPrefs.pendingDisabledCalendarIds.first()
+                digestNotifier.post(day, digestEntries(source.occurrences(from, to), day, zone, left))
+                state.setLastDigestDay(day)
+            } catch (e: Exception) {
+                Log.w(TAG, "Daily summary failed", e)
+            }
+        }
         return schedule.nextAlarmMillis
     }
 

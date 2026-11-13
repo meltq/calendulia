@@ -779,5 +779,46 @@ class EventEditViewModelTest {
         assertThat(fake.updatedEvents.single().third.fixedReminders).containsExactly(evening)
         job.cancel()
     }
+
+    @Test
+    fun `a round trip through all-day keeps set-time reminders`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val s = settings(tempDir)
+        s.setDefaultFixedTimeReminder(FixedTimeReminder(1, 1_200))
+        val vm = viewModel(tempDir, fake, s)
+        val job = activate(vm)
+
+        vm.openNew(LocalDate(2030, 1, 15), startMinutes = 600)
+        advanceUntilIdle()
+        vm.addFixedReminder(FixedTimeReminder(2, 480))
+        vm.setAllDay(true)
+        vm.setAllDay(false)
+        advanceUntilIdle()
+        assertThat(vm.state.value!!.form!!.fixedReminders)
+            .containsExactly(FixedTimeReminder(2, 480), FixedTimeReminder(1, 1_200))
+        job.cancel()
+    }
+
+    @Test
+    fun `a copy carrying only set-time reminders keeps them`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val s = settings(tempDir)
+        s.setDefaultReminderMinutes(listOf(15))
+        val vm = viewModel(tempDir, fake, s)
+        val job = activate(vm)
+
+        val copy = importedForm(end = LocalDateTime(2030, 1, 15, 10, 0))
+            .copy(reminders = emptyList(), fixedReminders = listOf(FixedTimeReminder(1, 1_200)))
+        vm.openImported(copy, ImportSource.Insert)
+        advanceUntilIdle()
+        val form = vm.state.value!!.form!!
+        assertThat(form.fixedReminders).containsExactly(FixedTimeReminder(1, 1_200))
+        assertThat(form.reminders).isEmpty()
+        job.cancel()
+    }
 }
 

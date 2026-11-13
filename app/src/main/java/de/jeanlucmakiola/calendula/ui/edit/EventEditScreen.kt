@@ -880,7 +880,7 @@ private fun EventEditContent(
             Spacer(Modifier.height(gap))
             RemindersSection(
                 reminders = form.reminders,
-                fixedReminders = form.fixedReminders,
+                fixedReminders = if (form.isAllDay) emptyList() else form.fixedReminders,
                 onRemove = viewModel::removeReminder,
                 onRemoveFixed = viewModel::removeFixedReminder,
                 onAdd = { sheet = EditSheet.Reminder },

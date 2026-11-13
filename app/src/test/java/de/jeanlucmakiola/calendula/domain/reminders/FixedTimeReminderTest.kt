@@ -42,11 +42,16 @@ class FixedTimeReminderTest {
     }
 
     @Test
-    fun `split keeps presets and whole days as lead times`() {
+    fun `only known patterns read as fixed-time`() {
         val start = at("2026-06-10T10:00")
-        val split = splitTimedReminders(listOf(10, 1_440, 840, 2 * 1_440), start, berlin, known = emptySet())
-        assertThat(split.leadMinutes).containsExactly(10, 1_440, 2_880).inOrder()
-        assertThat(split.fixed).containsExactly(eveningBefore)
+        // 840 is "1 day before at 20:00" here, but also a plain "14 hours before".
+        val unknown = splitTimedReminders(listOf(10, 1_440, 840), start, berlin, known = emptySet())
+        assertThat(unknown.leadMinutes).containsExactly(10, 840, 1_440).inOrder()
+        assertThat(unknown.fixed).isEmpty()
+
+        val known = splitTimedReminders(listOf(10, 1_440, 840), start, berlin, known = setOf(eveningBefore))
+        assertThat(known.leadMinutes).containsExactly(10, 1_440).inOrder()
+        assertThat(known.fixed).containsExactly(eveningBefore)
     }
 
     @Test
@@ -67,7 +72,7 @@ class FixedTimeReminderTest {
             listOf(eveningBefore.offsetMinutes(start, berlin), twoDays.offsetMinutes(start, berlin)),
             start,
             berlin,
-            known = emptySet(),
+            known = setOf(eveningBefore, twoDays),
         )
         assertThat(split.fixed).containsExactly(twoDays, eveningBefore).inOrder()
     }

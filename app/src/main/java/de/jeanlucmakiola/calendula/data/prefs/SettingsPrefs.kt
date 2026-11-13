@@ -1,10 +1,12 @@
 package de.jeanlucmakiola.calendula.data.prefs
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.reminders.DEFAULT_DIGEST_TIME_MINUTES
 import de.jeanlucmakiola.calendula.domain.reminders.DailyDigestSettings
 import de.jeanlucmakiola.calendula.domain.reminders.DigestDay
 import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
@@ -190,7 +192,8 @@ class SettingsPrefs @Inject constructor(
      */
     val knownFixedTimeReminders: Flow<Set<FixedTimeReminder>> = prefs.snapshot {
         setOfNotNull(it[SettingsKeys.defaultFixedTimeReminder]) +
-            it[SettingsKeys.perCalendarFixedTimeReminderOverride].values.filterNotNull()
+            it[SettingsKeys.perCalendarFixedTimeReminderOverride].values.filterNotNull() +
+            it[SettingsKeys.recentFixedTimeReminders]
     }
     val dailyDigest: Flow<DailyDigestSettings> = prefs.snapshot { it.dailyDigest }
     val autoBackupEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.autoBackupEnabled)
@@ -359,12 +362,28 @@ class SettingsPrefs @Inject constructor(
         }
     }
 
-    suspend fun setDailyDigestEnabled(enabled: Boolean) = prefs.set(SettingsKeys.dailyDigestEnabled, enabled)
+    suspend fun setDailyDigestEnabled(enabled: Boolean) = editDigest { it[SettingsKeys.dailyDigestEnabled] = enabled }
 
     suspend fun setDailyDigestTimeMinutes(minutesOfDay: Int) =
-        prefs.set(SettingsKeys.dailyDigestTimeMinutes, minutesOfDay)
+        editDigest { it[SettingsKeys.dailyDigestTimeMinutes] = minutesOfDay }
 
-    suspend fun setDailyDigestDay(day: DigestDay) = prefs.set(SettingsKeys.dailyDigestDay, day)
+    suspend fun setDailyDigestDay(day: DigestDay) = editDigest { it[SettingsKeys.dailyDigestDay] = day }
+
+    /**
+     * Change when the summary arrives, stamping the moment: a summary whose time
+     * had already passed today is not owed by the change itself.
+     */
+    private suspend fun editDigest(change: (MutablePreferences) -> Unit) {
+        prefs.edit {
+            change(it)
+            it[SettingsKeys.dailyDigestArmedAt] = System.currentTimeMillis()
+        }
+    }
+
+    /** Remember a fixed-time reminder picked by hand, so it reads back as one later (#459). */
+    suspend fun addRecentFixedTimeReminder(reminder: FixedTimeReminder) {
+        prefs.update(SettingsKeys.recentFixedTimeReminders) { (listOf(reminder) + it).distinct() }
+    }
 
     suspend fun setCalendarInDailyDigest(calendarId: Long, included: Boolean) {
         prefs.update(SettingsKeys.digestExcludedCalendarIds) { if (included) it - calendarId else it + calendarId }
@@ -419,8 +438,7 @@ class SettingsPrefs @Inject constructor(
         /** 09:00 as minutes from midnight; the default all-day reminder fire time. */
         internal const val DEFAULT_ALLDAY_REMINDER_TIME = 540
         internal const val MINUTES_PER_DAY = 1_440
-        /** 20:00, when the daily summary arrives until changed. */
-        internal const val DEFAULT_DIGEST_TIME = 1_200
+        internal const val MAX_RECENT_FIXED_TIME_REMINDERS = 5
         /** Default snooze delay for the notification "Snooze" action. */
         const val DEFAULT_SNOOZE_MINUTES = 10
         const val DEFAULT_MULTI_DAY_COUNT = 3
@@ -757,13 +775,26 @@ object SettingsKeys {
     /** The daily summary notification (#459): opt-in, and which day it lists at what time. */
     val dailyDigestEnabled: Pref<Boolean> = booleanPref("daily_digest_enabled", false)
     val dailyDigestTimeMinutes: Pref<Int> =
-        intPref("daily_digest_time_minutes", SettingsPrefs.DEFAULT_DIGEST_TIME).coerced {
+        intPref("daily_digest_time_minutes", DEFAULT_DIGEST_TIME_MINUTES).coerced {
             it.coerceIn(0, SettingsPrefs.MINUTES_PER_DAY - 1)
         }
     val dailyDigestDay: Pref<DigestDay> = enumPref("daily_digest_day", DigestDay.Tomorrow)
 
     /** Calendars left out of the daily summary; every other one is in. */
     val digestExcludedCalendarIds: Pref<Set<Long>> = idSetPref("digest_excluded_calendar_ids")
+
+    /** When the summary's switch, time or day last changed; a moment before it is never owed. */
+    val dailyDigestArmedAt: Pref<Long> = longPref("daily_digest_armed_at", 0L)
+
+    /**
+     * Fixed-time reminders last picked by hand in the editor, newest first —
+     * with the defaults, the patterns a stored offset is recognised as.
+     */
+    val recentFixedTimeReminders: Pref<List<FixedTimeReminder>> =
+        nullableStringPref("recent_fixed_time_reminders").map(
+            { stored -> stored?.split(LIST_SEP).orEmpty().mapNotNull(FixedTimeReminder::parse).distinct() },
+            { reminders -> reminders.take(SettingsPrefs.MAX_RECENT_FIXED_TIME_REMINDERS).joinToString(LIST_SEP) { it.toToken() } },
+        )
 
     /** Whether periodic automatic `.ics` export of local calendars is on (issue #8). */
     val autoBackupEnabled: Pref<Boolean> = booleanPref("auto_backup_enabled", false)
@@ -968,6 +999,7 @@ internal val Preferences.dailyDigest: DailyDigestSettings
         timeMinutes = this[SettingsKeys.dailyDigestTimeMinutes],
         day = this[SettingsKeys.dailyDigestDay],
         excludedCalendarIds = this[SettingsKeys.digestExcludedCalendarIds],
+        armedAtMillis = this[SettingsKeys.dailyDigestArmedAt],
     )
 
 /** A calendar's choice for the fixed-time default, as a picker returns it. */

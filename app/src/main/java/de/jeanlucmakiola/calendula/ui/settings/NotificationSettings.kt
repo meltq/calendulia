@@ -82,8 +82,9 @@ internal fun NotificationsScreen(
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { /* The pref is already on; a denial just leaves the OS gate shut. */ }
-    val toggleReminders: (Boolean) -> Unit = { enabled ->
-        viewModel.setRemindersEnabled(enabled)
+    // Turning either kind of notification on asks for the permission if missing.
+    fun askingPermission(set: (Boolean) -> Unit): (Boolean) -> Unit = { enabled ->
+        set(enabled)
         val needsPermission = enabled &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !context.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -91,16 +92,8 @@ internal fun NotificationsScreen(
             launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
-
-    val toggleDigest: (Boolean) -> Unit = { enabled ->
-        viewModel.setDailyDigestEnabled(enabled)
-        val needsPermission = enabled &&
-            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            !context.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
-        if (needsPermission) {
-            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
-        }
-    }
+    val toggleReminders = askingPermission(viewModel::setRemindersEnabled)
+    val toggleDigest = askingPermission(viewModel::setDailyDigestEnabled)
 
     var showDefaultReminder by remember { mutableStateOf(false) }
     var showAllDayReminder by remember { mutableStateOf(false) }
@@ -174,9 +167,7 @@ internal fun NotificationsScreen(
         Spacer(Modifier.height(24.dp))
         DailyDigestRows(
             digest = state.dailyDigest,
-            onEnable = { enabled ->
-                toggleDigest(enabled)
-            },
+            onEnable = toggleDigest,
             onPickDay = { showDigestDay = true },
             onPickTime = { showDigestTime = true },
             onOpenSound = {

@@ -415,11 +415,12 @@ moment (device zone) to the start, so it syncs and fires everywhere — the scan
 plans it like any lead time. Only the editor knows it as a pattern
 (`EventForm.fixedReminders`), and it re-derives the offset from the start it
 saves with, so moving the event, in the form or by drag, keeps the wall clock.
-Reading a row back is a guess, made in one place (`splitTimedReminders`): an
-offset landing on a configured default's pattern is fixed-time; otherwise one
-reaching back past the start's day is, unless it is a whole number of days or a
-short preset. Guessing wrong never moves an alarm, only how a later time change
-treats it. Limits: a recurring series stores one offset, so an occurrence whose
+Reading a row back is a guess, made in one place (`classifyTimedReminder`): an
+offset is fixed-time only when it lands on a known pattern — a configured
+default, or one picked by hand on this device (`recentFixedTimeReminders`).
+Guessing from the offset's shape alone would turn ordinary leads ("12 hours
+before") into fixed ones; guessing wrong never moves an alarm, only how a later
+time change treats it. Limits: a recurring series stores one offset, so an occurrence whose
 lead spans a DST change fires an hour off the named time (as in every other
 app reading that row), and on another device or app the row is just a lead time.
 New timed events get the default (`SettingsKeys.defaultFixedTimeReminder`, with
@@ -431,6 +432,10 @@ counts after a long gap, and it is dropped once the day it lists has passed.
 It is independent of the event-reminder switch, posts on its own channel
 (`DailyDigestNotifier`), lists switched-on calendars minus its own exclusions,
 and replaces the previous summary — or withdraws it when the day is empty.
+Two guards keep it to one per day: the day last listed is recorded right after
+posting (`ReminderStatePrefs.lastDigestDay`), so a pass failing later can't post
+it twice, and changing the switch, time or day stamps `dailyDigestArmedAt`, so a
+moment that passed before the change is not owed by it.
 The per-calendar reminder mute does not apply: a calendar too noisy to ping per
 event can still belong in the overview, and the summary has its own
 per-calendar switch next to it.

@@ -29,6 +29,15 @@ class DailyDigestTest {
     }
 
     @Test
+    fun `a day already listed is not listed again`() {
+        val schedule = scheduleDigest(
+            eight, DigestDay.Tomorrow, zone, millis("2026-06-10T19:00"), millis("2026-06-10T20:01"),
+            lastPostedDay = LocalDate.of(2026, 6, 11),
+        )
+        assertThat(schedule.dueDay).isNull()
+    }
+
+    @Test
     fun `before the moment it only arms the alarm`() {
         val schedule = scheduleDigest(eight, DigestDay.Tomorrow, zone, millis("2026-06-10T08:00"), millis("2026-06-10T09:00"))
         assertThat(schedule.dueDay).isNull()

@@ -1,7 +1,7 @@
 package de.jeanlucmakiola.calendula.ui.detail
 
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
-import de.jeanlucmakiola.calendula.domain.reminders.splitTimedReminders
+import de.jeanlucmakiola.calendula.domain.reminders.classifyTimedReminder
 import de.jeanlucmakiola.calendula.domain.withFixedTimeRemindersRead
 import android.net.Uri
 import androidx.lifecycle.ViewModel
@@ -169,8 +169,7 @@ class EventDetailViewModel @Inject constructor(
         } else {
             val zone = zoneSource.current()
             corrected.reminders.map { it.minutes }.distinct().mapNotNull { minutes ->
-                splitTimedReminders(listOf(minutes), corrected.instance.start, zone, knownFixed)
-                    .fixed.firstOrNull()?.let { minutes to it }
+                classifyTimedReminder(minutes, corrected.instance.start, zone, knownFixed)?.let { minutes to it }
             }.toMap()
         }
         val description = corrected.description

@@ -44,7 +44,8 @@ data class EventForm(
     val reminders: List<Int> = emptyList(),
     /**
      * "N days before at HH:MM" reminders of a timed event (#459), written as lead
-     * times measured from [start] at save time. Always empty on an all-day event.
+     * times measured from [start] at save time. Ignored while [isAllDay], so a
+     * round trip through all-day keeps them.
      */
     val fixedReminders: List<FixedTimeReminder> = emptyList(),
     val availability: Availability = Availability.Busy,
@@ -293,7 +294,7 @@ fun EventForm.populatedFields(): Set<EventFormField> = buildSet {
     if (location.isNotBlank()) add(EventFormField.Location)
     if (description.isNotBlank()) add(EventFormField.Description)
     if (timezone != null) add(EventFormField.Timezone)
-    if (reminders.isNotEmpty() || fixedReminders.isNotEmpty()) add(EventFormField.Reminders)
+    if (reminders.isNotEmpty() || (!isAllDay && fixedReminders.isNotEmpty())) add(EventFormField.Reminders)
     if (rrule != null) add(EventFormField.Recurrence)
     if (availability != Availability.Busy) add(EventFormField.Availability)
     if (status != EventStatus.Confirmed) add(EventFormField.Status)

@@ -748,6 +748,9 @@ class SettingsPrefsTest {
         assertThat(resolveDefaultFixedTimeReminder(FixedTimeReminder(1, 1_200), overrides, 3L))
             .isEqualTo(FixedTimeReminder(1, 1_200))
         assertThat(prefs.knownFixedTimeReminders.first()).containsExactly(FixedTimeReminder(1, 1_200), morning)
+        val picked = FixedTimeReminder(3, 600)
+        prefs.addRecentFixedTimeReminder(picked)
+        assertThat(prefs.knownFixedTimeReminders.first()).contains(picked)
 
         prefs.setCalendarFixedTimeReminderOverride(2L, FixedTimeOverride.Inherit)
         assertThat(prefs.perCalendarFixedTimeReminderOverride.first().containsKey(2L)).isFalse()
@@ -761,9 +764,11 @@ class SettingsPrefsTest {
         prefs.setDailyDigestTimeMinutes(420)
         prefs.setDailyDigestDay(DigestDay.Today)
         prefs.setCalendarInDailyDigest(5L, included = false)
-        assertThat(prefs.dailyDigest.first()).isEqualTo(
+        val digest = prefs.dailyDigest.first()
+        assertThat(digest.copy(armedAtMillis = 0L)).isEqualTo(
             DailyDigestSettings(enabled = true, timeMinutes = 420, day = DigestDay.Today, excludedCalendarIds = setOf(5L)),
         )
+        assertThat(digest.armedAtMillis).isGreaterThan(0L)
         prefs.setCalendarInDailyDigest(5L, included = true)
         assertThat(prefs.dailyDigest.first().excludedCalendarIds).isEmpty()
     }

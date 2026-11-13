@@ -22,7 +22,7 @@ class FixedTimeReminderFormTest {
     @Test
     fun `a moved start re-derives the offset so the wall clock stays`() {
         val loaded = form("2026-06-10T10:00", reminders = listOf(10, 840))
-            .withFixedTimeRemindersRead(known = emptySet(), deviceZone = zone)
+            .withFixedTimeRemindersRead(known = setOf(evening), deviceZone = zone)
         assertThat(loaded.reminders).containsExactly(10)
         assertThat(loaded.fixedReminders).containsExactly(evening)
         assertThat(loaded.fixedReminderOffsets(zone)).containsExactly(840)
@@ -34,13 +34,14 @@ class FixedTimeReminderFormTest {
     @Test
     fun `all-day forms keep their reminders and store no fixed ones`() {
         val allDay = form("2026-06-10T00:00", reminders = listOf(840), allDay = true)
-        assertThat(allDay.withFixedTimeRemindersRead(emptySet(), zone)).isEqualTo(allDay)
+        assertThat(allDay.withFixedTimeRemindersRead(setOf(evening), zone)).isEqualTo(allDay)
         assertThat(allDay.copy(fixedReminders = listOf(evening)).fixedReminderOffsets(zone)).isEmpty()
     }
 
     @Test
-    fun `fixed reminders count as a populated reminders section`() {
+    fun `fixed reminders count as a populated reminders section on a timed event only`() {
         val withFixed = form("2026-06-10T10:00").copy(fixedReminders = listOf(evening))
         assertThat(withFixed.populatedFields()).contains(EventFormField.Reminders)
+        assertThat(withFixed.copy(isAllDay = true).populatedFields()).doesNotContain(EventFormField.Reminders)
     }
 }
