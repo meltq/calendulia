@@ -98,11 +98,15 @@ fun BackupScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     // The one-calendar shortcut; the per-calendar selector owns its own launcher.
+    // The id is taken at the tap, so a result delivered into a recreated screen
+    // still knows what to export.
+    var shortcutExportId by rememberSaveable { mutableStateOf<Long?>(null) }
     val createBackup = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/calendar"),
     ) { uri ->
-        val ids = (state as? BackupUiState.Ready)?.exportable?.map { it.id }?.toSet()
-        if (uri != null && ids != null) viewModel.exportBackup(uri, ids)
+        val id = shortcutExportId
+        if (uri != null && id != null) viewModel.exportBackup(uri, setOf(id))
+        shortcutExportId = null
     }
     var showExportPicker by rememberSaveable { mutableStateOf(false) }
 
@@ -159,7 +163,8 @@ fun BackupScreen(
                 viewModel = viewModel,
                 onRestore = { runCatching { openBackup.launch(RESTORE_MIME_TYPES) } },
                 onPickFolder = { runCatching { pickFolder.launch(null) } },
-                onExportAll = {
+                onExportOnly = {
+                    shortcutExportId = s.exportable.singleOrNull()?.id
                     runCatching { createBackup.launch(defaultBackupName()) }
                 },
                 onExportPick = { showExportPicker = true },
@@ -243,7 +248,7 @@ private fun BackupContent(
     viewModel: CalendarsViewModel,
     onRestore: () -> Unit,
     onPickFolder: () -> Unit,
-    onExportAll: () -> Unit,
+    onExportOnly: () -> Unit,
     onExportPick: () -> Unit,
     onEditInterval: () -> Unit,
     onEditCalendars: () -> Unit,
@@ -277,7 +282,7 @@ private fun BackupContent(
         position = Position.Top,
         leading = { LeadingAvatar(Icons.Default.FileDownload) },
         // A single exportable calendar skips the selector.
-        onClick = if (exportable.size == 1) onExportAll else onExportPick,
+        onClick = if (exportable.size == 1) onExportOnly else onExportPick,
     )
     GroupedRow(
         title = stringResource(R.string.calendars_restore_action),
@@ -352,7 +357,7 @@ private fun BackupContent(
 @Composable
 private fun ExportCalendarPicker(
     calendars: List<CalendarSource>,
-    onExport: (Uri, Set<Long>?) -> Unit,
+    onExport: (Uri, Set<Long>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     // Deliberately not keyed on [calendars]: that list is observer-driven, so

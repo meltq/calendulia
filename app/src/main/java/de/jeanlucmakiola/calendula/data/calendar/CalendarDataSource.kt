@@ -789,14 +789,23 @@ class AndroidCalendarDataSource @Inject constructor(
         if (names.isEmpty()) return emptyList()
 
         val idList = names.keys.joinToString(",")
+        // Skip soft-deleted rows and exception rows (modified occurrences /
+        // cancellations) — v1 exports masters + one-offs only.
+        val selection = "${CalendarContract.Events.CALENDAR_ID} IN ($idList) AND " +
+            "${CalendarContract.Events.DELETED} = 0 AND " +
+            "${CalendarContract.Events.ORIGINAL_ID} IS NULL"
+        val eventIds = resolver.query(
+            CalendarContract.Events.CONTENT_URI,
+            arrayOf(CalendarContract.Events._ID),
+            selection,
+            null,
+            null,
+        )?.use { c -> c.mapRows { getLong(0) } }.orEmpty()
+        val reminders = reminderMinutesByEvent(eventIds)
         return resolver.query(
             CalendarContract.Events.CONTENT_URI,
             EventExportProjection.COLUMNS,
-            // Skip soft-deleted rows and exception rows (modified occurrences /
-            // cancellations) — v1 exports masters + one-offs only.
-            "${CalendarContract.Events.CALENDAR_ID} IN ($idList) AND " +
-                "${CalendarContract.Events.DELETED} = 0 AND " +
-                "${CalendarContract.Events.ORIGINAL_ID} IS NULL",
+            selection,
             null,
             CalendarContract.Events.DTSTART + " ASC",
         )?.use { c ->
@@ -804,12 +813,32 @@ class AndroidCalendarDataSource @Inject constructor(
                 val eventId = getLong(EventExportProjection.IDX_ID)
                 val calendarId = getLong(EventExportProjection.IDX_CALENDAR_ID)
                 toIcsEvent(
-                    reminderMinutes = queryReminders(eventId).map { it.minutes },
+                    reminderMinutes = reminders[eventId].orEmpty(),
                     calendarName = names[calendarId],
                     allDayReminderTimeMinutes = allDayReminderTimeMinutes,
                 )
             }
         } ?: emptyList()
+    }
+
+    /**
+     * Reminder minutes of [eventIds], a chunked query at a time rather than one
+     * per event — a synced calendar can hold thousands (#147).
+     */
+    private fun reminderMinutesByEvent(eventIds: List<Long>): Map<Long, List<Int>> {
+        val byEvent = mutableMapOf<Long, MutableList<Int>>()
+        eventIds.chunked(REMINDER_QUERY_CHUNK).forEach { chunk ->
+            resolver.query(
+                CalendarContract.Reminders.CONTENT_URI,
+                arrayOf(CalendarContract.Reminders.EVENT_ID, CalendarContract.Reminders.MINUTES),
+                "${CalendarContract.Reminders.EVENT_ID} IN (${chunk.joinToString(",")})",
+                null,
+                null,
+            )?.use { c ->
+                while (c.moveToNext()) byEvent.getOrPut(c.getLong(0)) { mutableListOf() } += c.getInt(1)
+            }
+        }
+        return byEvent
     }
 
     override fun existingUids(calendarId: Long): Set<String> = resolver.query(
@@ -1745,6 +1774,9 @@ class AndroidCalendarDataSource @Inject constructor(
 
     private companion object {
         const val TAG = "CalendarDataSource"
+
+        /** Ids per `IN (…)` list, well under SQLite's bound-variable and statement limits. */
+        const val REMINDER_QUERY_CHUNK = 500
 
         /** Normalised key an attendee is matched/deduped on (case-insensitive email). */
         fun emailKey(email: String): String = email.trim().lowercase()

@@ -950,37 +950,6 @@ class CalendarRepositoryImplTest {
     }
 
     @Test
-    fun `exportEvents without ids reads the writable local calendars only`(
-        @TempDir tempDir: Path,
-    ) = runTest {
-        fun cal(id: Long, local: Boolean, writable: Boolean = true, managed: Boolean = false) =
-            de.jeanlucmakiola.calendula.domain.CalendarSource(
-                id = id,
-                displayName = "C$id",
-                accountName = "a",
-                accountType = if (local) "LOCAL" else "com.google",
-                color = 0,
-                isVisibleInSystem = true,
-                canModifyContents = writable,
-                isLocal = local,
-                isManaged = managed,
-            )
-        val fake = FakeCalendarDataSource().apply {
-            calendarsResult = listOf(
-                cal(1L, local = true),
-                cal(2L, local = false),
-                cal(3L, local = true, managed = true),
-                cal(4L, local = true, writable = false),
-            )
-        }
-        val repo = testRepository(fake, tempDir, Dispatchers.Unconfined)
-
-        repo.exportEvents()
-
-        assertThat(fake.lastCalendarEventsIds).containsExactly(1L)
-    }
-
-    @Test
     fun `exportEvents reads synced calendars when asked for them`(
         @TempDir tempDir: Path,
     ) = runTest {

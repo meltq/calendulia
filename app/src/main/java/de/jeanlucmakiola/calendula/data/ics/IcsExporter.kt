@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.data.ics
 
 import android.content.Context
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import dagger.hilt.android.qualifiers.ApplicationContext
@@ -30,41 +31,50 @@ class IcsExporter @Inject constructor(
     }
 
     /**
-     * Write [content] to [fileName] inside the persisted SAF tree [folder],
-     * overwriting it if it already exists (the automatic-backup destination).
-     * Requires a persisted write grant on [folder]. Throws on failure.
+     * The files directly inside the persisted SAF tree [folder] (the
+     * automatic-backup destination), by display name — one provider query, so
+     * a run over many calendars doesn't pay a lookup per file. Throws when the
+     * folder is gone or not writable.
      */
-    fun writeToFolder(folder: Uri, fileName: String, content: String) {
-        val dir = writableFolder(folder)
-        // Reuse the file if present and clean up any "name (1).ics" duplicates
-        // SAF may have created if two runs ever raced, so a name converges on a
-        // single overwritten file.
-        val base = fileName.substringBeforeLast('.')
-        val ext = fileName.substringAfterLast('.', "")
-        var target: DocumentFile? = null
-        for (child in dir.listFiles()) {
-            val name = child.name ?: continue
-            when {
-                name == fileName -> target = child
-                name.startsWith("$base (") && name.endsWith(".$ext") -> child.delete()
+    fun listFolder(folder: Uri): Map<String, Uri> {
+        writableFolder(folder)
+        val treeId = DocumentsContract.getTreeDocumentId(folder)
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(folder, treeId)
+        val columns = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+        )
+        val cursor = context.contentResolver.query(children, columns, null, null, null)
+            ?: throw IOException("Backup folder can't be listed")
+        return cursor.use { c ->
+            buildMap {
+                while (c.moveToNext()) {
+                    if (c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) continue
+                    val name = c.getString(1) ?: continue
+                    put(name, DocumentsContract.buildDocumentUriUsingTree(folder, c.getString(0)))
+                }
             }
         }
-        val file = target
-            ?: dir.createFile(MIME_CALENDAR, fileName)
-            ?: throw IOException("Could not create backup file in the chosen folder")
-        writeDocument(file.uri, content)
     }
 
-    /** Names of the files directly inside [folder]. Throws when it can't be read. */
-    fun fileNames(folder: Uri): List<String> = writableFolder(folder).listFiles().mapNotNull { it.name }
+    /**
+     * Write [content] to [fileName] in [folder], overwriting the file of that
+     * name if [listing] (from [listFolder]) has one. Throws on failure.
+     */
+    fun writeToFolder(folder: Uri, listing: Map<String, Uri>, fileName: String, content: String) {
+        val uri = listing[fileName] ?: DocumentsContract.createDocument(
+            context.contentResolver,
+            DocumentsContract.buildDocumentUriUsingTree(folder, DocumentsContract.getTreeDocumentId(folder)),
+            MIME_CALENDAR,
+            fileName,
+        ) ?: throw IOException("Could not create backup file in the chosen folder")
+        writeDocument(uri, content)
+    }
 
-    /** Delete the files called [names] from [folder]; one that won't go is left behind. */
-    fun deleteFromFolder(folder: Uri, names: Collection<String>) {
-        if (names.isEmpty()) return
-        val wanted = names.toSet()
-        writableFolder(folder).listFiles()
-            .filter { it.isFile && it.name in wanted }
-            .forEach { runCatching { it.delete() } }
+    /** Delete [documents]; one that won't go is left behind. */
+    fun deleteDocuments(documents: Collection<Uri>) {
+        documents.forEach { runCatching { DocumentsContract.deleteDocument(context.contentResolver, it) } }
     }
 
     private fun writableFolder(folder: Uri): DocumentFile {

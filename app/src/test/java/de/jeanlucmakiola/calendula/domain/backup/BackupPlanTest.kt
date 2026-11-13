@@ -145,4 +145,60 @@ class BackupPlanTest {
         assertThat(normalizeBackupKeep(3)).isEqualTo(3)
         assertThat(normalizeBackupKeep(50)).isEqualTo(10)
     }
+    @Test
+    fun `a suffixed name that meets a real one is told apart again`() {
+        val targets = backupTargets(
+            listOf(cal(5L, "Work"), cal(6L, "Work"), cal(9L, "Work-5")),
+            combined = false,
+        )
+        assertThat(targets.map { it.baseName }.toSet()).hasSize(3)
+        assertThat(targets.map { it.baseName }).containsExactly("Work-5-5", "Work-6", "Work-5-9").inOrder()
+    }
+
+    @Test
+    fun `an emoji at the length limit is not split`() {
+        val name = "a".repeat(59) + "\uD83D\uDCC5" + "tail"
+        val cleaned = sanitizeBackupName(name)
+        assertThat(cleaned).isEqualTo("a".repeat(59) + "\uD83D\uDCC5")
+        assertThat(Character.isHighSurrogate(cleaned.last())).isFalse()
+    }
+
+    @Test
+    fun `a renamed calendar keeps pruning the files of its old name`() {
+        val target = backupTargets(
+            listOf(cal(1L, "Job")),
+            combined = false,
+            previousBases = mapOf(1L to setOf("Work")),
+        ).single()
+        assertThat(target.formerBaseNames).containsExactly("Work")
+        val existing = listOf("Work_2026-11-10_09-00-00.ics", "Work_2026-11-12_09-00-00.ics")
+
+        val keepTwo = planBackupFiles(listOf(target), existing, at, keep = 2).single()
+        assertThat(keepTwo.prune).containsExactly("Work_2026-11-10_09-00-00.ics")
+        assertThat(keepTwo.liveFormerBaseNames).containsExactly("Work")
+        assertThat(updatedBackupBases(emptyMap(), listOf(keepTwo))).containsExactly(1L, setOf("Work", "Job"))
+
+        val keepOne = planBackupFiles(listOf(target), existing, at, keep = 1).single()
+        assertThat(keepOne.prune).hasSize(2)
+        assertThat(updatedBackupBases(mapOf(1L to setOf("Work"), 2L to setOf("X")), listOf(keepOne)))
+            .containsExactly(1L, setOf("Job"), 2L, setOf("X"))
+    }
+
+    @Test
+    fun `a former name now used by another calendar is not claimed`() {
+        val targets = backupTargets(
+            listOf(cal(1L, "Job"), cal(2L, "Work")),
+            combined = false,
+            previousBases = mapOf(1L to setOf("Work")),
+        )
+        assertThat(targets.first().formerBaseNames).isEmpty()
+    }
+
+    @Test
+    fun `series names round-trip through storage`() {
+        val bases = mapOf(3L to setOf("Work", "Job"), 1L to setOf("Home"))
+        assertThat(parseBackupBases(persistBackupBases(bases))).isEqualTo(bases)
+        assertThat(persistBackupBases(emptyMap())).isNull()
+        assertThat(parseBackupBases("garbage|x/y|4/")).isEmpty()
+    }
 }

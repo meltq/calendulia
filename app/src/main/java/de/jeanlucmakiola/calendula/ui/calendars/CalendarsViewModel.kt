@@ -124,11 +124,11 @@ class CalendarsViewModel @Inject constructor(
     fun consumeBackupResult() { _backupResult.value = null }
 
     /**
-     * Serialise every event of [calendarIds] (null: the local calendars a backup
-     * covers by default) into the chosen SAF document [uri] as one `VCALENDAR`. Result (event count, or failure) lands
+     * Serialise every event of [calendarIds] into the chosen SAF document [uri]
+     * as one `VCALENDAR`. Result (event count, or failure) lands
      * in [backupResult] for a one-shot message.
      */
-    fun exportBackup(uri: Uri, calendarIds: Set<Long>? = null) {
+    fun exportBackup(uri: Uri, calendarIds: Set<Long>) {
         viewModelScope.launch {
             _backupResult.value = try {
                 val count = withContext(io) {

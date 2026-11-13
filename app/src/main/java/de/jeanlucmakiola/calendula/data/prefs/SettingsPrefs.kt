@@ -8,6 +8,8 @@ import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.backup.BackupSelection
 import de.jeanlucmakiola.calendula.domain.backup.DEFAULT_BACKUP_KEEP
 import de.jeanlucmakiola.calendula.domain.backup.normalizeBackupKeep
+import de.jeanlucmakiola.calendula.domain.backup.parseBackupBases
+import de.jeanlucmakiola.calendula.domain.backup.persistBackupBases
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.parseAgendaRange
@@ -188,6 +190,7 @@ class SettingsPrefs @Inject constructor(
     val autoBackupSelection: Flow<BackupSelection> = prefs.snapshot { it.autoBackupSelection }
     val autoBackupCombined: Flow<Boolean> = prefs.snapshot { it.autoBackupCombined }
     val autoBackupKeep: Flow<Int> = prefs.flow(SettingsKeys.autoBackupKeep)
+    val autoBackupSeriesNames: Flow<Map<Long, Set<String>>> = prefs.flow(SettingsKeys.autoBackupSeriesNames)
     val specialDatesEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.specialDatesEnabled)
     val specialDatesTypes: Flow<Set<SpecialDateType>> = prefs.snapshot { it.specialDatesTypes }
     val specialDatesCalendars: Flow<Map<SpecialDateType, Long>> = prefs.snapshot { it.specialDatesCalendars }
@@ -355,6 +358,9 @@ class SettingsPrefs @Inject constructor(
         prefs.set(SettingsKeys.autoBackupCombinedStored, combined)
 
     suspend fun setAutoBackupKeep(keep: Int) = prefs.set(SettingsKeys.autoBackupKeep, keep)
+
+    suspend fun setAutoBackupSeriesNames(names: Map<Long, Set<String>>) =
+        prefs.set(SettingsKeys.autoBackupSeriesNames, names)
 
     /** Switch [calendar] in or out of the automatic backup (#147). */
     suspend fun setAutoBackupCalendar(calendar: CalendarSource, included: Boolean) {
@@ -751,6 +757,10 @@ object SettingsKeys {
     val autoBackupKeep: Pref<Int> =
         intPref("auto_backup_keep", DEFAULT_BACKUP_KEEP).coerced(::normalizeBackupKeep)
 
+    /** Each calendar's backup series name from its last run, so a rename still prunes the old files. */
+    val autoBackupSeriesNames: Pref<Map<Long, Set<String>>> =
+        nullableStringPref("auto_backup_series").map(::parseBackupBases, ::persistBackupBases)
+
     /** Master switch for the contact special-dates mirror (issue #15). Opt-in. */
     val specialDatesEnabled: Pref<Boolean> = booleanPref("special_dates_enabled", false)
 
@@ -849,12 +859,6 @@ private fun <T> Pref<T>.coerced(clamp: (T) -> T): Pref<T> = map(clamp, clamp)
 
 private fun agendaRangePref(name: String): Pref<AgendaRange> =
     nullableStringPref(name).map({ parseAgendaRange(it, AgendaRange.Month) }, { it.storageValue() })
-
-private fun idSetPref(name: String): Pref<Set<Long>> =
-    nullableStringPref(name).map(
-        { stored -> stored?.split(LIST_SEP).orEmpty().mapNotNull { it.trim().toLongOrNull() }.toSet() },
-        { ids -> ids.takeIf { it.isNotEmpty() }?.sorted()?.joinToString(LIST_SEP) },
-    )
 
 private fun reminderListPref(name: String): Pref<List<Int>> =
     nullableStringPref(name).map({ it.toReminderList() }, { it.toStoredReminders() })

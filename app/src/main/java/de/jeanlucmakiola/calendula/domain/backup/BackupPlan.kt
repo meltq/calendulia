@@ -47,10 +47,6 @@ data class BackupSelection(
             excluded = if (!on && default) excluded + id else excluded - id,
         )
     }
-
-    /** Ids of the selected calendars among [calendars]. */
-    fun selectedIds(calendars: List<CalendarSource>): Set<Long> =
-        calendars.filter(::selects).map { it.id }.toSet()
 }
 
 /** One backup file series: the calendars it holds and the name its files start with. */
@@ -59,6 +55,8 @@ data class BackupTarget(
     val baseName: String,
     /** The calendar name written into the file, or null for a combined file. */
     val calendarName: String?,
+    /** Names this calendar's series went by before a rename; their files are pruned with it. */
+    val formerBaseNames: Set<String> = emptySet(),
 )
 
 /** What one run writes and which earlier files it removes afterwards. */
@@ -67,6 +65,8 @@ data class BackupFilePlan(
     val fileName: String,
     /** Earlier files of this series beyond the retention count, oldest first. */
     val prune: List<String>,
+    /** Former names of the series that still have files after [prune], so they stay tracked. */
+    val liveFormerBaseNames: Set<String> = emptySet(),
 )
 
 /** The combined file's series name; also the fixed name used before #411. */
@@ -100,31 +100,51 @@ fun sanitizeBackupName(name: String, fallback: String = "calendar"): String {
         .replace(WHITESPACE, " ")
         .trim()
         .trimStart('.')
-        .take(MAX_BASE_LENGTH)
-        .trim()
-    return cleaned.ifEmpty { fallback }
+    // Cut by code point, so an emoji at the limit isn't split into a lone surrogate.
+    val end = if (cleaned.codePointCount(0, cleaned.length) > MAX_BASE_LENGTH) {
+        cleaned.offsetByCodePoints(0, MAX_BASE_LENGTH)
+    } else {
+        cleaned.length
+    }
+    return cleaned.substring(0, end).trim().ifEmpty { fallback }
 }
 
 /**
  * The file series the automatic backup writes: one combined file, or one per
- * calendar named after it. Two calendars that sanitise to the same name (a local
- * and a synced "Personal") keep apart by their id, so neither prunes the other's
+ * calendar named after it. Names are compared case-insensitively, as most
+ * storage is; calendars whose names clash (a local and a synced "Personal")
+ * take their id as a suffix until every series is distinct, so none prunes
+ * another's files. [previousBases] — the series names each calendar's files
+ * still carry from earlier runs — let a renamed calendar keep pruning its old
  * files.
  */
-fun backupTargets(calendars: List<CalendarSource>, combined: Boolean): List<BackupTarget> {
+fun backupTargets(
+    calendars: List<CalendarSource>,
+    combined: Boolean,
+    previousBases: Map<Long, Set<String>> = emptyMap(),
+): List<BackupTarget> {
     if (calendars.isEmpty()) return emptyList()
     if (combined) {
         return listOf(BackupTarget(calendars.map { it.id }.toSet(), COMBINED_BACKUP_BASE, calendarName = null))
     }
-    val bases = calendars.associate { it.id to sanitizeBackupName(it.displayName) }
-    val taken = bases.values.groupingBy { it.lowercase() }.eachCount()
+    val bases = calendars.associateTo(LinkedHashMap()) { it.id to sanitizeBackupName(it.displayName) }
+    while (true) {
+        val counts = bases.values.groupingBy { it.lowercase() }.eachCount()
+        val clashing = bases.filterValues {
+            counts.getValue(it.lowercase()) > 1 || it.equals(COMBINED_BACKUP_BASE, ignoreCase = true)
+        }
+        if (clashing.isEmpty()) break
+        clashing.forEach { (id, base) -> bases[id] = "$base-$id" }
+    }
+    val current = bases.values.map { it.lowercase() }.toSet()
     return calendars.map { calendar ->
         val base = bases.getValue(calendar.id)
-        val clash = taken.getValue(base.lowercase()) > 1 || base.equals(COMBINED_BACKUP_BASE, ignoreCase = true)
         BackupTarget(
             calendarIds = setOf(calendar.id),
-            baseName = if (clash) "$base-${calendar.id}" else base,
+            baseName = base,
             calendarName = calendar.displayName,
+            formerBaseNames = previousBases[calendar.id].orEmpty()
+                .filterTo(mutableSetOf()) { it.lowercase() !in current },
         )
     }
 }
@@ -149,23 +169,61 @@ fun planBackupFiles(
     val retain = keep.coerceAtLeast(1)
     return targets.map { target ->
         val fileName = backupFileName(target.baseName, at)
-        val series = Regex("^${Regex.escape(target.baseName)}_($STAMP_REGEX)${Regex.escape(ICS_EXTENSION)}$")
+        val series = (target.formerBaseNames + target.baseName).map { base ->
+            base to Regex("^${Regex.escape(base)}_($STAMP_REGEX)${Regex.escape(ICS_EXTENSION)}$")
+        }
         val earlier = existing
             .filter { it != fileName }
             .mapNotNull { name ->
-                val stamp = series.find(name)?.groupValues?.get(1)
-                    ?: if (target.baseName == COMBINED_BACKUP_BASE && name == LEGACY_BACKUP_FILE) "" else null
-                stamp?.let { name to it }
+                series.firstNotNullOfOrNull { (base, regex) ->
+                    regex.find(name)?.let { SeriesFile(name, base, it.groupValues[1]) }
+                } ?: if (target.baseName == COMBINED_BACKUP_BASE && name == LEGACY_BACKUP_FILE) {
+                    SeriesFile(name, COMBINED_BACKUP_BASE, stamp = "")
+                } else {
+                    null
+                }
             }
-            .sortedByDescending { it.second }
-            .map { it.first }
+            .sortedByDescending { it.stamp }
+        val kept = earlier.take(retain - 1)
         BackupFilePlan(
             target = target,
             fileName = fileName,
-            prune = earlier.drop(retain - 1).reversed(),
+            prune = earlier.drop(retain - 1).reversed().map { it.name },
+            liveFormerBaseNames = kept.map { it.base }.filterTo(mutableSetOf()) { it in target.formerBaseNames },
         )
     }
 }
+
+private data class SeriesFile(val name: String, val base: String, val stamp: String)
+
+/**
+ * The series names each calendar's files carry after a run that wrote
+ * [written]: its current name plus former ones that still have files. Calendars
+ * not written this run keep what [previous] had.
+ */
+fun updatedBackupBases(previous: Map<Long, Set<String>>, written: List<BackupFilePlan>): Map<Long, Set<String>> =
+    previous + written.filter { it.target.calendarName != null }.associate {
+        it.target.calendarIds.single() to (it.liveFormerBaseNames + it.target.baseName)
+    }
+
+private const val BASES_ENTRY_SEP = "|"
+private const val BASES_KEY_SEP = "/"
+
+/** Stores the id → series names map; both separators are characters a sanitised name can't hold. */
+fun persistBackupBases(bases: Map<Long, Set<String>>): String? =
+    bases.filterValues { it.isNotEmpty() }.takeIf { it.isNotEmpty() }
+        ?.entries?.sortedBy { it.key }
+        ?.joinToString(BASES_ENTRY_SEP) { (id, names) ->
+            (listOf(id.toString()) + names.sorted()).joinToString(BASES_KEY_SEP)
+        }
+
+fun parseBackupBases(stored: String?): Map<Long, Set<String>> =
+    stored?.split(BASES_ENTRY_SEP).orEmpty().mapNotNull { entry ->
+        val parts = entry.split(BASES_KEY_SEP)
+        val id = parts.first().toLongOrNull() ?: return@mapNotNull null
+        val names = parts.drop(1).filter { it.isNotEmpty() }.toSet()
+        names.takeIf { it.isNotEmpty() }?.let { id to it }
+    }.toMap()
 
 /** Closest offered retention count to [stored], so a stray value still shows a row. */
 fun normalizeBackupKeep(stored: Int): Int =

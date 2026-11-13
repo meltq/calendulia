@@ -63,11 +63,9 @@ interface CalendarRepository {
     /**
      * Every event of [calendarIds], ready to serialise into an `.ics` backup
      * (see [CalendarDataSource.calendarEvents]). Any calendar can be read,
-     * synced and read-only ones included (#147); `null` means the calendars a
-     * backup covers by default
-     * ([de.jeanlucmakiola.calendula.domain.backup.isBackedUpByDefault]).
+     * synced and read-only ones included (#147).
      */
-    suspend fun exportEvents(calendarIds: Set<Long>? = null): List<IcsEvent>
+    suspend fun exportEvents(calendarIds: Set<Long>): List<IcsEvent>
 
     /**
      * Bulk-import parsed `.ics` [events] into [targetCalendarId]. Events whose

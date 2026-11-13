@@ -26,8 +26,10 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.domain.backup.BackupFilePlan
 import de.jeanlucmakiola.calendula.domain.backup.backupTargets
 import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
+import de.jeanlucmakiola.calendula.domain.backup.updatedBackupBases
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.floret.android.hasPermission
 import kotlinx.coroutines.flow.first
@@ -120,55 +122,75 @@ class BackupWorker(
         val folder = prefs.autoBackupFolderUri.first()
             ?: return Result.failure() // nothing to write to — leave scheduling to settings
         val now = System.currentTimeMillis()
-        return try {
+        val outcome = try {
             runBackup(deps, prefs, folder.toUri())
-            prefs.recordAutoBackupRun(success = true, atMillis = now)
-            Result.success()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            prefs.recordAutoBackupRun(success = false, atMillis = now)
-            if (prefs.autoBackupStatus.first().consecutiveFailures >= FAILURE_NOTIFY_THRESHOLD) {
-                notifyFailure(applicationContext)
-            }
             Log.w(TAG, "Automatic backup failed", e)
-            Result.retry()
+            RunOutcome.Failed
         }
+        if (outcome == RunOutcome.NothingSelected) return Result.success()
+        val success = outcome == RunOutcome.Written
+        prefs.recordAutoBackupRun(success = success, atMillis = now)
+        if (!success && prefs.autoBackupStatus.first().consecutiveFailures >= FAILURE_NOTIFY_THRESHOLD) {
+            notifyFailure(applicationContext)
+        }
+        // A retry rewrites every series, so only a run that wrote nothing is
+        // retried; a partial one waits for the next interval rather than
+        // rotating the healthy calendars' history out with near-identical copies.
+        return if (outcome == RunOutcome.Failed) Result.retry() else Result.success()
     }
 
+    private enum class RunOutcome { Written, PartlyFailed, Failed, NothingSelected }
+
     /**
-     * Writes every file first and prunes afterwards, and only a series whose
-     * new file landed, so a failed run never costs an older backup. Throws
-     * after the rest are done if any series failed.
+     * Writes each series and prunes it only once its new file has landed, so
+     * a failed write never costs an older backup.
      */
-    private suspend fun runBackup(deps: Deps, prefs: SettingsPrefs, folder: Uri) {
+    private suspend fun runBackup(deps: Deps, prefs: SettingsPrefs, folder: Uri): RunOutcome {
         val repository = deps.repository()
         val exporter = deps.exporter()
+        val all = repository.calendars().first()
+        // Without the calendar permission the list comes back empty: a failure,
+        // not an empty selection.
+        if (all.isEmpty()) return RunOutcome.Failed
         val selection = prefs.autoBackupSelection.first()
-        val calendars = repository.calendars().first().filter(selection::selects)
-        val targets = backupTargets(calendars, combined = prefs.autoBackupCombined.first())
+        val previousBases = prefs.autoBackupSeriesNames.first()
+        val targets = backupTargets(
+            calendars = all.filter(selection::selects),
+            combined = prefs.autoBackupCombined.first(),
+            previousBases = previousBases,
+        )
+        if (targets.isEmpty()) return RunOutcome.NothingSelected
+        val listing = exporter.listFolder(folder)
         val plans = planBackupFiles(
             targets = targets,
-            existing = exporter.fileNames(folder),
+            existing = listing.keys,
             at = LocalDateTime.now(),
             keep = prefs.autoBackupKeep.first(),
         )
         val stamp = Clock.System.now()
-        var failure: Exception? = null
+        val written = mutableListOf<BackupFilePlan>()
         for (plan in plans) {
             try {
                 val events = repository.exportEvents(plan.target.calendarIds)
                 val content = IcsWriter().writeCalendar(events, stamp, plan.target.calendarName)
-                exporter.writeToFolder(folder, plan.fileName, content)
-                exporter.deleteFromFolder(folder, plan.prune)
+                exporter.writeToFolder(folder, listing, plan.fileName, content)
+                written += plan
+                exporter.deleteDocuments(plan.prune.mapNotNull(listing::get))
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "Backup of one calendar failed", e)
-                failure = failure ?: e
+                Log.w(TAG, "Backup of one series failed", e)
             }
         }
-        failure?.let { throw it }
+        prefs.setAutoBackupSeriesNames(updatedBackupBases(previousBases, written))
+        return when (written.size) {
+            plans.size -> RunOutcome.Written
+            0 -> RunOutcome.Failed
+            else -> RunOutcome.PartlyFailed
+        }
     }
 
     private fun notifyFailure(context: Context) {
