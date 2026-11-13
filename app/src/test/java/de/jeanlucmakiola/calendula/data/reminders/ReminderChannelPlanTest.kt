@@ -75,7 +75,7 @@ class ReminderChannelPlanTest {
     fun `stale reminder channels and groups go, foreign ones stay`() {
         val current = calendar(1, "me@example.org", "com.google")
         fun plan(calendars: List<CalendarSource>, existing: List<String> = emptyList(), groups: List<String> = emptyList()) =
-            planReminderChannels(calendars, existing.map { ExistingReminderChannel(it, "Cal ${it.last()}", DESC) }, groups, "Unnamed", DESC)
+            planReminderChannels(calendars, existing.map { ExistingReminderChannel(it, "Cal ${it.last()}", DESC, null) }, groups, "Unnamed", DESC)
         val keptGroup = plan(listOf(current)).groups.single().id
         val goneGroup = plan(listOf(calendar(9, "old", "com.google"))).groups.single().id
         val result = plan(
@@ -97,9 +97,9 @@ class ReminderChannelPlanTest {
                 calendar(4, "a", "com.google"),
             ),
             existing = listOf(
-                ExistingReminderChannel(reminderChannelId(1), "Cal 1", DESC),
-                ExistingReminderChannel(reminderChannelId(4), "Cal 4", "Old description"),
-                ExistingReminderChannel(reminderChannelId(2), "Old name", DESC),
+                ExistingReminderChannel(reminderChannelId(1), "Cal 1", DESC, "g"),
+                ExistingReminderChannel(reminderChannelId(4), "Cal 4", "Old description", "g"),
+                ExistingReminderChannel(reminderChannelId(2), "Old name", DESC, "g"),
             ),
             existingGroupIds = emptyList(),
             unnamed = "Unnamed",
@@ -107,6 +107,24 @@ class ReminderChannelPlanTest {
         )
         assertThat(plan.channelsToWrite.map { it.calendarId }).containsExactly(2L, 3L, 4L)
         assertThat(plan.channelsToWrite.single { it.calendarId == 3L }.name).isEqualTo("Unnamed")
+    }
+
+    @Test
+    fun `non-syncing calendars keep a channel but get none up front`() {
+        val quiet = calendar(2, "a", "com.google").copy(syncsEvents = false)
+        val fresh = planReminderChannels(listOf(quiet), emptyList(), emptyList(), "Unnamed", DESC)
+        assertThat(fresh.channelsToWrite).isEmpty()
+        assertThat(fresh.groupsInUse).isEmpty()
+        val posted = planReminderChannels(
+            calendars = listOf(quiet),
+            existing = listOf(ExistingReminderChannel(reminderChannelId(2), "Cal 2", DESC, null)),
+            existingGroupIds = emptyList(),
+            unnamed = "Unnamed",
+            description = DESC,
+        )
+        assertThat(posted.staleChannelIds).isEmpty()
+        assertThat(posted.channelsToWrite.map { it.calendarId }).containsExactly(2L)
+        assertThat(posted.groupsInUse).hasSize(1)
     }
 
     private companion object {

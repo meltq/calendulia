@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.ui.settings
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -361,28 +362,30 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) =
-        save { setCalendarRemindersEnabled(calendarId, enabled) }
-
-    /** [calendarId]'s reminder channel, created if needed so its system settings can open (#340). */
-    suspend fun reminderChannelFor(calendarId: Long): String? = withContext(io) {
-        try {
-            reminderChannels.channelFor(calendarId)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            null
+    /** Re-plans, since a muted calendar armed no wake-up for its next reminder. */
+    fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setCalendarRemindersEnabled(calendarId, enabled)
+            reminderScanner.scan()
         }
     }
 
+    /** [calendarId]'s reminder channel, created if needed so its system settings can open (#340). */
+    suspend fun reminderChannelFor(calendarId: Long): String? = onChannels { channelFor(calendarId) }
+
     /** Create the per-calendar channels before showing the app's channel list, even with reminders off. */
-    suspend fun syncReminderChannels() = withContext(io) {
+    suspend fun syncReminderChannels() {
+        onChannels { sync() }
+    }
+
+    private suspend fun <T> onChannels(block: ReminderChannels.() -> T): T? = withContext(io) {
         try {
-            reminderChannels.sync()
+            reminderChannels.block()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            Unit
+            Log.w("SettingsViewModel", "Reminder channel update failed", e)
+            null
         }
     }
 

@@ -35,56 +35,63 @@ class ReminderChannels @Inject constructor(
     private var lastSync: Any? = null
 
     /**
-     * Bring the channels in line with the provider's calendars. A calendar that
-     * syncs no events gets none, and an empty snapshot changes nothing: that is
-     * a provider hiccup far more often than every calendar gone at once.
+     * Bring the channels in line with the provider's calendars. An empty
+     * snapshot changes nothing: that is a provider hiccup far more often than
+     * every calendar gone at once.
      */
+    @Synchronized
     fun sync() {
-        val calendars = calendarDataSource.calendars().filter { it.isLocal || it.syncsEvents }
+        val calendars = calendarDataSource.calendars()
         if (calendars.isEmpty()) return
         val manager = manager
         val existing = manager.notificationChannels
-        val key = syncKey(calendars, existing)
-        if (key == lastSync && existing.none { it.id == LEGACY_REMINDER_CHANNEL_ID }) return
+        val existingIds = existing.mapTo(HashSet()) { it.id }
+        if (syncKey(calendars, existingIds) == lastSync && LEGACY_REMINDER_CHANNEL_ID !in existingIds) return
         val groups = manager.notificationChannelGroups
         val plan = plan(calendars, existing, groups.map { it.id })
         plan.staleChannelIds.forEach(manager::deleteNotificationChannel)
         plan.staleGroupIds.forEach(manager::deleteNotificationChannelGroup)
         val groupNames = groups.associate { it.id to it.name?.toString() }
         write(
-            groups = plan.groups.filter { groupNames[it.id] != groupLabel(it) },
+            groups = plan.groupsInUse.filter { groupNames[it.id] != groupLabel(it) },
             channels = plan.channelsToWrite,
             existing = existing,
         )
-        retireLegacyChannel()
-        lastSync = syncKey(calendars, manager.notificationChannels)
+        val ids = existingIds - plan.staleChannelIds.toSet() + plan.channelsToWrite.map { it.id }
+        lastSync = syncKey(calendars, if (retireLegacyChannel()) ids - LEGACY_REMINDER_CHANNEL_ID else ids)
     }
 
-    private fun syncKey(calendars: List<CalendarSource>, channels: List<NotificationChannel>): Any = listOf(
-        calendars.map { listOf(it.id, it.displayName, it.accountName, it.accountType, it.isLocal) },
+    private fun syncKey(calendars: List<CalendarSource>, channelIds: Set<String>): Any = listOf(
+        calendars.map { listOf(it.id, it.displayName, it.accountName, it.accountType, it.isLocal, it.syncsEvents) },
         Locale.getDefault(),
-        channels.mapTo(HashSet()) { it.id },
+        channelIds,
     )
 
     /**
      * The channel to post [calendarId]'s reminder on, created first if a sync
      * has not got to it yet. Null when the calendar no longer exists. Should the
-     * calendar lookup fail, the channel is still created, plainly named and
-     * ungrouped, for the next sync to name and file — a reminder is never lost
-     * to its channel.
+     * calendar lookup fail or come back empty, the channel is still created,
+     * plainly named and ungrouped, for the next sync to name and file — a
+     * reminder is never lost to its channel.
      */
+    @Synchronized
     fun channelFor(calendarId: Long): String? {
         val id = reminderChannelId(calendarId)
         val manager = manager
         if (manager.getNotificationChannel(id) != null) return id
         val existing = manager.notificationChannels
-        val plan = try {
-            plan(calendarDataSource.calendars(), existing, emptyList())
+        val calendars = try {
+            calendarDataSource.calendars()
         } catch (e: Exception) {
             Log.w(TAG, "Could not look up calendar $calendarId for its channel", e)
-            write(emptyList(), listOf(ReminderChannelSpec(id, calendarId, context.getString(R.string.reminder_channel_name), null)), existing)
+            emptyList()
+        }
+        if (calendars.isEmpty()) {
+            val fallback = ReminderChannelSpec(id, calendarId, context.getString(R.string.reminder_channel_name), null)
+            write(emptyList(), listOf(fallback), existing)
             return id
         }
+        val plan = plan(calendars, existing, emptyList())
         val spec = plan.channels.firstOrNull { it.calendarId == calendarId } ?: return null
         val knownGroups = manager.notificationChannelGroups.mapTo(HashSet()) { it.id }
         write(
@@ -101,7 +108,7 @@ class ReminderChannels @Inject constructor(
         existingGroupIds: List<String>,
     ): ReminderChannelPlan = planReminderChannels(
         calendars = calendars,
-        existing = existing.map { ExistingReminderChannel(it.id, it.name.toString(), it.description) },
+        existing = existing.map { ExistingReminderChannel(it.id, it.name.toString(), it.description, it.group) },
         existingGroupIds = existingGroupIds,
         unnamed = context.getString(R.string.calendar_unnamed),
         description = context.getString(R.string.reminder_channel_description),
@@ -157,11 +164,11 @@ class ReminderChannels @Inject constructor(
     /**
      * Delete the pre-#145 channel once the per-calendar ones carry its settings,
      * but not while a reminder posted on it is still on screen — deleting the
-     * channel would take that notification with it.
+     * channel would take that notification with it. Returns whether it is gone.
      */
-    private fun retireLegacyChannel() {
+    private fun retireLegacyChannel(): Boolean {
         val manager = manager
-        if (manager.getNotificationChannel(LEGACY_REMINDER_CHANNEL_ID) == null) return
+        if (manager.getNotificationChannel(LEGACY_REMINDER_CHANNEL_ID) == null) return true
         val showing = runCatching {
             manager.activeNotifications.any { it.notification.channelId == LEGACY_REMINDER_CHANNEL_ID }
         }.getOrElse { e ->
@@ -169,6 +176,7 @@ class ReminderChannels @Inject constructor(
             true
         }
         if (!showing) manager.deleteNotificationChannel(LEGACY_REMINDER_CHANNEL_ID)
+        return !showing
     }
 
     private fun groupLabel(group: ReminderChannelGroupSpec): String {

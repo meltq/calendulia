@@ -38,16 +38,26 @@ data class ReminderChannelSpec(
     val name: String,
     /** Null only for a channel created before its calendar could be looked up. */
     val groupId: String?,
+    /**
+     * Whether a sync creates it up front. A calendar that syncs no events never
+     * fires, so its channel only appears once something posts on it.
+     */
+    val upFront: Boolean = true,
 )
 
 /** What a channel already looks like in the system, as far as the plan compares it. */
-data class ExistingReminderChannel(val id: String, val name: String, val description: String?)
+data class ExistingReminderChannel(val id: String, val name: String, val description: String?, val groupId: String?)
 
 data class ReminderChannelPlan(
     val groups: List<ReminderChannelGroupSpec>,
     val channels: List<ReminderChannelSpec>,
-    /** The [channels] that are missing, or whose name or (localized) description changed. */
+    /**
+     * The [channels] a sync writes: missing up-front ones, and existing ones
+     * whose name or (localized) description changed, or that still lack a group.
+     */
     val channelsToWrite: List<ReminderChannelSpec>,
+    /** The [groups] holding a channel that exists or is about to be written. */
+    val groupsInUse: List<ReminderChannelGroupSpec>,
     val staleChannelIds: List<String>,
     val staleGroupIds: List<String>,
 )
@@ -89,18 +99,29 @@ fun planReminderChannels(
             calendarId = calendar.id,
             name = calendar.displayName.ifBlank { unnamed },
             groupId = if (calendar.isLocal) LOCAL_GROUP_ID else accountGroupId(calendar.accountType, calendar.accountName),
+            upFront = calendar.isLocal || calendar.syncsEvents,
         )
     }
     val existingById = existing.associateBy { it.id }
     val wantedChannels = channels.mapTo(HashSet()) { it.id }
     val wantedGroups = groups.mapTo(HashSet()) { it.id }
+    val toWrite = channels.filter { spec ->
+        val current = existingById[spec.id]
+        if (current == null) {
+            spec.upFront
+        } else {
+            current.name != spec.name || current.description != description ||
+                (current.groupId == null && spec.groupId != null)
+        }
+    }
+    val usedGroupIds = channels
+        .filter { it.id in existingById || it in toWrite }
+        .mapNotNullTo(HashSet()) { it.groupId }
     return ReminderChannelPlan(
         groups = groups,
         channels = channels,
-        channelsToWrite = channels.filter { spec ->
-            val current = existingById[spec.id]
-            current == null || current.name != spec.name || current.description != description
-        },
+        channelsToWrite = toWrite,
+        groupsInUse = groups.filter { it.id in usedGroupIds },
         staleChannelIds = existingById.keys.filter { isReminderChannelId(it) && it !in wantedChannels },
         staleGroupIds = existingGroupIds.filter { isReminderGroupId(it) && it !in wantedGroups },
     )

@@ -392,7 +392,8 @@ switched off. The drawer's filter sheet (`CalendarPrefs.hiddenCalendarIds`) is a
 separate in-app declutter that never touches reminders.
 
 **A channel per calendar (#145).** `ReminderChannels` keeps one notification
-channel per calendar that syncs events, grouped by account, so a calendar can be
+channel per calendar, grouped by account (one that syncs no events only gets
+its channel once something posts on it), so a calendar can be
 muted or given its own sound in the system settings before it ever fires. Every
 scan with reminders on syncs them (skipped when nothing changed): missing
 channels are created, renamed ones updated, and channels of deleted calendars
@@ -405,7 +406,8 @@ nothing showing still sits on it. Settings → Notifications only deep-links int
 the system's channel screens (#340); the app never sets a sound itself. Separate
 from both, `SettingsPrefs.mutedReminderCalendarIds` is the in-app per-calendar
 off switch (#272): the scan plans nothing for those calendars (so they arm no
-wake-ups), and `ReminderNotifier.post` checks it again for snoozes.
+wake-ups; toggling it re-scans), and `ReminderNotifier.post` checks it again
+for snoozes.
 
 Deliberately absent: a fallback to the provider's `EVENT_REMINDER` broadcast.
 Keeping both would double-post wherever the provider works, and Etar's way out —
