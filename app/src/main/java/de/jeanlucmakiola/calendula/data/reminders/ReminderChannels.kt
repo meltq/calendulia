@@ -59,6 +59,7 @@ class ReminderChannels @Inject constructor(
             channels = plan.channelsToWrite,
             existing = existing,
         )
+        if (RING_CHANNEL_ID in existingIds) writeRingChannel()
         val ids = existingIds - plan.staleChannelIds.toSet() + plan.channelsToWrite.map { it.id }
         lastSync = syncKey(calendars, if (retireLegacyChannel()) ids - LEGACY_REMINDER_CHANNEL_ID else ids)
     }
@@ -91,21 +92,35 @@ class ReminderChannels @Inject constructor(
      */
     private fun ringChannel(): String {
         val manager = manager
-        if (manager.getNotificationChannel(RING_CHANNEL_ID) == null) {
-            manager.createNotificationChannel(
-                NotificationChannel(
-                    RING_CHANNEL_ID,
-                    context.getString(R.string.reminder_ring_channel_name),
-                    NotificationManager.IMPORTANCE_HIGH,
-                ).apply {
-                    description = context.getString(R.string.reminder_ring_channel_description)
-                    setSound(null, null)
-                    enableVibration(false)
-                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
-                },
-            )
-        }
+        if (manager.getNotificationChannel(RING_CHANNEL_ID) == null) writeRingChannel()
         return RING_CHANNEL_ID
+    }
+
+    /** Creates the ring channel, or renames it after a language change. */
+    private fun writeRingChannel() {
+        manager.createNotificationChannel(
+            NotificationChannel(
+                RING_CHANNEL_ID,
+                context.getString(R.string.reminder_ring_channel_name),
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                description = context.getString(R.string.reminder_ring_channel_description)
+                setSound(null, null)
+                enableVibration(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            },
+        )
+    }
+
+    /**
+     * Whether a ring may sound for [calendarId]: neither its own channel nor
+     * the ring channel is blocked, since the service plays the sound itself.
+     */
+    fun canRing(calendarId: Long): Boolean {
+        val manager = manager
+        return listOf(reminderChannelId(calendarId), RING_CHANNEL_ID).none {
+            manager.getNotificationChannel(it)?.importance == NotificationManager.IMPORTANCE_NONE
+        }
     }
 
     private fun calendarChannelFor(calendarId: Long): String? {

@@ -4,6 +4,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.util.Log
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -17,6 +18,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.lifecycleScope
@@ -29,6 +31,7 @@ import de.jeanlucmakiola.calendula.data.reminders.ReminderActionReceiver
 import de.jeanlucmakiola.calendula.data.reminders.ReminderActionReceiver.Companion.putAlert
 import de.jeanlucmakiola.calendula.data.reminders.ReminderAlert
 import de.jeanlucmakiola.calendula.data.reminders.ReminderNotifier
+import de.jeanlucmakiola.calendula.data.reminders.ReminderRingService
 import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
 import de.jeanlucmakiola.calendula.ui.theme.CalendulaTheme
 import de.jeanlucmakiola.calendula.ui.theme.WindowThemeCache
@@ -40,6 +43,7 @@ import de.jeanlucmakiola.floret.ring.showOverLockScreen
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
@@ -69,6 +73,11 @@ class ReminderAlertActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         showOverLockScreen()
         enableEdgeToEdge()
+        lifecycleScope.launch {
+            // An alert nobody answers lets the display sleep again; it stays on the lock screen.
+            delay(SCREEN_ON_MILLIS)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
         show(intent)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.CREATED) {
@@ -152,9 +161,11 @@ class ReminderAlertActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "ReminderAlertActivity"
+        private const val SCREEN_ON_MILLIS = ReminderRingService.RING_TIMEOUT_MILLIS
 
         fun intent(context: Context, alert: ReminderAlert): Intent =
             Intent(context, ReminderAlertActivity::class.java)
+                .setData("calendula://reminder-alert/${alert.key}".toUri())
                 .putAlert(alert)
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_NO_USER_ACTION)
     }

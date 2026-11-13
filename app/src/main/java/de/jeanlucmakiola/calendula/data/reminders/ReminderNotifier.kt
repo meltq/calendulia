@@ -76,17 +76,23 @@ class ReminderNotifier @Inject constructor(
      */
     suspend fun post(alert: ReminderAlert, quiet: Boolean = false) {
         if (isSilenced(alert.calendarId)) return
-        val style = if (quiet) {
-            ReminderAlertStyle.Notification
-        } else {
-            settingsPrefs.reminderAlertStyles.first().alertStyleFor(alert.calendarId)
+        val style = when {
+            quiet -> ReminderAlertStyle.Notification
+            else -> settingsPrefs.reminderAlertStyles.first().alertStyleFor(alert.calendarId).let {
+                // A calendar or ring channel the user blocked must not ring regardless.
+                if (it == ReminderAlertStyle.FullScreenRing && !channels.canRing(alert.calendarId)) {
+                    ReminderAlertStyle.FullScreen
+                } else {
+                    it
+                }
+            }
         }
         val channelId = channelFor(alert, style) ?: return
         val title = displayTitle(alert)
         val text = contentText(alert)
         if (style == ReminderAlertStyle.FullScreenRing) {
             val ringing = build(alert, channelId, title, text, fullScreen = true, ringing = true, quiet = false)
-            if (ReminderRingService.start(context, alert, ringing)) {
+            if (ReminderRingService.start(context, alerts, alert, ringing)) {
                 // An earlier reminder for this occurrence gives way to the ring.
                 NotificationManagerCompat.from(context).cancel(alert.occurrenceKey.toString(), NOTIFICATION_ID)
                 cancelLegacy(alert)
@@ -98,7 +104,7 @@ class ReminderNotifier @Inject constructor(
             return
         }
         // A ring for this occurrence from before its calendar's style changed.
-        if (alerts.ringing?.occurrenceKey == alert.occurrenceKey) ReminderRingService.stop(context)
+        stopRing { it.occurrenceKey == alert.occurrenceKey }
         notify(
             alert,
             build(alert, channelId, title, text, fullScreen = style.isFullScreen, ringing = false, quiet = quiet),
@@ -175,10 +181,10 @@ class ReminderNotifier @Inject constructor(
                 context.getString(R.string.reminder_action_dismiss),
                 actionIntent(alert, ReminderActionReceiver.ACTION_DISMISS),
             )
+        // A swipe dismisses a full-screen alert, so its screen closes too.
+        if (fullScreen) builder.setDeleteIntent(actionIntent(alert, ReminderActionReceiver.ACTION_DISMISS))
         if (ringing) {
-            builder.setOngoing(true)
-                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
-                .setDeleteIntent(actionIntent(alert, ReminderActionReceiver.ACTION_DISMISS))
+            builder.setOngoing(true).setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
         } else {
             builder.setAutoCancel(true).setOnlyAlertOnce(shownKey(alert) == alert.key)
         }
@@ -208,8 +214,23 @@ class ReminderNotifier @Inject constructor(
         if (shownKey(alert) == alert.key) manager.cancel(alert.occurrenceKey.toString(), NOTIFICATION_ID)
         // Posted before reminders shared a notification, under the reminder's own key.
         manager.cancel(alert.key.toString(), NOTIFICATION_ID)
-        if (alerts.ringing?.key == alert.key) ReminderRingService.stop(context)
+        stopRing { it.key == alert.key }
         alerts.markHandled(alert)
+    }
+
+    /**
+     * Stop the ring if it is for a reminder [matching]. While a newer ring is
+     * still on its way to the service, that one takes over instead, and the
+     * stopped reminder is not handed back to the shade.
+     */
+    fun stopRing(matching: (ReminderAlert) -> Boolean) {
+        val ringing = alerts.ringing ?: return
+        if (!matching(ringing)) return
+        if (alerts.starting != null) {
+            alerts.ringing = null
+        } else {
+            ReminderRingService.stop(context)
+        }
     }
 
     /** Whether a different reminder for [alert]'s occurrence is on screen now. */

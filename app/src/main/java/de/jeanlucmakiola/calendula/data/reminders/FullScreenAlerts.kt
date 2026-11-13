@@ -19,6 +19,10 @@ class FullScreenAlerts @Inject constructor() {
     @Volatile
     var ringing: ReminderAlert? = null
 
+    /** The key of a ring handed to [ReminderRingService] that has not reached it yet. */
+    @Volatile
+    var starting: Long? = null
+
     private val handledKeys = MutableSharedFlow<Long>(
         extraBufferCapacity = 8,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,

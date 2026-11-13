@@ -44,12 +44,7 @@
     <!-- WorkManager declares this for network constraints, which the app doesn't use (#448). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
-    <!--
-      Full-screen reminder alerts (#171), opt-in per calendar. The alert screen
-      opens over the lock screen through a full-screen intent; "Ring until
-      dismissed" rings from a foreground service (systemExempted, covered by
-      the exact-alarm permission above) with its own wake lock and vibration.
-    -->
+    <!-- Full-screen reminder alerts and their ring (#171), opt-in per calendar. -->
     <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
@@ -332,19 +327,15 @@
             android:name=".data.reminders.ReminderActionReceiver"
             android:exported="false" />
 
-        <!-- The full-screen reminder alert (#171): over the lock screen, out of
-             recents, in a task of its own so it never brings the app with it. -->
+        <!-- The full-screen reminder alert (#171), in a task of its own. -->
         <activity
             android:name=".ui.reminders.ReminderAlertActivity"
             android:exported="false"
             android:excludeFromRecents="true"
             android:launchMode="singleTask"
-            android:showWhenLocked="true"
-            android:taskAffinity=""
-            android:turnScreenOn="true" />
+            android:taskAffinity="" />
 
-        <!-- Rings a "Ring until dismissed" reminder (#171). systemExempted: an
-             app holding an exact-alarm permission continuing an alarm. -->
+        <!-- Rings a "Ring until dismissed" reminder (#171). -->
         <service
             android:name=".data.reminders.ReminderRingService"
             android:exported="false"

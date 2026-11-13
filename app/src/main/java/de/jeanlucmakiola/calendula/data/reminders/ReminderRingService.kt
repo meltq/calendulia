@@ -7,6 +7,7 @@ import android.content.Intent
 import android.media.RingtoneManager
 import android.os.IBinder
 import android.util.Log
+import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.IntentCompat
 import dagger.hilt.android.AndroidEntryPoint
 import de.jeanlucmakiola.calendula.data.reminders.ReminderActionReceiver.Companion.putAlert
@@ -14,6 +15,7 @@ import de.jeanlucmakiola.floret.ring.RingVibrator
 import de.jeanlucmakiola.floret.ring.RingWakeLock
 import de.jeanlucmakiola.floret.ring.TonePlayer
 import de.jeanlucmakiola.floret.ring.startRingForeground
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -21,6 +23,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 /**
@@ -46,33 +49,60 @@ class ReminderRingService : Service() {
 
     private var ringing: Job? = null
     private var timeout: Job? = null
+    private var notificationId = RING_NOTIFICATION_ID
+    private var lastStartId: Int? = null
+
+    /** What this service rings, which [FullScreenAlerts.ringing] may already have let go of. */
+    private var currentKey: Long? = null
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val alert = intent?.let(ReminderActionReceiver::alertFrom)
         val notification = intent?.let { IntentCompat.getParcelableExtra(it, EXTRA_NOTIFICATION, Notification::class.java) }
+        if (alerts.starting == alert?.key) alerts.starting = null
         if (alert == null || notification == null) {
             if (alerts.ringing == null) stopSelf()
             return START_NOT_STICKY
         }
-        // Before anything else: the platform gives a foreground service a few
-        // seconds to post its notification.
-        startRingForeground(RING_NOTIFICATION_ID, notification)
+        // Null when the user handled it while this ring was on its way.
         val previous = alerts.ringing
-        if (previous?.key == alert.key && timeout?.isActive == true) return START_REDELIVER_INTENT
+        // A different reminder posts under the other id, so it is a new
+        // notification whose full-screen intent opens; an update would not.
+        val replacing = currentKey != null && currentKey != alert.key
+        val shown = notificationId
+        if (replacing) notificationId = if (shown == RING_NOTIFICATION_ID) OTHER_RING_NOTIFICATION_ID else RING_NOTIFICATION_ID
+        val foreground = runCatching { startRingForeground(notificationId, notification) }
+        if (foreground.isFailure) {
+            // A restart after a process death may be refused a foreground start:
+            // the reminder goes back to the shade rather than being lost.
+            Log.w(TAG, "Could not ring for event ${alert.eventId}", foreground.exceptionOrNull())
+            notificationId = shown
+            scope.launch {
+                handBack(alert)
+                if (alerts.ringing == null) stopSelf()
+            }
+            return START_NOT_STICKY
+        }
+        if (replacing) NotificationManagerCompat.from(this).cancel(shown)
+        // Only the newest start is redelivered after a process death; the older
+        // ones are done, so a handled reminder never rings again.
+        lastStartId?.let { stopSelfResult(it) }
+        lastStartId = startId
+        if (currentKey == alert.key && timeout?.isActive == true) return START_REDELIVER_INTENT
+        currentKey = alert.key
         alerts.ringing = alert
         if (previous != null && previous.occurrenceKey != alert.occurrenceKey) {
-            scope.launch { notifier.post(previous, quiet = true) }
+            scope.launch { handBack(previous) }
         }
         ring()
-        // Re-delivered rather than dropped, so a ring the system killed comes back.
         return START_REDELIVER_INTENT
     }
 
     override fun onDestroy() {
         releaseRing()
         alerts.ringing = null
+        alerts.starting = null
         scope.cancel()
         super.onDestroy()
     }
@@ -89,21 +119,30 @@ class ReminderRingService : Service() {
         }
     }
 
-    /** Rung long enough: back to the shade quietly, so the reminder is not lost. */
+    /** Rung long enough: back to the shade quietly, and the alert screen closes. */
     private suspend fun giveUp() {
         timeout = null
+        currentKey = null
         val alert = alerts.ringing
         releaseRing()
         alerts.ringing = null
         if (alert != null) {
-            try {
-                notifier.post(alert, quiet = true)
-            } catch (e: Exception) {
-                Log.w(TAG, "Could not hand the reminder of event ${alert.eventId} back", e)
-            }
+            handBack(alert)
+            alerts.markHandled(alert)
         }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
+    }
+
+    /** [alert] as a quiet notification in the shade, so it is not lost. */
+    private suspend fun handBack(alert: ReminderAlert) {
+        try {
+            withContext(Dispatchers.IO) { notifier.post(alert, quiet = true) }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not hand the reminder of event ${alert.eventId} back", e)
+        }
     }
 
     private fun releaseRing() {
@@ -128,8 +167,9 @@ class ReminderRingService : Service() {
         private const val EXTRA_NOTIFICATION = "notification"
         private const val WAKE_LOCK_TAG = "calendula:reminder-ring"
 
-        /** Distinct from the reminders' own id, which is shared under per-occurrence tags. */
-        private const val RING_NOTIFICATION_ID = 2
+        /** Clear of the reminders' tagged id 1 and the backup notice's 2. */
+        private const val RING_NOTIFICATION_ID = 171
+        private const val OTHER_RING_NOTIFICATION_ID = 172
 
         /** How long a reminder rings unanswered before it goes quiet. */
         const val RING_TIMEOUT_MILLIS = 10L * 60 * 1000
@@ -138,16 +178,18 @@ class ReminderRingService : Service() {
          * Rings [alert] under [notification]. False when Android refused to
          * start the service from where the reminder fired.
          */
-        fun start(context: Context, alert: ReminderAlert, notification: Notification): Boolean {
+        fun start(context: Context, alerts: FullScreenAlerts, alert: ReminderAlert, notification: Notification): Boolean {
             val intent = Intent(context, ReminderRingService::class.java)
                 .putAlert(alert)
                 .putExtra(EXTRA_NOTIFICATION, notification)
             return try {
                 RingWakeLock.handOff(context, WAKE_LOCK_TAG)
+                alerts.starting = alert.key
                 context.startForegroundService(intent)
                 true
             } catch (e: Exception) {
                 Log.w(TAG, "Could not start the ring for event ${alert.eventId}", e)
+                alerts.starting = null
                 false
             }
         }

@@ -35,6 +35,7 @@ import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.data.prefs.TimeFormatPref
 import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
 import de.jeanlucmakiola.calendula.data.reminders.ReminderChannels
+import de.jeanlucmakiola.calendula.data.reminders.ReminderNotifier
 import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
@@ -72,6 +73,7 @@ class SettingsViewModel @Inject constructor(
     private val launcherNameManager: LauncherNameManager,
     private val reminderScanner: ReminderScanner,
     private val reminderChannels: ReminderChannels,
+    private val reminderNotifier: ReminderNotifier,
     @IoDispatcher private val io: CoroutineDispatcher,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
@@ -360,6 +362,7 @@ class SettingsViewModel @Inject constructor(
     fun setRemindersEnabled(enabled: Boolean) {
         viewModelScope.launch {
             prefs.setRemindersEnabled(enabled)
+            if (!enabled) reminderNotifier.stopRing { true }
             reminderScanner.scan()
         }
     }
@@ -368,11 +371,15 @@ class SettingsViewModel @Inject constructor(
     fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) {
         viewModelScope.launch {
             prefs.setCalendarRemindersEnabled(calendarId, enabled)
+            if (!enabled) reminderNotifier.stopRing { it.calendarId == calendarId }
             reminderScanner.scan()
         }
     }
 
-    fun setCalendarAlertStyle(calendarId: Long, style: ReminderAlertStyle) = save { setCalendarAlertStyle(calendarId, style) }
+    fun setCalendarAlertStyle(calendarId: Long, style: ReminderAlertStyle) {
+        save { setCalendarAlertStyle(calendarId, style) }
+        if (style != ReminderAlertStyle.FullScreenRing) reminderNotifier.stopRing { it.calendarId == calendarId }
+    }
 
     /** [calendarId]'s reminder channel, created if needed so its system settings can open (#340). */
     suspend fun reminderChannelFor(calendarId: Long): String? = onChannels { channelFor(calendarId) }

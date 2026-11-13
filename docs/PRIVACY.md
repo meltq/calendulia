@@ -96,7 +96,8 @@ The settings screen contains links to the source code, the licence, the issue tr
 - `USE_EXACT_ALARM`, `SCHEDULE_EXACT_ALARM`: deliver reminders at the exact time, including after snoozing.
 - `RECEIVE_BOOT_COMPLETED`: re-register pending reminders after a restart.
 - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`: only to open the system dialog for the “Reliable delivery” setting.
-- `USE_FULL_SCREEN_INTENT`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SYSTEM_EXEMPTED`, `WAKE_LOCK`, `VIBRATE`: only for calendars you set to full-screen alerts — showing the alert over the lock screen and, with “Ring until dismissed”, ringing and vibrating until you dismiss or snooze it.
+- `USE_FULL_SCREEN_INTENT`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SYSTEM_EXEMPTED`, `VIBRATE`: for calendars you set to full-screen alerts — showing the alert over the lock screen and, with “Ring until dismissed”, ringing and vibrating until you dismiss or snooze it.
+- `WAKE_LOCK`: keeps the phone awake while a full-screen alert rings, and lets the Android component that runs scheduled background work (WorkManager) finish it.
 
 ## 7. Distribution channels
 
