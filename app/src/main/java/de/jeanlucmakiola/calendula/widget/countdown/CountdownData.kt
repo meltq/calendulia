@@ -12,6 +12,7 @@ import de.jeanlucmakiola.floret.glance.updateWithRefresh
 import kotlinx.coroutines.CancellationException
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.domain.withoutCalendars
 import de.jeanlucmakiola.calendula.widget.Themed
 import de.jeanlucmakiola.calendula.widget.WidgetKind
 import de.jeanlucmakiola.calendula.widget.WidgetLoadContext
@@ -22,7 +23,6 @@ import de.jeanlucmakiola.calendula.widget.today
 import de.jeanlucmakiola.calendula.widget.widgetEntryPoint
 import de.jeanlucmakiola.calendula.widget.widgetLoadContext
 import de.jeanlucmakiola.calendula.widget.widgetState
-import de.jeanlucmakiola.calendula.ui.common.withoutCalendars
 import de.jeanlucmakiola.floret.prefs.toEnum
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.LocalDate

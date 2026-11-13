@@ -45,7 +45,7 @@ class ViewHiddenCalendarsTest {
     }
 
     @Test
-    fun `instancesIn drops a calendar only in the views it is hidden in`(@TempDir tempDir: Path) = runTest {
+    fun `instancesWithout drops a calendar only in the views it is hidden in`(@TempDir tempDir: Path) = runTest {
         val fake = FakeCalendarDataSource().apply {
             calendarsResult = listOf(calendar(1L), calendar(2L))
             instancesResult = { _, _ -> listOf(event(10L, 1L), event(20L, 2L)) }
@@ -64,7 +64,7 @@ class ViewHiddenCalendarsTest {
     }
 
     @Test
-    fun `instancesIn re-filters live when the setting changes`(@TempDir tempDir: Path) = runTest {
+    fun `instancesWithout re-filters live when the setting changes`(@TempDir tempDir: Path) = runTest {
         val fake = FakeCalendarDataSource().apply {
             calendarsResult = listOf(calendar(1L), calendar(2L))
             instancesResult = { _, _ -> listOf(event(10L, 1L), event(20L, 2L)) }

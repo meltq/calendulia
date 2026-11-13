@@ -391,8 +391,8 @@ gate also covers a snooze re-shown from our own alarm after its calendar was
 switched off. The drawer's filter sheet (`CalendarPrefs.hiddenCalendarIds`) is a
 separate in-app declutter that never touches reminders. Narrower still is the per-view hide
 (`SettingsPrefs.perCalendarHiddenViews`, #270): each view model asks for its
-events through `instancesIn(view, …)`, which drops the calendars hidden in that
-one view on top of the repository's filters; reminders, search and widgets read
+events through `instancesWithout(range, calendarsHiddenIn(view, …))`, which drops
+the calendars hidden in that one view on top of the repository's filters; reminders, search and widgets read
 the repository and never see it.
 
 Deliberately absent: a fallback to the provider's `EVENT_REMINDER` broadcast.

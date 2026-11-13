@@ -372,7 +372,7 @@ internal fun CalendarEditor(
     initialName: String,
     initialColor: Int,
     initialDescription: String,
-    onSave: (name: String, color: Int, description: String?, hiddenViews: Set<CalendarView>?) -> Unit,
+    onSave: (name: String, color: Int, description: String?, hiddenChanges: Map<CalendarView, Boolean>) -> Unit,
     onDelete: () -> Unit,
     onClose: () -> Unit,
     deleteLocked: Boolean = false,
@@ -380,9 +380,8 @@ internal fun CalendarEditor(
     initialHiddenViews: Set<CalendarView> = emptySet(),
 ) {
     var name by rememberSaveable(sessionKey) { mutableStateOf(initialName) }
+    val seededHiddenViews = rememberSaveable(sessionKey) { initialHiddenViews }
     var hiddenViews by rememberSaveable(sessionKey) { mutableStateOf(initialHiddenViews) }
-    // Only a set the user touched is written back, so a save never resets one read before it loaded.
-    var hiddenViewsEdited by rememberSaveable(sessionKey) { mutableStateOf(false) }
     var pickHiddenViews by rememberSaveable(sessionKey) { mutableStateOf(false) }
     var color by rememberSaveable(sessionKey) { mutableStateOf(initialColor) }
     var description by rememberSaveable(sessionKey) { mutableStateOf(initialDescription) }
@@ -392,7 +391,10 @@ internal fun CalendarEditor(
     val valid = name.isNotBlank()
     val commit = {
         if (valid) {
-            onSave(name.trim(), color, description.trim().ifEmpty { null }, hiddenViews.takeIf { hiddenViewsEdited })
+            // Only the views toggled here are written, so a save never resets ones it didn't load.
+            val changes = (hiddenViews + seededHiddenViews - (hiddenViews intersect seededHiddenViews))
+                .associateWith { it in hiddenViews }
+            onSave(name.trim(), color, description.trim().ifEmpty { null }, changes)
         }
     }
 
@@ -469,7 +471,6 @@ internal fun CalendarEditor(
             hidden = hiddenViews,
             onToggle = { view, hide ->
                 hiddenViews = if (hide) hiddenViews + view else hiddenViews - view
-                hiddenViewsEdited = true
             },
             onDismiss = { pickHiddenViews = false },
         )
@@ -757,8 +758,9 @@ private fun CalendarManagerRow(
 }
 
 /**
- * Which views one calendar stays out of (#270). Applies each toggle as it is
- * made; display only, so reminders and search keep the calendar.
+ * Which views one calendar stays out of (#270); display only, so reminders and
+ * search keep the calendar. [onToggle] decides when a toggle lands: at once for
+ * a synced calendar, on Save inside the local editor.
  */
 @Composable
 private fun HiddenViewsPicker(
@@ -767,12 +769,18 @@ private fun HiddenViewsPicker(
     onToggle: (CalendarView, Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    // Ahead of the store, so a second tap before the first write lands still flips.
+    var shown by remember { mutableStateOf(hidden) }
+    LaunchedEffect(hidden) { shown = hidden }
     MultiOptionPicker(
         title = stringResource(R.string.calendars_hide_in_views),
         options = IMPLEMENTED_VIEWS,
-        selected = hidden,
+        selected = shown,
         label = { it.label() },
-        onToggle = onToggle,
+        onToggle = { view, hide ->
+            shown = if (hide) shown + view else shown - view
+            onToggle(view, hide)
+        },
         onDismiss = onDismiss,
         leading = { Icon(it.icon, contentDescription = null) },
         header = {

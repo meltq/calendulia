@@ -309,3 +309,7 @@ enum class FailureReason {
     EventNotFound,
     Unknown,
 }
+
+/** [this] without the events of [hidden] calendars. */
+fun List<EventInstance>.withoutCalendars(hidden: Set<Long>): List<EventInstance> =
+    if (hidden.isEmpty()) this else filterNot { it.calendarId in hidden }

@@ -32,7 +32,8 @@ class FilterViewModel @Inject constructor(
         combine(
             repository.calendars(),
             prefs.hiddenCalendarIds,
-            settingsPrefs.perCalendarHiddenViews,
+            // Only feeds a note on the rows; a failed read leaves it off rather than failing the list.
+            settingsPrefs.perCalendarHiddenViews.catch { emit(emptyMap()) },
         ) { calendars, hidden, hiddenViews ->
             // Calendars switched off device-wide don't belong in the drawer's
             // hide/show list; they live only in Settings → Calendars.

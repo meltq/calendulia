@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.ui.calendars
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -29,6 +30,7 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import javax.inject.Inject
@@ -157,10 +159,10 @@ class CalendarsViewModel @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-        hiddenViews: Set<CalendarView>?,
+        hiddenChanges: Map<CalendarView, Boolean> = emptyMap(),
     ) = write {
         val id = repository.createLocalCalendar(displayName, color, description)
-        if (!hiddenViews.isNullOrEmpty()) settingsPrefs.setCalendarHiddenViews(id, hiddenViews)
+        applyHiddenChanges(id, hiddenChanges)
     }
 
     fun updateCalendar(
@@ -168,15 +170,24 @@ class CalendarsViewModel @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-        hiddenViews: Set<CalendarView>?,
+        hiddenChanges: Map<CalendarView, Boolean>,
     ) = write {
         repository.updateCalendar(id, displayName, color, description)
-        if (hiddenViews != null) settingsPrefs.setCalendarHiddenViews(id, hiddenViews)
+        applyHiddenChanges(id, hiddenChanges)
+    }
+
+    private suspend fun applyHiddenChanges(id: Long, changes: Map<CalendarView, Boolean>) {
+        changes.forEach { (view, hidden) -> settingsPrefs.setCalendarHiddenIn(id, view, hidden) }
     }
 
     fun deleteCalendar(id: Long) = write {
         repository.deleteCalendar(id)
-        settingsPrefs.setCalendarHiddenViews(id, emptySet())
+        // Tidy-up only: the delete already landed, so a failure here isn't its failure.
+        try {
+            settingsPrefs.setCalendarHiddenViews(id, emptySet())
+        } catch (e: IOException) {
+            Log.w("CalendarsViewModel", "Could not clear hidden views of $id", e)
+        }
     }
 
     /**
