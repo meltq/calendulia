@@ -21,7 +21,6 @@ import java.time.DayOfWeek
 import java.time.LocalDate
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
-import java.time.format.FormatStyle
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -53,10 +52,17 @@ class DailyDigestNotifier @Inject constructor(
             .is24Hour(android.text.format.DateFormat.is24HourFormat(context))
         val today = LocalDate.now(zone)
         val firstDayOfWeek = DayOfWeek.of(settingsPrefs.weekStart.first().resolveFirstDay(locale).isoDayNumber)
+        // The date rides along: the summary stays up into the day it lists,
+        // when "Tomorrow" alone would point at the wrong one.
+        val date = DateTimeFormatter.ofPattern(
+            android.text.format.DateFormat.getBestDateTimePattern(locale, "EEEdMMM"),
+            locale,
+        ).format(day)
         val dayLabel = when (day) {
-            today -> context.getString(R.string.reminder_day_today)
-            today.plusDays(1) -> context.getString(R.string.reminder_day_tomorrow)
-            else -> DateTimeFormatter.ofLocalizedDate(FormatStyle.MEDIUM).withLocale(locale).format(day)
+            today -> context.getString(R.string.digest_day_relative, context.getString(R.string.reminder_day_today), date)
+            today.plusDays(1) ->
+                context.getString(R.string.digest_day_relative, context.getString(R.string.reminder_day_tomorrow), date)
+            else -> date
         }
         val allDay = context.getString(R.string.event_detail_all_day)
         val lines = listed.map { entry ->
@@ -91,6 +97,11 @@ class DailyDigestNotifier @Inject constructor(
             .setStyle(style)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setAutoCancel(true)
+            // Gone once its day is over; "Tomorrow" would read wrong by then anyway.
+            .setTimeoutAfter(
+                (day.plusDays(1).atStartOfDay(zone).toInstant().toEpochMilli() - System.currentTimeMillis())
+                    .coerceAtLeast(1L),
+            )
             .setContentIntent(openDay(day))
             .build()
         try {

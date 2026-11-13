@@ -442,7 +442,9 @@ time picked the same evening lists it twice, and changing the switch, time or
 day stamps `dailyDigestArmedAt`, so a moment that passed before the change is
 not owed by it. A failing summary is logged and skipped; it never costs the
 event reminders of the same pass, and a failing reminder pass still arms a retry
-and the summary's next moment.
+and the summary's next moment. Switching between "today's" and "tomorrow's"
+events clears the day last listed, so the first summary of the new mode comes.
+The notification names its date and times out when that day ends.
 The per-calendar reminder mute does not apply: a calendar too noisy to ping per
 event can still belong in the overview, and the summary has its own
 per-calendar switch next to it.

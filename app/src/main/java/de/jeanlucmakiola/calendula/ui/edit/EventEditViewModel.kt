@@ -718,7 +718,11 @@ class EventEditViewModel @Inject constructor(
 
     fun addReminder(minutes: Int) {
         _remindersTouched.value = true
-        edit { it.copy(reminders = (it.reminders + minutes).distinct().sorted()) }
+        edit {
+            // A lead firing with a set-time reminder would be one row once saved.
+            if (minutes in it.fixedReminderOffsets(zoneSource.current())) it
+            else it.copy(reminders = (it.reminders + minutes).distinct().sorted())
+        }
     }
 
     fun removeReminder(minutes: Int) {

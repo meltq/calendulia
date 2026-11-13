@@ -21,6 +21,7 @@ import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
 import de.jeanlucmakiola.calendula.data.prefs.dailyDigest
+import de.jeanlucmakiola.calendula.data.prefs.ReminderStatePrefs
 import de.jeanlucmakiola.calendula.data.reminders.DailyDigestNotifier
 import de.jeanlucmakiola.calendula.domain.reminders.DigestDay
 import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
@@ -77,6 +78,7 @@ class SettingsViewModel @Inject constructor(
     private val reminderScanner: ReminderScanner,
     private val reminderChannels: ReminderChannels,
     private val digestNotifier: DailyDigestNotifier,
+    private val reminderState: ReminderStatePrefs,
     @IoDispatcher private val io: CoroutineDispatcher,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
@@ -418,14 +420,25 @@ class SettingsViewModel @Inject constructor(
 
     /** Every summary change re-plans, so the next one is armed for its new moment (#459). */
     fun setDailyDigestEnabled(enabled: Boolean) {
-        saveAndScan { setDailyDigestEnabled(enabled) }
-        // A summary left showing would go stale with nothing to replace it.
-        if (!enabled) digestNotifier.cancel()
+        viewModelScope.launch {
+            prefs.setDailyDigestEnabled(enabled)
+            // After the scan, so one already under way can't post past the cancel;
+            // a summary left showing would go stale with nothing to replace it.
+            reminderScanner.scan()
+            if (!enabled) digestNotifier.cancel()
+        }
     }
 
     fun setDailyDigestTimeMinutes(minutesOfDay: Int) = saveAndScan { setDailyDigestTimeMinutes(minutesOfDay) }
 
-    fun setDailyDigestDay(day: DigestDay) = saveAndScan { setDailyDigestDay(day) }
+    /** A new mode lists afresh: from "tomorrow" to "today", the day just listed comes again. */
+    fun setDailyDigestDay(day: DigestDay) {
+        viewModelScope.launch {
+            prefs.setDailyDigestDay(day)
+            reminderState.clearLastDigestDay()
+            reminderScanner.scan()
+        }
+    }
 
     fun setCalendarInDailyDigest(calendarId: Long, included: Boolean) = save { setCalendarInDailyDigest(calendarId, included) }
 

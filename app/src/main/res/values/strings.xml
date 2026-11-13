@@ -768,6 +768,8 @@
         <item quantity="one">%1$s: %2$d event</item>
         <item quantity="other">%1$s: %2$d events</item>
     </plurals>
+    <!-- %1$s is "Today" or "Tomorrow", %2$s a short date, e.g. "Fri, 14 Nov". -->
+    <string name="digest_day_relative">%1$s, %2$s</string>
     <!-- One event in the summary: %1$s its time ("09:00 – 10:00" or "All day"), %2$s its title. -->
     <string name="digest_line">%1$s · %2$s</string>
     <plurals name="digest_more">

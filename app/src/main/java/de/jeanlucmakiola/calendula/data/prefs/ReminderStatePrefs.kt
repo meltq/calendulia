@@ -39,6 +39,8 @@ class ReminderStatePrefs @Inject constructor(
 
     suspend fun setLastDigestDay(day: LocalDate) = prefs.set(LAST_DIGEST_DAY, day.toString())
 
+    suspend fun clearLastDigestDay() = prefs.set(LAST_DIGEST_DAY, null)
+
     private companion object {
         val LAST_SCAN = nullableLongPref("reminder_last_scan_millis")
         val LAST_DIGEST_DAY = nullableStringPref("reminder_last_digest_day")
