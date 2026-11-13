@@ -98,6 +98,10 @@ data class SettingsUiState(
     val perCalendarAllDayReminderOverride: Map<Long, List<Int>> = emptyMap(),
     /** Writable calendars, shown as per-calendar reminder-override rows. */
     val writableCalendars: List<CalendarSource> = emptyList(),
+    /** Calendars a new event can go into: the default calendar picker's choices. */
+    val eventTargetCalendars: List<CalendarSource> = emptyList(),
+    /** The default calendar for new events (#429); null is Automatic, also when the stored one fell out. */
+    val defaultNewEventCalendar: CalendarSource? = null,
     /**
      * Whether the event-colour picker is offered on calendars that publish no
      * colour palette (the colour may then not survive their next sync).

@@ -163,6 +163,7 @@ class SettingsPrefs @Inject constructor(
     val defaultFormFields: Flow<Set<EventFormField>> = prefs.flow(SettingsKeys.defaultFormFields)
     val recentTimeZones: Flow<List<String>> = prefs.flow(SettingsKeys.recentTimeZones)
     val autofocusEventTitle: Flow<Boolean> = prefs.flow(SettingsKeys.autofocusEventTitle)
+    val defaultNewEventCalendarId: Flow<Long?> = prefs.flow(SettingsKeys.defaultNewEventCalendarId)
     val defaultEventDurationMinutes: Flow<Int> = prefs.flow(SettingsKeys.defaultEventDurationMinutes)
     val perCalendarEventDuration: Flow<Map<Long, Int>> = prefs.flow(SettingsKeys.perCalendarEventDuration)
     val remindersEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.remindersEnabled)
@@ -256,6 +257,9 @@ class SettingsPrefs @Inject constructor(
     }
 
     suspend fun setAutofocusEventTitle(enabled: Boolean) = prefs.set(SettingsKeys.autofocusEventTitle, enabled)
+
+    /** [id] null goes back to Automatic. */
+    suspend fun setDefaultNewEventCalendarId(id: Long?) = prefs.set(SettingsKeys.defaultNewEventCalendarId, id)
 
     suspend fun setDefaultEventDurationMinutes(minutes: Int) =
         prefs.set(SettingsKeys.defaultEventDurationMinutes, minutes)
@@ -569,6 +573,13 @@ object SettingsKeys {
      * keyboard straight away (issue #10). Only the create form auto-focuses.
      */
     val autofocusEventTitle: Pref<Boolean> = booleanPref("autofocus_event_title", true)
+
+    /**
+     * The calendar new events open in (#429); null is Automatic (the last-used
+     * calendar). Kept when the calendar stops being a target, which only makes
+     * it fall back for as long as that lasts.
+     */
+    val defaultNewEventCalendarId: Pref<Long?> = nullableLongPref("default_new_event_calendar_id")
 
     /**
      * How long a new **timed** event lasts, in minutes (#54). Per-calendar

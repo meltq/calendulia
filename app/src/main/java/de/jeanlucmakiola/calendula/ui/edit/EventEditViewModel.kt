@@ -33,6 +33,8 @@ import de.jeanlucmakiola.calendula.domain.withStart
 import de.jeanlucmakiola.calendula.domain.withTimes
 import de.jeanlucmakiola.calendula.domain.withTimezone
 import de.jeanlucmakiola.calendula.domain.EventFormField
+import de.jeanlucmakiola.calendula.domain.NewEventCalendarHints
+import de.jeanlucmakiola.calendula.domain.resolveEventCalendar
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.atOccurrence
 import de.jeanlucmakiola.calendula.domain.isEventTarget
@@ -142,9 +144,9 @@ data class ImportReminderPrompt(
 )
 
 /**
- * Holds the event form being composed. The form's calendar id resolves to
- * (user pick > last used > first writable); the resolved value is what the UI
- * shows and what gets saved.
+ * Holds the event form being composed. The form's calendar id resolves through
+ * [resolveEventCalendar] (user pick > requested > default > last used > first
+ * target); the resolved value is what the UI shows and what gets saved.
  */
 @HiltViewModel
 class EventEditViewModel @Inject constructor(
@@ -181,6 +183,9 @@ class EventEditViewModel @Inject constructor(
     // A one-time offer, raised when a .ics import opens, to replace the file's
     // reminders with the settings default (#49). Null while there's nothing to ask.
     private val _importReminderPrompt = MutableStateFlow<ImportReminderPrompt?>(null)
+    // A calendar named by an insert intent or a duplicate's source (#429); wins
+    // over the default calendar while it can still take events.
+    private val _requestedCalendarId = MutableStateFlow<Long?>(null)
     // The form as the user received it: the loaded event, or a new form with its
     // prefill and auto-applied defaults. Anything else is an unsaved change.
     private val _baseline = MutableStateFlow<EventForm?>(null)
@@ -239,7 +244,7 @@ class EventEditViewModel @Inject constructor(
 
     private data class ExternalInputs(
         val writable: List<CalendarSource>,
-        val lastUsed: Long?,
+        val hints: NewEventCalendarHints,
         val defaultFields: Set<EventFormField>,
         val allowColorOnUnsupported: Boolean,
         val autofocusTitle: Boolean,
@@ -252,8 +257,8 @@ class EventEditViewModel @Inject constructor(
     /**
      * The calendars a new event can be saved to ([isEventTarget]): writable,
      * switched on, not a contact-filled mirror, not a non-syncing subscription.
-     * A last-used preselect landing on an excluded calendar falls back to the
-     * first remaining one (handled by [resolvedCalendarId] and [state]).
+     * A preselect landing on an excluded calendar falls back as
+     * [resolveEventCalendar] describes.
      *
      * This is the list of *targets*. An event already living in an excluded
      * calendar keeps it — [state] adds it back to the picker.
@@ -262,16 +267,20 @@ class EventEditViewModel @Inject constructor(
         calendars.filter { it.isEventTarget }
     }
 
+    private val calendarHints: Flow<NewEventCalendarHints> = combine(
+        _requestedCalendarId,
+        settingsPrefs.defaultNewEventCalendarId,
+        prefs.lastUsedCalendarId,
+        ::NewEventCalendarHints,
+    )
+
     /** The target calendar id, resolved exactly as the form shows it. */
     private val resolvedCalendarId: Flow<Long?> = combine(
         _form.map { it?.calendarId },
-        writableCalendars,
-        prefs.lastUsedCalendarId,
-    ) { picked, writable, lastUsed ->
-        picked
-            ?: lastUsed?.takeIf { id -> writable.any { it.id == id } }
-            ?: writable.firstOrNull()?.id
-    }.distinctUntilChanged()
+        calendarHints,
+        allCalendars,
+        ::resolveEventCalendar,
+    ).distinctUntilChanged()
 
     /** The resolved calendar's published event palette, refetched when it changes. */
     @OptIn(ExperimentalCoroutinesApi::class)
@@ -285,7 +294,7 @@ class EventEditViewModel @Inject constructor(
         combine(_form, _saveState, _showProblems, _revealed, _editTarget, ::LocalInputs),
         combine(
             writableCalendars,
-            prefs.lastUsedCalendarId,
+            calendarHints,
             settingsPrefs.defaultFormFields,
             settingsPrefs.allowColorOnUnsupportedCalendars,
             settingsPrefs.autofocusEventTitle,
@@ -296,9 +305,7 @@ class EventEditViewModel @Inject constructor(
         settingsPrefs.recentTimeZones.flowOn(io),
     ) { local, external, palette, allCalendars, recentTimeZones ->
         val form = local.form ?: return@combine null
-        val resolvedId = form.calendarId
-            ?: external.lastUsed?.takeIf { id -> external.writable.any { it.id == id } }
-            ?: external.writable.firstOrNull()?.id
+        val resolvedId = resolveEventCalendar(form.calendarId, external.hints, allCalendars)
         val resolved = form.copy(calendarId = resolvedId)
         val resolvedCalendar = allCalendars.firstOrNull { it.id == resolvedId }
         // Editing an event in a managed calendar locks its synced fields. Keyed
@@ -407,8 +414,9 @@ class EventEditViewModel @Inject constructor(
      * Seed a fresh event from a prefilled [form] — a parsed single-event `.ics`
      * file ([ImportSource.File]) or an external `ACTION_INSERT` intent (another
      * app/widget creating an event, e.g. Google Maps' "add to calendar";
-     * [ImportSource.Insert]; #30, #49). [EventForm.calendarId] is null so the
-     * calendar still resolves to the last-used/first-writable one.
+     * [ImportSource.Insert]; #30, #49). For an insert, a set [EventForm.calendarId]
+     * is the calendar the caller asked for: it is preselected while writable, and
+     * the form otherwise resolves its calendar like a new event (#429).
      *
      * Reminders are handled per [source], because the two paths mean different
      * things by "no reminders":
@@ -431,7 +439,9 @@ class EventEditViewModel @Inject constructor(
     fun openImported(form: EventForm, source: ImportSource) {
         if (_form.value != null || _editTarget.value != null) return
         _revealed.value = form.populatedFields()
-        open(form)
+        val insert = source != ImportSource.File
+        _requestedCalendarId.value = form.calendarId.takeIf { insert }
+        open(if (insert) form.copy(calendarId = null) else form)
         if (source.ownsDuration) _durationTouched.value = true else applyDefaultDuration()
         when (source) {
             ImportSource.Insert, ImportSource.InsertOpenEnded ->
@@ -609,6 +619,7 @@ class EventEditViewModel @Inject constructor(
         _remindersTouched.value = false
         _durationTouched.value = false
         _importReminderPrompt.value = null
+        _requestedCalendarId.value = null
     }
 
     /** Unfold one optional field, picked in the "more fields" dialog. */

@@ -24,6 +24,7 @@ class InsertEventFormTest {
         description: String? = null,
         location: String? = null,
         rrule: String? = null,
+        calendarId: Long? = null,
     ): EventForm = buildInsertEventForm(
         beginMillis = beginMillis,
         endMillis = endMillis,
@@ -32,6 +33,7 @@ class InsertEventFormTest {
         description = description,
         location = location,
         rrule = rrule,
+        calendarId = calendarId,
         zone = zone,
         now = now,
     )
@@ -50,7 +52,7 @@ class InsertEventFormTest {
             location = "Room 1",
             rrule = "FREQ=DAILY",
         )
-        assertThat(form.calendarId).isNull() // resolves to last-used / first-writable
+        assertThat(form.calendarId).isNull() // resolved by the editor
         assertThat(form.isAllDay).isFalse()
         assertThat(form.start.dateTime).isEqualTo(start)
         assertThat(form.end.dateTime).isEqualTo(end)
@@ -58,6 +60,11 @@ class InsertEventFormTest {
         assertThat(form.description).isEqualTo("Daily")
         assertThat(form.location).isEqualTo("Room 1")
         assertThat(form.rrule).isEqualTo("FREQ=DAILY")
+    }
+
+    @Test
+    fun `a named calendar is carried over`() {
+        assertThat(build(calendarId = 7L).calendarId).isEqualTo(7L)
     }
 
     @Test

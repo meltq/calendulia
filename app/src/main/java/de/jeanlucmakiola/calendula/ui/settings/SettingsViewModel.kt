@@ -37,6 +37,8 @@ import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
+import de.jeanlucmakiola.calendula.domain.effectiveDefaultCalendar
+import de.jeanlucmakiola.calendula.domain.isEventTarget
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
@@ -74,16 +76,15 @@ class SettingsViewModel @Inject constructor(
     private val dynamicColorAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     /**
-     * Writable calendars that are switched on — the only ones that take a
-     * per-calendar reminder override, since a switched-off one plans no
-     * reminders at all (#75).
+     * Every calendar; [SettingsUiState.writableCalendars] keeps the writable,
+     * switched-on ones — the only ones that take a per-calendar reminder
+     * override, since a switched-off one plans no reminders at all (#75).
      */
-    private val writableCalendars: Flow<List<CalendarSource>> = repository.calendars()
-        .map { calendars -> calendars.filter { it.canModifyContents && it.isVisibleInSystem } }
+    private val calendars: Flow<List<CalendarSource>> = repository.calendars()
         .catch { emit(emptyList()) }
 
     val state: StateFlow<SettingsUiState> =
-        combine(prefs.data, writableCalendars) { stored, calendars -> stored.toUiState(calendars) }
+        combine(prefs.data, calendars) { stored, calendars -> stored.toUiState(calendars) }
             .stateWhileSubscribed(
                 scope = viewModelScope,
                 initialValue = SettingsUiState(dynamicColorAvailable = dynamicColorAvailable),
@@ -125,7 +126,9 @@ class SettingsViewModel @Inject constructor(
         snoozeMinutes = this[SettingsKeys.snoozeMinutes],
         perCalendarReminderOverride = this[SettingsKeys.perCalendarReminderOverride],
         perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
-        writableCalendars = calendars,
+        writableCalendars = calendars.filter { it.canModifyContents && it.isVisibleInSystem },
+        eventTargetCalendars = calendars.filter { it.isEventTarget },
+        defaultNewEventCalendar = effectiveDefaultCalendar(this[SettingsKeys.defaultNewEventCalendarId], calendars),
         allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
         managedCalendarIds = specialDatesCalendars.values.toSet(),
     )
@@ -358,6 +361,8 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setAutofocusEventTitle(enabled: Boolean) = save { setAutofocusEventTitle(enabled) }
+
+    fun setDefaultNewEventCalendar(id: Long?) = save { setDefaultNewEventCalendarId(id) }
 
     fun setDefaultEventDuration(minutes: Int) = save { setDefaultEventDurationMinutes(minutes) }
 

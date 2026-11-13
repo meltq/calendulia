@@ -21,6 +21,7 @@ import de.jeanlucmakiola.calendula.testEvent
 import de.jeanlucmakiola.calendula.testPrefs
 import de.jeanlucmakiola.calendula.testRepository
 import de.jeanlucmakiola.calendula.testSettings
+import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -717,6 +718,86 @@ class EventEditViewModelTest {
 
         assertThat(fake.deletedEventIds).containsExactly(42L)
         assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.Idle)
+        job.cancel()
+    }
+
+    @Test
+    fun `a new event opens in the default calendar with its reminders`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L)) }
+        val s = settings(tempDir)
+        s.setDefaultNewEventCalendarId(2L)
+        s.setCalendarReminderOverride(2L, ReminderOverride.Minutes(listOf(5)))
+        val p = prefs(tempDir)
+        p.setLastUsedCalendarId(1L)
+        val repo = testRepository(fake, tempDir, dispatcher, p, s)
+        val vm = EventEditViewModel(repo, p, s, IcsExporter(ContextWrapper(null)), dispatcher, FakeZoneSource())
+        val job = activate(vm)
+
+        vm.openNew(LocalDate(2030, 1, 15), startMinutes = 9 * 60)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.form?.calendarId).isEqualTo(2L)
+        assertThat(vm.state.value?.form?.reminders).containsExactly(5)
+        job.cancel()
+    }
+
+    @Test
+    fun `a switched-off default calendar falls back to the first target`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L, visible = false)) }
+        val s = settings(tempDir)
+        s.setDefaultNewEventCalendarId(2L)
+        val vm = viewModel(tempDir, fake, s)
+        val job = activate(vm)
+
+        vm.openNew(LocalDate(2030, 1, 15))
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.form?.calendarId).isEqualTo(1L)
+        job.cancel()
+    }
+
+    @Test
+    fun `an insert naming a calendar wins over the default`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L), cal(3L)) }
+        val s = settings(tempDir)
+        s.setDefaultNewEventCalendarId(2L)
+        val vm = viewModel(tempDir, fake, s)
+        val job = activate(vm)
+
+        vm.openImported(
+            importedForm(end = LocalDateTime(2030, 1, 15, 10, 0)).copy(calendarId = 3L),
+            ImportSource.Insert,
+        )
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.form?.calendarId).isEqualTo(3L)
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+        job.cancel()
+    }
+
+    @Test
+    fun `an insert naming an unknown calendar falls back to the default`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L)) }
+        val s = settings(tempDir)
+        s.setDefaultNewEventCalendarId(2L)
+        val vm = viewModel(tempDir, fake, s)
+        val job = activate(vm)
+
+        vm.openImported(
+            importedForm(end = LocalDateTime(2030, 1, 15, 10, 0)).copy(calendarId = 77L),
+            ImportSource.Insert,
+        )
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.form?.calendarId).isEqualTo(2L)
         job.cancel()
     }
 }

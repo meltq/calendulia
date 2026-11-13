@@ -62,7 +62,8 @@ flowchart TD
   of `data/calendar/` because the receiver needs neither the repository
   nor its flows.
 - **`data/prefs/`** — DataStore-backed settings (theme, week start, form
-  field defaults, reminders toggle) and small state (last-used calendar).
+  field defaults, default calendar, reminders toggle) and small state
+  (last-used calendar).
 - **`ui/`** — one package per screen, each with Screen + ViewModel +
   UiState. Shared pieces in `ui/common/` (recurrence humanizer, FAB column,
   drawer, transitions). Selection pickers are full-screen and come from
