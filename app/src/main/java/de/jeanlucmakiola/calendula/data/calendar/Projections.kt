@@ -161,7 +161,7 @@ internal object EventDetailProjection {
  * documented v1 limit (import skips them too). EXDATE is unaffected by that
  * filter: it lives on the master row, not on an exception of its own. A
  * calendar copy (#325) reads the exception rows too, through the trailing
- * colour and series-link columns.
+ * colour, series-link, RDATE and access-level columns.
  */
 internal object EventExportProjection {
     val COLUMNS: Array<String> = arrayOf(
@@ -185,6 +185,8 @@ internal object EventExportProjection {
         CalendarContract.Events.ORIGINAL_ID,
         CalendarContract.Events.ORIGINAL_SYNC_ID,
         CalendarContract.Events.ORIGINAL_INSTANCE_TIME,
+        CalendarContract.Events.RDATE,
+        CalendarContract.Events.ACCESS_LEVEL,
     )
 
     const val IDX_ID = 0
@@ -207,6 +209,8 @@ internal object EventExportProjection {
     const val IDX_ORIGINAL_ID = 17
     const val IDX_ORIGINAL_SYNC_ID = 18
     const val IDX_ORIGINAL_INSTANCE_TIME = 19
+    const val IDX_RDATE = 20
+    const val IDX_ACCESS_LEVEL = 21
 }
 
 /**

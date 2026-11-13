@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.calendars
 
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -13,53 +14,71 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 import javax.inject.Inject
 
 /**
- * Copy events from one calendar into another (#325). Lives as long as the
- * activity, so a long copy keeps running across rotation and when the Backup
- * screen is closed; [cancel] stops it between events.
+ * Copy events from one calendar into another (#325). Scoped to the activity, so
+ * a copy keeps running across rotation and while the Backup screen is closed;
+ * finishing the activity or losing the process stops it like [cancel] does,
+ * and a re-run picks up where it ended.
  */
 @HiltViewModel
 class CopyEventsViewModel @Inject constructor(
     private val repository: CalendarRepository,
+    private val savedState: SavedStateHandle,
     @IoDispatcher io: CoroutineDispatcher,
 ) : ViewModel() {
 
-    val calendars: StateFlow<List<CalendarSource>> =
+    /** Null until the first read. */
+    val calendars: StateFlow<List<CalendarSource>?> =
         repository.calendars()
             .catch { emit(emptyList()) }
             .flowOn(io)
-            .stateWhileSubscribed(scope = viewModelScope, initialValue = emptyList())
+            .stateWhileSubscribed(scope = viewModelScope, initialValue = null)
 
-    private val _selection = MutableStateFlow(CopySelection())
-    val selection: StateFlow<CopySelection> = _selection.asStateFlow()
+    val selection: StateFlow<CopySelection> = combine(
+        savedState.getStateFlow<Long?>(KEY_SOURCE, null),
+        savedState.getStateFlow<Long?>(KEY_TARGET, null),
+    ) { source, target -> CopySelection(source, target) }
+        .stateIn(viewModelScope, SharingStarted.Eagerly, CopySelection())
 
     private val _run = MutableStateFlow<CopyRunState>(CopyRunState.Idle)
     val run: StateFlow<CopyRunState> = _run.asStateFlow()
 
     private var job: Job? = null
 
+    private val busy: Boolean get() = job?.isCompleted == false
+
+    private fun current() = CopySelection(savedState[KEY_SOURCE], savedState[KEY_TARGET])
+
+    private fun select(selection: CopySelection) {
+        savedState[KEY_SOURCE] = selection.sourceId
+        savedState[KEY_TARGET] = selection.targetId
+    }
+
     fun setSource(id: Long) {
-        if (job?.isActive == true) return
-        _selection.value = _selection.value.withSource(id)
+        if (busy) return
+        select(current().withSource(id))
         clearFinished()
     }
 
     fun setTarget(id: Long) {
-        if (job?.isActive == true) return
-        _selection.value = _selection.value.copy(targetId = id)
+        if (busy) return
+        select(current().copy(targetId = id))
         clearFinished()
     }
 
     fun start() {
-        val source = _selection.value.sourceId ?: return
-        val target = _selection.value.targetId ?: return
-        if (job?.isActive == true) return
+        val source = current().sourceId ?: return
+        val target = current().targetId ?: return
+        if (busy) return
         _run.value = CopyRunState.Running(done = 0, total = null)
         job = viewModelScope.launch {
             try {
@@ -82,7 +101,12 @@ class CopyEventsViewModel @Inject constructor(
 
     /** Back to idle once a finished run's outcome has been seen. */
     fun clearFinished() {
-        if (job?.isActive != true) _run.value = CopyRunState.Idle
+        if (!busy) _run.value = CopyRunState.Idle
+    }
+
+    private companion object {
+        const val KEY_SOURCE = "copy_source"
+        const val KEY_TARGET = "copy_target"
     }
 }
 

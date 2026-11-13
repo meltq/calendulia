@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.domain.ics
 
+import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.zoneOrNull
@@ -45,6 +46,9 @@ data class ParsedIcsEvent(
     val exDates: List<String> = emptyList(),
     /** True when this came from a `VTODO` rather than a `VEVENT`. */
     val isTask: Boolean = false,
+    /** The provider's raw `RDATE`, only set by a calendar copy. */
+    val recurrenceDates: String? = null,
+    val accessLevel: AccessLevel = AccessLevel.Default,
 )
 
 /**

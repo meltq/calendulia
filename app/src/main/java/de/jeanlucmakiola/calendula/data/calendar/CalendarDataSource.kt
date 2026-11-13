@@ -867,10 +867,11 @@ class AndroidCalendarDataSource @Inject constructor(
             null,
             CalendarContract.Events.DTSTART + " ASC",
         )?.use { c ->
-            c.mapRows {
-                val eventId = getLong(EventExportProjection.IDX_ID)
-                row { calendarName ->
-                    toIcsEvent(
+            val reader = CursorColumnReader(c)
+            while (c.moveToNext()) {
+                val eventId = reader.getLong(EventExportProjection.IDX_ID)
+                reader.row { calendarName ->
+                    reader.toIcsEvent(
                         reminderMinutes = reminders[eventId].orEmpty(),
                         calendarName = calendarName,
                         allDayReminderTimeMinutes = allDayReminderTimeMinutes,

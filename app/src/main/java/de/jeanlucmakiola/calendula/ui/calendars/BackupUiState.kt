@@ -55,13 +55,19 @@ fun backupUiState(calendars: List<CalendarSource>): BackupUiState {
     return BackupUiState.Ready(
         exportable = exportable,
         canImport = canImport,
-        canCopy = exportable.any { copyTargets(calendars, it.id).isNotEmpty() },
+        canCopy = copySources(calendars).isNotEmpty(),
     )
 }
 
-/** Calendars a copy can read from: any a backup can (#325), synced and read-only ones included. */
-fun copySources(calendars: List<CalendarSource>): List<CalendarSource> =
-    calendars.filter { it.isBackupCandidate }
+/**
+ * Calendars a copy can read from: any a backup can (#325), synced and read-only
+ * ones included, as long as some other calendar can take their events.
+ */
+fun copySources(calendars: List<CalendarSource>): List<CalendarSource> {
+    val targets = calendars.filter { it.isEventTarget }
+    if (targets.isEmpty()) return emptyList()
+    return calendars.filter { source -> source.isBackupCandidate && targets.any { it.id != source.id } }
+}
 
 /** Calendars a copy from [sourceId] can write into: the import targets, minus the source itself. */
 fun copyTargets(calendars: List<CalendarSource>, sourceId: Long?): List<CalendarSource> =

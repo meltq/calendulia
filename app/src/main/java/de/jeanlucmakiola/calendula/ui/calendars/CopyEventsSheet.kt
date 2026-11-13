@@ -38,7 +38,7 @@ import de.jeanlucmakiola.floret.components.Position
  */
 @Composable
 fun CopyEventsSheet(
-    calendars: List<CalendarSource>,
+    calendars: List<CalendarSource>?,
     selection: CopySelection,
     run: CopyRunState,
     onSelectSource: (Long) -> Unit,
@@ -47,9 +47,9 @@ fun CopyEventsSheet(
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sources = copySources(calendars)
+    val sources = calendars?.let(::copySources).orEmpty()
     val source = sources.firstOrNull { it.id == selection.sourceId }
-    val targets = copyTargets(calendars, source?.id)
+    val targets = calendars?.let { copyTargets(it, source?.id) }.orEmpty()
     val target = targets.firstOrNull { it.id == selection.targetId }
     val running = run is CopyRunState.Running
     var picking by rememberSaveable { mutableStateOf<CopyEnd?>(null) }

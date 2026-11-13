@@ -259,10 +259,19 @@ class CalendarRepositoryImpl @Inject constructor(
         onProgress: (done: Int, total: Int) -> Unit,
     ): IcsImportSummary {
         val events = withContext(io) {
-            planCalendarCopy(dataSource.calendarCopyRows(sourceCalendarId, allDayReminderTimeMinutes()))
+            planCalendarCopy(
+                dataSource.calendarCopyRows(sourceCalendarId, allDayReminderTimeMinutes()),
+                ::formatExdateStamp,
+            )
         }
         onProgress(0, events.size)
-        return importEvents(targetCalendarId, events) { done -> onProgress(done, events.size) }
+        // Checked between events, so cancelling stops the copy; a plain import
+        // keeps running to the end of its file.
+        val context = currentCoroutineContext()
+        return importEvents(targetCalendarId, events) { done ->
+            context.ensureActive()
+            onProgress(done, events.size)
+        }
     }
 
     override suspend fun importEvents(
@@ -282,7 +291,6 @@ class CalendarRepositoryImpl @Inject constructor(
         var failed = 0
         var notAttempted = 0
         for ((index, event) in events.withIndex()) {
-            currentCoroutineContext().ensureActive()
             if (index > 0) onProgress(index)
             // A known UID means the event is already in this calendar — skip,
             // keeping a restore idempotent (no overwrite this pass).

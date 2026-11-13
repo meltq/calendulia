@@ -106,7 +106,7 @@ class BackupUiStateTest {
         val state = ready(backupUiState(listOf(readOnly, local)))
 
         assertThat(state.canCopy).isTrue()
-        assertThat(copySources(listOf(readOnly, local)).map { it.id }).containsExactly(1L, 2L)
+        assertThat(copySources(listOf(readOnly, local)).map { it.id }).containsExactly(1L)
         assertThat(copyTargets(listOf(readOnly, local), 1L).map { it.id }).containsExactly(2L)
     }
 
@@ -116,6 +116,14 @@ class BackupUiStateTest {
 
         assertThat(ready(backupUiState(listOf(only))).canCopy).isFalse()
         assertThat(copyTargets(listOf(only), 1L)).isEmpty()
+    }
+
+    @Test
+    fun `the only writable calendar is not offered as a source`() {
+        val local = cal(1, local = true)
+        val holidays = cal(2, writable = false)
+
+        assertThat(copySources(listOf(local, holidays)).map { it.id }).containsExactly(2L)
     }
 
     @Test

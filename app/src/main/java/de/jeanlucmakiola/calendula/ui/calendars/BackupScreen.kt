@@ -326,8 +326,13 @@ private fun BackupContent(
     if (canCopy) {
         GroupedRow(
             title = stringResource(R.string.calendars_copy_action),
-            summary = (copyRun as? CopyRunState.Running)?.let { copyProgressText(it) }
-                ?: stringResource(R.string.calendars_copy_summary),
+            summary = when (copyRun) {
+                is CopyRunState.Running -> copyProgressText(copyRun)
+                is CopyRunState.Done -> stringResource(R.string.calendars_copy_done)
+                CopyRunState.Cancelled -> stringResource(R.string.calendars_copy_cancelled)
+                CopyRunState.Failed -> stringResource(R.string.calendars_copy_failed)
+                CopyRunState.Idle -> stringResource(R.string.calendars_copy_summary)
+            },
             position = Position.Middle,
             leading = { LeadingAvatar(Icons.Default.ContentCopy) },
             onClick = onCopy,

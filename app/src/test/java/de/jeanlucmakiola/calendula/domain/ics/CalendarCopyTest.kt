@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.domain.ics
 
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.data.calendar.formatExdateStamp
 import de.jeanlucmakiola.calendula.domain.EventStatus
 import org.junit.jupiter.api.Test
 import kotlin.time.Instant
@@ -41,6 +42,7 @@ class CalendarCopyTest {
                 series = listOf(CopySeries(1, null, event("a", reminders = listOf(10, -5, 10)), color = 0xFF112233.toInt())),
                 exceptions = emptyList(),
             ),
+            ::formatExdateStamp,
         )
 
         val copied = plan.single()
@@ -64,6 +66,7 @@ class CalendarCopyTest {
                     ),
                 ),
             ),
+            ::formatExdateStamp,
         )
 
         val series = plan.single()
@@ -85,6 +88,7 @@ class CalendarCopyTest {
                     ),
                 ),
             ),
+            ::formatExdateStamp,
         )
 
         assertThat(plan).hasSize(2)
@@ -110,6 +114,7 @@ class CalendarCopyTest {
                     ),
                 ),
             ),
+            ::formatExdateStamp,
         )
 
         assertThat(plan.single().exDates).containsExactly("20260107")
@@ -125,6 +130,7 @@ class CalendarCopyTest {
                     CopyException(5, null, occurrence(2), event("y", status = EventStatus.Cancelled)),
                 ),
             ),
+            ::formatExdateStamp,
         )
 
         assertThat(plan.map { it.summary }).containsExactly("x")
@@ -137,7 +143,7 @@ class CalendarCopyTest {
             exceptions = listOf(CopyException(1, null, occurrence(1), event("s"))),
         )
 
-        assertThat(planCalendarCopy(rows).map { it.uid }).isEqualTo(planCalendarCopy(rows).map { it.uid })
+        assertThat(planCalendarCopy(rows, ::formatExdateStamp).map { it.uid }).isEqualTo(planCalendarCopy(rows, ::formatExdateStamp).map { it.uid })
     }
 
     @Test
@@ -146,5 +152,36 @@ class CalendarCopyTest {
         val parsed = event("a", allDay = true, at = day).copy(end = day).toParsedIcsEvent()
 
         assertThat(parsed.end).isEqualTo(Instant.parse("2026-01-06T00:00:00Z"))
+    }
+
+    @Test
+    fun `an RDATE-only series keeps its dates and takes its exceptions`() {
+        val plan = planCalendarCopy(
+            CalendarCopyRows(
+                series = listOf(CopySeries(1, null, event("s").copy(recurrenceDates = "20260112T090000Z"))),
+                exceptions = listOf(CopyException(1, null, occurrence(1), event("s", status = EventStatus.Cancelled))),
+            ),
+            ::formatExdateStamp,
+        )
+
+        val series = plan.single()
+        assertThat(series.recurrenceDates).isEqualTo("20260112T090000Z")
+        assertThat(series.exDates).containsExactly("20260112T090000Z")
+    }
+
+    @Test
+    fun `a UID that comes up twice is planned once`() {
+        val plan = planCalendarCopy(
+            CalendarCopyRows(
+                series = listOf(CopySeries(1, null, event("s", rrule = "FREQ=WEEKLY"))),
+                exceptions = listOf(
+                    CopyException(1, null, occurrence(1), event("x")),
+                    CopyException(1, null, occurrence(1), event("y")),
+                ),
+            ),
+            ::formatExdateStamp,
+        )
+
+        assertThat(plan.map { it.summary }).containsExactly("x", "s").inOrder()
     }
 }

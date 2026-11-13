@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
 import de.jeanlucmakiola.floret.time.toKotlinInstantFromEpochMillis
+import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.deriveIcsUid
 import java.time.ZoneId
@@ -27,6 +28,7 @@ internal fun ColumnReader.toIcsEvent(
     val eventId = getLong(EventExportProjection.IDX_ID)
     val dtStart = getLong(EventExportProjection.IDX_DTSTART)
     val rrule = getString(EventExportProjection.IDX_RRULE)?.takeIf { it.isNotBlank() }
+    val rdate = getString(EventExportProjection.IDX_RDATE)?.takeIf { it.isNotBlank() }
     val isAllDay = getInt(EventExportProjection.IDX_ALL_DAY) != 0
 
     // Unclamped: the writer renders DTEND as stored.
@@ -41,7 +43,7 @@ internal fun ColumnReader.toIcsEvent(
         zoneId = getString(EventExportProjection.IDX_EVENT_TIMEZONE)?.takeIf { it.isNotBlank() }
             ?: "UTC",
         recurrenceRule = rrule,
-        exDates = if (rrule == null) {
+        exDates = if (rrule == null && rdate == null) {
             emptyList()
         } else {
             exportExDates(
@@ -63,6 +65,8 @@ internal fun ColumnReader.toIcsEvent(
         status = eventStatus(EventExportProjection.IDX_STATUS),
         availability = mapAvailability(getInt(EventExportProjection.IDX_AVAILABILITY)),
         calendarName = calendarName,
+        recurrenceDates = rdate,
+        accessLevel = getIntOrNull(EventExportProjection.IDX_ACCESS_LEVEL)?.let(::mapAccessLevel) ?: AccessLevel.Default,
     )
 }
 

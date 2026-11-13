@@ -1,8 +1,6 @@
 package de.jeanlucmakiola.calendula.domain.ics
 
 import de.jeanlucmakiola.calendula.domain.EventStatus
-import kotlinx.datetime.TimeZone
-import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Duration.Companion.days
 import kotlin.time.Instant
 
@@ -52,24 +50,34 @@ data class CalendarCopyRows(
  * any other event.
  *
  * Standalone occurrences come first: a run cut short then leaves at worst an
- * occurrence missing its series, never a series missing an occurrence.
- * Attendees and organizer are not part of either input; the copy is the
- * user's own event.
+ * occurrence missing its series, never a series missing an occurrence. A UID
+ * that comes up twice is planned once, as a re-run would dedup it anyway.
+ * Attendees and organizer are not part of either input.
+ *
+ * Idempotent per snapshot only: a series already in the target is skipped
+ * whole, so an occurrence changed in the source after an earlier run arrives
+ * as a standalone event next to the copied series' original one.
+ *
+ * [exdateStamp] formats an occurrence as an `EXDATE` entry in the provider's
+ * shape, the same one Calendula's own exclusions use.
  */
-fun planCalendarCopy(rows: CalendarCopyRows): List<ParsedIcsEvent> {
+fun planCalendarCopy(
+    rows: CalendarCopyRows,
+    exdateStamp: (occurrenceMillis: Long, isAllDay: Boolean) -> String,
+): List<ParsedIcsEvent> {
     val (series, exceptions) = rows
     val byId = series.associateBy { it.eventId }
-    val bySyncId = series.filter { !it.syncId.isNullOrEmpty() }.associateBy { it.syncId }
+    val bySyncId = series.filter { it.syncId != null }.associateBy { it.syncId }
     val excluded = mutableMapOf<Long, MutableList<String>>()
     val detached = mutableListOf<ParsedIcsEvent>()
     for (exception in exceptions) {
         val parent = exception.originalId?.let(byId::get)
-            ?: exception.originalSyncId?.takeIf { it.isNotEmpty() }?.let(bySyncId::get)
+            ?: exception.originalSyncId?.let(bySyncId::get)
         if (parent != null) {
             // An exception to a one-off overrides nothing a copy could carry.
-            if (parent.event.recurrenceRule.isNullOrBlank()) continue
+            if (!parent.event.recurs) continue
             excluded.getOrPut(parent.eventId) { mutableListOf() } +=
-                exdateStamp(exception.originalInstance, parent.event.isAllDay)
+                exdateStamp(exception.originalInstance.toEpochMilliseconds(), parent.event.isAllDay)
         }
         if (exception.isCancelled) continue
         val baseUid = parent?.event?.uid ?: exception.event.uid
@@ -77,15 +85,15 @@ fun planCalendarCopy(rows: CalendarCopyRows): List<ParsedIcsEvent> {
             .copy(
                 uid = "${exception.originalInstance.toEpochMilliseconds()}-$baseUid",
                 recurrenceRule = null,
-                exDates = emptyList(),
+                recurrenceDates = null,
             )
             .toParsedIcsEvent(exception.color)
     }
-    return detached + series.map { s ->
+    return (detached + series.map { s ->
         val extra = excluded[s.eventId].orEmpty()
         val event = if (extra.isEmpty()) s.event else s.event.copy(exDates = (s.event.exDates + extra).distinct())
         event.toParsedIcsEvent(s.color)
-    }
+    }).distinctBy { it.uid }
 }
 
 /**
@@ -104,16 +112,14 @@ fun IcsEvent.toParsedIcsEvent(color: Int? = null): ParsedIcsEvent = ParsedIcsEve
     isAllDay = isAllDay,
     zoneId = zoneId,
     recurrenceRule = recurrenceRule?.takeIf { it.isNotBlank() }?.removePrefix("RRULE:"),
+    recurrenceDates = recurrenceDates?.takeIf { it.isNotBlank() },
     location = location,
     description = description,
     // The writer emits only lead times; a negative one would be an alarm after the start.
     reminderMinutes = reminderMinutes.filter { it >= 0 }.distinct(),
     status = status,
     availability = availability,
+    accessLevel = accessLevel,
     color = color,
-    exDates = if (recurrenceRule.isNullOrBlank()) emptyList() else exDates.filter { it.isNotBlank() }.distinct(),
+    exDates = if (recurs) exDates.filter { it.isNotBlank() }.distinct() else emptyList(),
 )
-
-/** An occurrence as an `EXDATE` entry in the provider's shape: the UTC day for an all-day series, else a UTC stamp. */
-internal fun exdateStamp(occurrence: Instant, isAllDay: Boolean): String =
-    if (isAllDay) occurrence.toLocalDateTime(TimeZone.UTC).date.toBasic() else occurrence.toUtcBasic()
