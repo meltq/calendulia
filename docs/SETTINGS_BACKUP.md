@@ -26,7 +26,8 @@ the rest.
 - `version` is `1`. A higher version is refused as "from a newer Calendula";
   a change that an older build could misread bumps it.
 - `exportedAt` (epoch ms) and `appVersion` are informational.
-- The file is limited to 8 MiB.
+- The file is limited to 8 MiB; a leading byte-order mark is ignored.
+- The `settings` section is required: a file without it would reset every setting.
 
 ## Parsing rules
 

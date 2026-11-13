@@ -183,7 +183,7 @@ class SettingsBackupTest {
 
     @Test
     fun `an out-of-range calendar length is clamped, not refused`() {
-        val text = """{"format":"calendula-settings","version":1,"exportedAt":1,"calendars":[
+        val text = """{"format":"calendula-settings","version":1,"exportedAt":1,"settings":{},"calendars":[
             {"account_name":"me@example.org","account_type":"com.google","display_name":"Work","event_duration_minutes":5000}]}"""
         val backup = (decodeSettingsBackup(text) as BackupResult.Success).value
 
@@ -353,6 +353,25 @@ class SettingsBackupTest {
         ).forEach { text ->
             val result = decodeSettingsBackup(text) as BackupResult.Failure
             assertThat(result.problem).isEqualTo(BackupProblem.INVALID_DATA)
+        }
+    }
+
+    @Test
+    fun `a file without its settings section is refused`() {
+        val result = decodeSettingsBackup("""{"format":"calendula-settings","version":1,"exportedAt":1,"calendars":[]}""")
+
+        assertThat((result as BackupResult.Failure).problem).isEqualTo(BackupProblem.INVALID_DATA)
+    }
+
+    @Test
+    fun `an import without per-calendar settings leaves no empty keys behind`() {
+        val target = mutablePreferencesOf()
+        target[SettingsKeys.perCalendarEventDuration] = mapOf(1L to 30)
+
+        import(roundTrip(mutablePreferencesOf()), target)
+
+        SettingsBackupSchema.perCalendar.forEach { pref ->
+            assertThat(target.asMap().keys.map { it.name }).doesNotContain(pref.name)
         }
     }
 

@@ -11,8 +11,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -143,23 +141,20 @@ fun BackupScreen(
     CollapsingScaffold(
         title = stringResource(R.string.settings_section_backup),
         onBack = onBack,
-        // Loading and failure fill the screen and centre themselves, which they
-        // can only do in an unscrolled column — the scrolling one measures them
-        // against an unbounded height and leaves them hanging under the header.
-        scrollable = state is BackupUiState.Ready,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         predictiveBack = true,
         visible = visible,
     ) {
+        // Loading and failure get a fixed-height slot in the scrolling column (it
+        // can't centre them in an unbounded height); the settings block below
+        // works in every state.
         when (val s = state) {
-            // The settings block still works here, below a state that scrolls
-            // away with it rather than squeezing it off a short screen.
-            BackupUiState.Loading -> Column(Modifier.verticalScroll(rememberScrollState())) {
-                Box(Modifier.fillMaxWidth().heightIn(min = STATE_MIN_HEIGHT), contentAlignment = Alignment.Center) { BackupLoading() }
+            BackupUiState.Loading -> {
+                StateSlot { BackupLoading() }
                 SettingsBackupSection(settings)
             }
-            is BackupUiState.Failure -> Column(Modifier.verticalScroll(rememberScrollState())) {
-                Box(Modifier.fillMaxWidth().heightIn(min = STATE_MIN_HEIGHT), contentAlignment = Alignment.Center) { CalendarFailure(reason = s.reason, onRetry = onBack) }
+            is BackupUiState.Failure -> {
+                StateSlot { CalendarFailure(reason = s.reason, onRetry = onBack) }
                 SettingsBackupSection(settings)
             }
             is BackupUiState.Ready -> BackupContent(
@@ -198,6 +193,14 @@ fun BackupScreen(
             onDismiss = { showInterval = false },
         )
     }
+}
+
+@Composable
+private fun StateSlot(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxWidth().heightIn(min = STATE_MIN_HEIGHT),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
 
 /** The screen's loading state, centred in the scaffold's content column. */

@@ -10,6 +10,7 @@ import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.floret.backup.BackupDocument
 import de.jeanlucmakiola.floret.backup.BackupResult
 import de.jeanlucmakiola.floret.backup.PrefsSection
+import de.jeanlucmakiola.floret.backup.invalidBackup
 import de.jeanlucmakiola.floret.backup.optBoolean
 import de.jeanlucmakiola.floret.backup.optIntList
 import de.jeanlucmakiola.floret.backup.optObject
@@ -137,7 +138,7 @@ fun decodeSettingsBackup(text: String): BackupResult<SettingsBackup> {
         val body = document.body
         val app = body.optObject(KEY_APP)
         SettingsBackup(
-            prefs = plainSection.read(body.optObject(KEY_SETTINGS) ?: JsonObject(emptyMap())),
+            prefs = plainSection.read(body.optObject(KEY_SETTINGS) ?: invalidBackup("$KEY_SETTINGS: missing")),
             calendars = body.optObjectList(KEY_CALENDARS).orEmpty().map { it.toCalendarSettings() },
             language = app?.takeIf { KEY_LANGUAGE in it }?.let { LanguageChoice(it.optString(KEY_LANGUAGE)) },
             launcherName = app?.optString(KEY_LAUNCHER_NAME)

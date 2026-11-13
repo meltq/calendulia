@@ -119,8 +119,8 @@ fun SettingsBackupDialogs(
 
     LaunchedEffect(result) {
         val message = when (val r = result) {
-            SettingsBackupResult.Exported -> exported
-            SettingsBackupResult.ExportFailed -> exportFailed
+            is SettingsBackupResult.Exported -> exported
+            is SettingsBackupResult.ExportFailed -> exportFailed
             is SettingsBackupResult.ImportFailed -> importFailed.getValue(r.problem)
             is SettingsBackupResult.Imported, null -> return@LaunchedEffect
         }

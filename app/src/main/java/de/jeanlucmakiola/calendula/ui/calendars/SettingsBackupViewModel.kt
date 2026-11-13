@@ -23,12 +23,15 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
-/** The outcome of a settings export or import, held until the screen has shown it. */
+/**
+ * The outcome of a settings export or import, held until the screen has shown
+ * it. Plain classes, not data ones: two equal outcomes in a row must each count.
+ */
 sealed interface SettingsBackupResult {
-    data object Exported : SettingsBackupResult
-    data object ExportFailed : SettingsBackupResult
-    data class Imported(val summary: SettingsImportSummary) : SettingsBackupResult
-    data class ImportFailed(val problem: BackupProblem) : SettingsBackupResult
+    class Exported : SettingsBackupResult
+    class ExportFailed : SettingsBackupResult
+    class Imported(val summary: SettingsImportSummary) : SettingsBackupResult
+    class ImportFailed(val problem: BackupProblem) : SettingsBackupResult
 }
 
 /**
@@ -54,11 +57,11 @@ class SettingsBackupViewModel @Inject constructor(
         try {
             val text = engine.export()
             withContext(io) { context.contentResolver.writeDocumentBytes(uri, text.toByteArray(Charsets.UTF_8)) }
-            SettingsBackupResult.Exported
+            SettingsBackupResult.Exported()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            SettingsBackupResult.ExportFailed
+            SettingsBackupResult.ExportFailed()
         }
     }
 

@@ -15,6 +15,7 @@ import de.jeanlucmakiola.floret.prefs.Pref
 import de.jeanlucmakiola.floret.prefs.get
 import de.jeanlucmakiola.floret.prefs.rawValue
 import de.jeanlucmakiola.floret.prefs.set
+import de.jeanlucmakiola.floret.prefs.setRawValue
 
 /** What this device can take of a backup, read before planning. */
 data class ImportEnvironment(
@@ -162,12 +163,18 @@ fun SettingsImportPlan.applyTo(target: MutablePreferences) {
 fun MutablePreferences.writeCalendarSettings(calendars: Map<Long, CalendarSettings>) {
     this[CalendarPrefKeys.hiddenCalendarIds] = calendars.filterValues { it.hidden }.keys
     this[CalendarPrefKeys.lastUsedCalendarId] = calendars.entries.firstOrNull { it.value.lastUsed }?.key
-    this[SettingsKeys.perCalendarEventDuration] =
-        calendars.mapNotNull { (id, entry) -> entry.eventDurationMinutes?.let { id to it.clampDuration() } }.toMap()
-    this[SettingsKeys.perCalendarReminderOverride] =
-        calendars.mapNotNull { (id, entry) -> entry.reminders?.let { id to it } }.toMap()
-    this[SettingsKeys.perCalendarAllDayReminderOverride] =
-        calendars.mapNotNull { (id, entry) -> entry.allDayReminders?.let { id to it } }.toMap()
+    setMapOrClear(
+        SettingsKeys.perCalendarEventDuration,
+        calendars.mapNotNull { (id, entry) -> entry.eventDurationMinutes?.let { id to it.clampDuration() } }.toMap(),
+    )
+    setMapOrClear(
+        SettingsKeys.perCalendarReminderOverride,
+        calendars.mapNotNull { (id, entry) -> entry.reminders?.let { id to it } }.toMap(),
+    )
+    setMapOrClear(
+        SettingsKeys.perCalendarAllDayReminderOverride,
+        calendars.mapNotNull { (id, entry) -> entry.allDayReminders?.let { id to it } }.toMap(),
+    )
 }
 
 /** Adds one late-matched calendar's settings to what [writeCalendarSettings] stored. */
@@ -202,6 +209,11 @@ private fun CalendarSource.matches(identity: CalendarIdentity): Boolean =
     accountType == identity.accountType &&
         accountName == identity.accountName &&
         displayName == identity.displayName
+
+/** An empty map removes the key; its codec would otherwise store an empty string. */
+private fun <V> MutablePreferences.setMapOrClear(pref: Pref<Map<Long, V>>, value: Map<Long, V>) {
+    if (value.isEmpty()) setRawValue(pref, null) else this[pref] = value
+}
 
 /** The same range the per-calendar duration setter clamps to. */
 private fun Int.clampDuration(): Int = coerceIn(SettingsPrefs.MIN_EVENT_DURATION, SettingsPrefs.MAX_EVENT_DURATION)
