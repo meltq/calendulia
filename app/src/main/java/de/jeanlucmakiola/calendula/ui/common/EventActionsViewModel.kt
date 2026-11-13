@@ -12,6 +12,7 @@ import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
+import de.jeanlucmakiola.calendula.domain.isEventTarget
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.atOccurrence
 import de.jeanlucmakiola.calendula.domain.toDuplicateForm
@@ -64,8 +65,8 @@ class EventActionsViewModel @Inject constructor(
     /** A create form copying [event], or null when it can't be read. */
     suspend fun duplicateForm(event: EventInstance): EventForm? {
         val detail = load(event) ?: return null
-        val canModify = calendars.value[event.calendarId]?.canModifyContents == true
-        return detail.toDuplicateForm(canModify, zoneSource.current())
+        val isTarget = calendars.value[event.calendarId]?.isEventTarget == true
+        return detail.toDuplicateForm(isTarget, zoneSource.current())
     }
 
     /** A staged `.ics` for [event], or null — reported — when it can't be built. */

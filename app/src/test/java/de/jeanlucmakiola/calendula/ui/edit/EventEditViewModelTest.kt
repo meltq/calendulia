@@ -803,27 +803,6 @@ class EventEditViewModelTest {
     }
 
     @Test
-    fun `a duplicate that falls back to another calendar drops its colour`(
-        @TempDir tempDir: Path,
-    ) = runTest(dispatcher) {
-        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L, visible = false)) }
-        val vm = viewModel(tempDir, fake)
-        val job = activate(vm)
-
-        vm.openImported(
-            importedForm(end = LocalDateTime(2030, 1, 15, 10, 0)).copy(calendarId = 2L, colorKey = "3", color = 7),
-            ImportSource.Insert,
-        )
-        advanceUntilIdle()
-
-        assertThat(vm.state.value?.form?.calendarId).isEqualTo(1L)
-        assertThat(vm.state.value?.form?.colorKey).isNull()
-        assertThat(vm.state.value?.form?.color).isNull()
-        assertThat(vm.hasUnsavedChanges.value).isFalse()
-        job.cancel()
-    }
-
-    @Test
     fun `a duplicate in its own calendar keeps its colour`(
         @TempDir tempDir: Path,
     ) = runTest(dispatcher) {
@@ -839,6 +818,27 @@ class EventEditViewModelTest {
 
         assertThat(vm.state.value?.form?.calendarId).isEqualTo(2L)
         assertThat(vm.state.value?.form?.colorKey).isEqualTo("3")
+        job.cancel()
+    }
+
+    @Test
+    fun `re-picking the shown calendar is no change`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L)) }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openImported(
+            importedForm(end = LocalDateTime(2030, 1, 15, 10, 0)).copy(calendarId = 2L, colorKey = "3", color = 7),
+            ImportSource.Insert,
+        )
+        advanceUntilIdle()
+        vm.setCalendar(2L)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.form?.colorKey).isEqualTo("3")
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
         job.cancel()
     }
 }

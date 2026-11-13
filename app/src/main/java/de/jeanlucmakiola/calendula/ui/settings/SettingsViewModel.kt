@@ -38,6 +38,7 @@ import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.DefaultCalendarRef
+import de.jeanlucmakiola.calendula.domain.effectiveDefaultCalendar
 import de.jeanlucmakiola.calendula.domain.isEventTarget
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
@@ -92,7 +93,7 @@ class SettingsViewModel @Inject constructor(
 
     private fun Preferences.toUiState(
         calendars: List<CalendarSource>,
-        defaultCalendar: CalendarSource? = this[SettingsKeys.defaultNewEventCalendar]?.find(calendars),
+        storedDefault: DefaultCalendarRef? = this[SettingsKeys.defaultNewEventCalendar],
     ) = SettingsUiState(
         themeMode = this[SettingsKeys.themeMode],
         dynamicColor = this[SettingsKeys.dynamicColor] && dynamicColorAvailable,
@@ -131,8 +132,8 @@ class SettingsViewModel @Inject constructor(
         perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
         writableCalendars = calendars.filter { it.canModifyContents && it.isVisibleInSystem },
         eventTargetCalendars = calendars.filter { it.isEventTarget },
-        defaultNewEventCalendar = defaultCalendar?.takeIf { it.isEventTarget },
-        unavailableDefaultCalendar = defaultCalendar?.takeUnless { it.isEventTarget },
+        defaultNewEventCalendar = effectiveDefaultCalendar(storedDefault, calendars),
+        unavailableDefaultCalendar = storedDefault?.find(calendars)?.takeUnless { it.isEventTarget },
         allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
         managedCalendarIds = specialDatesCalendars.values.toSet(),
     )

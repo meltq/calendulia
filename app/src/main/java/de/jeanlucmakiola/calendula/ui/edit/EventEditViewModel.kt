@@ -441,7 +441,6 @@ class EventEditViewModel @Inject constructor(
         _revealed.value = form.populatedFields()
         _requestedCalendarId.value = form.calendarId
         open(form.copy(calendarId = null))
-        dropColorOffRequestedCalendar(form)
         if (source.ownsDuration) _durationTouched.value = true else applyDefaultDuration()
         when (source) {
             ImportSource.Insert, ImportSource.InsertOpenEnded ->
@@ -453,20 +452,6 @@ class EventEditViewModel @Inject constructor(
                 _remindersTouched.value = true
                 maybePromptImportedReminderDefault(form)
             }
-        }
-    }
-
-    /**
-     * A duplicate carries its source's colour, which is scoped to that calendar's
-     * account. When the form lands elsewhere, the colour goes as on [setCalendar].
-     */
-    private fun dropColorOffRequestedCalendar(form: EventForm) {
-        if (form.colorKey == null && form.color == null) return
-        val opened = session
-        viewModelScope.launch {
-            val resolved = resolvedCalendarId.first()
-            if (opened != session || _form.value?.calendarId != null) return@launch
-            if (resolved != form.calendarId) applyDefault { it.copy(colorKey = null, color = null) }
         }
     }
 
@@ -692,6 +677,9 @@ class EventEditViewModel @Inject constructor(
      * The event falls back to the new calendar's colour until re-picked.
      */
     fun setCalendar(id: Long) {
+        // Re-picking the calendar the form already shows changes nothing, so it
+        // keeps a duplicate's colour and raises no unsaved change.
+        if (id == state.value?.form?.calendarId) return
         edit { it.copy(calendarId = id, colorKey = null, color = null) }
         // A fresh event re-inherits the new calendar's default reminder and
         // length unless the user has already hand-edited them (guarded inside).
