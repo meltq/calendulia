@@ -97,7 +97,8 @@ fun ReminderDefaultPicker(
 
     var customExpanded by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("") }
-    var unit by rememberSaveable { mutableStateOf(units.first()) }
+    var pickedUnit by rememberSaveable { mutableStateOf(units.first()) }
+    val unit = pickedUnit.takeIf { it in units } ?: units.first()
 
     fun apply(override: ReminderOverride) {
         userEdited = true
@@ -154,7 +155,7 @@ fun ReminderDefaultPicker(
                         onAmountChange = { amountText = it },
                         units = units,
                         unit = unit,
-                        onUnitChange = { unit = it },
+                        onUnitChange = { pickedUnit = it },
                         onConfirm = { minutes ->
                             emit(selectedMinutes + minutes)
                             amountText = ""

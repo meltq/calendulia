@@ -55,16 +55,6 @@ internal fun toProviderAllDayMinutes(
 }
 
 /**
- * Lead times rounded down to the whole days an all-day reminder can express, the
- * same truncation [toProviderAllDayMinutes] applies, so the form shows what will
- * be saved. [MINUTES_DEFAULT] passes through.
- */
-internal fun wholeDayReminders(minutes: List<Int>): List<Int> = minutes
-    .map { if (it == MINUTES_DEFAULT) it else it / MINUTES_PER_DAY * MINUTES_PER_DAY }
-    .distinct()
-    .sorted()
-
-/**
  * The next date on or after [today] carrying [month]/[day] — the date to sample
  * a yearly all-day reminder's UTC offset at. A managed birthday's DTSTART is an
  * ancient anchor (1972 for year-less dates), a year whose timezone rules

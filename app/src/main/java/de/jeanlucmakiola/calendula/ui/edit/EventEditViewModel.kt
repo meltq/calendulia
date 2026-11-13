@@ -7,7 +7,6 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
-import de.jeanlucmakiola.calendula.data.calendar.wholeDayReminders
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -640,12 +639,7 @@ class EventEditViewModel @Inject constructor(
         // A kept pass of a repeated hour stays, so switching back out of all-day
         // lands where the event was — unless dropping the pin changed the zone.
         edit {
-            if (value) {
-                it.withTimezone(null, zoneSource.current())
-                    .copy(isAllDay = true, reminders = wholeDayReminders(it.reminders))
-            } else {
-                it.copy(isAllDay = false)
-            }
+            if (value) it.withTimezone(null, zoneSource.current()).copy(isAllDay = true) else it.copy(isAllDay = false)
         }
         // The default reminder differs for all-day vs timed; re-apply the
         // type-appropriate default unless the user has hand-edited it (guarded).
