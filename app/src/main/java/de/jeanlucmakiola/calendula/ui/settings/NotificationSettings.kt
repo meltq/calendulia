@@ -18,7 +18,6 @@ import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -29,9 +28,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
-import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
@@ -396,7 +393,13 @@ private fun CalendarNotificationRows(
         )
         GroupedRow(
             title = stringResource(R.string.settings_notification_sound),
-            summary = stringResource(R.string.settings_calendar_notification_sound_hint),
+            summary = stringResource(
+                if (alertStyle == ReminderAlertStyle.FullScreenRing) {
+                    R.string.settings_calendar_notification_sound_ring_hint
+                } else {
+                    R.string.settings_calendar_notification_sound_hint
+                },
+            ),
             position = Position.Middle,
             trailing = { ExternalLinkIcon() },
             onClick = onOpenSound,
@@ -515,13 +518,9 @@ private fun rememberBatteryOptimizationExempt(): Boolean = rememberOnResume(::is
 private fun rememberOnResume(read: (Context) -> Boolean): Boolean {
     val context = LocalContext.current
     var value by remember { mutableStateOf(read(context)) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) value = read(context)
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    LifecycleResumeEffect(context) {
+        value = read(context)
+        onPauseOrDispose {}
     }
     return value
 }

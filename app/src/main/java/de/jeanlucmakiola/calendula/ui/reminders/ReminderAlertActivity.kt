@@ -50,7 +50,7 @@ import javax.inject.Inject
 
 /**
  * The full-screen reminder alert (#171), opened by the reminder's full-screen
- * intent over the lock screen, or from its heads-up while the phone is in use.
+ * intent over the lock screen, or, for a ringing one, from its heads-up.
  * It stays until the reminder is dismissed or snoozed — here, from the
  * notification, or by the ring giving up — and back does not close it.
  */
@@ -68,16 +68,12 @@ class ReminderAlertActivity : ComponentActivity() {
     private var state by mutableStateOf<ReminderAlertUiState>(ReminderAlertUiState.Loading)
     private var alert: ReminderAlert? = null
     private var loading: Job? = null
+    private var screenOn: Job? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         showOverLockScreen()
         enableEdgeToEdge()
-        lifecycleScope.launch {
-            // An alert nobody answers lets the display sleep again; it stays on the lock screen.
-            delay(SCREEN_ON_MILLIS)
-            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        }
         show(intent)
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.CREATED) {
@@ -131,6 +127,8 @@ class ReminderAlertActivity : ComponentActivity() {
             return
         }
         alert = next
+        val ringing = alerts.ringing?.key == next.key
+        keepScreenOn(if (ringing) ReminderRingService.RING_TIMEOUT_MILLIS else ONCE_SCREEN_ON_MILLIS)
         loading?.cancel()
         state = ReminderAlertUiState.Loading
         loading = lifecycleScope.launch {
@@ -153,6 +151,16 @@ class ReminderAlertActivity : ComponentActivity() {
         }
     }
 
+    /** An alert nobody answers lets the display sleep again; it stays on the lock screen. */
+    private fun keepScreenOn(millis: Long) {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        screenOn?.cancel()
+        screenOn = lifecycleScope.launch {
+            delay(millis)
+            window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
+
     private fun act(action: String) {
         val current = alert ?: return
         sendBroadcast(ReminderActionReceiver.intent(this, action, current))
@@ -161,7 +169,7 @@ class ReminderAlertActivity : ComponentActivity() {
 
     companion object {
         private const val TAG = "ReminderAlertActivity"
-        private const val SCREEN_ON_MILLIS = ReminderRingService.RING_TIMEOUT_MILLIS
+        private const val ONCE_SCREEN_ON_MILLIS = 60_000L
 
         fun intent(context: Context, alert: ReminderAlert): Intent =
             Intent(context, ReminderAlertActivity::class.java)

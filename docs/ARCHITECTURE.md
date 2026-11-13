@@ -420,9 +420,13 @@ foreground on the shared silent `reminders_ring` channel and loops the alarm
 sound with vibration through floret-kit's `ring` module — the same player
 Clockula's alarms use. One reminder rings at a time; a newer one takes over and
 hands the older back to the shade quietly, as does a ring left unanswered for
-ten minutes. Dismiss and Snooze, from the screen, the notification or a swipe,
-all go through `ReminderActionReceiver`, so the ring stops and the screen
-closes (`FullScreenAlerts`) however the reminder was handled. When Android 14+
+ten minutes, and switching the calendar away from ringing. Dismiss and Snooze,
+from the screen, the notification or a swipe, all go through
+`ReminderActionReceiver`, so the ring stops and the screen closes
+(`FullScreenAlerts`) however the reminder was handled. Starts and stops reach
+the service as commands, so a dismiss sent while a newer ring is on its way
+applies in order rather than killing it. A blocked calendar, account group or
+ring channel never rings, and during a call the ring only vibrates. When Android 14+
 withholds `USE_FULL_SCREEN_INTENT`, the intent is left off and the alert is a
 heads-up; Settings shows a row leading to the system switch. When Android
 refuses the ring service, the reminder falls back to sounding once.

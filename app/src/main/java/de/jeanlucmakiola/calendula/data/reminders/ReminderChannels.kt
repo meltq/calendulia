@@ -113,13 +113,16 @@ class ReminderChannels @Inject constructor(
     }
 
     /**
-     * Whether a ring may sound for [calendarId]: neither its own channel nor
-     * the ring channel is blocked, since the service plays the sound itself.
+     * Whether a ring may sound for [calendarId]: neither its own channel, its
+     * account's group nor the ring channel is blocked, since the service plays
+     * the sound itself.
      */
     fun canRing(calendarId: Long): Boolean {
         val manager = manager
-        return listOf(reminderChannelId(calendarId), RING_CHANNEL_ID).none {
-            manager.getNotificationChannel(it)?.importance == NotificationManager.IMPORTANCE_NONE
+        return listOf(reminderChannelId(calendarId), RING_CHANNEL_ID).none { id ->
+            val channel = manager.getNotificationChannel(id) ?: return@none false
+            channel.importance == NotificationManager.IMPORTANCE_NONE ||
+                channel.group?.let { manager.getNotificationChannelGroup(it)?.isBlocked } == true
         }
     }
 

@@ -36,6 +36,7 @@ import de.jeanlucmakiola.calendula.data.prefs.TimeFormatPref
 import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
 import de.jeanlucmakiola.calendula.data.reminders.ReminderChannels
 import de.jeanlucmakiola.calendula.data.reminders.ReminderNotifier
+import de.jeanlucmakiola.calendula.data.reminders.RingMatch
 import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
@@ -362,7 +363,7 @@ class SettingsViewModel @Inject constructor(
     fun setRemindersEnabled(enabled: Boolean) {
         viewModelScope.launch {
             prefs.setRemindersEnabled(enabled)
-            if (!enabled) reminderNotifier.stopRing { true }
+            if (!enabled) reminderNotifier.stopRing(RingMatch.Any)
             reminderScanner.scan()
         }
     }
@@ -371,14 +372,17 @@ class SettingsViewModel @Inject constructor(
     fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) {
         viewModelScope.launch {
             prefs.setCalendarRemindersEnabled(calendarId, enabled)
-            if (!enabled) reminderNotifier.stopRing { it.calendarId == calendarId }
+            if (!enabled) reminderNotifier.stopRing(RingMatch.Calendar(calendarId))
             reminderScanner.scan()
         }
     }
 
     fun setCalendarAlertStyle(calendarId: Long, style: ReminderAlertStyle) {
         save { setCalendarAlertStyle(calendarId, style) }
-        if (style != ReminderAlertStyle.FullScreenRing) reminderNotifier.stopRing { it.calendarId == calendarId }
+        // A ring for it goes quiet but stays in the shade.
+        if (style != ReminderAlertStyle.FullScreenRing) {
+            reminderNotifier.stopRing(RingMatch.Calendar(calendarId), handBack = true)
+        }
     }
 
     /** [calendarId]'s reminder channel, created if needed so its system settings can open (#340). */

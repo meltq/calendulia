@@ -749,7 +749,8 @@
     <string name="settings_alert_sound_once">Play sound once</string>
     <string name="settings_alert_sound_once_summary">This calendar\'s notification sound, once</string>
     <string name="settings_alert_sound_ring">Ring until dismissed</string>
-    <string name="settings_alert_sound_ring_summary">Your alarm sound and vibration, like an alarm</string>
+    <string name="settings_alert_sound_ring_summary">Your alarm sound and vibration, like an alarm, also in Do Not Disturb when alarms may sound</string>
+    <string name="settings_calendar_notification_sound_ring_hint">Ringing reminders use your alarm sound. This sets the sound of the ones handed back to the shade.</string>
     <string name="settings_full_screen_permission">Allow full-screen alerts</string>
     <string name="settings_full_screen_permission_hint">Android blocks Calendula\'s full-screen alerts, so they only pop up as notifications. Tap to allow them.</string>
     <string name="settings_calendar_reminder_inherits">Default (%1$s)</string>

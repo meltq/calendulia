@@ -4,6 +4,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -15,23 +16,47 @@ import javax.inject.Singleton
 @Singleton
 class FullScreenAlerts @Inject constructor() {
 
-    /** Set by [ReminderRingService] for as long as it rings. */
+    /** Written only by [ReminderRingService], on the main thread, for as long as it rings. */
     @Volatile
     var ringing: ReminderAlert? = null
+        internal set
 
-    /** The key of a ring handed to [ReminderRingService] that has not reached it yet. */
-    @Volatile
-    var starting: Long? = null
+    /** Rings handed to [ReminderRingService] that have not reached it yet. */
+    internal val pendingStarts = AtomicInteger(0)
+
+    /** Whether a ring is going or on its way, so a stop is worth sending. */
+    val mayBeRinging: Boolean get() = ringing != null || pendingStarts.get() > 0
 
     private val handledKeys = MutableSharedFlow<Long>(
         extraBufferCapacity = 8,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
-    /** The [ReminderAlert.key]s of reminders as they are dismissed or snoozed. */
+    /** The [ReminderAlert.key]s of reminders as they are dismissed, snoozed or handed back. */
     val handled: SharedFlow<Long> = handledKeys.asSharedFlow()
 
     fun markHandled(alert: ReminderAlert) {
         handledKeys.tryEmit(alert.key)
+    }
+}
+
+/** Which ring a stop is for. */
+sealed interface RingMatch {
+    fun matches(alert: ReminderAlert): Boolean
+
+    data class Key(val key: Long) : RingMatch {
+        override fun matches(alert: ReminderAlert) = alert.key == key
+    }
+
+    data class Occurrence(val occurrenceKey: Long) : RingMatch {
+        override fun matches(alert: ReminderAlert) = alert.occurrenceKey == occurrenceKey
+    }
+
+    data class Calendar(val calendarId: Long) : RingMatch {
+        override fun matches(alert: ReminderAlert) = alert.calendarId == calendarId
+    }
+
+    data object Any : RingMatch {
+        override fun matches(alert: ReminderAlert) = true
     }
 }
