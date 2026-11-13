@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.2] — 2026-11-13
+
+### Fixed
+- **Quick moves no longer get lost.** Dropping an event while an earlier move was still saving used to snap it back without a word. Drops now wait in line and are saved in order, and a moved event stays where you dropped it until the calendar shows it there. If an event changed before a drop could be saved, or the line is full, a message says so instead ([#494]).
+- **Undo after a run of moves** keeps the first move's Undo, and each failed move gets its own message rather than replacing the last one ([#494]).
+
+### Changed
+- **The day view's title names the month**, like the week and 3-day views. Weekday and date already sit in the column header below it ([#501]).
+- Library updates (kotlinx-datetime, AppCompat).
+
 ## [2.24.1] — 2026-11-12
 
 ### Added
@@ -1973,3 +1983,5 @@ automatically, with zero telemetry and no internet permission.
 [#489]: https://codeberg.org/jlmakiola/calendula/issues/489
 [#491]: https://codeberg.org/jlmakiola/calendula/issues/491
 [#493]: https://codeberg.org/jlmakiola/calendula/issues/493
+[#494]: https://codeberg.org/jlmakiola/calendula/issues/494
+[#501]: https://codeberg.org/jlmakiola/calendula/issues/501

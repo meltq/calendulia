@@ -125,11 +125,11 @@ import de.jeanlucmakiola.calendula.ui.common.eventTitleOverflow
 import de.jeanlucmakiola.calendula.ui.common.MoveTarget
 import de.jeanlucmakiola.calendula.ui.common.MoveRequest
 import de.jeanlucmakiola.calendula.ui.common.LocalEventMove
-import de.jeanlucmakiola.calendula.ui.common.moveInFlight
-import de.jeanlucmakiola.calendula.ui.common.abandonedMoves
+import de.jeanlucmakiola.calendula.ui.common.dropStates
 import de.jeanlucmakiola.calendula.ui.common.OnUndoStarted
 import de.jeanlucmakiola.calendula.ui.common.ghostAlpha
 import de.jeanlucmakiola.calendula.ui.common.DragSnapHaptics
+import de.jeanlucmakiola.calendula.ui.common.rememberHeldSettle
 import de.jeanlucmakiola.calendula.ui.common.SETTLE_FADE_MILLIS
 import de.jeanlucmakiola.calendula.ui.common.SETTLE_GRACE_MILLIS
 import de.jeanlucmakiola.calendula.ui.common.EventMoveScope
@@ -515,7 +515,7 @@ fun MonthScreen(
         val chipDrag = rememberMonthDragController()
         // Undo moves the event back, so the chip travels back too. The
         // signal comes from the write, not from the chip that offers it.
-        OnUndoStarted { chipDrag.beginUndo() }
+        OnUndoStarted { start -> chipDrag.beginUndo(start.token, start.dropToken) }
         Box(
             modifier = Modifier
                 .padding(innerPadding)
@@ -591,11 +591,11 @@ private const val MONTH_SETTLE_TIMEOUT_MILLIS = 450L
 @Composable
 private fun MonthDragOverlay(controller: MonthDragController, showStartTimes: Boolean) {
     var origin by remember { mutableStateOf(Offset.Zero) }
-    val dark = LocalFloretDarkTheme.current
-    val density = LocalDensity.current
     val timeFit = rememberMonthChipTimeFit(showStartTimes)
     val reduceMotion = rememberReduceMotion()
-    val moveInFlight = moveInFlight()
+    val drops = dropStates()
+    val moveInFlight = controller.settledToken in drops.pending
+    val abandoned = controller.settledToken in drops.abandoned
     // Here rather than beside the controller: this reads [drag], which changes
     // every frame, and this composable is the one that is meant to.
     DragSnapHaptics(controller.drag?.targetDate, controller.drops)
@@ -608,14 +608,12 @@ private fun MonthDragOverlay(controller: MonthDragController, showStartTimes: Bo
     val glide = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
     val glideSpec = MaterialTheme.motionScheme.fastSpatialSpec<Offset>()
     val seat = controller.settledInRoot
-    val abandoned = abandonedMoves()
     LaunchedEffect(controller.settling, moveInFlight, seat, abandoned) {
         val landed = controller.settling
         if (landed == null || moveInFlight) return@LaunchedEffect
         if (seat == null) {
-            // Past the mark this drop was let go on, it was abandoned and no
-            // seat is ever coming.
-            if (abandoned == controller.settledAbandonedMark) delay(MONTH_SETTLE_TIMEOUT_MILLIS)
+            // An abandoned drop has no seat coming.
+            if (!abandoned) delay(MONTH_SETTLE_TIMEOUT_MILLIS)
         } else {
             if (!gliding) glide.snapTo(landed.topLeftInRoot)
             gliding = true
@@ -635,6 +633,9 @@ private fun MonthDragOverlay(controller: MonthDragController, showStartTimes: Bo
             .clearAndSetSemantics { }
             .onGloballyPositioned { origin = it.positionInRoot() },
     ) {
+        controller.held.forEach { parked ->
+            key(parked.token) { HeldMonthChip(controller, parked, origin, timeFit) }
+        }
         val drag = controller.drag ?: controller.settling ?: return@Box
         // Landed: the copy sinks back to the grid's own plane while the write runs.
         val lift by animateFloatAsState(
@@ -646,40 +647,91 @@ private fun MonthDragOverlay(controller: MonthDragController, showStartTimes: Bo
             animationSpec = tween(SETTLE_FADE_MILLIS),
             label = "chip-handover",
         )
-        MonthBar(
-            event = drag.event,
-            dark = dark,
-            continuesLeft = false,
-            continuesRight = false,
-            // The time the source chip carried, drawn only if this one-column
-            // cut-out of it has the room — which a slice of a multi-day bar has
-            // not, however wide the bar was.
-            time = drag.time,
+        MonthChipCopy(
+            drag = drag,
+            // Read at layout, so the glide doesn't recompose every frame.
+            at = { if (gliding) glide.value else drag.topLeftInRoot },
+            origin = origin,
+            lift = lift,
+            alpha = copyAlpha,
             timeFit = timeFit,
-            chipWidth = with(density) { drag.sizePx.width.toDp() },
-            modifier = Modifier
-                // Absolute: these are root coordinates, and the direction-aware
-                // offset would mirror them across the screen in an RTL layout.
-                .absoluteOffset {
-                    val at = if (gliding) glide.value else drag.topLeftInRoot
-                    IntOffset(
-                        (at.x - origin.x).roundToInt(),
-                        (at.y - origin.y).roundToInt(),
-                    )
-                }
-                .width(with(density) { drag.sizePx.width.toDp() })
-                .height(with(density) { drag.sizePx.height.toDp() })
-                .padding(horizontal = MONTH_CHIP_INSET, vertical = 1.dp)
-                .graphicsLayer {
-                    scaleX = 1f + 0.04f * lift
-                    scaleY = 1f + 0.04f * lift
-                    shadowElevation = 8.dp.toPx() * lift
-                    alpha = copyAlpha
-                    shape = EventChipShape
-                    clip = false
-                },
         )
     }
+}
+
+/** A drop parked by a newer pickup: held on its landing day until its own write settles. */
+@Composable
+private fun HeldMonthChip(
+    controller: MonthDragController,
+    parked: HeldChip,
+    origin: Offset,
+    timeFit: MonthChipTimeFit?,
+) {
+    val reduceMotion = rememberReduceMotion()
+    val glide = remember { Animatable(parked.copy.topLeftInRoot, Offset.VectorConverter) }
+    val glideSpec = MaterialTheme.motionScheme.fastSpatialSpec<Offset>()
+    val seat = parked.seat
+    val landed = parked.token !in dropStates().pending
+    // Carried onto its seat once the write is in, as the settling chip is.
+    LaunchedEffect(seat, landed) {
+        if (seat == null || !landed) return@LaunchedEffect
+        if (reduceMotion) glide.snapTo(seat) else glide.animateTo(seat, glideSpec)
+    }
+    val alpha = rememberHeldSettle(
+        token = parked.token,
+        seated = seat != null,
+        timeoutMillis = MONTH_SETTLE_TIMEOUT_MILLIS,
+        onHandOver = { controller.handOverHeld(parked.token) },
+        onRelease = { controller.releaseHeld(parked.token) },
+    )
+    MonthChipCopy(parked.copy, { glide.value }, origin, lift = 0f, alpha = alpha, timeFit = timeFit)
+}
+
+/** [drag]'s chip floating over the grid with its top left at [at], in root coordinates. */
+@Composable
+private fun MonthChipCopy(
+    drag: MonthChipDrag,
+    at: () -> Offset,
+    origin: Offset,
+    lift: Float,
+    alpha: Float,
+    timeFit: MonthChipTimeFit?,
+) {
+    val density = LocalDensity.current
+    val dark = LocalFloretDarkTheme.current
+    MonthBar(
+        event = drag.event,
+        dark = dark,
+        continuesLeft = false,
+        continuesRight = false,
+        // The time the source chip carried, drawn only if this one-column
+        // cut-out of it has the room — which a slice of a multi-day bar has
+        // not, however wide the bar was.
+        time = drag.time,
+        timeFit = timeFit,
+        chipWidth = with(density) { drag.sizePx.width.toDp() },
+        modifier = Modifier
+            // Absolute: these are root coordinates, and the direction-aware
+            // offset would mirror them across the screen in an RTL layout.
+            .absoluteOffset {
+                val topLeft = at()
+                IntOffset(
+                    (topLeft.x - origin.x).roundToInt(),
+                    (topLeft.y - origin.y).roundToInt(),
+                )
+            }
+            .width(with(density) { drag.sizePx.width.toDp() })
+            .height(with(density) { drag.sizePx.height.toDp() })
+            .padding(horizontal = MONTH_CHIP_INSET, vertical = 1.dp)
+            .graphicsLayer {
+                scaleX = 1f + 0.04f * lift
+                scaleY = 1f + 0.04f * lift
+                shadowElevation = 8.dp.toPx() * lift
+                this.alpha = alpha
+                shape = EventChipShape
+                clip = false
+            },
+    )
 }
 
 /**
@@ -2258,7 +2310,7 @@ private fun MonthWeekRow(
     // Once the grid holds the settled chip, tell the controller where this row
     // has seated it, so the copy in flight can glide onto it. Keyed on the week,
     // which is what changes when the re-read lands.
-    LaunchedEffect(week, dragController?.settling) {
+    LaunchedEffect(week, dragController?.settling, dragController?.held) {
         dragController?.noteSettled(rowToken)
     }
 
@@ -2691,6 +2743,8 @@ private fun monthChipDragModifier(
                     beginMillis = drop.event.start.toEpochMilliseconds(),
                     endMillis = drop.event.end.toEpochMilliseconds(),
                     target = MoveTarget.ByDays(delta),
+                    isAllDay = drop.event.isAllDay,
+                    token = drop.token,
                 ),
             )
         }
@@ -2836,8 +2890,17 @@ private fun MonthBar(
     val moveAction = eventMoveAction(event)
     // The source stays put as a ghost while its floating copy travels.
     val monthDrag = LocalMonthDrag.current
-    val lifted = monthDrag?.liftedInstanceId == event.instanceId ||
-        monthDrag?.isSettledChip(event, days) == true
+    // Derived, so a chip recomposes only when its own answer changes rather than
+    // on every lift, park and release anywhere in the grid.
+    val lifted by remember(monthDrag, event, days) {
+        derivedStateOf {
+            monthDrag != null && (
+                monthDrag.liftedInstanceId == event.instanceId ||
+                    monthDrag.isSettledChip(event, days) ||
+                    monthDrag.isHeldChip(event, days)
+                )
+        }
+    }
     val ghost = ghostAlpha(lifted)
     val shape = monthBarShape(continuesLeft, continuesRight)
     Box(

@@ -110,6 +110,9 @@
     <string name="event_move_failed">Couldn\'t move the event</string>
     <string name="event_move_write_denied">Calendula needs write access to move events</string>
     <string name="event_move_gone">That event no longer exists</string>
+    <string name="event_move_stale">That event moved before your drop could be saved</string>
+    <string name="event_move_queue_full">Too many moves at once, so that one wasn\'t saved</string>
+    <string name="event_move_skipped">Moves made while the question was open weren\'t saved</string>
     <string name="event_move_blocked_series_end">Can\'t move an event past the end of its series</string>
     <string name="event_move_blocked_cancelled_series">A cancelled series can only move as a whole, and this would change which days it falls on</string>
 
