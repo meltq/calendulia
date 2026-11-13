@@ -17,6 +17,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
@@ -86,6 +87,17 @@ class RescheduleViewModelTest {
             settings = testSettings(tempDir, CoroutineScope(dispatcher)),
         )
         return RescheduleViewModel(repo, dispatcher, FakeZoneSource())
+    }
+
+    /** A view model whose provider reads suspend until the scheduler runs, so a drop stays in flight. */
+    private fun slowViewModel(tempDir: Path, fake: FakeCalendarDataSource): RescheduleViewModel {
+        val io = StandardTestDispatcher(dispatcher.scheduler)
+        val repo = testRepository(
+            fake, tempDir, io,
+            prefs = testPrefs(tempDir, CoroutineScope(dispatcher)),
+            settings = testSettings(tempDir, CoroutineScope(dispatcher)),
+        )
+        return RescheduleViewModel(repo, io, FakeZoneSource())
     }
 
     private fun CoroutineScope.activate(vm: RescheduleViewModel): Job =
@@ -274,6 +286,38 @@ class RescheduleViewModelTest {
         assertThat(vm.move(oneHourLater())).isFalse()
         advanceUntilIdle()
         assertThat(fake.updatedEvents).isEmpty()
+    }
+
+    @Test
+    fun `a drop of another event waits for the one in flight, then lands`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
+        val vm = slowViewModel(tempDir, fake)
+
+        assertThat(vm.move(oneHourLater())).isTrue()
+        assertThat(vm.inFlight.value).isTrue()
+        val abandoned = vm.abandoned.value
+        assertThat(vm.move(toWednesday().copy(eventId = 7L))).isTrue()
+        advanceUntilIdle()
+
+        assertThat(fake.updatedEvents.map { it.first }).containsExactly(42L, 7L).inOrder()
+        assertThat(vm.abandoned.value).isEqualTo(abandoned)
+        assertThat(vm.inFlight.value).isFalse()
+    }
+
+    @Test
+    fun `a second drop of the event in flight is still refused`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
+        val vm = slowViewModel(tempDir, fake)
+
+        assertThat(vm.move(oneHourLater())).isTrue()
+        assertThat(vm.move(toWednesday())).isFalse()
+        advanceUntilIdle()
+
+        assertThat(fake.updatedEvents).hasSize(1)
     }
 
     @Test

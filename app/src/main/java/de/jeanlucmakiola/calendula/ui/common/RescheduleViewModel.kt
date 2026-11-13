@@ -189,6 +189,15 @@ class RescheduleViewModel @Inject constructor(
             _inFlight.value = value
         }
 
+    /** The event whose drop owns the pipeline, while [busy]. */
+    private var busyEventId: Long? = null
+
+    /**
+     * A drop of another event that arrived while one was still being written,
+     * run once that write settles rather than snapping back unannounced (#494).
+     */
+    private var queued: MoveRequest? = null
+
     /**
      * The calendars whose events may be dragged. Nothing below the UI guards
      * this, so a block outside this set registers no drag gesture at all.
@@ -219,7 +228,7 @@ class RescheduleViewModel @Inject constructor(
     }
 
     /**
-     * Take a drop, unless one is already being written. False means nothing will
+     * Take a drop, or queue it behind the one being written (see [canQueue]). False means nothing will
      * be written; [abandoned] ticks for that refusal too, so a held copy is let
      * go by the one signal rather than by every caller remembering to.
      *
@@ -228,27 +237,32 @@ class RescheduleViewModel @Inject constructor(
      * from two places, and it answers before the write is resolved anyway.
      */
     fun move(request: MoveRequest): Boolean {
+        if (busy && canQueue(request)) {
+            queued = request
+            return true
+        }
         if (busy || _scopePrompt.value != null) {
             _abandoned.value += 1
             return false
         }
         busy = true
+        busyEventId = request.eventId
         viewModelScope.launch {
             val prepared = prepare(request)
             if (prepared == null) {
                 _abandoned.value += 1
-                busy = false
+                settle()
                 return@launch
             }
             // A cancelled series only moves as a whole (#388).
             val seriesOnly = !prepared.original.canSaveApartFromSeries()
             if (!prepared.isRecurring || (seriesOnly && prepared.canRealign)) {
                 write(prepared, RecurringWriteScope.AllEvents)
-                busy = false
+                settle()
             } else if (seriesOnly) {
                 _outcome.value = MoveOutcome.BlockedCancelledSeries
                 _abandoned.value += 1
-                busy = false
+                settle()
             } else {
                 // Still busy: the scope dialog is now the thing in flight.
                 pending = prepared
@@ -270,16 +284,33 @@ class RescheduleViewModel @Inject constructor(
         _scopePrompt.value = null
         viewModelScope.launch {
             write(prepared, scope)
-            busy = false
+            settle()
         }
     }
 
     /** Dismiss the scope dialog without writing. */
     fun cancelScope() {
         pending = null
-        busy = false
         _scopePrompt.value = null
         _abandoned.value += 1
+        settle()
+    }
+
+    /**
+     * Only a drop of a different event, and only before a scope dialog is up:
+     * a second drop of the same event carries the occurrence times from before
+     * the first write, and would compound with it.
+     */
+    private fun canQueue(request: MoveRequest): Boolean =
+        queued == null && _scopePrompt.value == null && request.eventId != busyEventId
+
+    /** Free the pipeline, then run the drop that waited for it, if any. */
+    private fun settle() {
+        busy = false
+        busyEventId = null
+        val next = queued ?: return
+        queued = null
+        move(next)
     }
 
     /**
@@ -297,6 +328,7 @@ class RescheduleViewModel @Inject constructor(
     fun undo(undo: MoveUndo): Boolean {
         if (busy) return false
         busy = true
+        busyEventId = undo.eventId
         _undoStarted.value += 1
         viewModelScope.launch {
             _outcome.value = try {
@@ -314,7 +346,7 @@ class RescheduleViewModel @Inject constructor(
             // Read off the outcome, the way [write] does — no second copy of the
             // same fact to drift from it.
             if (_outcome.value !is MoveOutcome.Undone) _abandoned.value += 1
-            busy = false
+            settle()
         }
         return true
     }
