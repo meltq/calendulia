@@ -19,8 +19,9 @@ import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
-import de.jeanlucmakiola.calendula.ui.common.resolvableMapsIntent
+import de.jeanlucmakiola.calendula.domain.reminders.reminderMapQuery
 import de.jeanlucmakiola.floret.android.hasPermission
+import de.jeanlucmakiola.floret.android.resolvableMapsSearchIntent
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.isoDayNumber
 import java.time.DayOfWeek
@@ -191,14 +192,16 @@ class ReminderNotifier @Inject constructor(
     /**
      * Opens [alert]'s location in maps like the detail screen does, started
      * directly (no receiver trampoline). Leaves the notification up for a later
-     * snooze or dismiss. Null without a location or an app to open it.
+     * snooze or dismiss. Null without a place to look up (a bare meeting link
+     * isn't one) or an app to open it.
      */
     private fun mapIntent(alert: ReminderAlert): PendingIntent? {
-        val location = alert.location?.takeIf { it.isNotBlank() } ?: return null
-        val intent = context.resolvableMapsIntent(location) ?: return null
+        val query = reminderMapQuery(alert.location) ?: return null
+        val intent = context.resolvableMapsSearchIntent(query) ?: return null
         return PendingIntent.getActivity(
             context,
-            ReminderActionReceiver.requestCode(alert, ReminderActionReceiver.ACTION_MAP),
+            // An implicit activity intent: filterEquals already keeps it apart from the others.
+            /* requestCode = */ 0,
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )

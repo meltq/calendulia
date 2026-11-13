@@ -90,8 +90,7 @@ import de.jeanlucmakiola.calendula.domain.timeZoneOptionOf
 import de.jeanlucmakiola.calendula.domain.zoneDescriptor
 import de.jeanlucmakiola.calendula.domain.zoneOrNull
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
-import de.jeanlucmakiola.calendula.ui.common.geoSearchIntent
-import de.jeanlucmakiola.calendula.ui.common.webMapsSearchIntent
+import de.jeanlucmakiola.floret.android.mapsSearchIntents
 import de.jeanlucmakiola.floret.components.IconInfoCard
 import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.predictiveBack
@@ -886,7 +885,6 @@ private fun startOrSayNoApp(context: Context, intent: Intent) {
 
 /** Open a maps intent for [query]; fall back to a web maps URL if no app handles geo:. */
 private fun openInMaps(context: Context, query: String) {
-    if (runCatching { context.startActivity(geoSearchIntent(query)) }.isFailure) {
-        startOrSayNoApp(context, webMapsSearchIntent(query))
-    }
+    val opened = mapsSearchIntents(query).any { runCatching { context.startActivity(it) }.isSuccess }
+    if (!opened) Toast.makeText(context, R.string.link_open_failed, Toast.LENGTH_SHORT).show()
 }
