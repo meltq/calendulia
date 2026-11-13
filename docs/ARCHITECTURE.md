@@ -24,7 +24,7 @@ the package list (recurring writes, save conflicts, reminder delivery).
    drawer offers "Allow sync requests" instead, which opens the system account
    picker (`AccountManager.newChooseAccountIntent`) — the picked account
    becomes visible to the app. Access is re-read on every request and on
-   every resume, so a revoke simply puts the account back behind the
+   every resume and drawer open, so a revoke simply puts the account back behind the
    grant row. Whether and when the adapter syncs stays its call.
 2. **Observer-driven UI.** A `ContentObserver` on the provider triggers
    re-queries; every screen recomposes from fresh provider state. After a

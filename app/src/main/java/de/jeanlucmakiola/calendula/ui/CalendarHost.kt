@@ -461,18 +461,21 @@ fun CalendarHost(
     val syncResult by sync.result.collectAsStateWithLifecycle()
     val selectionFailureMessage = eventActionFailureMessage(selectionFailure)
     val syncMessage = syncResult?.let { stringResource(it.messageRes()) }
-    // The system account picker grants access to one account per pick; whatever
-    // the outcome, access is re-read rather than trusted from the result.
-    // Access can also be granted or revoked in system settings: re-read on every
-    // resume, which covers the picker returning too.
-    val accessPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    // Access is re-read on resume (covering the picker's return), never trusted from the result.
+    var accessPickerOpen by remember { mutableStateOf(false) }
+    val accessPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        accessPickerOpen = false
+    }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { sync.refreshAccess() }
     val accessPickerDescription = stringResource(R.string.sync_access_picker_description)
     val launchAccessPicker: (Set<SyncAccount>) -> Unit = { accounts ->
-        try {
-            accessPicker.launch(accountAccessIntent(accounts, accessPickerDescription))
-        } catch (e: ActivityNotFoundException) {
-            Log.w("CalendarHost", "No account picker", e)
+        if (!accessPickerOpen) {
+            try {
+                accessPicker.launch(accountAccessIntent(accounts, accessPickerDescription))
+                accessPickerOpen = true
+            } catch (e: ActivityNotFoundException) {
+                Log.w("CalendarHost", "No account picker", e)
+            }
         }
     }
     val onEditEvent: (EventInstance) -> Unit = { event -> editKey = event.occurrenceKey() }
@@ -572,6 +575,9 @@ fun CalendarHost(
         val stayingPut = remember { StayingPut() }
         val chromeHost = remember { ChromeHost() }
         val drawerState = rememberDrawerState(DrawerValue.Closed)
+        LaunchedEffect(drawerState.targetValue) {
+            if (drawerState.targetValue == DrawerValue.Open) sync.refreshAccess()
+        }
         val density = LocalDensity.current
         val topBarBottom = TopAppBarDefaults.windowInsets.getTop(density) +
             with(density) { TopAppBarDefaults.TopAppBarExpandedHeight.toPx() }
@@ -622,17 +628,15 @@ fun CalendarHost(
                         onOpenSettings()
                         switchScope.launch { drawerState.close() }
                     },
-                    sync = remember(syncTargets, syncInFlight) {
+                    sync = remember(syncTargets, syncInFlight, accessPickerDescription) {
                         DrawerSync(
                             canSync = syncTargets.reachable.isNotEmpty(),
                             inFlight = syncInFlight,
-                            needsAccess = syncTargets.needsAccess.map { it.name }.distinct(),
+                            needsAccess = syncTargets.needsAccess.isNotEmpty(),
                             onSync = {
                                 sync.requestSync()
                                 switchScope.launch { drawerState.close() }
                             },
-                            // The drawer stays open: one pick grants one account,
-                            // and the row is right there for the next.
                             onGrantAccess = { launchAccessPicker(syncTargets.needsAccess) },
                         )
                     },

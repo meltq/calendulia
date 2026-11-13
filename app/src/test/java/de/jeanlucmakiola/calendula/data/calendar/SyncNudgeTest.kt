@@ -233,7 +233,7 @@ class SyncNudgeTest {
         assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), setOf(google)))
 
         sync.requests.clear()
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.PartlyFailed)
         assertThat(sync.requests).containsExactly(Request(dav, true))
     }
 

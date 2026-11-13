@@ -150,27 +150,27 @@ fun CalendarDrawer(
 
 /**
  * The drawer's sync rows: "Sync now" when [canSync] ([inFlight] shows progress
- * and ignores taps), and a grant row naming the [needsAccess] accounts.
+ * and ignores taps), and a grant row while some account [needsAccess].
  */
 data class DrawerSync(
     val canSync: Boolean,
     val inFlight: Boolean,
-    val needsAccess: List<String>,
+    val needsAccess: Boolean,
     val onSync: () -> Unit,
     val onGrantAccess: () -> Unit,
 ) {
-    val hasRows: Boolean get() = canSync || needsAccess.isNotEmpty()
+    val hasRows: Boolean get() = canSync || needsAccess
 }
 
 @Composable
 private fun SyncRows(sync: DrawerSync) {
     if (sync.canSync) {
-        SyncNowRow(sync, if (sync.needsAccess.isEmpty()) Position.Bottom else Position.Middle)
+        SyncNowRow(sync, if (sync.needsAccess) Position.Middle else Position.Bottom)
     }
-    if (sync.needsAccess.isNotEmpty()) {
+    if (sync.needsAccess) {
         GroupedRow(
             title = stringResource(R.string.drawer_sync_access),
-            summary = stringResource(R.string.drawer_sync_access_summary, sync.needsAccess.joinToString()),
+            summary = stringResource(R.string.drawer_sync_access_summary),
             position = Position.Bottom,
             minHeight = 56.dp,
             leading = { DrawerLeadingIcon(Icons.Filled.ManageAccounts) },

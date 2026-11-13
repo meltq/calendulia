@@ -206,7 +206,7 @@ class CalendarRepositoryImpl @Inject constructor(
         val sent = targets.reachable.count { requestSync(it, userInitiated = true) }
         when {
             sent == 0 -> SyncRequestResult.Failed
-            sent < targets.reachable.size -> SyncRequestResult.PartlyFailed
+            sent < targets.reachable.size || targets.needsAccess.isNotEmpty() -> SyncRequestResult.PartlyFailed
             else -> SyncRequestResult.Requested
         }
     }
