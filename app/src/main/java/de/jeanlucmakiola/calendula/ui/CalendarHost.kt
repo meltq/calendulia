@@ -485,9 +485,8 @@ fun CalendarHost(
             movableCalendarIds = movableCalendarIds,
             dragEnabled = dragToReschedule,
             move = { reschedule.move(it) },
-            inFlight = reschedule.inFlight,
+            drops = reschedule.drops,
             undoStarted = reschedule.undoStarted,
-            abandoned = reschedule.abandoned,
             edit = onEditEvent,
         )
     }

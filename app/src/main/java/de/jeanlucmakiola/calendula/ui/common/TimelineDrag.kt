@@ -60,7 +60,6 @@ import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.rememberReduceMotion
 import de.jeanlucmakiola.floret.locale.currentLocale
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.atStartOfDayIn
@@ -611,14 +610,8 @@ class TimelineDragController {
     var settlingSelected: Boolean = false
         private set
 
-    /**
-     * The abandoned-move counter, read at the drop so the mark can't be a
-     * composition behind the tick it is compared against.
-     */
-    var abandonedTicks: StateFlow<Int>? = null
-
-    /** What [abandonedTicks] stood at when the settling drop was let go. */
-    var settledAbandonedMark: Int = 0
+    /** The token of the drop [settling] waits on; a drop's caller hands it to its `MoveRequest`. */
+    var settledToken: Long = 0L
         private set
 
     private var source: TimedBlock? = null
@@ -661,8 +654,8 @@ class TimelineDragController {
     var stripSeated: Boolean by mutableStateOf(false)
         private set
 
-    /** What [abandonedTicks] stood at when [stripSettling] was let go. */
-    var stripAbandonedMark: Int = 0
+    /** The token of the drop [stripSettling] waits on. */
+    var stripToken: Long = 0L
         private set
 
     /** The shown day the finger picked the strip bar up on. */
@@ -756,7 +749,7 @@ class TimelineDragController {
         if (held.overGrid || held.dayShift == 0) return null
         stripSettling = held
         stripSeated = false
-        stripAbandonedMark = abandonedTicks?.value ?: 0
+        stripToken = nextMoveToken()
         drops++
         return StripDrop.Days(held.event, held.dayShift)
     }
@@ -873,7 +866,7 @@ class TimelineDragController {
         settling = if (landed.edgeOnly || leavesGrid) landed.copy(pieces = emptyList()) else landed
         liftedInstanceId = landed.event.instanceId
         settledOrigin = landed.event.eventId to landed.event.start
-        settledAbandonedMark = abandonedTicks?.value ?: 0
+        settledToken = nextMoveToken()
         settledEnd = end
         drops++
     }
@@ -1199,7 +1192,6 @@ fun rememberTimelineDragController(): TimelineDragController {
     controller.geometry.edgePx = with(density) { AUTO_SCROLL_EDGE.toPx() }
     controller.geometry.stepPx = with(density) { AUTO_SCROLL_STEP.toPx() }
     controller.slopPx = LocalViewConfiguration.current.touchSlop
-    controller.abandonedTicks = LocalEventMove.current?.abandoned
     return controller
 }
 
@@ -1313,7 +1305,9 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
     val use24Hour = LocalUse24HourFormat.current
     val locale = currentLocale()
     val reduceMotion = rememberReduceMotion()
-    val moveInFlight = moveInFlight()
+    val drops = dropStates()
+    val moveInFlight = controller.settledToken in drops.pending
+    val stripInFlight = controller.stripToken in drops.pending
 
     // Both live here rather than beside the controller: they read [drag], which
     // changes every frame, and this composable is the one that is meant to.
@@ -1327,12 +1321,11 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
     // recurring drop's scope dialog is up — and then until the grid draws the
     // drop itself.
     var handingOver by remember(controller.settling) { mutableStateOf(false) }
-    val abandoned = abandonedMoves()
+    val abandoned = controller.settledToken in drops.abandoned
     LaunchedEffect(controller.settling, moveInFlight, controller.settledOnGrid, abandoned) {
         if (controller.settling == null || moveInFlight) return@LaunchedEffect
-        // Past the mark this drop was let go on, it was abandoned: nothing will
-        // land and there is nothing to wait for.
-        if (abandoned == controller.settledAbandonedMark) {
+        // An abandoned drop: nothing will land and there is nothing to wait for.
+        if (!abandoned) {
             delay(if (controller.settledOnGrid) SETTLE_GRACE_MILLIS else SETTLE_TIMEOUT_MILLIS)
         }
         handingOver = true
@@ -1342,9 +1335,10 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
     }
 
     // The same hold for a bar moved along the all-day strip.
-    LaunchedEffect(controller.stripSettling, moveInFlight, controller.stripSeated, abandoned) {
-        if (controller.stripSettling == null || moveInFlight) return@LaunchedEffect
-        if (abandoned == controller.stripAbandonedMark) {
+    val stripAbandoned = controller.stripToken in drops.abandoned
+    LaunchedEffect(controller.stripSettling, stripInFlight, controller.stripSeated, stripAbandoned) {
+        if (controller.stripSettling == null || stripInFlight) return@LaunchedEffect
+        if (!stripAbandoned) {
             delay(if (controller.stripSeated) SETTLE_GRACE_MILLIS else SETTLE_TIMEOUT_MILLIS)
         }
         controller.releaseStrip()

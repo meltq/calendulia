@@ -6,7 +6,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
@@ -16,6 +16,7 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Drag-to-reschedule wiring (#68), provided once at `CalendarHost` and read by
@@ -37,24 +38,18 @@ class EventMoveScope(
     val dragEnabled: Boolean,
     /**
      * Hand a drop to the writer. Returns nothing on purpose: a drop is answered
-     * before its write resolves, so [abandoned] — not a return value — is what
-     * tells a held copy that nothing landed.
+     * before its write resolves, so [drops] — not a return value — is what tells
+     * a held copy whether anything landed.
      */
     val move: (MoveRequest) -> Unit,
     /**
-     * True while a dropped event is being written, including the time its scope
-     * dialog is up. A flow rather than a value so this scope stays the same
-     * object across a move — every visible block reads it as a composition local.
+     * Each drop's progress by its token — see `RescheduleViewModel.drops`. A flow
+     * rather than a value so this scope stays the same object across a move —
+     * every visible block reads it as a composition local.
      */
-    val inFlight: StateFlow<Boolean>,
-    /** Ticks when an undo write begins — see `RescheduleViewModel.undoStarted`. */
-    val undoStarted: StateFlow<Int>,
-    /**
-     * Ticks when a drop ends with nothing landing — see
-     * `RescheduleViewModel.abandoned`. [move] answers before the write is
-     * resolved, so this is what tells a held copy to stop waiting.
-     */
-    val abandoned: StateFlow<Int>,
+    val drops: StateFlow<DropStates>,
+    /** The token of the undo write that just began — see `RescheduleViewModel.undoStarted`. */
+    val undoStarted: StateFlow<Long?>,
     /** Open an event in the edit form — the pointer-free route to the same change. */
     val edit: (EventInstance) -> Unit,
 ) {
@@ -63,46 +58,56 @@ class EventMoveScope(
 
 val LocalEventMove = compositionLocalOf<EventMoveScope?> { null }
 
-private val NEVER_IN_FLIGHT = MutableStateFlow(false)
+private val moveTokens = AtomicLong()
 
-private val NEVER_UNDONE = MutableStateFlow(0)
+/** A fresh identity for one drop or undo, unique for the process. */
+fun nextMoveToken(): Long = moveTokens.incrementAndGet()
 
-private val NEVER_ABANDONED = MutableStateFlow(0)
+/** How many ended drops [DropStates] remembers — far more than can be on screen at once. */
+private const val ENDED_KEPT = 32
+
+/** Per-drop progress, by token — see `RescheduleViewModel.drops`. */
+@Immutable
+data class DropStates(
+    val pending: Set<Long> = emptySet(),
+    val abandoned: Set<Long> = emptySet(),
+) {
+    fun started(token: Long): DropStates = copy(pending = pending + token)
+
+    fun ended(token: Long, landed: Boolean): DropStates = copy(
+        pending = pending - token,
+        abandoned = if (landed) abandoned else (abandoned + token).toList().takeLast(ENDED_KEPT).toSet(),
+    )
+}
+
+private val NO_DROPS = MutableStateFlow(DropStates())
+
+private val NEVER_UNDONE = MutableStateFlow<Long?>(null)
 
 /**
- * Whether a dropped event is still being written — false wherever moving is off.
- * The drag overlays hold a landed block on its target for this window.
+ * Every drop's progress — empty wherever moving is off. A drag overlay keeps
+ * the token of its own drop and holds its copy while that token is pending.
  */
 @Composable
-fun moveInFlight(): Boolean {
-    val flow = LocalEventMove.current?.inFlight ?: NEVER_IN_FLIGHT
+fun dropStates(): DropStates {
+    val flow = LocalEventMove.current?.drops ?: NO_DROPS
     return flow.collectAsStateWithLifecycle().value
 }
 
 /**
- * How many drops have ended with nothing landing. Read as a plain count so a
- * drag overlay can capture it at the moment of the drop and tell, later, whether
- * *its own* drop was one of them.
+ * Runs [onUndo] with the undo's token when an undo write begins, and never for
+ * one that began before this composable came on screen.
  */
 @Composable
-fun abandonedMoves(): Int {
-    val flow = LocalEventMove.current?.abandoned ?: NEVER_ABANDONED
-    return flow.collectAsStateWithLifecycle().value
-}
-
-/**
- * Runs [onUndo] when an undo write begins, and never for one that began before
- * this composable came on screen.
- */
-@Composable
-fun OnUndoStarted(onUndo: () -> Unit) {
+fun OnUndoStarted(onUndo: (token: Long) -> Unit) {
     val flow = LocalEventMove.current?.undoStarted ?: NEVER_UNDONE
-    val tick by flow.collectAsStateWithLifecycle()
-    var seen by remember { mutableIntStateOf(tick) }
-    LaunchedEffect(tick) {
-        if (tick == seen) return@LaunchedEffect
-        seen = tick
-        onUndo()
+    val token by flow.collectAsStateWithLifecycle()
+    var seen by remember { mutableStateOf(token) }
+    LaunchedEffect(token) {
+        val started = token
+        if (started == null || started == seen) return@LaunchedEffect
+        seen = started
+        onUndo(started)
     }
 }
 

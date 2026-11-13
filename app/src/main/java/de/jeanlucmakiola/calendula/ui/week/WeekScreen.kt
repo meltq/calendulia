@@ -592,6 +592,7 @@ private fun WeekContent(
                 beginMillis = drop.event.start.toEpochMilliseconds(),
                 endMillis = drop.event.end.toEpochMilliseconds(),
                 target = MoveTarget.Start(start),
+                token = dragController.settledToken,
             ),
         )
     }
@@ -611,6 +612,7 @@ private fun WeekContent(
                 beginMillis = drop.event.start.toEpochMilliseconds(),
                 endMillis = drop.event.end.toEpochMilliseconds(),
                 target = MoveTarget.Span(drop.start, drop.end),
+                token = dragController.settledToken,
             ),
         )
     }
@@ -625,6 +627,11 @@ private fun WeekContent(
                 target = when (drop) {
                     is StripDrop.Days -> MoveTarget.ByDays(drop.days)
                     is StripDrop.Timed -> MoveTarget.Span(drop.start, drop.end)
+                },
+                // A bar dropped into the grid settles as a timed copy, not on the strip.
+                token = when (drop) {
+                    is StripDrop.Days -> dragController.stripToken
+                    is StripDrop.Timed -> dragController.settledToken
                 },
             ),
         )

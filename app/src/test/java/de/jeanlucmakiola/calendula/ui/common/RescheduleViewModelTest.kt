@@ -100,6 +100,8 @@ class RescheduleViewModelTest {
         return RescheduleViewModel(repo, io, FakeZoneSource())
     }
 
+    private val RescheduleViewModel.abandonedCount: Int get() = drops.value.abandoned.size
+
     private fun CoroutineScope.activate(vm: RescheduleViewModel): Job =
         launch { vm.movableCalendarIds.collect {} }
 
@@ -270,54 +272,103 @@ class RescheduleViewModelTest {
         assertThat(vm.scopePrompt.value).isEqualTo(MoveScopePrompt(occurrenceOnly = true))
     }
 
-    @Test
-    fun `a second drop is refused while the first is still in flight`(
-        @TempDir tempDir: Path,
-    ) = runTest(dispatcher) {
-        val fake = FakeCalendarDataSource().apply {
-            eventDetailResult = { detail(rrule = "FREQ=WEEKLY;BYDAY=MO") }
+    /** The occurrences [ids] still at the dragged start, as a waiting drop re-checks them. */
+    private fun FakeCalendarDataSource.occurrencesAt(vararg ids: Long) {
+        instancesResult = { _, _ ->
+            ids.map { id ->
+                testEvent(
+                    id = id,
+                    start = Instant.fromEpochMilliseconds(beginMillis),
+                    end = Instant.fromEpochMilliseconds(endMillis),
+                )
+            }
         }
-        val vm = viewModel(tempDir, fake)
-
-        assertThat(vm.move(toWednesday())).isTrue()
-        advanceUntilIdle()
-
-        // Parked on the scope dialog, so the first drop still owns the pipeline.
-        assertThat(vm.move(oneHourLater())).isFalse()
-        advanceUntilIdle()
-        assertThat(fake.updatedEvents).isEmpty()
     }
 
     @Test
     fun `a drop of another event waits for the one in flight, then lands`(
         @TempDir tempDir: Path,
     ) = runTest(dispatcher) {
-        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = { detail() }
+            occurrencesAt(7L)
+        }
         val vm = slowViewModel(tempDir, fake)
 
-        assertThat(vm.move(oneHourLater())).isTrue()
-        assertThat(vm.inFlight.value).isTrue()
-        val abandoned = vm.abandoned.value
-        assertThat(vm.move(toWednesday().copy(eventId = 7L))).isTrue()
+        val first = oneHourLater()
+        val second = toWednesday().copy(eventId = 7L)
+        assertThat(vm.move(first)).isTrue()
+        assertThat(vm.move(second)).isTrue()
+        assertThat(vm.drops.value.pending).containsExactly(first.token, second.token)
         advanceUntilIdle()
 
         assertThat(fake.updatedEvents.map { it.first }).containsExactly(42L, 7L).inOrder()
-        assertThat(vm.abandoned.value).isEqualTo(abandoned)
+        assertThat(vm.drops.value).isEqualTo(DropStates())
         assertThat(vm.inFlight.value).isFalse()
     }
 
     @Test
-    fun `a second drop of the event in flight is still refused`(
+    fun `a failed drop lets go of its own copy only, not the one queued behind it`(
         @TempDir tempDir: Path,
     ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = { detail() }
+            occurrencesAt(7L)
+        }
+        val vm = slowViewModel(tempDir, fake)
+
+        // Zero distance: refused in prepare.
+        val nowhere = oneHourLater().copy(target = MoveTarget.Start(Instant.fromEpochMilliseconds(beginMillis)))
+        val queued = toWednesday().copy(eventId = 7L)
+        vm.move(nowhere)
+        vm.move(queued)
+        advanceUntilIdle()
+
+        assertThat(vm.drops.value.abandoned).containsExactly(nowhere.token)
+        assertThat(fake.updatedEvents.map { it.first }).containsExactly(7L)
+    }
+
+    @Test
+    fun `a waiting drop whose occurrence an earlier write moved is not written`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        // The first drop moved event 42, so nothing of it begins at the old start any more.
         val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
         val vm = slowViewModel(tempDir, fake)
 
-        assertThat(vm.move(oneHourLater())).isTrue()
-        assertThat(vm.move(toWednesday())).isFalse()
+        val again = toWednesday()
+        vm.move(oneHourLater())
+        vm.move(again)
         advanceUntilIdle()
 
         assertThat(fake.updatedEvents).hasSize(1)
+        assertThat(vm.outcome.value).isEqualTo(MoveOutcome.Stale)
+        assertThat(vm.drops.value.abandoned).containsExactly(again.token)
+    }
+
+    @Test
+    fun `a drop made while a scope dialog is up runs once it is answered`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply {
+            eventDetailResult = { id -> if (id == 42L) detail(rrule = "FREQ=WEEKLY") else detail() }
+            occurrencesAt(7L)
+        }
+        val vm = viewModel(tempDir, fake)
+
+        vm.move(oneHourLater())
+        advanceUntilIdle()
+        val queued = toWednesday().copy(eventId = 7L)
+        assertThat(vm.move(queued)).isTrue()
+        advanceUntilIdle()
+        assertThat(fake.updatedEvents).isEmpty()
+        assertThat(vm.drops.value.pending).contains(queued.token)
+
+        vm.moveWithScope(RecurringWriteScope.AllEvents)
+        advanceUntilIdle()
+
+        assertThat(fake.updatedEvents.map { it.first }).containsExactly(42L, 7L).inOrder()
+        assertThat(vm.drops.value.pending).isEmpty()
     }
 
     @Test
@@ -333,14 +384,14 @@ class RescheduleViewModelTest {
         vm.move(toWednesday())
         advanceUntilIdle()
 
-        val abandoned = vm.abandoned.value
+        val abandoned = vm.abandonedCount
         assertThat(vm.undo(undo)).isFalse()
         advanceUntilIdle()
         assertThat(fake.updatedEvents).hasSize(1)
         // Nothing ticks: the refusal started no journey of its own, and the
         // counter is global — a tick here would release the copy the drop that
         // *is* in flight is holding, before the grid has drawn it.
-        assertThat(vm.abandoned.value).isEqualTo(abandoned)
+        assertThat(vm.abandonedCount).isEqualTo(abandoned)
     }
 
     @Test
@@ -355,13 +406,13 @@ class RescheduleViewModelTest {
         advanceUntilIdle()
         val undo = (vm.outcome.value as MoveOutcome.Moved).undo!!
 
-        val abandoned = vm.abandoned.value
+        val abandoned = vm.abandonedCount
         fake.writeError = SecurityException("permission revoked")
         assertThat(vm.undo(undo)).isTrue()
         advanceUntilIdle()
 
         assertThat(vm.outcome.value).isEqualTo(MoveOutcome.WriteDenied)
-        assertThat(vm.abandoned.value).isEqualTo(abandoned + 1)
+        assertThat(vm.abandonedCount).isEqualTo(abandoned + 1)
     }
 
     @Test
@@ -374,12 +425,12 @@ class RescheduleViewModelTest {
         advanceUntilIdle()
         val undo = (vm.outcome.value as MoveOutcome.Moved).undo!!
 
-        val abandoned = vm.abandoned.value
+        val abandoned = vm.abandonedCount
         vm.undo(undo)
         advanceUntilIdle()
 
         assertThat(vm.outcome.value).isEqualTo(MoveOutcome.Undone)
-        assertThat(vm.abandoned.value).isEqualTo(abandoned)
+        assertThat(vm.abandonedCount).isEqualTo(abandoned)
     }
 
     @Test
@@ -603,14 +654,14 @@ class RescheduleViewModelTest {
             ),
         )).isTrue()
         advanceUntilIdle()
-        assertThat(vm.abandoned.value).isEqualTo(1)
+        assertThat(vm.abandonedCount).isEqualTo(1)
 
         // Refused by the provider, after the write was attempted.
         fake.writeError = SecurityException("revoked")
         vm.move(oneHourLater())
         advanceUntilIdle()
         assertThat(vm.outcome.value).isEqualTo(MoveOutcome.WriteDenied)
-        assertThat(vm.abandoned.value).isEqualTo(2)
+        assertThat(vm.abandonedCount).isEqualTo(2)
     }
 
     @Test
@@ -624,11 +675,11 @@ class RescheduleViewModelTest {
 
         vm.move(oneHourLater())
         advanceUntilIdle()
-        assertThat(vm.abandoned.value).isEqualTo(0)
+        assertThat(vm.abandonedCount).isEqualTo(0)
 
         vm.cancelScope()
         advanceUntilIdle()
-        assertThat(vm.abandoned.value).isEqualTo(1)
+        assertThat(vm.abandonedCount).isEqualTo(1)
     }
 
     @Test
@@ -640,7 +691,7 @@ class RescheduleViewModelTest {
         advanceUntilIdle()
 
         assertThat(vm.outcome.value).isInstanceOf(MoveOutcome.Moved::class.java)
-        assertThat(vm.abandoned.value).isEqualTo(0)
+        assertThat(vm.abandonedCount).isEqualTo(0)
     }
 
     @Test
@@ -753,7 +804,7 @@ class RescheduleViewModelTest {
 
         assertThat(vm.scopePrompt.value).isNull()
         assertThat(vm.outcome.value).isEqualTo(MoveOutcome.BlockedCancelledSeries)
-        assertThat(vm.abandoned.value).isEqualTo(1)
+        assertThat(vm.abandonedCount).isEqualTo(1)
         assertThat(fake.updatedEvents).isEmpty()
         assertThat(fake.updatedOccurrences).isEmpty()
     }

@@ -32,6 +32,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.datetime.DateTimeUnit
 import kotlinx.datetime.LocalDate
@@ -45,6 +46,9 @@ import javax.inject.Inject
 
 private const val MILLIS_PER_MINUTE = 60_000
 private const val MINUTES_PER_DAY = 24 * 60
+
+/** How many drops may wait behind the one in flight before more are refused. */
+private const val MAX_QUEUED = 8
 
 /** Where a dragged event should land. */
 sealed interface MoveTarget {
@@ -74,6 +78,8 @@ data class MoveRequest(
     val beginMillis: Long,
     val endMillis: Long,
     val target: MoveTarget,
+    /** The drop's own identity, from [nextMoveToken], which the view holding its copy waits on. */
+    val token: Long = nextMoveToken(),
 )
 
 /**
@@ -115,6 +121,12 @@ sealed interface MoveOutcome {
     /** The event vanished (sync, another device) between the read and the write. */
     data object Gone : MoveOutcome
 
+    /**
+     * A drop that waited for an earlier one found its occurrence no longer where
+     * it was picked up — the earlier write moved it — so it is not written (#494).
+     */
+    data object Stale : MoveOutcome
+
     /** The drop would push the series past its own `UNTIL`, generating nothing. */
     data object BlockedSeriesEnd : MoveOutcome
 
@@ -152,51 +164,37 @@ class RescheduleViewModel @Inject constructor(
 
     private val _inFlight = MutableStateFlow(false)
 
-    /**
-     * True from the moment a drop is accepted until its write settles — the
-     * window the dropped block holds its landing position for.
-     */
+    /** True while any write runs or waits, a queued drop included — what the confirmation chip holds for. */
     val inFlight: StateFlow<Boolean> = _inFlight.asStateFlow()
 
-    private val _abandoned = MutableStateFlow(0)
+    private val _drops = MutableStateFlow(DropStates())
 
     /**
-     * Ticks when a drop ends with nothing on the target day: refused outright,
-     * refused before the write, written and failed, or its scope dialog
-     * dismissed. [move] answers before any of that is known, so without this
-     * signal the view that drew the drop held its copy out for the full settle
-     * timeout waiting for a grid that was never going to draw it (#253).
+     * Each drop's own state, by its [MoveRequest.token]: pending from the moment
+     * it is accepted until its write settles, and abandoned once it ends with
+     * nothing on the target day — refused, failed, or its scope dialog dismissed.
+     * Per drop, so a queued drop's held copy waits on its own write and is never
+     * let go by another drop's failure (#253, #494).
      */
-    val abandoned: StateFlow<Int> = _abandoned.asStateFlow()
+    val drops: StateFlow<DropStates> = _drops.asStateFlow()
 
-    private val _undoStarted = MutableStateFlow(0)
+    private val _undoStarted = MutableStateFlow<Long?>(null)
 
     /**
-     * Ticks the moment an undo write begins, before the provider has anything to
-     * re-read, so the view that drew the drop can carry its chip back rather than
-     * let it reappear on the old day.
+     * The token of an undo write the moment it begins, before the provider has
+     * anything to re-read, so the view that drew the drop can carry its chip back
+     * rather than let it reappear on the old day. Its fate then reads off [drops].
      */
-    val undoStarted: StateFlow<Int> = _undoStarted.asStateFlow()
+    val undoStarted: StateFlow<Long?> = _undoStarted.asStateFlow()
 
     /**
-     * Set from the moment a drop is accepted until its write settles. Two drops
-     * of the same recurring event inside that window would compute their shift
-     * from the same pre-move occurrence, and the shifts would compound.
+     * Set while a drop is being prepared, waits on its scope dialog, or is
+     * written. Drops arriving in that window wait in [queue] and run in order.
      */
     private var busy = false
-        set(value) {
-            field = value
-            _inFlight.value = value
-        }
 
-    /** The event whose drop owns the pipeline, while [busy]. */
-    private var busyEventId: Long? = null
-
-    /**
-     * A drop of another event that arrived while one was still being written,
-     * run once that write settles rather than snapping back unannounced (#494).
-     */
-    private var queued: MoveRequest? = null
+    /** Drops that arrived while another was in flight, oldest first (#494). */
+    private val queue = ArrayDeque<MoveRequest>()
 
     /**
      * The calendars whose events may be dragged. Nothing below the UI guards
@@ -228,41 +226,44 @@ class RescheduleViewModel @Inject constructor(
     }
 
     /**
-     * Take a drop, or queue it behind the one being written (see [canQueue]). False means nothing will
-     * be written; [abandoned] ticks for that refusal too, so a held copy is let
-     * go by the one signal rather than by every caller remembering to.
+     * Take a drop: run it now, or queue it behind the ones in flight. False means
+     * nothing will be written — the queue is full — and the drop is marked
+     * abandoned in [drops], so its held copy is let go by the one signal rather
+     * than by every caller remembering to.
      *
      * The Boolean is diagnostic — the tests read it, [EventMoveScope] does not
-     * hand it on. A caller that gated on it would be back to releasing its copy
-     * from two places, and it answers before the write is resolved anyway.
+     * hand it on. It answers before the write is resolved anyway.
      */
     fun move(request: MoveRequest): Boolean {
-        if (busy && canQueue(request)) {
-            queued = request
-            return true
-        }
-        if (busy || _scopePrompt.value != null) {
-            _abandoned.value += 1
+        if (queue.size >= MAX_QUEUED) {
+            _drops.update { it.ended(request.token, landed = false) }
             return false
         }
+        _drops.update { it.started(request.token) }
+        if (busy) {
+            queue.addLast(request)
+        } else {
+            run(request, waited = false)
+        }
+        syncInFlight()
+        return true
+    }
+
+    private fun run(request: MoveRequest, waited: Boolean) {
         busy = true
-        busyEventId = request.eventId
         viewModelScope.launch {
-            val prepared = prepare(request)
+            val prepared = prepare(request, waited)
             if (prepared == null) {
-                _abandoned.value += 1
-                settle()
+                settle(request.token, landed = false)
                 return@launch
             }
             // A cancelled series only moves as a whole (#388).
             val seriesOnly = !prepared.original.canSaveApartFromSeries()
             if (!prepared.isRecurring || (seriesOnly && prepared.canRealign)) {
-                write(prepared, RecurringWriteScope.AllEvents)
-                settle()
+                settle(request.token, write(prepared, RecurringWriteScope.AllEvents))
             } else if (seriesOnly) {
                 _outcome.value = MoveOutcome.BlockedCancelledSeries
-                _abandoned.value += 1
-                settle()
+                settle(request.token, landed = false)
             } else {
                 // Still busy: the scope dialog is now the thing in flight.
                 pending = prepared
@@ -272,7 +273,6 @@ class RescheduleViewModel @Inject constructor(
                 )
             }
         }
-        return true
     }
 
     /** Answer the scope dialog. */
@@ -283,53 +283,45 @@ class RescheduleViewModel @Inject constructor(
         pending = null
         _scopePrompt.value = null
         viewModelScope.launch {
-            write(prepared, scope)
-            settle()
+            settle(prepared.request.token, write(prepared, scope))
         }
     }
 
     /** Dismiss the scope dialog without writing. */
     fun cancelScope() {
+        val prepared = pending ?: return
         pending = null
         _scopePrompt.value = null
-        _abandoned.value += 1
-        settle()
+        settle(prepared.request.token, landed = false)
     }
 
-    /**
-     * Only a drop of a different event, and only before a scope dialog is up:
-     * a second drop of the same event carries the occurrence times from before
-     * the first write, and would compound with it.
-     */
-    private fun canQueue(request: MoveRequest): Boolean =
-        queued == null && _scopePrompt.value == null && request.eventId != busyEventId
-
-    /** Free the pipeline, then run the drop that waited for it, if any. */
-    private fun settle() {
+    /** End the drop [token], then run the next queued one, if any. */
+    private fun settle(token: Long, landed: Boolean) {
+        _drops.update { it.ended(token, landed) }
         busy = false
-        busyEventId = null
-        val next = queued ?: return
-        queued = null
-        move(next)
+        queue.removeFirstOrNull()?.let { run(it, waited = true) }
+        syncInFlight()
+    }
+
+    private fun syncInFlight() {
+        _inFlight.value = busy || queue.isNotEmpty()
     }
 
     /**
      * Put a completed move back where it came from. The outcome stands until the
      * inverse write reports back, so the one chip changes what it says rather
      * than closing and reopening. False when another write is already running —
-     * the chip hides its action for that window, so this is the backstop.
-     *
-     * [abandoned] ticks once an inverse that *started* fails to land: [undoStarted]
-     * has sent the chip back on its journey by then and nothing else will seat it.
-     * A refusal ticks nothing — it launched no journey of its own, and the counter
-     * is global, so a tick here would release some other drop's held copy before
-     * the grid has drawn it.
+     * the chip hides its action for that window, so this is the backstop. An
+     * undo is a journey of its own: [undoStarted] names its token, and [drops]
+     * reports whether it landed.
      */
     fun undo(undo: MoveUndo): Boolean {
-        if (busy) return false
+        if (busy || queue.isNotEmpty()) return false
+        val token = nextMoveToken()
+        _drops.update { it.started(token) }
         busy = true
-        busyEventId = undo.eventId
-        _undoStarted.value += 1
+        syncInFlight()
+        _undoStarted.value = token
         viewModelScope.launch {
             _outcome.value = try {
                 repository.updateEvent(undo.eventId, undo.moved, undo.restored)
@@ -343,10 +335,7 @@ class RescheduleViewModel @Inject constructor(
             } catch (e: Exception) {
                 MoveOutcome.Failed
             }
-            // Read off the outcome, the way [write] does — no second copy of the
-            // same fact to drift from it.
-            if (_outcome.value !is MoveOutcome.Undone) _abandoned.value += 1
-            settle()
+            settle(token, landed = _outcome.value is MoveOutcome.Undone)
         }
         return true
     }
@@ -356,8 +345,13 @@ class RescheduleViewModel @Inject constructor(
         _outcome.value = null
     }
 
-    private suspend fun prepare(request: MoveRequest): PreparedMove? {
+    private suspend fun prepare(request: MoveRequest, waited: Boolean): PreparedMove? {
         val detail = try {
+            // A drop that waited carries times from before the writes ahead of it.
+            if (waited && !occurrenceStillAt(request)) {
+                _outcome.value = MoveOutcome.Stale
+                return null
+            }
             repository.eventDetail(request.eventId)
         } catch (e: CancellationException) {
             throw e
@@ -427,12 +421,12 @@ class RescheduleViewModel @Inject constructor(
         )
     }
 
-    private suspend fun write(prepared: PreparedMove, scope: RecurringWriteScope) {
+    /** Write [prepared] in [scope]; true when it landed. */
+    private suspend fun write(prepared: PreparedMove, scope: RecurringWriteScope): Boolean {
         val request = prepared.request
         if (endsBeforeItStarts(prepared, scope)) {
             _outcome.value = MoveOutcome.BlockedSeriesEnd
-            _abandoned.value += 1
-            return
+            return false
         }
         _outcome.value = try {
             when {
@@ -469,9 +463,16 @@ class RescheduleViewModel @Inject constructor(
         } catch (e: Exception) {
             MoveOutcome.Failed
         }
-        // Nothing landed, so the copy the view is holding has nothing to fade
-        // into — let it go now rather than at the end of the settle timeout.
-        if (_outcome.value !is MoveOutcome.Moved) _abandoned.value += 1
+        return _outcome.value is MoveOutcome.Moved
+    }
+
+    /** Whether [request]'s occurrence still begins where it was picked up. */
+    private suspend fun occurrenceStillAt(request: MoveRequest): Boolean {
+        val begin = Instant.fromEpochMilliseconds(request.beginMillis)
+        val end = Instant.fromEpochMilliseconds(maxOf(request.endMillis, request.beginMillis + 1))
+        return repository.eventOccurrences(request.eventId, begin..end).any {
+            it.eventId == request.eventId && it.start == begin
+        }
     }
 
     /**

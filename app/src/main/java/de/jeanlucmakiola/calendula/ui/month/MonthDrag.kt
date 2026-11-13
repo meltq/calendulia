@@ -14,8 +14,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntSize
 import de.jeanlucmakiola.calendula.domain.EventInstance
-import de.jeanlucmakiola.calendula.ui.common.LocalEventMove
-import kotlinx.coroutines.flow.StateFlow
+import de.jeanlucmakiola.calendula.ui.common.nextMoveToken
 import kotlinx.datetime.LocalDate
 import kotlin.math.abs
 
@@ -112,6 +111,8 @@ data class MonthChipDrop(
     val event: EventInstance,
     val grabDate: LocalDate,
     val targetDate: LocalDate,
+    /** The drop's identity, which its held copy waits on — see [MonthDragController.settledToken]. */
+    val token: Long,
 )
 
 /**
@@ -172,14 +173,8 @@ class MonthDragController {
      */
     private var undoable: MonthChipDrag? = null
 
-    /**
-     * The abandoned-move counter, read at the drop so the mark can't be a
-     * composition behind the tick it is compared against.
-     */
-    var abandonedTicks: StateFlow<Int>? = null
-
-    /** What [abandonedTicks] stood at when the settling chip was let go. */
-    var settledAbandonedMark: Int = 0
+    /** The token of the drop (or undo) [settling] is waiting on. */
+    var settledToken: Long = 0L
         private set
 
     private var event: EventInstance? = null
@@ -265,7 +260,7 @@ class MonthDragController {
      * there is no drop of this controller's left to undo, or the grid doesn't
      * seat the moved event where the chip would have to start from.
      */
-    fun beginUndo(): Boolean {
+    fun beginUndo(token: Long): Boolean {
         val last = undoable ?: return false
         undoable = null
         val from = last.targetDate ?: return false
@@ -274,7 +269,7 @@ class MonthDragController {
         liftedInstanceId = last.event.instanceId
         settledGhost = true
         settledInRoot = null
-        settledAbandonedMark = abandonedTicks?.value ?: 0
+        settledToken = token
         return true
     }
 
@@ -295,9 +290,9 @@ class MonthDragController {
         liftedInstanceId = landed.event.instanceId
         settledGhost = true
         undoable = settling
-        settledAbandonedMark = abandonedTicks?.value ?: 0
+        settledToken = nextMoveToken()
         drops++
-        return MonthChipDrop(landed.event, landed.grabDate, target)
+        return MonthChipDrop(landed.event, landed.grabDate, target, settledToken)
     }
 
     /**
@@ -355,9 +350,7 @@ class MonthDragController {
 
 @Composable
 fun rememberMonthDragController(): MonthDragController {
-    val controller = remember { MonthDragController() }
-    controller.abandonedTicks = LocalEventMove.current?.abandoned
-    return controller
+    return remember { MonthDragController() }
 }
 
 val LocalMonthDrag = compositionLocalOf<MonthDragController?> { null }

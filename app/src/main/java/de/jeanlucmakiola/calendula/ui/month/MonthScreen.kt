@@ -125,8 +125,7 @@ import de.jeanlucmakiola.calendula.ui.common.eventTitleOverflow
 import de.jeanlucmakiola.calendula.ui.common.MoveTarget
 import de.jeanlucmakiola.calendula.ui.common.MoveRequest
 import de.jeanlucmakiola.calendula.ui.common.LocalEventMove
-import de.jeanlucmakiola.calendula.ui.common.moveInFlight
-import de.jeanlucmakiola.calendula.ui.common.abandonedMoves
+import de.jeanlucmakiola.calendula.ui.common.dropStates
 import de.jeanlucmakiola.calendula.ui.common.OnUndoStarted
 import de.jeanlucmakiola.calendula.ui.common.ghostAlpha
 import de.jeanlucmakiola.calendula.ui.common.DragSnapHaptics
@@ -515,7 +514,7 @@ fun MonthScreen(
         val chipDrag = rememberMonthDragController()
         // Undo moves the event back, so the chip travels back too. The
         // signal comes from the write, not from the chip that offers it.
-        OnUndoStarted { chipDrag.beginUndo() }
+        OnUndoStarted { token -> chipDrag.beginUndo(token) }
         Box(
             modifier = Modifier
                 .padding(innerPadding)
@@ -595,7 +594,9 @@ private fun MonthDragOverlay(controller: MonthDragController, showStartTimes: Bo
     val density = LocalDensity.current
     val timeFit = rememberMonthChipTimeFit(showStartTimes)
     val reduceMotion = rememberReduceMotion()
-    val moveInFlight = moveInFlight()
+    val drops = dropStates()
+    val moveInFlight = controller.settledToken in drops.pending
+    val abandoned = controller.settledToken in drops.abandoned
     // Here rather than beside the controller: this reads [drag], which changes
     // every frame, and this composable is the one that is meant to.
     DragSnapHaptics(controller.drag?.targetDate, controller.drops)
@@ -608,14 +609,12 @@ private fun MonthDragOverlay(controller: MonthDragController, showStartTimes: Bo
     val glide = remember { Animatable(Offset.Zero, Offset.VectorConverter) }
     val glideSpec = MaterialTheme.motionScheme.fastSpatialSpec<Offset>()
     val seat = controller.settledInRoot
-    val abandoned = abandonedMoves()
     LaunchedEffect(controller.settling, moveInFlight, seat, abandoned) {
         val landed = controller.settling
         if (landed == null || moveInFlight) return@LaunchedEffect
         if (seat == null) {
-            // Past the mark this drop was let go on, it was abandoned and no
-            // seat is ever coming.
-            if (abandoned == controller.settledAbandonedMark) delay(MONTH_SETTLE_TIMEOUT_MILLIS)
+            // An abandoned drop has no seat coming.
+            if (!abandoned) delay(MONTH_SETTLE_TIMEOUT_MILLIS)
         } else {
             if (!gliding) glide.snapTo(landed.topLeftInRoot)
             gliding = true
@@ -2691,6 +2690,7 @@ private fun monthChipDragModifier(
                     beginMillis = drop.event.start.toEpochMilliseconds(),
                     endMillis = drop.event.end.toEpochMilliseconds(),
                     target = MoveTarget.ByDays(delta),
+                    token = drop.token,
                 ),
             )
         }
