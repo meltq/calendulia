@@ -21,12 +21,31 @@ class FullScreenAlerts @Inject constructor() {
     var ringing: ReminderAlert? = null
         internal set
 
-    /** Rings handed to [ReminderRingService] that have not reached it yet, by key. */
-    internal val pending = ConcurrentHashMap<Long, ReminderAlert>()
+    /** Rings handed to [ReminderRingService] that have not reached it yet, with how many starts each. */
+    private val pending = ConcurrentHashMap<Long, Pair<ReminderAlert, Int>>()
 
-    /** Whether a ring going or on its way [match]es, so a stop is worth sending. */
+    /** Set when the service is stopped from outside but its ring should go back to the shade. */
+    @Volatile
+    internal var handBackOnDestroy = false
+
+    internal fun addPending(alert: ReminderAlert) {
+        pending.compute(alert.key) { _, entry -> alert to ((entry?.second ?: 0) + 1) }
+    }
+
+    internal fun removePending(alert: ReminderAlert) {
+        pending.computeIfPresent(alert.key) { _, entry -> if (entry.second <= 1) null else entry.first to entry.second - 1 }
+    }
+
+    internal fun isPending(alert: ReminderAlert): Boolean = pending.containsKey(alert.key)
+
+    internal val anyPending: Boolean get() = pending.isNotEmpty()
+
+    /**
+     * Whether a ring going or on its way [match]es, so a stop is worth sending.
+     * Pending first: the service sets [ringing] before it lets a start go.
+     */
     fun mayRing(match: RingMatch): Boolean =
-        ringing?.let(match::matches) == true || pending.values.any(match::matches)
+        pending.values.any { match.matches(it.first) } || ringing?.let(match::matches) == true
 
     private val handledKeys = MutableSharedFlow<Long>(
         extraBufferCapacity = 8,

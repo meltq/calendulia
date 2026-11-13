@@ -72,17 +72,21 @@ class ReminderRingService : Service() {
             return START_NOT_STICKY
         }
         val alert = intent?.let(ReminderActionReceiver::alertFrom)
+        if (intent == null || alert == null) {
+            stopIfIdle()
+            return START_NOT_STICKY
+        }
         try {
             return startRing(intent, alert, previousStart)
         } finally {
             // Only now, once alerts.ringing says whether it rings, so a stop sent meanwhile is never skipped.
-            alert?.let { alerts.pending.remove(it.key) }
+            if (flags and START_FLAG_REDELIVERY == 0) alerts.removePending(alert)
         }
     }
 
-    private fun startRing(intent: Intent?, alert: ReminderAlert?, previousStart: Int?): Int {
-        val notification = intent?.let { IntentCompat.getParcelableExtra(it, EXTRA_NOTIFICATION, Notification::class.java) }
-        if (alert == null || notification == null) {
+    private fun startRing(intent: Intent, alert: ReminderAlert, previousStart: Int?): Int {
+        val notification = IntentCompat.getParcelableExtra(intent, EXTRA_NOTIFICATION, Notification::class.java)
+        if (notification == null) {
             stopIfIdle()
             return START_NOT_STICKY
         }
@@ -103,16 +107,17 @@ class ReminderRingService : Service() {
             return START_NOT_STICKY
         }
         if (replacing) NotificationManagerCompat.from(this).cancel(shown)
+        // A duplicate start for this very ring leaves the original in charge of redelivery.
+        if (previous?.key == alert.key) return START_NOT_STICKY
         // Only the newest start is redelivered after a process death; the older
         // ones are done, so a handled reminder never rings again.
         previousStart?.let { stopSelfResult(it) }
-        if (previous?.key == alert.key) return START_REDELIVER_INTENT
         alerts.ringing = alert
         if (previous != null) {
             // Its screen closes either way; another occurrence goes back to the shade.
             if (previous.occurrenceKey != alert.occurrenceKey) handBack(previous) else alerts.markHandled(previous)
         }
-        val since = intent?.getLongExtra(EXTRA_SINCE, System.currentTimeMillis()) ?: System.currentTimeMillis()
+        val since = intent.getLongExtra(EXTRA_SINCE, System.currentTimeMillis())
         ring(alert, remaining = since + RING_TIMEOUT_MILLIS - System.currentTimeMillis())
         return START_REDELIVER_INTENT
     }
@@ -120,7 +125,8 @@ class ReminderRingService : Service() {
     override fun onDestroy() {
         if (rang) releaseRing()
         // Stopped from outside: its screen must not stay up for a ring that is gone.
-        alerts.ringing?.let(alerts::markHandled)
+        alerts.ringing?.let { if (alerts.handBackOnDestroy) handBack(it) else alerts.markHandled(it) }
+        alerts.handBackOnDestroy = false
         alerts.ringing = null
         scope.cancel()
         super.onDestroy()
@@ -146,9 +152,9 @@ class ReminderRingService : Service() {
                 RingVerdict.Ring
             }
             if (verdict != RingVerdict.Ring) {
-                if (verdict == RingVerdict.HandBack) handBack(alert)
+                // Never heard yet, so it alerts once in its new style.
+                if (verdict == RingVerdict.HandBack) handBack(alert, quiet = false)
                 end()
-                stopIfIdle()
                 return@launch
             }
             sound(alert)
@@ -161,10 +167,11 @@ class ReminderRingService : Service() {
      */
     private suspend fun sound(alert: ReminderAlert) {
         var sounding = false
+        var tick = 0
         while (true) {
-            if (!notifier.canStillRing(alert)) {
+            if (tick++ % VISIBILITY_CHECK_TICKS == 0 && !notifier.canStillRing(alert)) {
+                handBack(alert)
                 end()
-                stopIfIdle()
                 return
             }
             val inCall = isInCall()
@@ -186,8 +193,9 @@ class ReminderRingService : Service() {
         if (current != null && matchFrom(intent).matches(current)) {
             if (intent.getBooleanExtra(EXTRA_HAND_BACK, false)) handBack(current)
             end()
+        } else {
+            stopIfIdle()
         }
-        stopIfIdle()
     }
 
     /** Rung long enough: back to the shade quietly. */
@@ -195,15 +203,15 @@ class ReminderRingService : Service() {
         timeout = null
         alerts.ringing?.let(::handBack)
         end()
-        stopIfIdle()
     }
 
-    /** Ends the ring and closes its screen. */
+    /** Ends the ring, closes its screen, and stops the service unless a newer command is on its way. */
     private fun end() {
         alerts.ringing?.let(alerts::markHandled)
         releaseRing()
         alerts.ringing = null
         stopForeground(STOP_FOREGROUND_REMOVE)
+        stopIfIdle()
     }
 
     /** Declines while a newer command is still on its way. */
@@ -252,6 +260,9 @@ class ReminderRingService : Service() {
         private const val EXTRA_NOTIFICATION = "notification"
         private const val EXTRA_SINCE = "since"
         private const val CALL_CHECK_MILLIS = 1_000L
+
+        /** How many call checks between re-reading whether the ring's notification can still be seen. */
+        private const val VISIBILITY_CHECK_TICKS = 5
         private const val EXTRA_MATCH_KIND = "match_kind"
         private const val EXTRA_MATCH_VALUE = "match_value"
         private const val EXTRA_HAND_BACK = "hand_back"
@@ -274,14 +285,14 @@ class ReminderRingService : Service() {
                 .putAlert(alert)
                 .putExtra(EXTRA_NOTIFICATION, notification)
                 .putExtra(EXTRA_SINCE, System.currentTimeMillis())
-            alerts.pending[alert.key] = alert
+            alerts.addPending(alert)
             return try {
                 RingWakeLock.handOff(context, WAKE_LOCK_TAG)
                 context.startForegroundService(intent)
                 true
             } catch (e: Exception) {
                 Log.w(TAG, "Could not start the ring for event ${alert.eventId}", e)
-                alerts.pending.remove(alert.key)
+                alerts.removePending(alert)
                 false
             }
         }
@@ -311,7 +322,10 @@ class ReminderRingService : Service() {
                 Log.w(TAG, "Could not stop the ring", e)
                 // Refused from the background: nothing must ring on regardless,
                 // unless a start is still on its way, which this would crash.
-                if (alerts.pending.isEmpty()) context.stopService(Intent(context, ReminderRingService::class.java))
+                if (!alerts.anyPending) {
+                    alerts.handBackOnDestroy = handBack
+                    context.stopService(Intent(context, ReminderRingService::class.java))
+                }
             }
         }
 

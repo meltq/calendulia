@@ -84,7 +84,7 @@ class ReminderNotifier @Inject constructor(
             }
         }
         // Rung already and handed back to the shade: a catch-up post leaves it there.
-        if (style == ReminderAlertStyle.FullScreenRing && isShowing(alert)) return
+        if (style == ReminderAlertStyle.FullScreenRing && (isShowing(alert) || alerts.isPending(alert))) return
         val channelId = channelFor(alert, style) ?: return
         val title = displayTitle(alert)
         val text = contentText(alert)
