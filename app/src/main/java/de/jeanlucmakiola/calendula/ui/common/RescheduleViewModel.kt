@@ -121,6 +121,9 @@ sealed interface MoveOutcome {
     /** The event vanished (sync, another device) between the read and the write. */
     data object Gone : MoveOutcome
 
+    /** Drops that waited behind a scope dialog, cancelled rather than run after it (#494). */
+    data object Skipped : MoveOutcome
+
     /**
      * The drop's occurrence is no longer where it was picked up — an earlier
      * write moved it — and a recurring one can't be followed there, so it is not
@@ -198,8 +201,8 @@ class RescheduleViewModel @Inject constructor(
             _inFlight.value = value
         }
 
-    /** Whether a drop since the pipeline was last idle failed — see [report]. */
-    private var failedThisRun = false
+    /** Whether the chip has shown anything since the pipeline was last idle — see [report]. */
+    private var reportedThisRun = false
 
     /** Drops that arrived while another was in flight, oldest first (#494). */
     private val queue = ArrayDeque<MoveRequest>()
@@ -247,6 +250,11 @@ class RescheduleViewModel @Inject constructor(
             _drops.update { it.ended(request.token, landed = false) }
             return false
         }
+        if (_scopePrompt.value != null) {
+            _drops.update { it.ended(request.token, landed = false) }
+            report(MoveOutcome.Skipped)
+            return false
+        }
         _drops.update { it.started(request.token) }
         if (busy) queue.addLast(request) else run(request)
         return true
@@ -268,7 +276,10 @@ class RescheduleViewModel @Inject constructor(
                 report(MoveOutcome.BlockedCancelledSeries)
                 settle(request.token, landed = false)
             } else {
-                // Still busy: the scope dialog is now the thing in flight.
+                // Still busy: the scope dialog is now the thing in flight. Drops
+                // waiting behind it are cancelled, not held behind a question
+                // about another event.
+                skipQueued()
                 pending = prepared
                 _scopePrompt.value = MoveScopePrompt(
                     occurrenceOnly = !prepared.canRealign,
@@ -307,19 +318,35 @@ class RescheduleViewModel @Inject constructor(
             run(next)
         } else {
             busy = false
-            failedThisRun = false
+            reportedThisRun = false
         }
     }
 
+    private fun skipQueued() {
+        if (queue.isEmpty()) return
+        val skipped = queue.map { it.token }
+        queue.clear()
+        _drops.update { states -> skipped.fold(states) { acc, token -> acc.ended(token, landed = false) } }
+        report(MoveOutcome.Skipped)
+    }
+
     /**
-     * Show [outcome] on the chip. While drops run back to back, a failure stays
-     * up rather than being replaced by a later drop's success: the grid shows
-     * what moved, but only the chip says what didn't.
+     * Show [outcome] on the chip. While drops run back to back, the first move's
+     * chip and its Undo stay up rather than being replaced by the next success,
+     * and a failure replaces it: the grid shows what moved, but only the chip
+     * says what didn't. A later write to the shown move's own event takes that
+     * Undo away, since putting the event back would undo the later move too.
      */
-    private fun report(outcome: MoveOutcome) {
+    private fun report(outcome: MoveOutcome, eventId: Long? = null) {
         val failure = outcome !is MoveOutcome.Moved && outcome !is MoveOutcome.Undone
-        if (!failure && failedThisRun) return
-        if (failure) failedThisRun = true
+        if (!failure && reportedThisRun) {
+            val shown = _outcome.value as? MoveOutcome.Moved
+            if (shown?.undo != null && shown.undo.eventId == eventId) {
+                _outcome.value = shown.copy(undo = null)
+            }
+            return
+        }
+        reportedThisRun = true
         _outcome.value = outcome
     }
 
@@ -480,7 +507,7 @@ class RescheduleViewModel @Inject constructor(
         } catch (e: Exception) {
             MoveOutcome.Failed
         }
-        report(outcome)
+        report(outcome, request.eventId)
         return outcome is MoveOutcome.Moved
     }
 

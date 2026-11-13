@@ -413,27 +413,61 @@ class RescheduleViewModelTest {
     }
 
     @Test
-    fun `a drop made while a scope dialog is up runs once it is answered`(
+    fun `drops waiting when a scope dialog opens are cancelled, not held behind it`(
         @TempDir tempDir: Path,
     ) = runTest(dispatcher) {
         val fake = FakeCalendarDataSource().apply {
             eventDetailResult = { id -> if (id == 42L) detail(rrule = "FREQ=WEEKLY") else detail() }
         }
-        val vm = viewModel(tempDir, fake)
+        val vm = slowViewModel(tempDir, fake)
 
         vm.move(oneHourLater())
-        advanceUntilIdle()
         val queued = toWednesday().copy(eventId = 7L, token = nextMoveToken())
-        assertThat(vm.move(queued)).isTrue()
+        vm.move(queued)
         advanceUntilIdle()
-        assertThat(fake.updatedEvents).isEmpty()
-        assertThat(vm.drops.value.pending).contains(queued.token)
+
+        assertThat(vm.scopePrompt.value).isNotNull()
+        assertThat(vm.drops.value.abandoned).containsExactly(queued.token)
+        assertThat(vm.outcome.value).isEqualTo(MoveOutcome.Skipped)
+
+        // One made while the dialog is up is refused the same way.
+        val during = toWednesday().copy(eventId = 7L, token = nextMoveToken())
+        assertThat(vm.move(during)).isFalse()
 
         vm.moveWithScope(RecurringWriteScope.AllEvents)
         advanceUntilIdle()
+        assertThat(fake.updatedEvents.map { it.first }).containsExactly(42L)
+        // The skip stays on the chip; the grid shows the move itself.
+        assertThat(vm.outcome.value).isEqualTo(MoveOutcome.Skipped)
+    }
 
-        assertThat(fake.updatedEvents.map { it.first }).containsExactly(42L, 7L).inOrder()
-        assertThat(vm.drops.value.pending).isEmpty()
+    @Test
+    fun `the first move of a run keeps the chip and its undo`(@TempDir tempDir: Path) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
+        val vm = slowViewModel(tempDir, fake)
+
+        vm.move(oneHourLater())
+        vm.move(toWednesday().copy(eventId = 7L, token = nextMoveToken()))
+        advanceUntilIdle()
+
+        val shown = vm.outcome.value as MoveOutcome.Moved
+        assertThat(fake.updatedEvents).hasSize(2)
+        assertThat(shown.undo?.eventId).isEqualTo(42L)
+    }
+
+    @Test
+    fun `a later move of the same event takes the first move's undo away`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
+        val vm = slowViewModel(tempDir, fake)
+
+        vm.move(oneHourLater())
+        vm.move(toWednesday())
+        advanceUntilIdle()
+
+        assertThat(fake.updatedEvents).hasSize(2)
+        assertThat((vm.outcome.value as MoveOutcome.Moved).undo).isNull()
     }
 
     @Test

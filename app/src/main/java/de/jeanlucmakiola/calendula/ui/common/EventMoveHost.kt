@@ -91,6 +91,7 @@ fun EventMoveHost(
         MoveOutcome.WriteDenied -> stringResource(R.string.event_move_write_denied)
         MoveOutcome.Gone -> stringResource(R.string.event_move_gone)
         MoveOutcome.Stale -> stringResource(R.string.event_move_stale)
+        MoveOutcome.Skipped -> stringResource(R.string.event_move_skipped)
         MoveOutcome.BlockedSeriesEnd -> stringResource(R.string.event_move_blocked_series_end)
         MoveOutcome.BlockedCancelledSeries -> stringResource(R.string.event_move_blocked_cancelled_series)
         MoveOutcome.Failed -> stringResource(R.string.event_move_failed)

@@ -106,6 +106,13 @@ data class MonthChipDrag(
     val time: String? = null,
 )
 
+/** A drop parked by a newer pickup while its write still runs — see [MonthDragController.held]. */
+data class HeldChip(
+    val copy: MonthChipDrag,
+    val token: Long,
+    val handedOver: Boolean = false,
+)
+
 /** Where a finished chip drag asks its event to go, as a whole-day shift. */
 data class MonthChipDrop(
     val event: EventInstance,
@@ -173,6 +180,14 @@ class MonthDragController {
      */
     private var undoable: MonthChipDrag? = null
 
+    /**
+     * Earlier drops still being written when another chip was picked up. They
+     * keep their copy and their ghost until their own token settles, rather than
+     * vanishing and flashing back on the old day (#494).
+     */
+    var held: List<HeldChip> by mutableStateOf(emptyList())
+        private set
+
     /** The token of the drop (or undo) [settling] is waiting on. */
     var settledToken: Long = 0L
         private set
@@ -203,7 +218,7 @@ class MonthDragController {
         this.event = event
         this.grabDate = grabDate
         this.time = time
-        settling = null
+        parkSettling()
         isDragging = true
         liftedInstanceId = event.instanceId
         grab = pointerInRoot - chipInRoot
@@ -227,6 +242,29 @@ class MonthDragController {
         settling = null
         settledInRoot = null
         settledGhost = false
+    }
+
+    /** Whether [event]'s chip is the source of a held drop, so still a ghost. */
+    fun isHeldSource(event: EventInstance): Boolean =
+        held.any { !it.handedOver && it.copy.event.instanceId == event.instanceId }
+
+    /** Move a still-settling drop to [held] before a new pickup takes the slot. */
+    private fun parkSettling() {
+        val landed = settling
+        if (landed != null) held = held + HeldChip(landed, settledToken)
+        settling = null
+        settledInRoot = null
+        settledGhost = false
+    }
+
+    /** Stop ghosting the held drop [token]'s source while its copy fades. */
+    fun handOverHeld(token: Long) {
+        held = held.map { if (it.token == token) it.copy(handedOver = true) else it }
+    }
+
+    /** Drop the held copy [token] once it has faded. */
+    fun releaseHeld(token: Long) {
+        held = held.filterNot { it.token == token }
     }
 
     /**

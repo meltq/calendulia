@@ -20,6 +20,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Stable
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -350,6 +351,19 @@ internal fun draftBlock(draft: EventInstance, date: LocalDate, zone: TimeZone): 
 enum class ResizeEdge { Top, Bottom }
 
 /** Where a finished resize asks its event to begin and end. */
+/** A drop parked by a newer pickup while its write still runs — see [TimelineDragController.held]. */
+data class HeldDrop(
+    val copy: TimelineDrag,
+    val token: Long,
+    val instanceId: Long,
+    /** The event row and start the drop came from, as [TimelineDragController.ghosts] matches them. */
+    val origin: Pair<Long, Instant>,
+    val handedOver: Boolean = false,
+) {
+    fun ghosts(block: TimedBlock): Boolean = block.event.instanceId == instanceId ||
+        (block.event.eventId == origin.first && block.event.start == origin.second)
+}
+
 data class TimelineResizeDrop(
     val event: EventInstance,
     val start: Instant,
@@ -528,6 +542,14 @@ class TimelineDragController {
      */
     private var settledOrigin: Pair<Long, Instant>? by mutableStateOf(null)
 
+    /**
+     * Earlier drops still being written when another block was picked up. They
+     * keep their copy and their ghost until their own token settles, rather than
+     * vanishing and flashing back at the old slot (#494).
+     */
+    var held: List<HeldDrop> by mutableStateOf(emptyList())
+        private set
+
     /** How long a block drafted on an empty slot starts out, in minutes (#153). */
     var draftMinutes: Int = SettingsPrefs.DEFAULT_EVENT_DURATION
 
@@ -696,7 +718,7 @@ class TimelineDragController {
         dragDuration = (block.event.end - block.event.start).coerceAtLeast(Duration.ZERO)
         dragKept = zone.repeatedHourOffsetAt(block.event.start)
         this.titleLines = titleLines
-        settling = null
+        parkSettling()
         isDragging = true
         liftedInstanceId = block.event.instanceId
         grab = pointerInRoot - blockInRoot
@@ -735,7 +757,7 @@ class TimelineDragController {
         dragDuration = draftMinutes.minutes
         dragKept = null
         titleLines = 1
-        settling = null
+        parkSettling()
         isDragging = true
         liftedInstanceId = event.instanceId
         grab = Offset(0f, geometry.hourPx * STRIP_GRAB_MINUTES / 60f)
@@ -815,10 +837,34 @@ class TimelineDragController {
      * an event that crosses midnight (#253).
      */
     fun ghosts(block: TimedBlock): Boolean {
+        if (held.any { !it.handedOver && it.ghosts(block) }) return true
         if (liftedInstanceId == null) return false
         if (block.event.instanceId == liftedInstanceId) return true
         val (eventId, start) = settledOrigin ?: return false
         return block.event.eventId == eventId && block.event.start == start
+    }
+
+    /** Move a still-settling drop to [held] before a new pickup takes the slot. */
+    private fun parkSettling() {
+        val landed = settling
+        val origin = settledOrigin
+        if (landed != null && origin != null && !landed.event.isDraft) {
+            held = held + HeldDrop(landed, settledToken, landed.event.instanceId, origin)
+        }
+        settling = null
+        settledOnGrid = false
+        settledOrigin = null
+        settledEnd = null
+    }
+
+    /** Stop ghosting the held drop [token]'s source while its copy fades. */
+    fun handOverHeld(token: Long) {
+        held = held.map { if (it.token == token) it.copy(handedOver = true) else it }
+    }
+
+    /** Drop the held copy [token] once it has faded. */
+    fun releaseHeld(token: Long) {
+        held = held.filterNot { it.token == token }
     }
 
     /**
@@ -908,7 +954,7 @@ class TimelineDragController {
         resize = session
         clipOffsetMin = 0
         this.titleLines = titleLines
-        settling = null
+        parkSettling()
         isDragging = true
         pointerMoved = true
         liftedInstanceId = block.event.instanceId
@@ -1312,6 +1358,9 @@ private const val SETTLE_TIMEOUT_MILLIS = 900L
  */
 const val SETTLE_FADE_MILLIS: Int = 250
 
+/** How long a held copy waits after its write before fading — the grid's re-read, unconfirmed. */
+const val HELD_SETTLE_MILLIS: Long = 300L
+
 /**
  * The floating block, drawn over the whole calendar so it is free of the day
  * column's clip and of the scroll viewport's rounded corners.
@@ -1319,10 +1368,6 @@ const val SETTLE_FADE_MILLIS: Int = 250
 @Composable
 fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier = Modifier) {
     var origin by remember { mutableStateOf(Offset.Zero) }
-    val density = LocalDensity.current
-    val dark = LocalFloretDarkTheme.current
-    val use24Hour = LocalUse24HourFormat.current
-    val locale = currentLocale()
     val reduceMotion = rememberReduceMotion()
     val drops = dropStates()
     val moveInFlight = controller.settledToken in drops.pending
@@ -1371,6 +1416,9 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
             .clearAndSetSemantics { }
             .onGloballyPositioned { origin = it.positionInRoot() },
     ) {
+        controller.held.forEach { parked ->
+            key(parked.token) { HeldTimelineCopy(controller, parked, origin) }
+        }
         val drag = controller.drag ?: controller.settling ?: return@Box
         // Landed: the copy sinks back to the grid's own plane while the write runs.
         val landed = controller.drag == null
@@ -1384,6 +1432,47 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
             animationSpec = tween(SETTLE_FADE_MILLIS),
             label = "drag-handover",
         )
+        TimelineCopy(drag, controller.geometry, origin, lift, copyAlpha)
+    }
+}
+
+/** A drop parked by a newer pickup: held at its landing slot until its own write settles. */
+@Composable
+private fun HeldTimelineCopy(controller: TimelineDragController, parked: HeldDrop, origin: Offset) {
+    val drops = dropStates()
+    val pending = parked.token in drops.pending
+    val abandoned = parked.token in drops.abandoned
+    var fading by remember { mutableStateOf(false) }
+    LaunchedEffect(pending, abandoned) {
+        if (pending) return@LaunchedEffect
+        // No seat to confirm this one, so give the grid a beat to re-read.
+        if (!abandoned) delay(HELD_SETTLE_MILLIS)
+        fading = true
+        controller.handOverHeld(parked.token)
+        delay(SETTLE_FADE_MILLIS.toLong())
+        controller.releaseHeld(parked.token)
+    }
+    val alpha by animateFloatAsState(
+        targetValue = if (fading) 0f else 1f,
+        animationSpec = tween(SETTLE_FADE_MILLIS),
+        label = "held-handover",
+    )
+    TimelineCopy(parked.copy, controller.geometry, origin, lift = 0f, copyAlpha = alpha)
+}
+
+/** [drag]'s pieces drawn over the calendar, clipped to the timeline's viewport. */
+@Composable
+private fun TimelineCopy(
+    drag: TimelineDrag,
+    geometry: TimelineGeometry,
+    origin: Offset,
+    lift: Float,
+    copyAlpha: Float,
+) {
+    val density = LocalDensity.current
+    val dark = LocalFloretDarkTheme.current
+    val use24Hour = LocalUse24HourFormat.current
+    val locale = currentLocale()
         val paint = eventPaint(drag.event, dark)
         val title = drag.event.title.ifBlank { stringResource(R.string.event_untitled) }
         // Read off the event rather than the held block, so grabbing either half
@@ -1399,7 +1488,7 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
         // so no column clip or rounded corner cuts it, but it still belongs to
         // the timeline: a piece a whole day tall reaches far past both ends of
         // the viewport, and unclipped it paints over the headers above (#267).
-        val port = controller.geometry.viewport?.takeIf { it.isAttached }?.boundsInRoot()
+        val port = geometry.viewport?.takeIf { it.isAttached }?.boundsInRoot()
         // How much of each piece the viewport actually shows. A multi-day event
         // has a piece per day, and the widest one is a full 24 hours — taller
         // than the screen, its top at a midnight scrolled out of sight. Picking
@@ -1451,7 +1540,6 @@ fun TimelineDragOverlay(controller: TimelineDragController, modifier: Modifier =
                 )
             }
         }
-    }
 }
 
 /** One piece of a dragged block, floating over the calendar. */
