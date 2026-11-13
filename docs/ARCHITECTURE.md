@@ -18,9 +18,14 @@ the package list (recurring writes, save conflicts, reminder delivery).
    system's own "Sync now" also runs for accounts whose auto-sync is off. Both
    go through `SyncRequester` and only ask account types with a calendar sync
    adapter (visible to the app via a `<queries>` entry). From Android 13 a
-   request naming an account the app can't see is silently dropped, so when
-   any of them is hidden a single account-less request, which covers every
-   calendar account, goes out instead. Whether and when the adapter syncs stays its call.
+   request naming an account the app can't see is silently dropped, and
+   without `GET_ACCOUNTS` that is most of them. Such accounts are not asked at
+   all (an account-less request would sync every account on the device); the
+   drawer offers "Allow sync requests" instead, which opens the system account
+   picker (`AccountManager.newChooseAccountIntent`) — the picked account
+   becomes visible to the app. Access is re-read on every request and when
+   the drawer opens, so a revoke simply puts the account back behind the
+   grant row. Whether and when the adapter syncs stays its call.
 2. **Observer-driven UI.** A `ContentObserver` on the provider triggers
    re-queries; every screen recomposes from fresh provider state. After a
    write, nothing is patched by hand — the views refresh from the provider.

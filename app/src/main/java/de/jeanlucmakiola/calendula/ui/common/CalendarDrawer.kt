@@ -20,6 +20,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ManageAccounts
 import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.DrawerState
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
@@ -66,7 +67,8 @@ import kotlinx.datetime.LocalDate
  *
  * [currentDate] seeds the jump-to-date picker (the visible day/week-start/month
  * anchor); [onJumpToDate] navigates the active view to the chosen day.
- * [sync] adds "Sync now" beside it while there is a synced calendar (#240).
+ * [sync] adds "Sync now" beside it while there is a synced calendar (#240),
+ * and a row to grant account access while some account can't be reached yet.
  */
 @Composable
 fun CalendarDrawer(
@@ -110,12 +112,12 @@ fun CalendarDrawer(
             Spacer(Modifier.height(16.dp))
             GroupedRow(
                 title = stringResource(R.string.drawer_jump_to_date),
-                position = if (sync != null) Position.Top else Position.Alone,
+                position = if (sync?.hasRows == true) Position.Top else Position.Alone,
                 minHeight = 56.dp,
                 leading = { DrawerLeadingIcon(Icons.Filled.DateRange) },
                 onClick = { showDatePicker = true },
             )
-            if (sync != null) SyncNowRow(sync)
+            if (sync != null) SyncRows(sync)
 
             Spacer(Modifier.height(16.dp))
 
@@ -146,16 +148,44 @@ fun CalendarDrawer(
     }
 }
 
-/** The drawer's "Sync now" state: [inFlight] shows progress and ignores taps. */
-data class DrawerSync(val inFlight: Boolean, val onSync: () -> Unit)
+/**
+ * The drawer's sync rows: "Sync now" when [canSync] ([inFlight] shows progress
+ * and ignores taps), and a grant row naming the [needsAccess] accounts.
+ */
+data class DrawerSync(
+    val canSync: Boolean,
+    val inFlight: Boolean,
+    val needsAccess: List<String>,
+    val onSync: () -> Unit,
+    val onGrantAccess: () -> Unit,
+) {
+    val hasRows: Boolean get() = canSync || needsAccess.isNotEmpty()
+}
+
+@Composable
+private fun SyncRows(sync: DrawerSync) {
+    if (sync.canSync) {
+        SyncNowRow(sync, if (sync.needsAccess.isEmpty()) Position.Bottom else Position.Middle)
+    }
+    if (sync.needsAccess.isNotEmpty()) {
+        GroupedRow(
+            title = stringResource(R.string.drawer_sync_access),
+            summary = stringResource(R.string.drawer_sync_access_summary, sync.needsAccess.joinToString()),
+            position = Position.Bottom,
+            minHeight = 56.dp,
+            leading = { DrawerLeadingIcon(Icons.Filled.ManageAccounts) },
+            onClick = sync.onGrantAccess,
+        )
+    }
+}
 
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
-private fun SyncNowRow(sync: DrawerSync) {
+private fun SyncNowRow(sync: DrawerSync, position: Position) {
     val inFlightText = stringResource(R.string.sync_requested)
     GroupedRow(
         title = stringResource(R.string.drawer_sync_now),
-        position = Position.Bottom,
+        position = position,
         modifier = if (sync.inFlight) {
             Modifier.semantics { stateDescription = inFlightText }
         } else {

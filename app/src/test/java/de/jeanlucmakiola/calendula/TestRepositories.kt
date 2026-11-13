@@ -60,8 +60,7 @@ class RecordingSyncRequester(
     var refusedTypes: Set<String> = emptySet(),
     var hiddenTypes: Set<String> = emptySet(),
 ) : SyncRequester {
-    /** [account] null: one request for every calendar account. */
-    data class Request(val account: SyncAccount?, val userInitiated: Boolean)
+    data class Request(val account: SyncAccount, val userInitiated: Boolean)
 
     val requests = mutableListOf<Request>()
 
@@ -83,8 +82,8 @@ class RecordingSyncRequester(
     /** The accounts on the "device", for [addressableAccounts]. */
     var knownAccounts: Set<SyncAccount> = emptySet()
 
-    override fun requestSync(account: SyncAccount?, userInitiated: Boolean) {
-        if (!accepts || account?.type in refusedTypes) throw SecurityException("refused")
+    override fun requestSync(account: SyncAccount, userInitiated: Boolean) {
+        if (!accepts || account.type in refusedTypes) throw SecurityException("refused")
         requests += Request(account, userInitiated)
     }
 }

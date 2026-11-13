@@ -7,14 +7,18 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.SyncRequestResult
+import de.jeanlucmakiola.calendula.data.calendar.SyncTargets
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
@@ -30,10 +34,21 @@ class SyncViewModel @Inject constructor(
     private val repository: CalendarRepository,
 ) : ViewModel() {
 
-    /** Whether any visible calendar has a sync adapter behind it. */
-    val available: StateFlow<Boolean> = repository.canRequestSync
-        .catch { emit(false) }
-        .stateWhileSubscribed(scope = viewModelScope, initialValue = false)
+    private val accessChecks = MutableStateFlow(0)
+
+    /**
+     * Who "Sync now" can reach, and who first needs the user's grant. Account
+     * access isn't observable, so it is re-read on every [refreshAccess].
+     */
+    @OptIn(ExperimentalCoroutinesApi::class)
+    val targets: StateFlow<SyncTargets> = accessChecks
+        .flatMapLatest { repository.syncTargets.catch { emit(SyncTargets.None) } }
+        .stateWhileSubscribed(scope = viewModelScope, initialValue = SyncTargets.None)
+
+    /** Re-read account access: after the picker returns, and whenever the drawer opens. */
+    fun refreshAccess() {
+        accessChecks.update { it + 1 }
+    }
 
     private val _inFlight = MutableStateFlow(false)
     val inFlight: StateFlow<Boolean> = _inFlight.asStateFlow()
@@ -54,7 +69,8 @@ class SyncViewModel @Inject constructor(
                 }
                 val outcome = repository.requestSync()
                 _result.value = outcome
-                if (outcome == SyncRequestResult.Requested || outcome == SyncRequestResult.PartlyFailed) settled.await() else settled.cancel()
+                val sent = outcome == SyncRequestResult.Requested || outcome == SyncRequestResult.PartlyFailed
+                if (sent) settled.await() else settled.cancel()
             } finally {
                 _inFlight.value = false
             }

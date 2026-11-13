@@ -199,17 +199,17 @@ class SyncNudgeTest {
     }
 
     @Test
-    fun `canRequestSync needs a visible calendar with an adapter`(@TempDir dir: Path) = runTest {
+    fun `syncTargets needs a visible calendar with an adapter`(@TempDir dir: Path) = runTest {
         val sync = RecordingSyncRequester(adapterTypes = setOf(google.type))
         val source = fake().apply {
             calendarsResult = listOf(cal(1L, dav), cal(3L, google, visible = false), cal(4L, local))
         }
         val repo = testRepository(source, dir, Dispatchers.Unconfined, syncRequester = sync)
 
-        assertThat(repo.canRequestSync.first()).isFalse()
+        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets.None)
 
         sync.adapterTypes = setOf(dav.type)
-        assertThat(repo.canRequestSync.first()).isTrue()
+        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), emptySet()))
     }
 
     @Test
@@ -222,42 +222,52 @@ class SyncNudgeTest {
     }
 
     @Test
-    fun `accounts the app can't see share one request for every calendar account`(@TempDir dir: Path) = runTest {
-        val sync = RecordingSyncRequester(hiddenTypes = setOf(dav.type, google.type))
+    fun `accounts the app can't see wait for access instead of being asked`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(hiddenTypes = setOf(google.type))
         sync.knownAccounts = setOf(dav, google)
         val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
 
         repo.moveEvent(10L, 3L, form(1L), form(3L))
-        assertThat(sync.requests).containsExactly(Request(null, false))
-
-        sync.requests.clear()
-        sync.hiddenTypes = setOf(google.type)
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
-        assertThat(sync.requests).containsExactly(Request(null, true))
-
-        sync.requests.clear()
-        sync.hiddenTypes = setOf("other")
-        repo.createEvent(form(1L))
         assertThat(sync.requests).containsExactly(auto(dav))
+
+        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), setOf(google)))
+
+        sync.requests.clear()
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.PartlyFailed)
+        assertThat(sync.requests).containsExactly(Request(dav, true))
     }
 
     @Test
-    fun `unreadable account visibility falls back to the account-less request`(@TempDir dir: Path) = runTest {
+    fun `once access is granted the account is asked by name`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(hiddenTypes = setOf(google.type))
+        sync.knownAccounts = setOf(dav, google)
+        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        sync.hiddenTypes = setOf("other")
+
+        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav, google), emptySet()))
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
+    }
+
+    @Test
+    fun `only hidden accounts make manual sync fail without asking anyone`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(hiddenTypes = setOf(dav.type, google.type))
+        sync.knownAccounts = setOf(dav, google)
+        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Failed)
+        repo.createEvent(form(1L))
+        assertThat(sync.requests).isEmpty()
+    }
+
+    @Test
+    fun `unreadable account visibility asks no one`(@TempDir dir: Path) = runTest {
         val sync = RecordingSyncRequester(hiddenTypes = setOf("other"))
         sync.visibilityError = SecurityException("no")
         val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
 
         repo.createEvent(form(1L))
 
-        assertThat(sync.requests).containsExactly(Request(null, false))
-    }
-
-    @Test
-    fun `a refused account-less request reports a failure`(@TempDir dir: Path) = runTest {
-        val sync = RecordingSyncRequester(accepts = false, hiddenTypes = setOf(dav.type))
-        sync.knownAccounts = setOf(dav, google)
-        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
-
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Failed)
+        assertThat(sync.requests).isEmpty()
     }
 }

@@ -142,28 +142,29 @@ class CalendarRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Ask each of [accounts] once. If the app can't name one of them (see
-     * [SyncRequester.addressableAccounts]), a single account-less request for
-     * every calendar account goes out instead. Returns how many were asked.
+     * Splits [accounts] by whether a request may name them (see
+     * [SyncRequester.addressableAccounts]). The rest wait for the user's grant:
+     * an account-less request would reach them, but also every other calendar
+     * account on the device, so none is sent.
      */
-    private fun requestSyncs(accounts: Set<SyncAccount>, userInitiated: Boolean): Int {
-        if (accounts.isEmpty()) return 0
+    private fun reach(accounts: Set<SyncAccount>): SyncTargets {
+        if (accounts.isEmpty()) return SyncTargets.None
         val addressable = try {
             syncRequester.addressableAccounts(accounts.mapTo(mutableSetOf()) { it.type })
         } catch (e: Exception) {
             Log.w(TAG, "Account visibility unreadable", e)
             emptySet()
         }
-        return if (addressable == null || addressable.containsAll(accounts)) {
-            accounts.count { requestSync(it, userInitiated) }
-        } else if (requestSync(null, userInitiated)) {
-            accounts.size
-        } else {
-            0
-        }
+        if (addressable == null) return SyncTargets(reachable = accounts, needsAccess = emptySet())
+        val (reachable, hidden) = accounts.partition { it in addressable }
+        return SyncTargets(reachable.toSet(), hidden.toSet())
     }
 
-    private fun requestSync(account: SyncAccount?, userInitiated: Boolean): Boolean = try {
+    /** Ask each reachable one of [accounts] once; returns how many were asked. */
+    private fun requestSyncs(accounts: Set<SyncAccount>, userInitiated: Boolean): Int =
+        reach(accounts).reachable.count { requestSync(it, userInitiated) }
+
+    private fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean = try {
         syncRequester.requestSync(account, userInitiated)
         true
     } catch (e: Exception) {
@@ -179,27 +180,33 @@ class CalendarRepositoryImpl @Inject constructor(
     ): suspend () -> Collection<Long?> =
         { listOf(original?.calendarId ?: dataSource.eventCalendarId(eventId), *others) }
 
-    private fun syncTargets(calendars: List<CalendarSource>): Set<SyncAccount> =
-        calendars.syncAccounts().withAdapter()
+    private fun targetsOf(calendars: List<CalendarSource>): SyncTargets =
+        reach(calendars.syncAccounts().withAdapter())
 
-    override val canRequestSync: Flow<Boolean>
-        get() = calendars().map { syncTargets(it).isNotEmpty() }.distinctUntilChanged().flowOn(io)
+    override val syncTargets: Flow<SyncTargets>
+        get() = calendars().map { targetsOf(it) }.flowOn(io)
 
     override suspend fun requestSync(): SyncRequestResult = withContext(io) {
-        val accounts = try {
-            syncTargets(calendars().first())
+        val targets = try {
+            targetsOf(calendars().first())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Sync request skipped: calendars unreadable", e)
             return@withContext SyncRequestResult.Failed
         }
-        if (accounts.isEmpty()) return@withContext SyncRequestResult.NothingToSync
-        val sent = requestSyncs(accounts, userInitiated = true)
-        when (sent) {
-            accounts.size -> SyncRequestResult.Requested
-            0 -> SyncRequestResult.Failed
-            else -> SyncRequestResult.PartlyFailed
+        if (targets.reachable.isEmpty()) {
+            return@withContext if (targets.needsAccess.isEmpty()) {
+                SyncRequestResult.NothingToSync
+            } else {
+                SyncRequestResult.Failed
+            }
+        }
+        val sent = targets.reachable.count { requestSync(it, userInitiated = true) }
+        when {
+            sent == 0 -> SyncRequestResult.Failed
+            sent < targets.reachable.size || targets.needsAccess.isNotEmpty() -> SyncRequestResult.PartlyFailed
+            else -> SyncRequestResult.Requested
         }
     }
 

@@ -1,6 +1,10 @@
 package de.jeanlucmakiola.calendula.ui
 
+import android.content.ActivityNotFoundException
+import android.util.Log
 import androidx.activity.compose.BackHandler
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -44,6 +48,7 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
@@ -53,6 +58,8 @@ import de.jeanlucmakiola.calendula.ui.calendars.CalendarsScreen
 import de.jeanlucmakiola.calendula.ui.common.BelowTopBarClip
 import de.jeanlucmakiola.calendula.ui.common.StayingPut
 import de.jeanlucmakiola.calendula.ui.common.CalendarDrawer
+import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
+import de.jeanlucmakiola.calendula.data.calendar.accountAccessIntent
 import de.jeanlucmakiola.calendula.ui.common.DrawerSync
 import de.jeanlucmakiola.calendula.ui.common.SyncViewModel
 import de.jeanlucmakiola.calendula.ui.common.messageRes
@@ -447,11 +454,24 @@ fun CalendarHost(
     val selectionFailure by eventActions.failure.collectAsStateWithLifecycle()
     // "Sync now" in the drawer (#240); its receipt shares the move chip.
     val sync: SyncViewModel = hiltViewModel()
-    val syncAvailable by sync.available.collectAsStateWithLifecycle()
+    val syncTargets by sync.targets.collectAsStateWithLifecycle()
     val syncInFlight by sync.inFlight.collectAsStateWithLifecycle()
     val syncResult by sync.result.collectAsStateWithLifecycle()
     val selectionFailureMessage = eventActionFailureMessage(selectionFailure)
     val syncMessage = syncResult?.let { stringResource(it.messageRes()) }
+    // The system account picker grants access to one account per pick; whatever
+    // the outcome, access is re-read rather than trusted from the result.
+    val accessPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        sync.refreshAccess()
+    }
+    val accessPickerDescription = stringResource(R.string.sync_access_picker_description)
+    val launchAccessPicker: (Set<SyncAccount>) -> Unit = { accounts ->
+        try {
+            accessPicker.launch(accountAccessIntent(accounts, accessPickerDescription))
+        } catch (e: ActivityNotFoundException) {
+            Log.w("CalendarHost", "No account picker", e)
+        }
+    }
     val onEditEvent: (EventInstance) -> Unit = { event -> editKey = event.occurrenceKey() }
     // A tap opens the edit form instead of the detail screen when the user chose
     // so (#178) — only for events whose calendar takes writes. Both are read at
@@ -549,6 +569,11 @@ fun CalendarHost(
         val stayingPut = remember { StayingPut() }
         val chromeHost = remember { ChromeHost() }
         val drawerState = rememberDrawerState(DrawerValue.Closed)
+        // Account access can be granted or revoked outside the app; re-read it
+        // whenever the drawer that offers the grant opens.
+        LaunchedEffect(drawerState.targetValue) {
+            if (drawerState.targetValue == DrawerValue.Open) sync.refreshAccess()
+        }
         val density = LocalDensity.current
         val topBarBottom = TopAppBarDefaults.windowInsets.getTop(density) +
             with(density) { TopAppBarDefaults.TopAppBarExpandedHeight.toPx() }
@@ -599,14 +624,20 @@ fun CalendarHost(
                         onOpenSettings()
                         switchScope.launch { drawerState.close() }
                     },
-                    sync = remember(syncAvailable, syncInFlight) {
+                    sync = remember(syncTargets, syncInFlight) {
                         DrawerSync(
+                            canSync = syncTargets.reachable.isNotEmpty(),
                             inFlight = syncInFlight,
+                            needsAccess = syncTargets.needsAccess.map { it.name },
                             onSync = {
                                 sync.requestSync()
                                 switchScope.launch { drawerState.close() }
                             },
-                        ).takeIf { syncAvailable }
+                            onGrantAccess = {
+                                launchAccessPicker(syncTargets.needsAccess)
+                                switchScope.launch { drawerState.close() }
+                            },
+                        )
                     },
                 )
             },

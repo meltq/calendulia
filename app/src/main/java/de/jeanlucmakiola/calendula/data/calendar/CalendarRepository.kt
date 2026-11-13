@@ -142,8 +142,12 @@ interface CalendarRepository {
      */
     suspend fun requestSync(): SyncRequestResult = SyncRequestResult.NothingToSync
 
-    /** Whether [requestSync] has anyone to ask: a visible calendar with a sync adapter behind it. */
-    val canRequestSync: Flow<Boolean> get() = flowOf(false)
+    /**
+     * The accounts behind visible calendars with a sync adapter, split by
+     * whether [requestSync] can reach them yet. Re-reads account access on
+     * every collection, so a grant or revoke shows on the next one.
+     */
+    val syncTargets: Flow<SyncTargets> get() = flowOf(SyncTargets.None)
 
     /** Every provider notification and [refresh], including the app's own writes. */
     val providerChanges: Flow<Unit> get() = emptyFlow()

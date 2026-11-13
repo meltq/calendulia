@@ -4,7 +4,10 @@ import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.MainDispatcherExtension
 import de.jeanlucmakiola.calendula.RecordingSyncRequester
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
+import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
 import de.jeanlucmakiola.calendula.data.calendar.SyncRequestResult
+import de.jeanlucmakiola.calendula.data.calendar.SyncTargets
+import kotlinx.coroutines.launch
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.testPrefs
 import de.jeanlucmakiola.calendula.testRepository
@@ -28,6 +31,7 @@ class SyncViewModelTest {
     private val dispatcher = mainDispatcher.dispatcher
 
     private val synced = CalendarSource(1L, "Work", "me@dav", "bitfire.at.davdroid", 0, true)
+    private val davAccount = SyncAccount("me@dav", "bitfire.at.davdroid")
 
     private fun viewModel(dir: Path, sync: RecordingSyncRequester = RecordingSyncRequester()):
         Pair<SyncViewModel, FakeCalendarDataSource> {
@@ -92,5 +96,22 @@ class SyncViewModelTest {
 
         vm.consumeResult()
         assertThat(vm.result.value).isNull()
+    }
+
+    @Test
+    fun `refreshAccess picks up a grant`(@TempDir dir: Path) = runTest(dispatcher) {
+        val sync = RecordingSyncRequester(hiddenTypes = setOf(davAccount.type))
+        sync.knownAccounts = setOf(davAccount)
+        val (vm, _) = viewModel(dir, sync)
+        backgroundScope.launch { vm.targets.collect {} }
+        runCurrent()
+
+        assertThat(vm.targets.value).isEqualTo(SyncTargets(emptySet(), setOf(davAccount)))
+
+        sync.hiddenTypes = setOf("other")
+        vm.refreshAccess()
+        runCurrent()
+
+        assertThat(vm.targets.value).isEqualTo(SyncTargets(setOf(davAccount), emptySet()))
     }
 }
