@@ -14,7 +14,6 @@ import de.jeanlucmakiola.calendula.domain.reminders.reminderWatermark
 import de.jeanlucmakiola.calendula.domain.reminders.scheduleReminders
 import de.jeanlucmakiola.floret.android.hasPermission
 import de.jeanlucmakiola.floret.di.IoDispatcher
-import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
@@ -78,7 +77,6 @@ class ReminderScanner @Inject constructor(
     private suspend fun runScan() {
         val now = System.currentTimeMillis()
         if (!hasReadCalendar()) return
-        syncChannels()
 
         if (!settingsPrefs.remindersEnabled.first()) {
             // Reminders off: drop the wake-up, but keep the watermark moving
@@ -88,6 +86,7 @@ class ReminderScanner @Inject constructor(
             return
         }
 
+        syncChannels()
         val lookahead = reminderQueryHorizon(LOOKAHEAD_MILLIS, source.longestReminderMinutes())
         // Reach into the past too: an all-day "at time of event" encodes to a
         // negative offset, and a catch-up pass needs the occurrences it missed.
@@ -121,14 +120,13 @@ class ReminderScanner @Inject constructor(
     }
 
     /**
-     * Every trigger that can add, rename or drop a calendar reaches a scan, so
-     * the channels are kept in step here. A failure never costs the reminders.
+     * A provider change re-scans, so a calendar added, renamed or removed keeps
+     * its channel in step here. Skipped while reminders are off, when the
+     * channels have nothing to do. A failure never costs the reminders.
      */
-    private suspend fun syncChannels() {
+    private fun syncChannels() {
         try {
             channels.sync()
-        } catch (e: CancellationException) {
-            throw e
         } catch (e: SecurityException) {
             throw e
         } catch (e: Exception) {

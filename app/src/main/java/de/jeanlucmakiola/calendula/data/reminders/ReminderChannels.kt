@@ -8,44 +8,39 @@ import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
-import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
-import de.jeanlucmakiola.calendula.ui.common.sourceAppPackages
-import kotlinx.coroutines.flow.first
+import de.jeanlucmakiola.calendula.ui.common.sourceAppLabel
 import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * The reminder notification channels: one per switched-on calendar, grouped
- * by account (#145), so each calendar can be muted or given its own sound in
- * the system settings before it ever fires.
+ * The reminder notification channels: one per calendar, grouped by account
+ * (#145), created up front so each calendar can be muted or given its own sound
+ * in the system settings before it ever fires.
  *
  * A channel the user has touched keeps their settings; [sync] only creates the
- * missing ones, refreshes names, and deletes channels whose calendar is gone or
- * switched off — the system restores a deleted channel's settings if its id
- * comes back.
+ * missing ones, renames changed ones, and deletes those whose calendar is gone.
  */
 @Singleton
 class ReminderChannels @Inject constructor(
     @ApplicationContext private val context: Context,
     private val calendarDataSource: CalendarDataSource,
-    private val calendarPrefs: CalendarPrefs,
 ) {
     private val manager: NotificationManager
         get() = context.getSystemService(NotificationManager::class.java)
 
-    /** Bring the channels in line with the provider's switched-on calendars. */
-    suspend fun sync() {
-        val pending = calendarPrefs.pendingDisabledCalendarIds.first()
-        val calendars = calendarDataSource.calendars().filter { it.isVisibleInSystem && it.id !in pending }
+    /** Bring the channels in line with the provider's calendars. */
+    fun sync() {
         val manager = manager
-        val plan = planReminderChannels(
-            calendars = calendars,
-            existingChannelIds = manager.notificationChannels.map { it.id },
-            existingGroupIds = manager.notificationChannelGroups.map { it.id },
-        )
+        val existing = manager.notificationChannels
+        val plan = plan(existing)
         plan.staleChannelIds.forEach(manager::deleteNotificationChannel)
         plan.staleGroupIds.forEach(manager::deleteNotificationChannelGroup)
-        create(plan)
+        val groupNames = manager.notificationChannelGroups.associate { it.id to it.name?.toString() }
+        write(
+            groups = plan.groups.filter { groupNames[it.id] != groupLabel(it) },
+            channels = plan.channelsToWrite,
+            existing = existing,
+        )
         if (plan.channels.isNotEmpty()) retireLegacyChannel()
     }
 
@@ -55,32 +50,52 @@ class ReminderChannels @Inject constructor(
      */
     fun channelFor(calendarId: Long): String? {
         val id = reminderChannelId(calendarId)
+        val manager = manager
         if (manager.getNotificationChannel(id) != null) return id
-        val calendar = calendarDataSource.calendars().firstOrNull { it.id == calendarId } ?: return null
-        create(planReminderChannels(listOf(calendar), emptyList(), emptyList()))
+        val existing = manager.notificationChannels
+        val plan = plan(existing)
+        val spec = plan.channels.firstOrNull { it.calendarId == calendarId } ?: return null
+        val knownGroups = manager.notificationChannelGroups.mapTo(HashSet()) { it.id }
+        write(
+            groups = plan.groups.filter { it.id == spec.groupId && it.id !in knownGroups },
+            channels = listOf(spec),
+            existing = existing,
+        )
         return id
     }
 
-    private fun create(plan: ReminderChannelPlan) {
+    private fun plan(existing: List<NotificationChannel>): ReminderChannelPlan = planReminderChannels(
+        calendars = calendarDataSource.calendars(),
+        existing = existing.map { ExistingReminderChannel(it.id, it.name.toString()) },
+        existingGroupIds = manager.notificationChannelGroups.map { it.id },
+        unnamed = context.getString(R.string.calendar_unnamed),
+    )
+
+    private fun write(
+        groups: List<ReminderChannelGroupSpec>,
+        channels: List<ReminderChannelSpec>,
+        existing: List<NotificationChannel>,
+    ) {
         val manager = manager
-        manager.createNotificationChannelGroups(
-            plan.groups.map { NotificationChannelGroup(it.id, groupLabel(it)) },
-        )
+        if (groups.isNotEmpty()) {
+            manager.createNotificationChannelGroups(groups.map { NotificationChannelGroup(it.id, groupLabel(it)) })
+        }
+        if (channels.isEmpty()) return
+        val byId = existing.associateBy { it.id }
+        val template = byId[LEGACY_REMINDER_CHANNEL_ID]
         // Only a channel's first creation sets its behaviour; later calls just
         // rename it, so an existing one passes its own importance back.
-        val template = manager.getNotificationChannel(LEGACY_REMINDER_CHANNEL_ID)
-        val unnamed = context.getString(R.string.calendar_unnamed)
         manager.createNotificationChannels(
-            plan.channels.map { spec ->
-                val existing = manager.getNotificationChannel(spec.id)
+            channels.map { spec ->
+                val current = byId[spec.id]
                 NotificationChannel(
                     spec.id,
-                    spec.name.ifBlank { unnamed },
-                    existing?.importance ?: template?.importance ?: NotificationManager.IMPORTANCE_HIGH,
+                    spec.name,
+                    current?.importance ?: template?.importance ?: NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
                     description = context.getString(R.string.reminder_channel_description)
                     group = spec.groupId
-                    if (existing == null && template != null) inheritFrom(template)
+                    if (current == null && template != null) inheritFrom(template)
                 }
             },
         )
@@ -92,8 +107,9 @@ class ReminderChannels @Inject constructor(
      */
     private fun NotificationChannel.inheritFrom(template: NotificationChannel) {
         setSound(template.sound, template.audioAttributes)
-        enableVibration(template.shouldVibrate())
+        // The pattern setter also flips vibration on or off, so it goes first.
         vibrationPattern = template.vibrationPattern
+        enableVibration(template.shouldVibrate())
         enableLights(template.shouldShowLights())
         lightColor = template.lightColor
         lockscreenVisibility = template.lockscreenVisibility
@@ -119,17 +135,9 @@ class ReminderChannels @Inject constructor(
 
     private fun groupLabel(group: ReminderChannelGroupSpec): String {
         if (group.isLocal) return context.getString(R.string.calendars_local_header)
-        val name = group.accountName.ifBlank { group.accountType }
-            .ifBlank { context.getString(R.string.calendar_unnamed) }
+        val name = group.label.ifBlank { context.getString(R.string.calendar_unnamed) }
         if (!group.ambiguous) return name
-        return context.getString(R.string.calendars_account_from_source, name, sourceAppLabel(group.accountType))
-    }
-
-    private fun sourceAppLabel(accountType: String): String {
-        val pm = context.packageManager
-        return sourceAppPackages(context, accountType).firstNotNullOfOrNull { pkg ->
-            runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrNull()
-        } ?: accountType
+        return context.getString(R.string.calendars_account_from_source, name, sourceAppLabel(context, group.accountType))
     }
 
     private companion object {

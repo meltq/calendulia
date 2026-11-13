@@ -392,11 +392,11 @@ switched off. The drawer's filter sheet (`CalendarPrefs.hiddenCalendarIds`) is a
 separate in-app declutter that never touches reminders.
 
 **A channel per calendar (#145).** `ReminderChannels` keeps one notification
-channel per switched-on calendar, grouped by account, so a calendar can be muted
-or given its own sound in the system settings before it ever fires. Every scan
-syncs them first: missing channels are created, names refreshed, and channels of
-gone or switched-off calendars deleted (the system restores a deleted channel's
-settings if the id returns). A new channel copies the sound, vibration and
+channel per calendar, grouped by account, so a calendar can be muted or given
+its own sound in the system settings before it ever fires. Every scan with
+reminders on syncs them: missing channels are created, renamed ones updated, and
+channels of deleted calendars removed. Switched-off calendars keep theirs, so
+toggling one never cancels a showing reminder or loses its settings. A new channel copies the sound, vibration and
 importance of the pre-#145 single `reminders` channel, which is deleted once
 nothing showing still sits on it. Settings → Notifications only deep-links into
 the system's channel screens (#340); the app never sets a sound itself. Separate
