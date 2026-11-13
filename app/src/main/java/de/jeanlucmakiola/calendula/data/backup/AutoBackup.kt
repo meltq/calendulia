@@ -26,13 +26,14 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
-import de.jeanlucmakiola.calendula.domain.backup.COMBINED_SERIES
 import de.jeanlucmakiola.calendula.domain.backup.backupTargets
 import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
 import de.jeanlucmakiola.calendula.domain.backup.updatedBackupLedger
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.floret.android.hasPermission
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.cancellation.CancellationException
@@ -54,8 +55,8 @@ object BackupScheduler {
      * periodic request when backup is on and a folder is set, otherwise cancel
      * it. WorkManager persists the request across reboots on its own.
      *
-     * The first run is delayed by one interval so it never overlaps an immediate
-     * [runNow] (two simultaneous writes would race and leave a "(1)" duplicate).
+     * The first run is delayed by one interval so it doesn't follow an immediate
+     * [runNow] with a near-identical copy.
      */
     fun apply(context: Context, enabled: Boolean, intervalMinutes: Long, hasFolder: Boolean) {
         val workManager = WorkManager.getInstance(context)
@@ -123,7 +124,9 @@ class BackupWorker(
             ?: return Result.failure() // nothing to write to — leave scheduling to settings
         val now = System.currentTimeMillis()
         val outcome = try {
-            runBackup(deps, prefs, folder.toUri())
+            // The periodic and the immediate run are separate unique works; one
+            // at a time, or each would overwrite the other's ledger.
+            runLock.withLock { runBackup(deps, prefs, folder.toUri()) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -152,45 +155,36 @@ class BackupWorker(
         val selection = prefs.autoBackupSelection.first()
         val targets = backupTargets(all.filter(selection::selects), combined = prefs.autoBackupCombined.first())
         if (targets.isEmpty()) return RunOutcome.NothingSelected
-        val ledger = prefs.autoBackupLedger.first()
         val listing = exporter.listFolder(folder)
+        var ledger = prefs.autoBackupLedger.first()
         val plans = planBackupFiles(
             targets = targets,
             ledger = ledger,
-            existing = listing.keys,
+            // A listing still loading can't tell a gone file from a late one.
+            existing = if (listing.complete) listing.files.keys else listing.files.keys + ledger.values.flatten(),
             at = LocalDateTime.now(),
             keep = prefs.autoBackupKeep.first(),
         )
-        val events = repository.exportEvents(targets.flatMap { it.calendarIds }.toSet())
-        val byCalendar = events.groupBy { it.calendarId }
         val stamp = Clock.System.now()
+        val liveKeys = all.map { it.id.toString() }.toSet()
         val writtenNames = mutableMapOf<String, String>()
-        val undeleted = mutableSetOf<String>()
         for (plan in plans) {
             try {
                 val target = plan.target
-                val content = IcsWriter().writeCalendar(
-                    events = if (target.key == COMBINED_SERIES) events else byCalendar[target.calendarIds.single()].orEmpty(),
-                    dtStamp = stamp,
-                    calendarName = target.calendarName,
-                )
-                writtenNames[target.key] = exporter.writeToFolder(folder, listing, plan.fileName, content)
-                undeleted += exporter.deleteFromFolder(listing, plan.prune)
+                val events = repository.exportEvents(target.calendarIds)
+                val content = IcsWriter().writeCalendar(events, stamp, target.calendarName)
+                val name = exporter.writeToFolder(folder, listing, plan.fileName, content)
+                writtenNames[target.key] = name
+                val undeleted = exporter.deleteFromFolder(listing, plan.prune)
+                // Saved per series, so a run cut short still knows what it wrote.
+                ledger = updatedBackupLedger(ledger, listOf(plan), mapOf(target.key to name), undeleted, liveKeys)
+                prefs.setAutoBackupLedger(ledger)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Backup of one series failed", e)
             }
         }
-        prefs.setAutoBackupLedger(
-            updatedBackupLedger(
-                previous = ledger,
-                written = plans,
-                writtenNames = writtenNames,
-                undeleted = undeleted,
-                liveKeys = all.map { it.id.toString() }.toSet(),
-            ),
-        )
         return when (writtenNames.size) {
             plans.size -> RunOutcome.Written
             0 -> RunOutcome.Failed
@@ -237,5 +231,6 @@ class BackupWorker(
         private const val CHANNEL_ID = "backup"
         private const val NOTIFICATION_ID = 2
         private const val TAG = "BackupWorker"
+        private val runLock = Mutex()
     }
 }

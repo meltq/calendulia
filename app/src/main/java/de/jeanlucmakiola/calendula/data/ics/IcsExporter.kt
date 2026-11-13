@@ -36,7 +36,7 @@ class IcsExporter @Inject constructor(
      * a run over many calendars doesn't pay a lookup per file. Throws when the
      * folder is gone or not writable.
      */
-    fun listFolder(folder: Uri): Map<String, Uri> {
+    fun listFolder(folder: Uri): FolderListing {
         writableFolder(folder)
         val treeId = DocumentsContract.getTreeDocumentId(folder)
         val children = DocumentsContract.buildChildDocumentsUriUsingTree(folder, treeId)
@@ -48,13 +48,14 @@ class IcsExporter @Inject constructor(
         val cursor = context.contentResolver.query(children, columns, null, null, null)
             ?: throw IOException("Backup folder can't be listed")
         return cursor.use { c ->
-            buildMap {
+            val files = buildMap {
                 while (c.moveToNext()) {
                     if (c.getString(2) == DocumentsContract.Document.MIME_TYPE_DIR) continue
                     val name = c.getString(1) ?: continue
                     put(name, DocumentsContract.buildDocumentUriUsingTree(folder, c.getString(0)))
                 }
             }
+            FolderListing(files, complete = !c.extras.getBoolean(DocumentsContract.EXTRA_LOADING, false))
         }
     }
 
@@ -63,8 +64,8 @@ class IcsExporter @Inject constructor(
      * name if [listing] (from [listFolder]) has one. Returns the name the file
      * ended up with — a provider may de-duplicate it. Throws on failure.
      */
-    fun writeToFolder(folder: Uri, listing: Map<String, Uri>, fileName: String, content: String): String {
-        listing[fileName]?.let { uri ->
+    fun writeToFolder(folder: Uri, listing: FolderListing, fileName: String, content: String): String {
+        listing.files[fileName]?.let { uri ->
             writeDocument(uri, content)
             return fileName
         }
@@ -74,14 +75,19 @@ class IcsExporter @Inject constructor(
             MIME_CALENDAR,
             fileName,
         ) ?: throw IOException("Could not create backup file in the chosen folder")
-        writeDocument(uri, content)
+        try {
+            writeDocument(uri, content)
+        } catch (e: IOException) {
+            runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            throw e
+        }
         return DocumentFile.fromSingleUri(context, uri)?.name ?: fileName
     }
 
-    /** Delete the [names] files of [listing]; returns the ones that wouldn't go. */
-    fun deleteFromFolder(listing: Map<String, Uri>, names: Collection<String>): Set<String> =
+    /** Delete the [names] files of [listing]; returns the ones that didn't go, or weren't listed. */
+    fun deleteFromFolder(listing: FolderListing, names: Collection<String>): Set<String> =
         names.filterTo(mutableSetOf()) { name ->
-            val uri = listing[name] ?: return@filterTo false
+            val uri = listing.files[name] ?: return@filterTo true
             !runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }.getOrDefault(false)
         }
 
@@ -111,3 +117,9 @@ class IcsExporter @Inject constructor(
         const val MIME_CALENDAR = "text/calendar"
     }
 }
+
+/**
+ * A backup folder's files by name. A cloud provider may still be loading
+ * ([complete] false), so a name missing from [files] isn't proof it's gone.
+ */
+data class FolderListing(val files: Map<String, Uri>, val complete: Boolean)

@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.domain.backup
 
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.isNotSynced
+import de.jeanlucmakiola.floret.android.safeFileName
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -90,33 +91,11 @@ val BACKUP_KEEP_OPTIONS: List<Int> = listOf(1, 2, 3, 5, 7, 10)
 
 const val DEFAULT_BACKUP_KEEP = 3
 
+/** Room for the id suffix and the stamp within a file system's 255-byte name limit. */
+private const val MAX_BASE_BYTES = 120
 private const val ICS_EXTENSION = ".ics"
-private const val MAX_BASE_LENGTH = 60
 private const val STAMP_PATTERN = "yyyy-MM-dd_HH-mm-ss"
 private val STAMP_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern(STAMP_PATTERN)
-private val FORBIDDEN_CHARS = Regex("[\\\\/:*?\"<>|\\p{Cntrl}]")
-private val WHITESPACE = Regex("\\s+")
-
-/**
- * [name] made safe as a file name on every storage provider: path separators,
- * reserved and control characters become `_`, whitespace collapses, and leading
- * dots go so the file can't turn hidden. Falls back to [fallback] when nothing
- * is left.
- */
-fun sanitizeBackupName(name: String, fallback: String = "calendar"): String {
-    val cleaned = name
-        .replace(FORBIDDEN_CHARS, "_")
-        .replace(WHITESPACE, " ")
-        .trim()
-        .trimStart('.')
-    // By code point, so an emoji at the limit isn't split into a lone surrogate.
-    val end = if (cleaned.codePointCount(0, cleaned.length) > MAX_BASE_LENGTH) {
-        cleaned.offsetByCodePoints(0, MAX_BASE_LENGTH)
-    } else {
-        cleaned.length
-    }
-    return cleaned.substring(0, end).trim().ifEmpty { fallback }
-}
 
 /**
  * The file series the automatic backup writes: one combined file, or one per
@@ -131,7 +110,9 @@ fun backupTargets(calendars: List<CalendarSource>, combined: Boolean): List<Back
             BackupTarget(COMBINED_SERIES, calendars.map { it.id }.toSet(), COMBINED_BACKUP_BASE, calendarName = null),
         )
     }
-    val bases = calendars.associateTo(LinkedHashMap()) { it.id to sanitizeBackupName(it.displayName) }
+    val bases = calendars.associateTo(LinkedHashMap()) {
+        it.id to safeFileName(it.displayName, MAX_BASE_BYTES, fallback = "calendar")
+    }
     while (true) {
         val counts = bases.values.groupingBy { it.lowercase() }.eachCount()
         val clashing = bases.filterValues {

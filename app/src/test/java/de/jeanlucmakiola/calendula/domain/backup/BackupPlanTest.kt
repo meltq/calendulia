@@ -54,14 +54,6 @@ class BackupPlanTest {
     }
 
     @Test
-    fun `file names are sanitised calendar names`() {
-        assertThat(sanitizeBackupName("Work/Home: \"plans\"")).isEqualTo("Work_Home_ _plans_")
-        assertThat(sanitizeBackupName("  ..hidden  ")).isEqualTo("hidden")
-        assertThat(sanitizeBackupName("   ")).isEqualTo("calendar")
-        assertThat(sanitizeBackupName("a\tb\nc")).isEqualTo("a_b_c")
-    }
-
-    @Test
     fun `one target per calendar, clashing names told apart by id`() {
         val targets = backupTargets(
             listOf(cal(1L, "Personal", local = true), cal(2L, "personal"), cal(3L, "Work")),
@@ -212,9 +204,4 @@ class BackupPlanTest {
         assertThat(targets.map { it.baseName }).containsExactly("Work-5-5", "Work-6", "Work-5-9").inOrder()
     }
 
-    @Test
-    fun `an emoji at the length limit is not split`() {
-        val name = "a".repeat(59) + "\uD83D\uDCC5" + "tail"
-        assertThat(sanitizeBackupName(name)).isEqualTo("a".repeat(59) + "\uD83D\uDCC5")
-    }
 }

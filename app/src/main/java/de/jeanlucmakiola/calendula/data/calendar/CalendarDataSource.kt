@@ -792,7 +792,8 @@ class AndroidCalendarDataSource @Inject constructor(
         // Masters + one-offs only: no soft-deleted or exception rows.
         val selection = "${CalendarContract.Events.CALENDAR_ID} IN ($idList) AND " +
             "${CalendarContract.Events.DELETED} = 0 AND " +
-            "${CalendarContract.Events.ORIGINAL_ID} IS NULL"
+            "${CalendarContract.Events.ORIGINAL_ID} IS NULL AND " +
+            "${CalendarContract.Events.ORIGINAL_SYNC_ID} IS NULL"
         val eventIds = resolver.query(
             CalendarContract.Events.CONTENT_URI,
             arrayOf(CalendarContract.Events._ID),
@@ -815,7 +816,7 @@ class AndroidCalendarDataSource @Inject constructor(
                     reminderMinutes = reminders[eventId].orEmpty(),
                     calendarName = names[calendarId],
                     allDayReminderTimeMinutes = allDayReminderTimeMinutes,
-                ).copy(calendarId = calendarId)
+                )
             }
         } ?: emptyList()
     }

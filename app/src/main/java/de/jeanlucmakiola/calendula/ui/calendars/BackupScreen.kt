@@ -233,7 +233,7 @@ private fun BackupLoading() {
 private fun defaultBackupName(): String = "calendula-backup-${LocalDate.now()}.ics"
 
 /**
- * The working screen: export (when there are local calendars to export), restore,
+ * The working screen: export (when any calendar can be backed up), restore,
  * and the automatic-backup block. Restore is always on screen — when nothing can
  * receive the events it says so and routes to the calendar manager rather than
  * disappearing, which is what #304 reported as an invisible button.

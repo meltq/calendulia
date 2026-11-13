@@ -351,6 +351,8 @@ class SettingsPrefs @Inject constructor(
             if (it[SettingsKeys.autoBackupCombinedStored] == null) {
                 it[SettingsKeys.autoBackupCombinedStored] = it[SettingsKeys.autoBackupFolderUri] != null
             }
+            // The ledger names files in the old folder; it means nothing in a new one.
+            if (it[SettingsKeys.autoBackupFolderUri] != uri) it[SettingsKeys.autoBackupLedger] = emptyMap()
             it[SettingsKeys.autoBackupFolderUri] = uri
         }
     }
