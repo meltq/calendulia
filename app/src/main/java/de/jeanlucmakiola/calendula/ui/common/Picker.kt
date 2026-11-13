@@ -128,7 +128,7 @@ fun ReminderDefaultPicker(
         Spacer(Modifier.height(24.dp))
         GroupedLeadTimeRows(
             minutes = rows,
-            splitSubDay = presets.any { it in 1 until ReminderUnit.Days.minutesFactor },
+            splitSubDay = splitsSubDay(presets),
             row = { minute, position ->
                 val checked = minute in selectedMinutes
                 GroupedRow(

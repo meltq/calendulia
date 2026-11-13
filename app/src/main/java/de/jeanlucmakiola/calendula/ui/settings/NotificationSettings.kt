@@ -31,10 +31,8 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import de.jeanlucmakiola.calendula.R
-import de.jeanlucmakiola.calendula.ui.common.ALLDAY_REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.DurationPicker
-import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.calendula.ui.common.durationLabel
@@ -246,7 +244,7 @@ internal fun NotificationsScreen(
     if (showDefaultReminder) {
         ReminderDefaultPicker(
             title = stringResource(R.string.settings_default_reminder),
-            presets = REMINDER_PRESETS,
+            presets = reminderPresets(isAllDay = false),
             selected = state.defaultReminderMinutes.toReminderChoice(),
             allowInherit = false,
             onSelect = { viewModel.setDefaultReminderMinutes(it.minutesOrEmpty()) },
@@ -256,7 +254,7 @@ internal fun NotificationsScreen(
     if (showAllDayReminder) {
         ReminderDefaultPicker(
             title = stringResource(R.string.settings_default_reminder_allday),
-            presets = ALLDAY_REMINDER_PRESETS,
+            presets = reminderPresets(isAllDay = true),
             selected = state.defaultAllDayReminderMinutes.toReminderChoice(),
             allowInherit = false,
             onSelect = { viewModel.setDefaultAllDayReminderMinutes(it.minutesOrEmpty()) },

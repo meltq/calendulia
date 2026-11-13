@@ -166,6 +166,7 @@ import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.groupedShape as floretGroupedShape
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.calendula.ui.common.reminderPresets
+import de.jeanlucmakiola.calendula.ui.common.splitsSubDay
 import de.jeanlucmakiola.calendula.ui.common.GroupedLeadTimeRows
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.floret.reminders.ReminderUnit
@@ -1608,9 +1609,10 @@ private fun ReminderPickerDialog(
         },
     ) {
         if (!customMode) {
+            val presets = reminderPresets(isAllDay)
             GroupedLeadTimeRows(
-                minutes = reminderPresets(isAllDay).filterNot { it in alreadyChosen },
-                splitSubDay = !isAllDay,
+                minutes = presets.filterNot { it in alreadyChosen },
+                splitSubDay = splitsSubDay(presets),
                 row = { minutes, position ->
                     GroupedRow(
                         title = reminderLeadTimeLabel(minutes),

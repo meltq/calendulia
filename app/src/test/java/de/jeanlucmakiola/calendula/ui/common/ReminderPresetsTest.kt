@@ -31,6 +31,12 @@ class ReminderPresetsTest {
     }
 
     @Test
+    fun `only the timed list splits`() {
+        assertThat(splitsSubDay(REMINDER_PRESETS)).isTrue()
+        assertThat(splitsSubDay(ALLDAY_REMINDER_PRESETS)).isFalse()
+    }
+
+    @Test
     fun `unsplit list is one sorted group`() {
         assertThat(groupReminderLeadTimes(listOf(2_880, 0, 30), splitSubDay = false))
             .containsExactly(listOf(0, 30, 2_880))

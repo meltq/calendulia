@@ -23,8 +23,11 @@ val ALLDAY_REMINDER_PRESETS = listOf(0) + DAY_SCALE_PRESETS
 fun reminderPresets(isAllDay: Boolean): List<Int> =
     if (isAllDay) ALLDAY_REMINDER_PRESETS else REMINDER_PRESETS
 
+/** Whether a picker over [presets] splits its rows into sub-day and day-scale groups. */
+fun splitsSubDay(presets: Collection<Int>): Boolean = presets.any { it in 1 until DAY }
+
 /**
- * Sorts lead times and, when [splitSubDay], splits them into a sub-day group and
+ * Sorts lead times and, when [splitSubDay] (see [splitsSubDay]), splits them into a sub-day group and
  * a day-scale group so a long picker list reads as two connected sections.
  * Empty groups are dropped.
  */
