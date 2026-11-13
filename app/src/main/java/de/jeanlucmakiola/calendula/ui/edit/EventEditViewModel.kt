@@ -308,7 +308,7 @@ class EventEditViewModel @Inject constructor(
         val resolvedId = resolveEventCalendar(form.calendarId, external.hints, allCalendars)
         // A colour is scoped to the calendar it came from, so one that came with
         // a requested calendar the form couldn't take goes, as on [setCalendar].
-        val requestRefused = form.calendarId == null &&
+        val requestRefused = form.calendarId == null && resolvedId != null &&
             external.hints.requested.let { it != null && it != resolvedId }
         val resolved = form.copy(calendarId = resolvedId).let {
             if (requestRefused) it.copy(colorKey = null, color = null) else it

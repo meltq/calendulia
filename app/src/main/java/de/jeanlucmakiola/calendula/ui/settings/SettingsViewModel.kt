@@ -37,6 +37,7 @@ import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.DefaultCalendarRef
+import de.jeanlucmakiola.calendula.domain.effectiveDefaultCalendar
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.isEventTarget
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
@@ -91,53 +92,51 @@ class SettingsViewModel @Inject constructor(
             )
 
     private fun Preferences.toUiState(calendars: List<CalendarSource>): SettingsUiState {
-        val defaultCalendar = this[SettingsKeys.defaultNewEventCalendar]?.find(calendars)
-        return toUiState(calendars, defaultCalendar)
+        val storedDefault = this[SettingsKeys.defaultNewEventCalendar]
+        return SettingsUiState(
+            themeMode = this[SettingsKeys.themeMode],
+            dynamicColor = this[SettingsKeys.dynamicColor] && dynamicColorAvailable,
+            dynamicColorAvailable = dynamicColorAvailable,
+            softenColors = this[SettingsKeys.softenCalendarColors],
+            weekStart = this[SettingsKeys.weekStart],
+            timeFormat = this[SettingsKeys.timeFormat],
+            showHourGrid = this[SettingsKeys.showHourGrid],
+            multiDayCount = this[SettingsKeys.multiDayCount],
+            pastEventDisplay = this[SettingsKeys.pastEventDisplay],
+            dimCompletedEvents = this[SettingsKeys.dimCompletedEvents],
+            showWeekNumbers = this[SettingsKeys.showWeekNumbers],
+            monthShowStartTimes = this[SettingsKeys.monthShowStartTimes],
+            todayButtonInToolbar = this[SettingsKeys.todayButtonInToolbar],
+            dragToReschedule = this[SettingsKeys.dragToReschedule],
+            tapOpensEditor = this[SettingsKeys.tapOpensEditor],
+            agendaScreenRange = this[SettingsKeys.agendaScreenRange],
+            agendaShowToday = this[SettingsKeys.agendaShowToday],
+            agendaShowRangeBar = this[SettingsKeys.agendaShowRangeBar],
+            defaultView = this[SettingsKeys.defaultView],
+            quickSwitchConfig = this[SettingsKeys.quickSwitchConfig],
+            monthViewStyle = this[SettingsKeys.monthViewStyle],
+            timelineScale = this[SettingsKeys.timelineScale],
+            timelineHours = timelineHours,
+            drawerViewOrder = this[SettingsKeys.drawerViewOrder],
+            defaultFormFields = this[SettingsKeys.defaultFormFields],
+            autofocusEventTitle = this[SettingsKeys.autofocusEventTitle],
+            defaultEventDurationMinutes = this[SettingsKeys.defaultEventDurationMinutes],
+            perCalendarEventDuration = this[SettingsKeys.perCalendarEventDuration],
+            remindersEnabled = this[SettingsKeys.remindersEnabled],
+            defaultReminderMinutes = this[SettingsKeys.defaultReminderMinutes],
+            defaultAllDayReminderMinutes = this[SettingsKeys.defaultAllDayReminderMinutes],
+            allDayReminderTimeMinutes = this[SettingsKeys.allDayReminderTimeMinutes],
+            snoozeMinutes = this[SettingsKeys.snoozeMinutes],
+            perCalendarReminderOverride = this[SettingsKeys.perCalendarReminderOverride],
+            perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
+            writableCalendars = calendars.filter { it.canModifyContents && it.isVisibleInSystem },
+            eventTargetCalendars = calendars.filter { it.isEventTarget },
+            defaultNewEventCalendar = effectiveDefaultCalendar(storedDefault, calendars),
+            unavailableDefaultCalendar = storedDefault?.find(calendars)?.takeUnless { it.isEventTarget },
+            allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
+            managedCalendarIds = specialDatesCalendars.values.toSet(),
+        )
     }
-
-    private fun Preferences.toUiState(calendars: List<CalendarSource>, defaultCalendar: CalendarSource?) = SettingsUiState(
-        themeMode = this[SettingsKeys.themeMode],
-        dynamicColor = this[SettingsKeys.dynamicColor] && dynamicColorAvailable,
-        dynamicColorAvailable = dynamicColorAvailable,
-        softenColors = this[SettingsKeys.softenCalendarColors],
-        weekStart = this[SettingsKeys.weekStart],
-        timeFormat = this[SettingsKeys.timeFormat],
-        showHourGrid = this[SettingsKeys.showHourGrid],
-        multiDayCount = this[SettingsKeys.multiDayCount],
-        pastEventDisplay = this[SettingsKeys.pastEventDisplay],
-        dimCompletedEvents = this[SettingsKeys.dimCompletedEvents],
-        showWeekNumbers = this[SettingsKeys.showWeekNumbers],
-        monthShowStartTimes = this[SettingsKeys.monthShowStartTimes],
-        todayButtonInToolbar = this[SettingsKeys.todayButtonInToolbar],
-        dragToReschedule = this[SettingsKeys.dragToReschedule],
-        tapOpensEditor = this[SettingsKeys.tapOpensEditor],
-        agendaScreenRange = this[SettingsKeys.agendaScreenRange],
-        agendaShowToday = this[SettingsKeys.agendaShowToday],
-        agendaShowRangeBar = this[SettingsKeys.agendaShowRangeBar],
-        defaultView = this[SettingsKeys.defaultView],
-        quickSwitchConfig = this[SettingsKeys.quickSwitchConfig],
-        monthViewStyle = this[SettingsKeys.monthViewStyle],
-        timelineScale = this[SettingsKeys.timelineScale],
-        timelineHours = timelineHours,
-        drawerViewOrder = this[SettingsKeys.drawerViewOrder],
-        defaultFormFields = this[SettingsKeys.defaultFormFields],
-        autofocusEventTitle = this[SettingsKeys.autofocusEventTitle],
-        defaultEventDurationMinutes = this[SettingsKeys.defaultEventDurationMinutes],
-        perCalendarEventDuration = this[SettingsKeys.perCalendarEventDuration],
-        remindersEnabled = this[SettingsKeys.remindersEnabled],
-        defaultReminderMinutes = this[SettingsKeys.defaultReminderMinutes],
-        defaultAllDayReminderMinutes = this[SettingsKeys.defaultAllDayReminderMinutes],
-        allDayReminderTimeMinutes = this[SettingsKeys.allDayReminderTimeMinutes],
-        snoozeMinutes = this[SettingsKeys.snoozeMinutes],
-        perCalendarReminderOverride = this[SettingsKeys.perCalendarReminderOverride],
-        perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
-        writableCalendars = calendars.filter { it.canModifyContents && it.isVisibleInSystem },
-        eventTargetCalendars = calendars.filter { it.isEventTarget },
-        defaultNewEventCalendar = defaultCalendar?.takeIf { it.isEventTarget },
-        unavailableDefaultCalendar = defaultCalendar?.takeUnless { it.isEventTarget },
-        allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
-        managedCalendarIds = specialDatesCalendars.values.toSet(),
-    )
 
     /**
      * The app-wide custom-font choice (issue #19). Its own flow — both this
