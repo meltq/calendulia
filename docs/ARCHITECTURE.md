@@ -507,8 +507,10 @@ modified one becomes a standalone event with a UID derived from the series UID
 and the occurrence. The rows skip the `.ics` text: the writer pins a timed
 one-off to UTC and carries no colour, visibility or `RDATE`; the direct mapping
 keeps them. Attendees and organizer are never read. A re-run is idempotent per
-snapshot: a series already in the target is skipped whole, so an occurrence
-changed in the source since lands beside it rather than replacing it. The backup keeps excluding exceptions; a restore
+snapshot: a series already in the target is skipped with its overrides, so a
+re-run keeps the earlier copy of an occurrence changed since rather than adding
+a second one beside it. Cancelled events and exceptions whose series is gone are
+left out, as the source doesn't show them either. The backup keeps excluding exceptions; a restore
 could not place a `RECURRENCE-ID` either.
 
 That re-encode is sampled where the reminder will actually *fire*, not at

@@ -260,16 +260,17 @@ class CalendarRepositoryImpl @Inject constructor(
     ): IcsImportSummary {
         val events = withContext(io) {
             planCalendarCopy(
-                dataSource.calendarCopyRows(sourceCalendarId, allDayReminderTimeMinutes()),
-                ::formatExdateStamp,
+                rows = dataSource.calendarCopyRows(sourceCalendarId, allDayReminderTimeMinutes()),
+                targetUids = dataSource.existingUids(targetCalendarId),
+                exdateStamp = ::formatExdateStamp,
             )
         }
         onProgress(0, events.size)
         // Checked between events, so cancelling stops the copy; a plain import
-        // keeps running to the end of its file.
+        // keeps running to the end of its file. A finished run stays finished.
         val context = currentCoroutineContext()
         return importEvents(targetCalendarId, events) { done ->
-            context.ensureActive()
+            if (done < events.size) context.ensureActive()
             onProgress(done, events.size)
         }
     }

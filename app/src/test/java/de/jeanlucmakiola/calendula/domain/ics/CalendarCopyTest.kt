@@ -42,6 +42,7 @@ class CalendarCopyTest {
                 series = listOf(CopySeries(1, null, event("a", reminders = listOf(10, -5, 10)), color = 0xFF112233.toInt())),
                 exceptions = emptyList(),
             ),
+            emptySet(),
             ::formatExdateStamp,
         )
 
@@ -66,6 +67,7 @@ class CalendarCopyTest {
                     ),
                 ),
             ),
+            emptySet(),
             ::formatExdateStamp,
         )
 
@@ -88,6 +90,7 @@ class CalendarCopyTest {
                     ),
                 ),
             ),
+            emptySet(),
             ::formatExdateStamp,
         )
 
@@ -114,6 +117,7 @@ class CalendarCopyTest {
                     ),
                 ),
             ),
+            emptySet(),
             ::formatExdateStamp,
         )
 
@@ -121,7 +125,7 @@ class CalendarCopyTest {
     }
 
     @Test
-    fun `an orphaned modified occurrence still copies, an orphaned cancellation does not`() {
+    fun `exceptions without their series are left out`() {
         val plan = planCalendarCopy(
             CalendarCopyRows(
                 series = emptyList(),
@@ -130,10 +134,40 @@ class CalendarCopyTest {
                     CopyException(5, null, occurrence(2), event("y", status = EventStatus.Cancelled)),
                 ),
             ),
+            emptySet(),
             ::formatExdateStamp,
         )
 
-        assertThat(plan.map { it.summary }).containsExactly("x")
+        assertThat(plan).isEmpty()
+    }
+
+    @Test
+    fun `a cancelled series is left out with its exceptions`() {
+        val plan = planCalendarCopy(
+            CalendarCopyRows(
+                series = listOf(CopySeries(1, null, event("s", rrule = "FREQ=WEEKLY", status = EventStatus.Cancelled))),
+                exceptions = listOf(CopyException(1, null, occurrence(1), event("x"))),
+            ),
+            emptySet(),
+            ::formatExdateStamp,
+        )
+
+        assertThat(plan).isEmpty()
+    }
+
+    @Test
+    fun `a series already in the target brings no overrides along`() {
+        val plan = planCalendarCopy(
+            CalendarCopyRows(
+                series = listOf(CopySeries(1, null, event("s", rrule = "FREQ=WEEKLY"))),
+                exceptions = listOf(CopyException(1, null, occurrence(1), event("x"))),
+            ),
+            setOf("s"),
+            ::formatExdateStamp,
+        )
+
+        assertThat(plan.map { it.uid }).containsExactly("s")
+        assertThat(plan.single().exDates).isEmpty()
     }
 
     @Test
@@ -143,7 +177,7 @@ class CalendarCopyTest {
             exceptions = listOf(CopyException(1, null, occurrence(1), event("s"))),
         )
 
-        assertThat(planCalendarCopy(rows, ::formatExdateStamp).map { it.uid }).isEqualTo(planCalendarCopy(rows, ::formatExdateStamp).map { it.uid })
+        assertThat(planCalendarCopy(rows, emptySet(), ::formatExdateStamp).map { it.uid }).isEqualTo(planCalendarCopy(rows, emptySet(), ::formatExdateStamp).map { it.uid })
     }
 
     @Test
@@ -161,6 +195,7 @@ class CalendarCopyTest {
                 series = listOf(CopySeries(1, null, event("s").copy(recurrenceDates = "20260112T090000Z"))),
                 exceptions = listOf(CopyException(1, null, occurrence(1), event("s", status = EventStatus.Cancelled))),
             ),
+            emptySet(),
             ::formatExdateStamp,
         )
 
@@ -179,6 +214,7 @@ class CalendarCopyTest {
                     CopyException(1, null, occurrence(1), event("y")),
                 ),
             ),
+            emptySet(),
             ::formatExdateStamp,
         )
 

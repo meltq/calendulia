@@ -328,7 +328,9 @@ private fun BackupContent(
             title = stringResource(R.string.calendars_copy_action),
             summary = when (copyRun) {
                 is CopyRunState.Running -> copyProgressText(copyRun)
-                is CopyRunState.Done -> stringResource(R.string.calendars_copy_done)
+                is CopyRunState.Done -> stringResource(
+                    if (copyRun.stopped) R.string.calendars_copy_stopped_title else R.string.calendars_copy_done,
+                )
                 CopyRunState.Cancelled -> stringResource(R.string.calendars_copy_cancelled)
                 CopyRunState.Failed -> stringResource(R.string.calendars_copy_failed)
                 CopyRunState.Idle -> stringResource(R.string.calendars_copy_summary)

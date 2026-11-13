@@ -1,11 +1,13 @@
 package de.jeanlucmakiola.calendula.ui.calendars
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -16,13 +18,13 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.CalendarSource
-import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.CalendarPickerGroups
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
@@ -60,6 +62,16 @@ fun CopyEventsSheet(
         predictiveBack = true,
     ) {
         GroupedHint(stringResource(R.string.calendars_copy_hint), style = MaterialTheme.typography.bodySmall)
+        if (calendars == null) {
+            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                CircularProgressIndicator()
+            }
+            return@FullScreenPicker
+        }
+        if (sources.isEmpty() && !running) {
+            GroupedHint(stringResource(R.string.calendars_copy_none))
+            return@FullScreenPicker
+        }
         CopyEndRow(
             label = stringResource(R.string.calendars_copy_from),
             calendar = source,
@@ -80,7 +92,7 @@ fun CopyEventsSheet(
         ) {
             when (run) {
                 is CopyRunState.Running -> CopyProgress(run, onCancel)
-                is CopyRunState.Done -> CopySummary(run.summary)
+                is CopyRunState.Done -> CopySummary(run)
                 CopyRunState.Cancelled -> CopyNote(stringResource(R.string.calendars_copy_cancelled))
                 CopyRunState.Failed -> CopyNote(
                     stringResource(R.string.calendars_copy_failed),
@@ -182,9 +194,10 @@ fun copyProgressText(run: CopyRunState.Running): String {
 }
 
 @Composable
-private fun CopySummary(summary: IcsImportSummary) {
+private fun CopySummary(run: CopyRunState.Done) {
+    val summary = run.summary
     Text(
-        stringResource(R.string.calendars_copy_done),
+        stringResource(if (run.stopped) R.string.calendars_copy_stopped_title else R.string.calendars_copy_done),
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface,
     )

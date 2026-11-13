@@ -50,50 +50,51 @@ data class CalendarCopyRows(
  * any other event.
  *
  * Standalone occurrences come first: a run cut short then leaves at worst an
- * occurrence missing its series, never a series missing an occurrence. A UID
- * that comes up twice is planned once, as a re-run would dedup it anyway.
- * Attendees and organizer are not part of either input.
+ * occurrence missing its series, never a series missing an occurrence.
+ * Cancelled events, and exceptions whose series isn't among the rows, are left
+ * out; the source doesn't show them either. Attendees and organizer are not
+ * part of either input.
  *
- * Idempotent per snapshot only: a series already in the target is skipped
- * whole, so an occurrence changed in the source after an earlier run arrives
- * as a standalone event next to the copied series' original one.
+ * Idempotent per snapshot: a series whose UID is in [targetUids] is skipped
+ * whole, its overrides included, so a re-run never puts a changed occurrence
+ * next to the copied series' original one; it keeps the earlier copy instead.
  *
  * [exdateStamp] formats an occurrence as an `EXDATE` entry in the provider's
  * shape, the same one Calendula's own exclusions use.
  */
 fun planCalendarCopy(
     rows: CalendarCopyRows,
+    targetUids: Set<String>,
     exdateStamp: (occurrenceMillis: Long, isAllDay: Boolean) -> String,
 ): List<ParsedIcsEvent> {
-    val (series, exceptions) = rows
+    val series = rows.series.filterNot { it.event.status == EventStatus.Cancelled }
     val byId = series.associateBy { it.eventId }
     val bySyncId = series.filter { it.syncId != null }.associateBy { it.syncId }
     val excluded = mutableMapOf<Long, MutableList<String>>()
     val detached = mutableListOf<ParsedIcsEvent>()
-    for (exception in exceptions) {
+    for (exception in rows.exceptions) {
         val parent = exception.originalId?.let(byId::get)
             ?: exception.originalSyncId?.let(bySyncId::get)
-        if (parent != null) {
-            // An exception to a one-off overrides nothing a copy could carry.
-            if (!parent.event.recurs) continue
-            excluded.getOrPut(parent.eventId) { mutableListOf() } +=
-                exdateStamp(exception.originalInstance.toEpochMilliseconds(), parent.event.isAllDay)
-        }
+            ?: continue
+        // An exception to a one-off overrides nothing a copy could carry.
+        if (!parent.event.recurs || parent.event.uid in targetUids) continue
+        excluded.getOrPut(parent.eventId) { mutableListOf() } +=
+            exdateStamp(exception.originalInstance.toEpochMilliseconds(), parent.event.isAllDay)
         if (exception.isCancelled) continue
-        val baseUid = parent?.event?.uid ?: exception.event.uid
         detached += exception.event
             .copy(
-                uid = "${exception.originalInstance.toEpochMilliseconds()}-$baseUid",
+                uid = "${exception.originalInstance.toEpochMilliseconds()}-${parent.event.uid}",
                 recurrenceRule = null,
                 recurrenceDates = null,
             )
             .toParsedIcsEvent(exception.color)
     }
-    return (detached + series.map { s ->
+    // Two exception rows for one occurrence would derive the same UID.
+    return detached.distinctBy { it.uid } + series.map { s ->
         val extra = excluded[s.eventId].orEmpty()
         val event = if (extra.isEmpty()) s.event else s.event.copy(exDates = (s.event.exDates + extra).distinct())
         event.toParsedIcsEvent(s.color)
-    }).distinctBy { it.uid }
+    }
 }
 
 /**

@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.calendars
 
+import android.util.Log
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -90,6 +91,7 @@ class CopyEventsViewModel @Inject constructor(
                 _run.value = CopyRunState.Cancelled
                 throw e
             } catch (e: Exception) {
+                Log.w(TAG, "Copy events failed", e)
                 _run.value = CopyRunState.Failed
             }
         }
@@ -107,6 +109,7 @@ class CopyEventsViewModel @Inject constructor(
     private companion object {
         const val KEY_SOURCE = "copy_source"
         const val KEY_TARGET = "copy_target"
+        const val TAG = "CopyEvents"
     }
 }
 
@@ -123,7 +126,10 @@ sealed interface CopyRunState {
     /** [total] is null while the source calendar is still being read. */
     data class Running(val done: Int, val total: Int?) : CopyRunState
 
-    data class Done(val summary: IcsImportSummary) : CopyRunState
+    data class Done(val summary: IcsImportSummary) : CopyRunState {
+        /** The target stopped taking events part way, so some were never tried. */
+        val stopped: Boolean get() = summary.notAttempted > 0
+    }
     data object Cancelled : CopyRunState
     data object Failed : CopyRunState
 }

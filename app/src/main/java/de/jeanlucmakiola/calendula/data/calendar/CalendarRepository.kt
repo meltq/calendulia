@@ -71,8 +71,9 @@ interface CalendarRepository {
      * Bulk-import parsed `.ics` [events] into [targetCalendarId]. Events whose
      * UID already exists in the target are skipped (idempotent restore); the
      * rest are inserted. See [CalendarDataSource.insertImportedEvent].
-     * [onProgress] gets the count of events handled so far after each one, and
-     * may throw to stop the import between events.
+     * [onProgress] gets the count of events handled so far before each event
+     * after the first and once more when all were handled; it may throw to stop
+     * the import between events.
      */
     suspend fun importEvents(
         targetCalendarId: Long,

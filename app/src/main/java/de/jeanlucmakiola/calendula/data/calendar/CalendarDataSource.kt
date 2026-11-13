@@ -815,8 +815,11 @@ class AndroidCalendarDataSource @Inject constructor(
             "${CalendarContract.Events.DELETED} = 0"
         val series = mutableListOf<CopySeries>()
         val exceptions = mutableListOf<CopyException>()
+        // Some adapters stamp the calendar's colour onto every row; that is no
+        // colour of the event's own and would pin it in the target.
+        val calendarColor = calendars().firstOrNull { it.id == calendarId }?.color
         forEachExportRow(selection, allDayReminderTimeMinutes) { event ->
-            val color = getIntOrNull(EventExportProjection.IDX_EVENT_COLOR)
+            val color = getIntOrNull(EventExportProjection.IDX_EVENT_COLOR)?.takeIf { it != calendarColor }
             val originalId = getLongOrNull(EventExportProjection.IDX_ORIGINAL_ID)
             val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)?.takeIf { it.isNotEmpty() }
             if (originalId == null && originalSyncId == null) {
