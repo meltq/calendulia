@@ -474,8 +474,13 @@ each series to the retention count after its new file has landed. Pruning only
 deletes names recorded in a per-series ledger of files the backup wrote
 (`auto_backup_files`, keyed by calendar id), never whatever happens to match a
 name, so renames, same-named calendars and the user's own files are safe; the
-pre-#411 fixed `calendula-backup.ics` counts as the combined series' oldest file,
-and an install that already had a folder stays on the combined layout.
+Each series also keeps a stable undated copy (`<calendar name>.ics`, or
+`calendula-backup.ics` combined) overwritten every run, so sync tools and
+subscriptions can follow one path; retention never touches it, it never
+overwrites a file the backup didn't write, and a renamed calendar's old copy is
+deleted while a deselected one's is kept. The pre-#411 fixed
+`calendula-backup.ics` simply is the combined series' stable copy, and an
+install that already had a folder stays on the combined layout.
 
 **A backup carries the series' deleted occurrences.** `EXDATE` lives on the
 master row, so the export query's `ORIGINAL_ID IS NULL` filter — which does drop

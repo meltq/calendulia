@@ -68,13 +68,22 @@ data class BackupFilePlan(
     val keep: List<String>,
     /** Earlier files of this series beyond the retention count, oldest first. */
     val prune: List<String>,
+    /**
+     * The stable, undated copy overwritten every run (`<base>.ics`), for tools
+     * that follow one path. Null when a file of that name is in the folder but
+     * isn't one this backup wrote: the user's own file is never overwritten.
+     */
+    val latestName: String?,
+    /** This series' earlier stable copies under a name it no longer uses (a rename), to delete. */
+    val staleLatest: List<String> = emptyList(),
 )
 
 /**
  * The files the automatic backup has written, per series key, oldest first.
  * Pruning only ever deletes names recorded here, so a series is its files, not
  * whatever currently matches a calendar's name: renames, same-named calendars
- * and the user's own files in the folder can't pull in the wrong ones.
+ * and the user's own files in the folder can't pull in the wrong ones. A
+ * series' stable copy is recorded apart, under [latestLedgerKey].
  */
 typealias BackupLedger = Map<String, List<String>>
 
@@ -83,8 +92,16 @@ const val COMBINED_SERIES = "combined"
 /** The combined file's series name; also the fixed name used before #411. */
 const val COMBINED_BACKUP_BASE = "calendula-backup"
 
-/** The single file every automatic backup overwrote before #411. */
+/**
+ * The single file every automatic backup overwrote before #411: the combined
+ * series' stable copy now, so an old setup keeps its path.
+ */
 const val LEGACY_BACKUP_FILE = "$COMBINED_BACKUP_BASE.ics"
+
+private const val LATEST_PREFIX = "latest-"
+
+/** Where the ledger records the stable copy of the series [key]. */
+fun latestLedgerKey(key: String): String = "$LATEST_PREFIX$key"
 
 /** The retention choices the settings offer, newest kept first. */
 val BACKUP_KEEP_OPTIONS: List<Int> = listOf(1, 2, 3, 5, 7, 10)
@@ -136,10 +153,12 @@ fun backupFileName(baseName: String, at: LocalDateTime): String =
     "${baseName}_${at.format(STAMP_FORMAT)}$ICS_EXTENSION"
 
 /**
- * Plan one run: a new file per target, and which of the series' recorded files
- * ([ledger]) fall out of the newest [keep], the new one included. Recorded files
- * no longer in the folder ([existing]) are forgotten. The pre-#411
- * [LEGACY_BACKUP_FILE] joins the combined series as its oldest file.
+ * Plan one run: a new dated file per target, and which of the series' recorded
+ * files ([ledger]) fall out of the newest [keep], the new one included. Recorded
+ * files no longer in the folder ([existing]) are forgotten. Each target also
+ * gets its stable copy, which retention never touches; a renamed series drops
+ * its old one. The pre-#411 [LEGACY_BACKUP_FILE] is the combined series'
+ * stable copy, so it is overwritten rather than left to go stale.
  */
 fun planBackupFiles(
     targets: List<BackupTarget>,
@@ -149,21 +168,21 @@ fun planBackupFiles(
     keep: Int,
 ): List<BackupFilePlan> {
     val retain = keep.coerceAtLeast(1)
+    val ownLatest = ledger.filterKeys { it.startsWith(LATEST_PREFIX) }.values.flatten().toSet() + LEGACY_BACKUP_FILE
+    val currentLatest = targets.map { latestFileName(it.baseName) }.toSet()
     return targets.map { target ->
         val fileName = backupFileName(target.baseName, at)
-        val recorded = ledger[target.key].orEmpty()
-        val legacy = if (target.key == COMBINED_SERIES && LEGACY_BACKUP_FILE !in recorded) {
-            listOf(LEGACY_BACKUP_FILE)
-        } else {
-            emptyList()
-        }
-        val earlier = (legacy + recorded).filter { it in existing && it != fileName }.distinct()
+        val earlier = ledger[target.key].orEmpty().filter { it in existing && it != fileName }.distinct()
         val kept = earlier.takeLast(retain - 1)
+        val latest = latestFileName(target.baseName)
         BackupFilePlan(
             target = target,
             fileName = fileName,
             keep = kept,
             prune = earlier.dropLast(kept.size),
+            latestName = latest.takeIf { it !in existing || it in ownLatest },
+            staleLatest = ledger[latestLedgerKey(target.key)].orEmpty()
+                .filter { it in existing && it != latest && it !in currentLatest },
         )
     }
 }
@@ -181,10 +200,36 @@ fun updatedBackupLedger(
     undeleted: Collection<String>,
     liveKeys: Set<String>,
 ): BackupLedger {
-    val next = previous.filterKeys { it in liveKeys || it == COMBINED_SERIES }.toMutableMap()
+    val next = previous.livePart(liveKeys)
     next[plan.target.key] = (plan.prune.filter { it in undeleted } + plan.keep + writtenName).distinct()
     return next.filterValues { it.isNotEmpty() }
 }
+
+/**
+ * The ledger once [plan]'s stable copy landed as [writtenName]: recorded with
+ * any stale copy that wouldn't delete ([undeleted]), so a later run retries it.
+ */
+fun updatedLatestLedger(
+    previous: BackupLedger,
+    plan: BackupFilePlan,
+    writtenName: String,
+    undeleted: Collection<String>,
+    liveKeys: Set<String>,
+): BackupLedger {
+    val next = previous.livePart(liveKeys)
+    next[latestLedgerKey(plan.target.key)] = (plan.staleLatest.filter { it in undeleted } + writtenName).distinct()
+    return next.filterValues { it.isNotEmpty() }
+}
+
+/** Entries of calendars that still exist; a deleted calendar's files stay, unrecorded. */
+private fun BackupLedger.livePart(liveKeys: Set<String>): MutableMap<String, List<String>> =
+    filterKeys { key ->
+        val series = key.removePrefix(LATEST_PREFIX)
+        series in liveKeys || series == COMBINED_SERIES
+    }.toMutableMap()
+
+/** `Work.ics`: the series' stable copy. */
+fun latestFileName(baseName: String): String = "$baseName$ICS_EXTENSION"
 
 private const val LEDGER_ENTRY_SEP = "|"
 private const val LEDGER_KEY_SEP = "/"

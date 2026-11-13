@@ -912,7 +912,7 @@
         <item quantity="one">Only the latest</item>
         <item quantity="other">The latest %d</item>
     </plurals>
-    <string name="calendars_auto_backup_keep_hint">Counted per file: with one file per calendar, each calendar keeps this many. Older backups Calendula wrote are deleted after each run; a calendar you stop backing up keeps its last files, and nothing else in the folder is touched.</string>
+    <string name="calendars_auto_backup_keep_hint">Counted per file: with one file per calendar, each calendar keeps this many dated copies, plus one undated copy that always holds the latest backup. Older backups Calendula wrote are deleted after each run; a calendar you stop backing up keeps its last files, and nothing else in the folder is touched.</string>
     <string name="calendars_auto_backup_status_never">No automatic backup yet</string>
     <string name="calendars_auto_backup_status_ok">Last backup: %1$s</string>
     <string name="calendars_auto_backup_status_failed">Last backup failed: %1$s</string>

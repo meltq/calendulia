@@ -29,6 +29,7 @@ import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.backup.backupTargets
 import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
 import de.jeanlucmakiola.calendula.domain.backup.updatedBackupLedger
+import de.jeanlucmakiola.calendula.domain.backup.updatedLatestLedger
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.floret.android.hasPermission
 import kotlinx.coroutines.NonCancellable
@@ -181,6 +182,13 @@ class BackupWorker(
                     val name = exporter.writeToFolder(folder, listing, plan.fileName, content)
                     ledger = updatedBackupLedger(ledger, plan, name, undeleted = plan.prune, liveKeys)
                     prefs.setAutoBackupLedger(ledger)
+                    plan.latestName?.let { latest ->
+                        val latestName = exporter.writeToFolder(folder, listing, latest, content)
+                        ledger = updatedLatestLedger(ledger, plan, latestName, plan.staleLatest, liveKeys)
+                        prefs.setAutoBackupLedger(ledger)
+                        val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
+                        ledger = updatedLatestLedger(ledger, plan, latestName, staleLeft, liveKeys)
+                    }
                     val undeleted = exporter.deleteFromFolder(listing, plan.prune)
                     ledger = updatedBackupLedger(ledger, plan, name, undeleted, liveKeys)
                     prefs.setAutoBackupLedger(ledger)
