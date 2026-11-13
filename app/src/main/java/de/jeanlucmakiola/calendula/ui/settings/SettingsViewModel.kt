@@ -378,10 +378,12 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setCalendarAlertStyle(calendarId: Long, style: ReminderAlertStyle) {
-        save { setCalendarAlertStyle(calendarId, style) }
-        // A ring for it goes quiet but stays in the shade.
-        if (style != ReminderAlertStyle.FullScreenRing) {
-            reminderNotifier.stopRing(RingMatch.Calendar(calendarId), handBack = true)
+        viewModelScope.launch {
+            prefs.setCalendarAlertStyle(calendarId, style)
+            // A ring for it goes quiet but stays in the shade.
+            if (style != ReminderAlertStyle.FullScreenRing) {
+                reminderNotifier.stopRing(RingMatch.Calendar(calendarId), handBack = true)
+            }
         }
     }
 

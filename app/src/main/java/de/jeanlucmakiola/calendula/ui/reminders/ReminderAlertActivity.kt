@@ -127,7 +127,8 @@ class ReminderAlertActivity : ComponentActivity() {
             return
         }
         alert = next
-        val ringing = alerts.ringing?.key == next.key
+        // A ring still going, this one's or another's, keeps the screen up as long as it rings.
+        val ringing = alerts.ringing != null
         keepScreenOn(if (ringing) ReminderRingService.RING_TIMEOUT_MILLIS else ONCE_SCREEN_ON_MILLIS)
         loading?.cancel()
         state = ReminderAlertUiState.Loading

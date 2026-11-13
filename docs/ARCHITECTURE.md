@@ -425,8 +425,11 @@ from the screen, the notification or a swipe, all go through
 `ReminderActionReceiver`, so the ring stops and the screen closes
 (`FullScreenAlerts`) however the reminder was handled. Starts and stops reach
 the service as commands, so a dismiss sent while a newer ring is on its way
-applies in order rather than killing it. A blocked calendar, account group or
-ring channel never rings, and during a call the ring only vibrates. When Android 14+
+applies in order rather than killing it, and the service re-reads the settings
+once a ring arrives, so a style change or mute that raced a scan still wins. A
+blocked calendar, account group or ring channel never rings, the tone pauses
+for a phone call, and a ring restarted after a process death only rings out
+what was left of its ten minutes. When Android 14+
 withholds `USE_FULL_SCREEN_INTENT`, the intent is left off and the alert is a
 heads-up; Settings shows a row leading to the system switch. When Android
 refuses the ring service, the reminder falls back to sounding once.

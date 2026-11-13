@@ -40,6 +40,9 @@ class FullScreenAlerts @Inject constructor() {
     }
 }
 
+/** What becomes of a ring once its settings are re-read. */
+enum class RingVerdict { Ring, HandBack, Drop }
+
 /** Which ring a stop is for. */
 sealed interface RingMatch {
     fun matches(alert: ReminderAlert): Boolean
