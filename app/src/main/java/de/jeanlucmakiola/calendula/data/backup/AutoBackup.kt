@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.net.Uri
 import android.os.Build
 import android.util.Log
 import androidx.core.app.NotificationCompat
@@ -25,17 +26,21 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.domain.backup.backupTargets
+import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.floret.android.hasPermission
 import kotlinx.coroutines.flow.first
+import java.time.LocalDateTime
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 
 /**
- * Schedules and runs the automatic periodic `.ics` backup of local calendars
- * (issue #8). One-way export only — it mirrors the manual "Back up" into a
- * user-chosen folder on an interval; it is not a sync. Stays INTERNET-free:
- * everything is local provider reads + a local file write.
+ * Schedules and runs the automatic periodic `.ics` backup (issue #8) of the
+ * calendars the user picked (#147). One-way export only — it mirrors the manual
+ * "Back up" into a user-chosen folder on an interval; it is not a sync. Stays
+ * INTERNET-free: everything is local provider reads + local file writes.
  */
 object BackupScheduler {
 
@@ -86,8 +91,9 @@ object BackupScheduler {
 }
 
 /**
- * Exports the local calendars to `calendula-backup.ics` in the configured folder,
- * overwriting the previous file. Pulls its collaborators through a Hilt
+ * Exports the selected calendars into the configured folder — one dated file
+ * per calendar, or one combined file (#411) — then prunes each series down to
+ * the retention count. Pulls its collaborators through a Hilt
  * [EntryPoint] so it works under WorkManager's default (no-arg) worker factory —
  * no custom factory / Application wiring needed. Records the outcome for the
  * settings status line, and notifies after repeated failures.
@@ -115,11 +121,11 @@ class BackupWorker(
             ?: return Result.failure() // nothing to write to — leave scheduling to settings
         val now = System.currentTimeMillis()
         return try {
-            val events = deps.repository().exportEvents()
-            val content = IcsWriter().writeCalendar(events, Clock.System.now())
-            deps.exporter().writeToFolder(folder.toUri(), BACKUP_FILE_NAME, content)
+            runBackup(deps, prefs, folder.toUri())
             prefs.recordAutoBackupRun(success = true, atMillis = now)
             Result.success()
+        } catch (e: CancellationException) {
+            throw e
         } catch (e: Exception) {
             prefs.recordAutoBackupRun(success = false, atMillis = now)
             if (prefs.autoBackupStatus.first().consecutiveFailures >= FAILURE_NOTIFY_THRESHOLD) {
@@ -128,6 +134,41 @@ class BackupWorker(
             Log.w(TAG, "Automatic backup failed", e)
             Result.retry()
         }
+    }
+
+    /**
+     * Writes every file first and prunes afterwards, and only a series whose
+     * new file landed, so a failed run never costs an older backup. Throws
+     * after the rest are done if any series failed.
+     */
+    private suspend fun runBackup(deps: Deps, prefs: SettingsPrefs, folder: Uri) {
+        val repository = deps.repository()
+        val exporter = deps.exporter()
+        val selection = prefs.autoBackupSelection.first()
+        val calendars = repository.calendars().first().filter(selection::selects)
+        val targets = backupTargets(calendars, combined = prefs.autoBackupCombined.first())
+        val plans = planBackupFiles(
+            targets = targets,
+            existing = exporter.fileNames(folder),
+            at = LocalDateTime.now(),
+            keep = prefs.autoBackupKeep.first(),
+        )
+        val stamp = Clock.System.now()
+        var failure: Exception? = null
+        for (plan in plans) {
+            try {
+                val events = repository.exportEvents(plan.target.calendarIds)
+                val content = IcsWriter().writeCalendar(events, stamp, plan.target.calendarName)
+                exporter.writeToFolder(folder, plan.fileName, content)
+                exporter.deleteFromFolder(folder, plan.prune)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Backup of one calendar failed", e)
+                failure = failure ?: e
+            }
+        }
+        failure?.let { throw it }
     }
 
     private fun notifyFailure(context: Context) {
@@ -165,7 +206,6 @@ class BackupWorker(
     }
 
     companion object {
-        const val BACKUP_FILE_NAME = "calendula-backup.ics"
         private const val FAILURE_NOTIFY_THRESHOLD = 2
         private const val CHANNEL_ID = "backup"
         private const val NOTIFICATION_ID = 2

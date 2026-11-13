@@ -705,4 +705,66 @@ class SettingsPrefsTest {
         prefs.recordSpecialDatesRun(2000L, null)
         assertThat(prefs.specialDatesStatus.first()).isEqualTo(SpecialDatesStatus(2000L, null))
     }
+    @Test
+    fun `a fresh install backs up one file per calendar, keeping three`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        prefs.setAutoBackupFolderUri("content://tree/a")
+        assertThat(prefs.autoBackupCombined.first()).isFalse()
+        assertThat(prefs.autoBackupKeep.first()).isEqualTo(3)
+    }
+
+    @Test
+    fun `an install that had a backup folder before 411 keeps its single file`(@TempDir tempDir: Path) = runTest {
+        val store = testDataStore(tempDir, "test_settings")
+        val prefs = SettingsPrefs(store)
+        store.updateData { p ->
+            val m = p.toMutablePreferences()
+            m[stringPreferencesKey("auto_backup_folder_uri")] = "content://tree/old"
+            m
+        }
+        assertThat(prefs.autoBackupCombined.first()).isTrue()
+
+        // Picking another folder pins the layout instead of flipping it.
+        prefs.setAutoBackupFolderUri("content://tree/new")
+        assertThat(prefs.autoBackupCombined.first()).isTrue()
+
+        prefs.setAutoBackupCombined(false)
+        assertThat(prefs.autoBackupCombined.first()).isFalse()
+    }
+
+    @Test
+    fun `backup calendar choices are stored as deviations from the default`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        val local = backupCalendar(1L, local = true)
+        val synced = backupCalendar(2L, local = false)
+
+        prefs.setAutoBackupCalendar(synced, true)
+        prefs.setAutoBackupCalendar(local, false)
+        val selection = prefs.autoBackupSelection.first()
+        assertThat(selection.included).containsExactly(2L)
+        assertThat(selection.excluded).containsExactly(1L)
+
+        prefs.setAutoBackupCalendar(local, true)
+        assertThat(prefs.autoBackupSelection.first().excluded).isEmpty()
+    }
+
+    @Test
+    fun `a stray retention count snaps to an offered one`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        prefs.setAutoBackupKeep(4)
+        assertThat(prefs.autoBackupKeep.first()).isIn(listOf(3, 5))
+        prefs.setAutoBackupKeep(99)
+        assertThat(prefs.autoBackupKeep.first()).isEqualTo(10)
+    }
+
+    private fun backupCalendar(id: Long, local: Boolean) = de.jeanlucmakiola.calendula.domain.CalendarSource(
+        id = id,
+        displayName = "C$id",
+        accountName = "a",
+        accountType = if (local) "LOCAL" else "com.google",
+        color = 0,
+        isVisibleInSystem = true,
+        canModifyContents = true,
+        isLocal = local,
+    )
 }

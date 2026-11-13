@@ -23,9 +23,9 @@ internal class FakeCalendarDataSource : CalendarDataSource {
     var searchResult: (String) -> List<SearchCandidate> = { _ -> emptyList() }
     var eventDetailResult: (Long) -> EventDetail? = { null }
     var publishedEventColorsResult: (Long) -> List<EventColorOption> = { emptyList() }
-    var exportableEventsResult: List<IcsEvent> = emptyList()
-    /** The [calendarIds] the last [exportableEvents] call received (null = all). */
-    var lastExportableEventsCalendarIds: Set<Long>? = null
+    var calendarEventsResult: List<IcsEvent> = emptyList()
+    /** The [calendarIds] the last [calendarEvents] call received. */
+    var lastCalendarEventsIds: Set<Long>? = null
     /** UIDs the target calendar already holds, for import dedup. */
     var existingUidsResult: Set<String> = emptySet()
     /** Set to make the next write call throw. */
@@ -81,12 +81,12 @@ internal class FakeCalendarDataSource : CalendarDataSource {
         eventDetailResult(eventId)
     override fun publishedEventColors(calendarId: Long): List<EventColorOption> =
         publishedEventColorsResult(calendarId)
-    override fun exportableEvents(
-        calendarIds: Set<Long>?,
+    override fun calendarEvents(
+        calendarIds: Set<Long>,
         allDayReminderTimeMinutes: Int,
     ): List<IcsEvent> {
-        lastExportableEventsCalendarIds = calendarIds
-        return exportableEventsResult
+        lastCalendarEventsIds = calendarIds
+        return calendarEventsResult
     }
 
     override fun existingUids(calendarId: Long): Set<String> = existingUidsResult

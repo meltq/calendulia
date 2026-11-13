@@ -462,6 +462,19 @@ after the event — so `toIcsEvent` decodes it back through
 `fromProviderAllDayMinutes` first, and the importing device re-encodes it against
 its own setting.
 
+**Backups read any calendar; restores still write only into targets.**
+`CalendarDataSource.calendarEvents` reads the events of whatever calendar ids it
+is given — local, synced or read-only — and leaves the choice to its callers:
+export and the automatic backup offer every calendar but the managed mirrors
+(#147), defaulting to the writable local ones (`domain/backup/BackupPlan.kt`). A
+restore runs through the normal import, whose targets stay `isEventTarget`. The
+automatic backup writes one `<calendar name>_<date>_<time>.ics` series per
+calendar, or one `calendula-backup_…` series in combined mode (#411), and prunes
+each series to the retention count after its new file has landed. Pruning only
+matches names of that series, so nothing else in the folder is touched; the
+pre-#411 fixed `calendula-backup.ics` counts as the combined series' oldest file,
+and an install that already had a folder stays on the combined layout.
+
 **A backup carries the series' deleted occurrences.** `EXDATE` lives on the
 master row, so the export query's `ORIGINAL_ID IS NULL` filter — which does drop
 `RECURRENCE-ID` overrides — never hid it; it simply wasn't read. It is now part

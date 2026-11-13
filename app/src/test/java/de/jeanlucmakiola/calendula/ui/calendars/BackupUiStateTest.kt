@@ -45,10 +45,10 @@ class BackupUiStateTest {
     }
 
     @Test
-    fun `a synced writable calendar can receive a restore`() {
+    fun `a synced writable calendar can receive a restore and be backed up`() {
         val state = ready(backupUiState(listOf(cal(1L))))
         assertThat(state.canImport).isTrue()
-        assertThat(state.exportable).isEmpty()
+        assertThat(state.exportable.map { it.id }).containsExactly(1L)
     }
 
     @Test
@@ -62,16 +62,18 @@ class BackupUiStateTest {
     }
 
     @Test
-    fun `a read-only subscription is no import target either`() {
-        assertThat(failure(backupUiState(listOf(cal(1L, writable = false)))))
-            .isEqualTo(FailureReason.NoImportTarget)
+    fun `a read-only subscription is no import target but can be backed up`() {
+        // #147: export only reads, so a subscription is fair game.
+        val state = ready(backupUiState(listOf(cal(1L, writable = false))))
+        assertThat(state.canImport).isFalse()
+        assertThat(state.exportable).hasSize(1)
     }
 
     @Test
-    fun `everything switched off is reported as hidden, not as a missing target`() {
-        // The remedy differs: a visibility switch fixes this one.
-        assertThat(failure(backupUiState(listOf(cal(1L, visible = false)))))
-            .isEqualTo(FailureReason.AllCalendarsHidden)
+    fun `a switched-off synced calendar still backs up`() {
+        val state = ready(backupUiState(listOf(cal(1L, visible = false))))
+        assertThat(state.canImport).isFalse()
+        assertThat(state.exportable).hasSize(1)
     }
 
     @Test
@@ -92,7 +94,7 @@ class BackupUiStateTest {
     @Test
     fun `a local calendar alongside a synced one offers both halves`() {
         val state = ready(backupUiState(listOf(cal(1L, local = true), cal(2L))))
-        assertThat(state.exportable.map { it.id }).containsExactly(1L)
+        assertThat(state.exportable.map { it.id }).containsExactly(1L, 2L)
         assertThat(state.canImport).isTrue()
     }
 }

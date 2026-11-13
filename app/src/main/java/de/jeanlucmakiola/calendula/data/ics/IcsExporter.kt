@@ -35,14 +35,10 @@ class IcsExporter @Inject constructor(
      * Requires a persisted write grant on [folder]. Throws on failure.
      */
     fun writeToFolder(folder: Uri, fileName: String, content: String) {
-        val dir = DocumentFile.fromTreeUri(context, folder)
-            ?: throw IOException("Backup folder is not accessible")
-        if (!dir.exists() || !dir.canWrite()) {
-            throw IOException("Backup folder is missing or not writable")
-        }
-        // Reuse the canonical file if present and clean up any "name (1).ics"
-        // duplicates SAF may have created if two runs ever raced — so we always
-        // converge on a single overwritten file.
+        val dir = writableFolder(folder)
+        // Reuse the file if present and clean up any "name (1).ics" duplicates
+        // SAF may have created if two runs ever raced, so a name converges on a
+        // single overwritten file.
         val base = fileName.substringBeforeLast('.')
         val ext = fileName.substringAfterLast('.', "")
         var target: DocumentFile? = null
@@ -57,6 +53,27 @@ class IcsExporter @Inject constructor(
             ?: dir.createFile(MIME_CALENDAR, fileName)
             ?: throw IOException("Could not create backup file in the chosen folder")
         writeDocument(file.uri, content)
+    }
+
+    /** Names of the files directly inside [folder]. Throws when it can't be read. */
+    fun fileNames(folder: Uri): List<String> = writableFolder(folder).listFiles().mapNotNull { it.name }
+
+    /** Delete the files called [names] from [folder]; one that won't go is left behind. */
+    fun deleteFromFolder(folder: Uri, names: Collection<String>) {
+        if (names.isEmpty()) return
+        val wanted = names.toSet()
+        writableFolder(folder).listFiles()
+            .filter { it.isFile && it.name in wanted }
+            .forEach { runCatching { it.delete() } }
+    }
+
+    private fun writableFolder(folder: Uri): DocumentFile {
+        val dir = DocumentFile.fromTreeUri(context, folder)
+            ?: throw IOException("Backup folder is not accessible")
+        if (!dir.exists() || !dir.canWrite()) {
+            throw IOException("Backup folder is missing or not writable")
+        }
+        return dir
     }
 
     /**

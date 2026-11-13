@@ -90,15 +90,15 @@ interface CalendarDataSource {
     fun publishedEventColors(calendarId: Long): List<EventColorOption>
 
     /**
-     * Every master/one-off event of the writable local calendars, mapped for a
-     * whole-calendar `.ics` backup. Modified-occurrence and cancelled-exception
-     * rows are excluded (see [EventExportProjection]). When [calendarIds] is
-     * given, only those calendars are exported (still intersected with the
-     * eligible set); `null` exports every eligible calendar.
-     * [allDayReminderTimeMinutes]: needed to write all-day reminders as whole-day
-     * lead times rather than raw provider offsets (see [toIcsEvent]).
+     * Every master/one-off event of [calendarIds], whatever kind of calendar
+     * they are (local, synced, read-only), mapped to [IcsEvent]s. A plain read:
+     * which calendars may be read for what is the caller's call. Modified-
+     * occurrence and cancelled-exception rows are excluded (see
+     * [EventExportProjection]). [allDayReminderTimeMinutes]: needed to write
+     * all-day reminders as whole-day lead times rather than raw provider
+     * offsets (see [toIcsEvent]).
      */
-    fun exportableEvents(calendarIds: Set<Long>?, allDayReminderTimeMinutes: Int): List<IcsEvent>
+    fun calendarEvents(calendarIds: Set<Long>, allDayReminderTimeMinutes: Int): List<IcsEvent>
 
     /**
      * The non-empty `Events.UID_2445` values present in [calendarId] — used to
@@ -776,22 +776,15 @@ class AndroidCalendarDataSource @Inject constructor(
             ?: emptyList()
     }
 
-    override fun exportableEvents(
-        calendarIds: Set<Long>?,
+    override fun calendarEvents(
+        calendarIds: Set<Long>,
         allDayReminderTimeMinutes: Int,
     ): List<IcsEvent> {
-        // Only the local calendars the app owns and can write — synced calendars
-        // already have a backup (their server). Exclude the managed special-dates
-        // mirror calendars: their events are derived from contacts, not authored
-        // here, and re-materialise from the contact sync — backing them up would
-        // just duplicate them on restore. A non-null [calendarIds] narrows the
-        // export to the user's chosen subset. Map id → display name for the
-        // X-CALENDULA-CALENDAR tag a restore uses to fan back out.
+        if (calendarIds.isEmpty()) return emptyList()
+        // Id → display name for the X-CALENDULA-CALENDAR tag a restore uses to
+        // fan back out; an id that no longer exists drops out here.
         val names = calendars()
-            .filter {
-                it.isLocal && it.canModifyContents && !it.isManaged &&
-                    (calendarIds == null || it.id in calendarIds)
-            }
+            .filter { it.id in calendarIds }
             .associate { it.id to it.displayName }
         if (names.isEmpty()) return emptyList()
 

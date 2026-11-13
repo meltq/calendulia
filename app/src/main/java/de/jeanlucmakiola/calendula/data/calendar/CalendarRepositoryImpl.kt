@@ -12,6 +12,7 @@ import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
+import de.jeanlucmakiola.calendula.domain.backup.isBackedUpByDefault
 import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import kotlinx.coroutines.CoroutineDispatcher
@@ -248,7 +249,11 @@ class CalendarRepositoryImpl @Inject constructor(
         }
 
     override suspend fun exportEvents(calendarIds: Set<Long>?) =
-        withContext(io) { dataSource.exportableEvents(calendarIds, allDayReminderTimeMinutes()) }
+        withContext(io) {
+            val ids = calendarIds
+                ?: dataSource.calendars().filter { it.isBackedUpByDefault }.map { it.id }.toSet()
+            dataSource.calendarEvents(ids, allDayReminderTimeMinutes())
+        }
 
     override suspend fun importEvents(
         targetCalendarId: Long,

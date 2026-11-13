@@ -25,12 +25,14 @@ const val ICS_PROD_ID: String = "-//Jean-Luc Makiola//Calendula//EN"
  */
 class IcsWriter(private val prodId: String = ICS_PROD_ID) {
 
-    fun writeCalendar(events: List<IcsEvent>, dtStamp: Instant): String {
+    /** [calendarName], when given, names the whole file (`X-WR-CALNAME`), as a one-calendar backup does. */
+    fun writeCalendar(events: List<IcsEvent>, dtStamp: Instant, calendarName: String? = null): String {
         val lines = buildList {
             add("BEGIN:VCALENDAR")
             add("VERSION:2.0")
             add("PRODID:$prodId")
             add("CALSCALE:GREGORIAN")
+            calendarName?.takeIf { it.isNotBlank() }?.let { add("X-WR-CALNAME:${escapeText(it)}") }
             events.forEach { appendEvent(it, dtStamp) }
             add("END:VCALENDAR")
         }
