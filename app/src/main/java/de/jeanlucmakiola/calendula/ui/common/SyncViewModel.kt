@@ -46,8 +46,6 @@ class SyncViewModel @Inject constructor(
     fun requestSync() {
         if (_inFlight.value) return
         _inFlight.value = true
-        // A repeat receipt must land as a new one, restarting the chip.
-        _result.value = null
         viewModelScope.launch {
             try {
                 // Listening before asking, so a sync that lands at once still counts.

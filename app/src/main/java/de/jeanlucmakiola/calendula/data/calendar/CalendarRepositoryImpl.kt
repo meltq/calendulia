@@ -94,7 +94,7 @@ class CalendarRepositoryImpl @Inject constructor(
      * multi-row save or a whole import asks once per account.
      */
     private suspend fun <T> write(
-        syncCalendars: suspend () -> Collection<Long?> = { emptyList() },
+        syncCalendars: suspend () -> Collection<Long?>,
         block: suspend () -> T,
     ): T = withContext(io) {
         val accounts = syncAccountsOf(syncCalendars)
@@ -103,9 +103,11 @@ class CalendarRepositoryImpl @Inject constructor(
         } finally {
             refresh()
             writes.tryEmit(Unit)
-            accounts.forEach { requestSync(it, userInitiated = false) }
+            requestSyncs(accounts, userInitiated = false)
         }
     }
+
+    private val noSync: suspend () -> Collection<Long?> = { emptyList() }
 
     private suspend fun syncAccountsOf(calendarIds: suspend () -> Collection<Long?>): Set<SyncAccount> =
         try {
@@ -138,7 +140,26 @@ class CalendarRepositoryImpl @Inject constructor(
         return candidates.filterTo(linkedSetOf()) { it.type in adapterTypes }
     }
 
-    private fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean = try {
+    /**
+     * Ask each of [accounts] once; those the app can't name (see
+     * [SyncRequester.isAddressable]) share one request for every calendar
+     * account. Returns how many of [accounts] were asked.
+     */
+    private fun requestSyncs(accounts: Set<SyncAccount>, userInitiated: Boolean): Int {
+        val (direct, hidden) = accounts.partition { isAddressable(it) }
+        var sent = direct.count { requestSync(it, userInitiated) }
+        if (hidden.isNotEmpty() && requestSync(null, userInitiated)) sent += hidden.size
+        return sent
+    }
+
+    private fun isAddressable(account: SyncAccount): Boolean = try {
+        syncRequester.isAddressable(account)
+    } catch (e: Exception) {
+        Log.w(TAG, "Account visibility unreadable", e)
+        false
+    }
+
+    private fun requestSync(account: SyncAccount?, userInitiated: Boolean): Boolean = try {
         syncRequester.requestSync(account, userInitiated)
         true
     } catch (e: Exception) {
@@ -170,7 +191,7 @@ class CalendarRepositoryImpl @Inject constructor(
             return@withContext SyncRequestResult.Failed
         }
         if (accounts.isEmpty()) return@withContext SyncRequestResult.NothingToSync
-        val sent = accounts.count { requestSync(it, userInitiated = true) }
+        val sent = requestSyncs(accounts, userInitiated = true)
         when (sent) {
             accounts.size -> SyncRequestResult.Requested
             0 -> SyncRequestResult.Failed
@@ -302,7 +323,7 @@ class CalendarRepositoryImpl @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-    ): Long = write {
+    ): Long = write(noSync) {
         dataSource.createLocalCalendar(displayName, color, description)
     }
 
@@ -311,13 +332,14 @@ class CalendarRepositoryImpl @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-    ) = write { dataSource.updateCalendar(id, displayName, color, description) }
+    ) = write(noSync) { dataSource.updateCalendar(id, displayName, color, description) }
 
     override suspend fun deleteCalendar(id: Long) =
-        write { dataSource.deleteCalendar(id) }
+        write(noSync) { dataSource.deleteCalendar(id) }
 
     override suspend fun setCalendarsVisible(ids: Collection<Long>, visible: Boolean) =
-        write {
+        // VISIBLE is device-local: nothing for an adapter to upload.
+        write(noSync) {
             val canWrite = dataSource.canWriteCalendars()
             if (canWrite) ids.forEach { dataSource.setCalendarVisible(it, visible) }
             // Nothing of ours is left waiting for the provider once the write

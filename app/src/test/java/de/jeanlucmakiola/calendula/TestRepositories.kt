@@ -51,22 +51,27 @@ fun testRepository(
 /**
  * Records every sync request; [accepts] false models the system refusing all,
  * [refusedTypes] refusing those account types, [adapterTypes] the installed
- * calendar sync adapters (null: a fixed set covering the test accounts).
+ * calendar sync adapters (null: a fixed set covering the test accounts),
+ * [hiddenTypes] account types the app can't address by name.
  */
 class RecordingSyncRequester(
     var accepts: Boolean = true,
     var adapterTypes: Set<String>? = null,
     var refusedTypes: Set<String> = emptySet(),
+    var hiddenTypes: Set<String> = emptySet(),
 ) : SyncRequester {
-    data class Request(val account: SyncAccount, val userInitiated: Boolean)
+    /** [account] null: one request for every calendar account. */
+    data class Request(val account: SyncAccount?, val userInitiated: Boolean)
 
     val requests = mutableListOf<Request>()
 
     override fun adapterAccountTypes(): Set<String> =
         adapterTypes ?: setOf("bitfire.at.davdroid", "com.google", "LOCAL")
 
-    override fun requestSync(account: SyncAccount, userInitiated: Boolean) {
-        if (!accepts || account.type in refusedTypes) throw SecurityException("refused")
+    override fun isAddressable(account: SyncAccount): Boolean = account.type !in hiddenTypes
+
+    override fun requestSync(account: SyncAccount?, userInitiated: Boolean) {
+        if (!accepts || account?.type in refusedTypes) throw SecurityException("refused")
         requests += Request(account, userInitiated)
     }
 }

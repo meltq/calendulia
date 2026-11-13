@@ -169,7 +169,7 @@ private fun SyncNowRow(sync: DrawerSync) {
         } else {
             null
         },
-        onClick = { if (!sync.inFlight) sync.onSync() },
+        onClick = sync.onSync.takeIf { !sync.inFlight },
     )
 }
 

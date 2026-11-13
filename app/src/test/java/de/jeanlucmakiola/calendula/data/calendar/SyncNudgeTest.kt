@@ -220,4 +220,18 @@ class SyncNudgeTest {
         assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.PartlyFailed)
         assertThat(sync.requests).containsExactly(Request(dav, true))
     }
+
+    @Test
+    fun `accounts the app can't see share one request for every calendar account`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(hiddenTypes = setOf(dav.type, google.type))
+        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        repo.moveEvent(10L, 3L, form(1L), form(3L))
+        assertThat(sync.requests).containsExactly(Request(null, false))
+
+        sync.requests.clear()
+        sync.hiddenTypes = setOf(google.type)
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
+        assertThat(sync.requests).containsExactly(Request(dav, true), Request(null, true)).inOrder()
+    }
 }

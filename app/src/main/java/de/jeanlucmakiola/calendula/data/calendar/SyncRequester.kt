@@ -1,9 +1,13 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
 import android.accounts.Account
+import android.accounts.AccountManager
 import android.content.ContentResolver
+import android.content.Context
+import android.os.Build
 import android.os.Bundle
 import android.provider.CalendarContract
+import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -24,27 +28,40 @@ interface SyncRequester {
     fun adapterAccountTypes(): Set<String>
 
     /**
-     * Schedule a sync of [account]; may throw if the system refuses. [userInitiated]
-     * marks it manual, which also overrides master-sync-off — only for a user's tap.
+     * Whether a request naming [account] reaches the system. From Android 13 one
+     * for an account the app can't see is dropped without a word.
      */
-    fun requestSync(account: SyncAccount, userInitiated: Boolean)
+    fun isAddressable(account: SyncAccount): Boolean
+
+    /**
+     * Schedule a sync of [account], or of every calendar account when null; may
+     * throw if the system refuses. [userInitiated] marks it manual, which also
+     * overrides master-sync-off — only for a user's tap.
+     */
+    fun requestSync(account: SyncAccount?, userInitiated: Boolean)
 }
 
 @Singleton
-class AndroidSyncRequester @Inject constructor() : SyncRequester {
+class AndroidSyncRequester @Inject constructor(
+    @ApplicationContext private val context: Context,
+) : SyncRequester {
     // Lists only adapters in packages visible to the app — hence the SyncAdapter <queries> entry.
     override fun adapterAccountTypes(): Set<String> =
         ContentResolver.getSyncAdapterTypes()
             .filter { it.authority == CalendarContract.AUTHORITY }
             .mapTo(mutableSetOf()) { it.accountType }
 
-    override fun requestSync(account: SyncAccount, userInitiated: Boolean) {
+    override fun isAddressable(account: SyncAccount): Boolean =
+        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
+            AccountManager.get(context).getAccountsByType(account.type).any { it.name == account.name }
+
+    override fun requestSync(account: SyncAccount?, userInitiated: Boolean) {
         val extras = Bundle().apply {
             putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
             if (userInitiated) putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)
         }
         ContentResolver.requestSync(
-            Account(account.name, account.type),
+            account?.let { Account(it.name, it.type) },
             CalendarContract.AUTHORITY,
             extras,
         )
