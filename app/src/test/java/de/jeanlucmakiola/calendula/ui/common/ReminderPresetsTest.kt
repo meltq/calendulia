@@ -31,8 +31,14 @@ class ReminderPresetsTest {
     }
 
     @Test
+    fun `at time of event alone joins the day-scale group`() {
+        assertThat(groupReminderLeadTimes(ALLDAY_REMINDER_PRESETS))
+            .containsExactly(ALLDAY_REMINDER_PRESETS)
+    }
+
+    @Test
     fun `empty groups are dropped`() {
-        assertThat(groupReminderLeadTimes(listOf(1_440, 0).drop(1))).containsExactly(listOf(0))
+        assertThat(groupReminderLeadTimes(listOf(10))).containsExactly(listOf(10))
         assertThat(groupReminderLeadTimes(listOf(2_880))).containsExactly(listOf(2_880))
         assertThat(groupReminderLeadTimes(emptyList())).isEmpty()
     }

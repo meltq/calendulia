@@ -1,7 +1,6 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.ui.common.ALLDAY_REMINDER_PRESETS
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import java.time.LocalTime
@@ -61,7 +60,7 @@ class AllDayReminderEncodingTest {
     fun `round-trips for whole-day lead times across both seasons`() {
         for (date in listOf(summer, winter)) {
             for (time in listOf(0, nineAm, 20 * 60)) {
-                for (semantic in ALLDAY_REMINDER_PRESETS) {
+                for (semantic in listOf(0, 1_440, 2_880, 4_320, 5_760, 7_200, 10_080, 20_160, 30_240)) {
                     val raw = toProviderAllDayMinutes(semantic, date, berlin, time)
                     assertThat(fromProviderAllDayMinutes(raw, date, berlin, time))
                         .isEqualTo(semantic)

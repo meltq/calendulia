@@ -89,9 +89,8 @@ fun ReminderDefaultPicker(
     // which would strand a hand-entered value with no way to re-check it.
     val seenCustom = remember { mutableSetOf<Int>() }
     seenCustom += selectedMinutes.filter { it !in presets }
-    // Presets plus every custom value seen this session, each as its own row,
-    // split into a sub-day and a day-scale group.
-    val groups = groupReminderLeadTimes(presets + seenCustom)
+    // Presets plus every custom value seen this session, each as its own row.
+    val rows = presets + seenCustom
 
     var customExpanded by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("") }
@@ -126,41 +125,61 @@ fun ReminderDefaultPicker(
             onClick = { apply(ReminderOverride.None) },
         )
         Spacer(Modifier.height(24.dp))
-        groups.forEachIndexed { groupIndex, group ->
-            val isLast = groupIndex == groups.lastIndex
-            val rowCount = group.size + if (isLast) 1 else 0 // + the custom row
-            group.forEachIndexed { index, minute ->
+        GroupedLeadTimeRows(
+            minutes = rows,
+            row = { minute, position ->
                 val checked = minute in selectedMinutes
                 GroupedRow(
                     title = reminderLeadTimeLabel(minute),
                     summary = leadTimeSummary?.invoke(minute),
-                    position = positionOf(index, rowCount),
+                    position = position,
                     selected = checked,
                     trailing = { Checkbox(checked = checked, onCheckedChange = { toggle(minute) }) },
                     onClick = { toggle(minute) },
                 )
-            }
-            if (!isLast) Spacer(Modifier.height(12.dp))
-        }
-        CustomExpandRow(
-            title = stringResource(R.string.event_edit_reminder_custom),
-            position = if (groups.isEmpty()) Position.Alone else Position.Bottom,
-            expanded = customExpanded,
-            onExpandedChange = { customExpanded = it },
-        ) {
-            CustomReminderEditor(
-                amountText = amountText,
-                onAmountChange = { amountText = it },
-                unit = unit,
-                onUnitChange = { unit = it },
-                onConfirm = { minutes ->
-                    emit(selectedMinutes + minutes)
-                    amountText = ""
-                    customExpanded = false
-                },
-            )
-        }
+            },
+            trailing = { position ->
+                CustomExpandRow(
+                    title = stringResource(R.string.event_edit_reminder_custom),
+                    position = position,
+                    expanded = customExpanded,
+                    onExpandedChange = { customExpanded = it },
+                ) {
+                    CustomReminderEditor(
+                        amountText = amountText,
+                        onAmountChange = { amountText = it },
+                        unit = unit,
+                        onUnitChange = { unit = it },
+                        onConfirm = { minutes ->
+                            emit(selectedMinutes + minutes)
+                            amountText = ""
+                            customExpanded = false
+                        },
+                    )
+                }
+            },
+        )
     }
+}
+
+/**
+ * Lead-time rows laid out as [groupReminderLeadTimes] groups, each a connected
+ * card, with [trailing] (the Custom row) closing the last one.
+ */
+@Composable
+internal fun GroupedLeadTimeRows(
+    minutes: Collection<Int>,
+    row: @Composable (minute: Int, position: Position) -> Unit,
+    trailing: @Composable (position: Position) -> Unit,
+) {
+    val groups = groupReminderLeadTimes(minutes)
+    groups.forEachIndexed { groupIndex, group ->
+        val isLast = groupIndex == groups.lastIndex
+        val rowCount = group.size + if (isLast) 1 else 0
+        group.forEachIndexed { index, minute -> row(minute, positionOf(index, rowCount)) }
+        if (!isLast) Spacer(Modifier.height(12.dp))
+    }
+    trailing(if (groups.isEmpty()) Position.Alone else Position.Bottom)
 }
 
 

@@ -167,7 +167,7 @@ import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.groupedShape as floretGroupedShape
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
-import de.jeanlucmakiola.calendula.ui.common.groupReminderLeadTimes
+import de.jeanlucmakiola.calendula.ui.common.GroupedLeadTimeRows
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.floret.reminders.ReminderUnit
 import de.jeanlucmakiola.floret.locale.currentLocale
@@ -1609,23 +1609,22 @@ private fun ReminderPickerDialog(
         },
     ) {
         if (!customMode) {
-            val groups = groupReminderLeadTimes(presets.filterNot { it in alreadyChosen })
-            groups.forEachIndexed { groupIndex, group ->
-                val isLast = groupIndex == groups.lastIndex
-                val rowCount = group.size + if (isLast) 1 else 0
-                group.forEachIndexed { index, minutes ->
+            GroupedLeadTimeRows(
+                minutes = presets.filterNot { it in alreadyChosen },
+                row = { minutes, position ->
                     GroupedRow(
                         title = reminderLeadTimeLabel(minutes),
-                        position = positionOf(index, rowCount),
+                        position = position,
                         onClick = { onSelect(minutes) },
                     )
-                }
-                if (!isLast) Spacer(Modifier.height(12.dp))
-            }
-            GroupedRow(
-                title = stringResource(R.string.event_edit_reminder_custom),
-                position = if (groups.isEmpty()) Position.Alone else Position.Bottom,
-                onClick = { customMode = true },
+                },
+                trailing = { position ->
+                    GroupedRow(
+                        title = stringResource(R.string.event_edit_reminder_custom),
+                        position = position,
+                        onClick = { customMode = true },
+                    )
+                },
             )
         } else {
             Row(

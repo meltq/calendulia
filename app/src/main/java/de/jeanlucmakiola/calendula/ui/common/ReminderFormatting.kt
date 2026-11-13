@@ -22,10 +22,15 @@ val ALLDAY_REMINDER_PRESETS = listOf(0) + DAY_SCALE_PRESETS
 
 /**
  * Sorts lead times and splits them into a sub-day group and a day-scale group,
- * so a long picker list reads as two connected sections. Empty groups are dropped.
+ * so a long picker list reads as two connected sections. A list with no real
+ * sub-day lead time (only "at time of event", as for all-day) stays one group.
  */
-fun groupReminderLeadTimes(minutes: Collection<Int>): List<List<Int>> =
-    minutes.distinct().sorted().partition { it < DAY }.toList().filter { it.isNotEmpty() }
+fun groupReminderLeadTimes(minutes: Collection<Int>): List<List<Int>> {
+    val sorted = minutes.distinct().sorted()
+    if (sorted.isEmpty()) return emptyList()
+    if (sorted.none { it in 1 until DAY }) return listOf(sorted)
+    return sorted.partition { it < DAY }.toList().filter { it.isNotEmpty() }
+}
 
 @StringRes
 fun reminderUnitLabel(unit: ReminderUnit): Int = when (unit) {
