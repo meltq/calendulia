@@ -10,6 +10,7 @@ import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
@@ -612,6 +613,18 @@ class SettingsPrefsTest {
         assertThat(prefs.mutedReminderCalendarIds.first()).containsExactly(7L, 9L)
         prefs.setCalendarRemindersEnabled(7L, true)
         assertThat(prefs.mutedReminderCalendarIds.first()).containsExactly(9L)
+    }
+
+    @Test
+    fun `calendar alert styles default to notifications and persist per calendar`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val prefs = testSettings(tempDir)
+        assertThat(prefs.reminderAlertStyles.first()).isEmpty()
+        prefs.setCalendarAlertStyle(7L, ReminderAlertStyle.FullScreenRing)
+        prefs.setCalendarAlertStyle(9L, ReminderAlertStyle.FullScreen)
+        prefs.setCalendarAlertStyle(9L, ReminderAlertStyle.Notification)
+        assertThat(prefs.reminderAlertStyles.first()).containsExactly(7L, ReminderAlertStyle.FullScreenRing)
     }
 
     @Test

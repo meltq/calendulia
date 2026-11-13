@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.data.reminders
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationChannelGroup
 import android.app.NotificationManager
@@ -9,6 +10,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
 import de.jeanlucmakiola.calendula.ui.common.sourceAppLabel
 import java.util.Locale
 import javax.inject.Inject
@@ -72,10 +74,41 @@ class ReminderChannels @Inject constructor(
      * has not got to it yet. Null when the calendar no longer exists. Should the
      * calendar lookup fail or come back empty, the channel is still created,
      * plainly named and ungrouped, for the next sync to name and file — a
-     * reminder is never lost to its channel.
+     * reminder is never lost to its channel. A ringing [style] posts on the
+     * shared ring channel instead, once the calendar is known to exist.
      */
     @Synchronized
-    fun channelFor(calendarId: Long): String? {
+    fun channelFor(calendarId: Long, style: ReminderAlertStyle = ReminderAlertStyle.Notification): String? {
+        val calendarChannel = calendarChannelFor(calendarId) ?: return null
+        return if (style == ReminderAlertStyle.FullScreenRing) ringChannel() else calendarChannel
+    }
+
+    /**
+     * The channel a ringing full-screen alert (#171) posts on, shared by every
+     * calendar. Silent: the ring service owns the sound and vibration, so the
+     * channel adds neither. High importance keeps the heads-up a denied
+     * full-screen intent degrades to.
+     */
+    private fun ringChannel(): String {
+        val manager = manager
+        if (manager.getNotificationChannel(RING_CHANNEL_ID) == null) {
+            manager.createNotificationChannel(
+                NotificationChannel(
+                    RING_CHANNEL_ID,
+                    context.getString(R.string.reminder_ring_channel_name),
+                    NotificationManager.IMPORTANCE_HIGH,
+                ).apply {
+                    description = context.getString(R.string.reminder_ring_channel_description)
+                    setSound(null, null)
+                    enableVibration(false)
+                    lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+                },
+            )
+        }
+        return RING_CHANNEL_ID
+    }
+
+    private fun calendarChannelFor(calendarId: Long): String? {
         val id = reminderChannelId(calendarId)
         val manager = manager
         if (manager.getNotificationChannel(id) != null) return id

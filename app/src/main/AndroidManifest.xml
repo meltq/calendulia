@@ -41,10 +41,20 @@
     -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-    <!-- WorkManager declares these for network constraints and foreground workers, neither of which the app uses (#448). -->
+    <!-- WorkManager declares this for network constraints, which the app doesn't use (#448). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
-    <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" tools:node="remove" />
+
+    <!--
+      Full-screen reminder alerts (#171), opt-in per calendar. The alert screen
+      opens over the lock screen through a full-screen intent; "Ring until
+      dismissed" rings from a foreground service (systemExempted, covered by
+      the exact-alarm permission above) with its own wake lock and vibration.
+    -->
+    <uses-permission android:name="android.permission.USE_FULL_SCREEN_INTENT" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SYSTEM_EXEMPTED" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <!-- Package visibility (Android 11+): without this, getLaunchIntentForPackage
          returns null and the calendar manager's per-account "manage" button can't
@@ -321,6 +331,24 @@
         <receiver
             android:name=".data.reminders.ReminderActionReceiver"
             android:exported="false" />
+
+        <!-- The full-screen reminder alert (#171): over the lock screen, out of
+             recents, in a task of its own so it never brings the app with it. -->
+        <activity
+            android:name=".ui.reminders.ReminderAlertActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:launchMode="singleTask"
+            android:showWhenLocked="true"
+            android:taskAffinity=""
+            android:turnScreenOn="true" />
+
+        <!-- Rings a "Ring until dismissed" reminder (#171). systemExempted: an
+             app holding an exact-alarm permission continuing an alarm. -->
+        <service
+            android:name=".data.reminders.ReminderRingService"
+            android:exported="false"
+            android:foregroundServiceType="systemExempted" />
 
         <!-- Home-screen widgets (Glance). Exported: the launcher/host binds them. -->
         <activity

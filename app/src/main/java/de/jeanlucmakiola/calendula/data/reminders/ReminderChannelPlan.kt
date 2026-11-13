@@ -6,6 +6,9 @@ import de.jeanlucmakiola.calendula.ui.common.groupByAccount
 /** The single channel every reminder posted on before they moved per calendar (#145). */
 const val LEGACY_REMINDER_CHANNEL_ID = "reminders"
 
+/** The silent channel ringing full-screen alerts post on (#171); outside the per-calendar namespace. */
+const val RING_CHANNEL_ID = "reminders_ring"
+
 private const val CHANNEL_PREFIX = "reminders.calendar."
 private const val GROUP_PREFIX = "reminders.account."
 private const val LOCAL_GROUP_ID = GROUP_PREFIX + "local"

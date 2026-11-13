@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.data.reminders
 
 import android.Manifest
+import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
@@ -16,7 +17,11 @@ import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
+import de.jeanlucmakiola.calendula.domain.reminders.alertStyleFor
+import de.jeanlucmakiola.calendula.ui.reminders.ReminderAlertActivity
 import de.jeanlucmakiola.floret.android.hasPermission
+import de.jeanlucmakiola.floret.ring.canUseFullScreenIntent
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.isoDayNumber
 import java.time.DayOfWeek
@@ -28,7 +33,8 @@ import javax.inject.Singleton
 
 /**
  * Posts one notification per occurrence on its calendar's channel
- * ([ReminderChannels], #145). Tapping opens the event's detail screen.
+ * ([ReminderChannels], #145), or as a full-screen alert where the calendar
+ * asks for one (#171). Tapping opens the event's detail screen.
  *
  * The tag is the [occurrenceKey], so each reminder for an occurrence replaces
  * the one before it in place (#463). A different reminder alerts afresh; the
@@ -42,6 +48,7 @@ class ReminderNotifier @Inject constructor(
     private val calendarPrefs: CalendarPrefs,
     private val calendarDataSource: CalendarDataSource,
     private val channels: ReminderChannels,
+    private val alerts: FullScreenAlerts,
 ) {
 
     /** False when the user declined `POST_NOTIFICATIONS` or muted the app. */
@@ -62,16 +69,54 @@ class ReminderNotifier @Inject constructor(
             calendarId in calendarPrefs.pendingDisabledCalendarIds.first() ||
             calendarDataSource.isCalendarVisible(calendarId) == false
 
-    /** Post [alert], unless its calendar is silenced or gone. */
-    suspend fun post(alert: ReminderAlert) {
+    /**
+     * Post [alert] in its calendar's alert style (#171), unless the calendar is
+     * silenced or gone. [quiet] posts it as a plain notification that makes no
+     * sound: a ring handing it back to the shade.
+     */
+    suspend fun post(alert: ReminderAlert, quiet: Boolean = false) {
         if (isSilenced(alert.calendarId)) return
-        val channelId = try {
-            channels.channelFor(alert.calendarId)
-        } catch (e: Exception) {
-            Log.w(TAG, "No channel for the reminder of event ${alert.eventId}", e)
-            null
-        } ?: return
+        val style = if (quiet) {
+            ReminderAlertStyle.Notification
+        } else {
+            settingsPrefs.reminderAlertStyles.first().alertStyleFor(alert.calendarId)
+        }
+        val channelId = channelFor(alert, style) ?: return
         val title = displayTitle(alert)
+        val text = contentText(alert)
+        if (style == ReminderAlertStyle.FullScreenRing) {
+            val ringing = build(alert, channelId, title, text, fullScreen = true, ringing = true, quiet = false)
+            if (ReminderRingService.start(context, alert, ringing)) {
+                // An earlier reminder for this occurrence gives way to the ring.
+                NotificationManagerCompat.from(context).cancel(alert.occurrenceKey.toString(), NOTIFICATION_ID)
+                cancelLegacy(alert)
+                return
+            }
+            // Android refused the ring: still full-screen, sounding once on the calendar's channel.
+            val fallback = channelFor(alert, ReminderAlertStyle.FullScreen) ?: return
+            notify(alert, build(alert, fallback, title, text, fullScreen = true, ringing = false, quiet = false))
+            return
+        }
+        // A ring for this occurrence from before its calendar's style changed.
+        if (alerts.ringing?.occurrenceKey == alert.occurrenceKey) ReminderRingService.stop(context)
+        notify(
+            alert,
+            build(alert, channelId, title, text, fullScreen = style.isFullScreen, ringing = false, quiet = quiet),
+        )
+    }
+
+    private fun channelFor(alert: ReminderAlert, style: ReminderAlertStyle): String? = try {
+        channels.channelFor(alert.calendarId, style)
+    } catch (e: Exception) {
+        Log.w(TAG, "No channel for the reminder of event ${alert.eventId}", e)
+        null
+    }
+
+    private suspend fun contentText(alert: ReminderAlert): String =
+        listOfNotNull(timeText(alert), alert.location).joinToString(" · ")
+
+    /** When [alert]'s occurrence happens, as its notification words it. */
+    suspend fun timeText(alert: ReminderAlert): String {
         val is24Hour = settingsPrefs.timeFormat.first()
             .is24Hour(android.text.format.DateFormat.is24HourFormat(context))
         val zone = ZoneId.systemDefault()
@@ -79,7 +124,7 @@ class ReminderNotifier @Inject constructor(
         // resolveFirstDay yields a kotlinx.datetime day; bridge it to java.time by
         // its shared ISO number (1..7) for the date math in reminderTimeText.
         val firstDayOfWeek = DayOfWeek.of(settingsPrefs.weekStart.first().resolveFirstDay(locale).isoDayNumber)
-        val time = reminderTimeText(
+        return reminderTimeText(
             beginMillis = alert.beginMillis,
             endMillis = alert.endMillis,
             isAllDay = alert.isAllDay,
@@ -92,19 +137,34 @@ class ReminderNotifier @Inject constructor(
             tomorrowLabel = context.getString(R.string.reminder_day_tomorrow),
             yesterdayLabel = context.getString(R.string.reminder_day_yesterday),
         )
-        val text = listOfNotNull(time, alert.location).joinToString(" · ")
-        val notification = NotificationCompat.Builder(context, channelId)
+    }
+
+    /**
+     * The reminder's notification. A [ringing] one belongs to [ReminderRingService]:
+     * ongoing, opening the alert screen, and dismissed by a swipe, since from
+     * Android 14 a swipe can take it away while the ring goes on. [fullScreen]
+     * adds the alert screen as a full-screen intent where Android allows it,
+     * and degrades to a heads-up where it does not.
+     */
+    private fun build(
+        alert: ReminderAlert,
+        channelId: String,
+        title: String,
+        text: String,
+        fullScreen: Boolean,
+        ringing: Boolean,
+        quiet: Boolean,
+    ): Notification {
+        val builder = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
             .setWhen(alert.beginMillis)
             .setShowWhen(false)
-            .setCategory(NotificationCompat.CATEGORY_EVENT)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)
-            .setAutoCancel(true)
-            .setOnlyAlertOnce(shownKey(alert) == alert.key)
+            .setCategory(if (ringing) NotificationCompat.CATEGORY_ALARM else NotificationCompat.CATEGORY_EVENT)
+            .setPriority(if (ringing) NotificationCompat.PRIORITY_MAX else NotificationCompat.PRIORITY_HIGH)
             .addExtras(Bundle().apply { putLong(EXTRA_REMINDER_KEY, alert.key) })
-            .setContentIntent(detailIntent(alert))
+            .setContentIntent(if (ringing) alertScreenIntent(alert) else detailIntent(alert))
             .addAction(
                 R.drawable.ic_notification_snooze,
                 context.getString(R.string.reminder_action_snooze),
@@ -115,7 +175,19 @@ class ReminderNotifier @Inject constructor(
                 context.getString(R.string.reminder_action_dismiss),
                 actionIntent(alert, ReminderActionReceiver.ACTION_DISMISS),
             )
-            .build()
+        if (ringing) {
+            builder.setOngoing(true)
+                .setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
+                .setDeleteIntent(actionIntent(alert, ReminderActionReceiver.ACTION_DISMISS))
+        } else {
+            builder.setAutoCancel(true).setOnlyAlertOnce(shownKey(alert) == alert.key)
+        }
+        if (quiet) builder.setSilent(true)
+        if (fullScreen && context.canUseFullScreenIntent()) builder.setFullScreenIntent(alertScreenIntent(alert), true)
+        return builder.build()
+    }
+
+    private fun notify(alert: ReminderAlert, notification: Notification) {
         val manager = NotificationManagerCompat.from(context)
         cancelLegacy(alert)
         try {
@@ -136,10 +208,20 @@ class ReminderNotifier @Inject constructor(
         if (shownKey(alert) == alert.key) manager.cancel(alert.occurrenceKey.toString(), NOTIFICATION_ID)
         // Posted before reminders shared a notification, under the reminder's own key.
         manager.cancel(alert.key.toString(), NOTIFICATION_ID)
+        if (alerts.ringing?.key == alert.key) ReminderRingService.stop(context)
+        alerts.markHandled(alert)
     }
 
     /** Whether a different reminder for [alert]'s occurrence is on screen now. */
-    fun isSuperseded(alert: ReminderAlert): Boolean = shownKey(alert).let { it != null && it != alert.key }
+    fun isSuperseded(alert: ReminderAlert): Boolean {
+        val ringing = alerts.ringing?.takeIf { it.occurrenceKey == alert.occurrenceKey }
+        if (ringing != null) return ringing.key != alert.key
+        return shownKey(alert).let { it != null && it != alert.key }
+    }
+
+    /** Whether [alert] itself is still on screen, as a notification or ringing. */
+    fun isShowing(alert: ReminderAlert): Boolean =
+        alerts.ringing?.key == alert.key || shownKey(alert) == alert.key
 
     /** The key of the reminder showing for [alert]'s occurrence, if any. */
     private fun shownKey(alert: ReminderAlert): Long? {
@@ -175,6 +257,13 @@ class ReminderNotifier @Inject constructor(
             ReminderActionReceiver.intent(context, action, alert),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
         )
+
+    private fun alertScreenIntent(alert: ReminderAlert): PendingIntent = PendingIntent.getActivity(
+        context,
+        ReminderActionReceiver.requestCode(alert, ReminderActionReceiver.ACTION_ALERT_SCREEN),
+        ReminderAlertActivity.intent(context, alert),
+        PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+    )
 
     private fun detailIntent(alert: ReminderAlert): PendingIntent = PendingIntent.getActivity(
         context,

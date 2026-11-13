@@ -96,9 +96,7 @@ The settings screen contains links to the source code, the licence, the issue tr
 - `USE_EXACT_ALARM`, `SCHEDULE_EXACT_ALARM`: deliver reminders at the exact time, including after snoozing.
 - `RECEIVE_BOOT_COMPLETED`: re-register pending reminders after a restart.
 - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`: only to open the system dialog for the “Reliable delivery” setting.
-- `WAKE_LOCK`, `FOREGROUND_SERVICE`, `ACCESS_NETWORK_STATE`: required by the Android system component used for scheduled background work (WorkManager).
-
-`ACCESS_NETWORK_STATE` allows reading *whether* a network connection exists. It does **not** permit using one. Without `INTERNET`, no connection is possible.
+- `USE_FULL_SCREEN_INTENT`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SYSTEM_EXEMPTED`, `WAKE_LOCK`, `VIBRATE`: only for calendars you set to full-screen alerts — showing the alert over the lock screen and, with “Ring until dismissed”, ringing and vibrating until you dismiss or snooze it.
 
 ## 7. Distribution channels
 

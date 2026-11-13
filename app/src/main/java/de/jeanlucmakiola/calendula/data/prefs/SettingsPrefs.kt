@@ -5,6 +5,9 @@ import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
+import de.jeanlucmakiola.calendula.domain.reminders.parseAlertStyles
+import de.jeanlucmakiola.calendula.domain.reminders.toStoredAlertStyles
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.parseAgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.storageValue
@@ -167,6 +170,7 @@ class SettingsPrefs @Inject constructor(
     val perCalendarEventDuration: Flow<Map<Long, Int>> = prefs.flow(SettingsKeys.perCalendarEventDuration)
     val remindersEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.remindersEnabled)
     val mutedReminderCalendarIds: Flow<Set<Long>> = prefs.flow(SettingsKeys.mutedReminderCalendarIds)
+    val reminderAlertStyles: Flow<Map<Long, ReminderAlertStyle>> = prefs.flow(SettingsKeys.reminderAlertStyles)
     val allowColorOnUnsupportedCalendars: Flow<Boolean> =
         prefs.flow(SettingsKeys.allowColorOnUnsupportedCalendars)
     val defaultReminderMinutes: Flow<List<Int>> = prefs.flow(SettingsKeys.defaultReminderMinutes)
@@ -276,6 +280,10 @@ class SettingsPrefs @Inject constructor(
 
     suspend fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) {
         prefs.update(SettingsKeys.mutedReminderCalendarIds) { if (enabled) it - calendarId else it + calendarId }
+    }
+
+    suspend fun setCalendarAlertStyle(calendarId: Long, style: ReminderAlertStyle) {
+        prefs.update(SettingsKeys.reminderAlertStyles) { it + (calendarId to style) }
     }
 
     suspend fun setAllowColorOnUnsupportedCalendars(enabled: Boolean) =
@@ -604,6 +612,10 @@ object SettingsKeys {
      * `Calendars.VISIBLE`: the events still show, only the notifications stop.
      */
     val mutedReminderCalendarIds: Pref<Set<Long>> = idSetPref("muted_reminder_calendar_ids")
+
+    /** Per-calendar alert styles (#171); a calendar absent from the map uses plain notifications. */
+    val reminderAlertStyles: Pref<Map<Long, ReminderAlertStyle>> =
+        nullableStringPref("reminder_alert_styles").map(::parseAlertStyles) { it.toStoredAlertStyles() }
 
     /**
      * Whether to offer a custom event colour on calendars that publish no colour

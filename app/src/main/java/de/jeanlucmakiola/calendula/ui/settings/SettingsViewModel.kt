@@ -37,6 +37,7 @@ import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
 import de.jeanlucmakiola.calendula.data.reminders.ReminderChannels
 import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
@@ -131,6 +132,7 @@ class SettingsViewModel @Inject constructor(
         writableCalendars = calendars.filter { it.canModifyContents },
         reminderCalendars = calendars,
         mutedReminderCalendarIds = this[SettingsKeys.mutedReminderCalendarIds],
+        reminderAlertStyles = this[SettingsKeys.reminderAlertStyles],
         allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
         managedCalendarIds = specialDatesCalendars.values.toSet(),
     )
@@ -369,6 +371,8 @@ class SettingsViewModel @Inject constructor(
             reminderScanner.scan()
         }
     }
+
+    fun setCalendarAlertStyle(calendarId: Long, style: ReminderAlertStyle) = save { setCalendarAlertStyle(calendarId, style) }
 
     /** [calendarId]'s reminder channel, created if needed so its system settings can open (#340). */
     suspend fun reminderChannelFor(calendarId: Long): String? = onChannels { channelFor(calendarId) }
