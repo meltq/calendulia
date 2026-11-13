@@ -71,11 +71,16 @@ class ReminderRingService : Service() {
             stop(intent)
             return START_NOT_STICKY
         }
-        // A redelivered start was never counted by this process.
-        if (intent?.action == ACTION_RING && flags and START_FLAG_REDELIVERY == 0) {
-            alerts.pendingStarts.updateAndGet { (it - 1).coerceAtLeast(0) }
-        }
         val alert = intent?.let(ReminderActionReceiver::alertFrom)
+        try {
+            return startRing(intent, alert, previousStart)
+        } finally {
+            // Only now, once alerts.ringing says whether it rings, so a stop sent meanwhile is never skipped.
+            alert?.let { alerts.pending.remove(it.key) }
+        }
+    }
+
+    private fun startRing(intent: Intent?, alert: ReminderAlert?, previousStart: Int?): Int {
         val notification = intent?.let { IntentCompat.getParcelableExtra(it, EXTRA_NOTIFICATION, Notification::class.java) }
         if (alert == null || notification == null) {
             stopIfIdle()
@@ -107,13 +112,15 @@ class ReminderRingService : Service() {
             // Its screen closes either way; another occurrence goes back to the shade.
             if (previous.occurrenceKey != alert.occurrenceKey) handBack(previous) else alerts.markHandled(previous)
         }
-        val since = intent.getLongExtra(EXTRA_SINCE, System.currentTimeMillis())
+        val since = intent?.getLongExtra(EXTRA_SINCE, System.currentTimeMillis()) ?: System.currentTimeMillis()
         ring(alert, remaining = since + RING_TIMEOUT_MILLIS - System.currentTimeMillis())
         return START_REDELIVER_INTENT
     }
 
     override fun onDestroy() {
         if (rang) releaseRing()
+        // Stopped from outside: its screen must not stay up for a ring that is gone.
+        alerts.ringing?.let(alerts::markHandled)
         alerts.ringing = null
         scope.cancel()
         super.onDestroy()
@@ -124,15 +131,12 @@ class ReminderRingService : Service() {
         releaseRing()
         rang = true
         wakeLock.acquire()
-        // Vibration first: the sound may take a moment to open.
-        vibrator.start()
-        ringing = scope.launch { followCalls() }
         timeout = scope.launch {
             delay(remaining.coerceAtLeast(0L))
             giveUp()
         }
-        // Settings changed while this ring was on its way apply to it too.
-        scope.launch {
+        ringing = scope.launch {
+            // Settings changed while this ring was on its way apply before it makes a sound.
             val verdict = try {
                 withContext(Dispatchers.IO) { notifier.ringVerdict(alert) }
             } catch (e: CancellationException) {
@@ -141,24 +145,37 @@ class ReminderRingService : Service() {
                 Log.w(TAG, "Could not re-check the ring for event ${alert.eventId}", e)
                 RingVerdict.Ring
             }
-            if (alerts.ringing?.key != alert.key || verdict == RingVerdict.Ring) return@launch
-            if (verdict == RingVerdict.HandBack) handBack(alert)
-            end()
-            stopIfIdle()
+            if (verdict != RingVerdict.Ring) {
+                if (verdict == RingVerdict.HandBack) handBack(alert)
+                end()
+                stopIfIdle()
+                return@launch
+            }
+            sound(alert)
         }
     }
 
-    /** The tone, but never over a phone call: it stops for one and comes back after. */
-    private suspend fun followCalls() {
-        var playing = false
+    /**
+     * Tone and vibration, paused for a phone call and back after it, until the
+     * user hides the ring's notification, which would leave no way to stop it.
+     */
+    private suspend fun sound(alert: ReminderAlert) {
+        var sounding = false
         while (true) {
+            if (!notifier.canStillRing(alert)) {
+                end()
+                stopIfIdle()
+                return
+            }
             val inCall = isInCall()
-            if (inCall && playing) {
+            if (inCall && sounding) {
                 tones.stop()
-                playing = false
-            } else if (!inCall && !playing) {
+                vibrator.stop()
+                sounding = false
+            } else if (!inCall && !sounding) {
+                vibrator.start()
                 tones.play(scope, ringSources())
-                playing = true
+                sounding = true
             }
             delay(CALL_CHECK_MILLIS)
         }
@@ -257,14 +274,14 @@ class ReminderRingService : Service() {
                 .putAlert(alert)
                 .putExtra(EXTRA_NOTIFICATION, notification)
                 .putExtra(EXTRA_SINCE, System.currentTimeMillis())
-            alerts.pendingStarts.incrementAndGet()
+            alerts.pending[alert.key] = alert
             return try {
                 RingWakeLock.handOff(context, WAKE_LOCK_TAG)
                 context.startForegroundService(intent)
                 true
             } catch (e: Exception) {
                 Log.w(TAG, "Could not start the ring for event ${alert.eventId}", e)
-                alerts.pendingStarts.updateAndGet { (it - 1).coerceAtLeast(0) }
+                alerts.pending.remove(alert.key)
                 false
             }
         }
@@ -293,9 +310,8 @@ class ReminderRingService : Service() {
             } catch (e: Exception) {
                 Log.w(TAG, "Could not stop the ring", e)
                 // Refused from the background: nothing must ring on regardless,
-                // and the starts this drops will never arrive.
-                context.stopService(Intent(context, ReminderRingService::class.java))
-                alerts.pendingStarts.set(0)
+                // unless a start is still on its way, which this would crash.
+                if (alerts.pending.isEmpty()) context.stopService(Intent(context, ReminderRingService::class.java))
             }
         }
 

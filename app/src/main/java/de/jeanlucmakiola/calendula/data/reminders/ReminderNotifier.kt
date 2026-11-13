@@ -77,19 +77,19 @@ class ReminderNotifier @Inject constructor(
      */
     suspend fun post(alert: ReminderAlert, quiet: Boolean = false, ring: Boolean = true) {
         if (isSilenced(alert.calendarId)) return
-        val chosen = settingsPrefs.reminderAlertStyles.first().alertStyleFor(alert.calendarId)
         val style = when {
             quiet -> ReminderAlertStyle.Notification
-            // A calendar or ring channel the user blocked must not ring regardless.
-            chosen == ReminderAlertStyle.FullScreenRing && (!ring || !channels.canRing(alert.calendarId)) ->
-                ReminderAlertStyle.FullScreen
-            else -> chosen
+            else -> effectiveStyle(alert).let {
+                if (it == ReminderAlertStyle.FullScreenRing && !ring) ReminderAlertStyle.FullScreen else it
+            }
         }
+        // Rung already and handed back to the shade: a catch-up post leaves it there.
+        if (style == ReminderAlertStyle.FullScreenRing && isShowing(alert)) return
         val channelId = channelFor(alert, style) ?: return
         val title = displayTitle(alert)
         val text = contentText(alert)
         if (style == ReminderAlertStyle.FullScreenRing) {
-            if (ReminderRingService.start(context, alerts, alert, build(alert, channelId, title, text, style, quiet))) {
+            if (ReminderRingService.start(context, alerts, alert, build(alert, channelId, title, text, style, quiet = false))) {
                 // An earlier reminder for this occurrence gives way to the ring.
                 NotificationManagerCompat.from(context).cancel(alert.occurrenceKey.toString(), NOTIFICATION_ID)
                 cancelLegacy(alert)
@@ -98,7 +98,7 @@ class ReminderNotifier @Inject constructor(
             // Android refused the ring: still full-screen, sounding once on the calendar's channel.
             stopRing(RingMatch.Occurrence(alert.occurrenceKey))
             val fallback = channelFor(alert, ReminderAlertStyle.FullScreen) ?: return
-            notify(alert, build(alert, fallback, title, text, ReminderAlertStyle.FullScreen, quiet))
+            notify(alert, build(alert, fallback, title, text, ReminderAlertStyle.FullScreen, quiet = false))
             return
         }
         // A fresh reminder replaces a ring for its occurrence from before the style changed.
@@ -108,10 +108,22 @@ class ReminderNotifier @Inject constructor(
 
     /** Whether a ring for [alert] should go on, now that settings may have changed since it started. */
     suspend fun ringVerdict(alert: ReminderAlert): RingVerdict = when {
-        !settingsPrefs.remindersEnabled.first() || isSilenced(alert.calendarId) -> RingVerdict.Drop
-        settingsPrefs.reminderAlertStyles.first().alertStyleFor(alert.calendarId) != ReminderAlertStyle.FullScreenRing ||
-            !channels.canRing(alert.calendarId) -> RingVerdict.HandBack
+        !settingsPrefs.remindersEnabled.first() || !canPost() || isSilenced(alert.calendarId) -> RingVerdict.Drop
+        effectiveStyle(alert) != ReminderAlertStyle.FullScreenRing -> RingVerdict.HandBack
         else -> RingVerdict.Ring
+    }
+
+    /** Whether a live ring for [alert] may go on: its notification can still be seen. */
+    fun canStillRing(alert: ReminderAlert): Boolean = canPost() && channels.canRing(alert.calendarId)
+
+    /** The calendar's style, short of ringing where the user blocked its calendar, group or the ring channel. */
+    private suspend fun effectiveStyle(alert: ReminderAlert): ReminderAlertStyle {
+        val chosen = settingsPrefs.reminderAlertStyles.first().alertStyleFor(alert.calendarId)
+        return if (chosen == ReminderAlertStyle.FullScreenRing && !channels.canRing(alert.calendarId)) {
+            ReminderAlertStyle.FullScreen
+        } else {
+            chosen
+        }
     }
 
     private fun channelFor(alert: ReminderAlert, style: ReminderAlertStyle): String? = try {
@@ -223,7 +235,7 @@ class ReminderNotifier @Inject constructor(
 
     /** Stop the ring if it is for a reminder [match]es; [handBack] keeps it in the shade, quietly. */
     fun stopRing(match: RingMatch, handBack: Boolean = false) {
-        if (alerts.mayBeRinging) ReminderRingService.stop(context, alerts, match, handBack)
+        if (alerts.mayRing(match)) ReminderRingService.stop(context, alerts, match, handBack)
     }
 
     /** Whether a different reminder for [alert]'s occurrence is on screen now. */

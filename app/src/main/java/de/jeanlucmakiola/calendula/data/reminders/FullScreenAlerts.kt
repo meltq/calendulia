@@ -4,7 +4,7 @@ import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
-import java.util.concurrent.atomic.AtomicInteger
+import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -21,11 +21,12 @@ class FullScreenAlerts @Inject constructor() {
     var ringing: ReminderAlert? = null
         internal set
 
-    /** Rings handed to [ReminderRingService] that have not reached it yet. */
-    internal val pendingStarts = AtomicInteger(0)
+    /** Rings handed to [ReminderRingService] that have not reached it yet, by key. */
+    internal val pending = ConcurrentHashMap<Long, ReminderAlert>()
 
-    /** Whether a ring is going or on its way, so a stop is worth sending. */
-    val mayBeRinging: Boolean get() = ringing != null || pendingStarts.get() > 0
+    /** Whether a ring going or on its way [match]es, so a stop is worth sending. */
+    fun mayRing(match: RingMatch): Boolean =
+        ringing?.let(match::matches) == true || pending.values.any(match::matches)
 
     private val handledKeys = MutableSharedFlow<Long>(
         extraBufferCapacity = 8,
