@@ -310,14 +310,6 @@ internal enum class TimelineKind(
     // A run of days often straddles two weeks, so no single number fits it.
     MultiDay(showWeekNumber = false, todayText = R.string.week_today_action, headerBias = 0f),
     Day(showWeekNumber = false, todayText = R.string.day_today_action, headerBias = -1f),
-    ;
-
-    fun title(start: LocalDate, end: LocalDate, locale: Locale, currentYear: Int, abbreviated: Boolean): String =
-        if (this == Day) {
-            formatDayTitle(start, locale, currentYear, abbreviated)
-        } else {
-            formatWeekTitle(start, end, locale, currentYear, abbreviated)
-        }
 }
 
 internal val CalendarView.timelineKind: TimelineKind
@@ -492,9 +484,10 @@ private fun PagedTimelineScreen(
     val jumpToToday = { jumpToDate(today) }
 
     val locale = currentLocale()
-    val (title, shortTitle) = remember(titleKind, weekStart, weekEnd, locale, today.year) {
-        titleKind.title(weekStart, weekEnd, locale, today.year, abbreviated = false) to
-            titleKind.title(weekStart, weekEnd, locale, today.year, abbreviated = true)
+    // The day view names the month too: its header already shows weekday and date (#501).
+    val (title, shortTitle) = remember(weekStart, weekEnd, locale, today.year) {
+        formatTimelineTitle(weekStart, weekEnd, locale, today.year, abbreviated = false) to
+            formatTimelineTitle(weekStart, weekEnd, locale, today.year, abbreviated = true)
     }
     PublishChrome(
         ScreenChrome(
@@ -2016,7 +2009,7 @@ private fun minToHm(min: Int, is24Hour: Boolean, locale: java.util.Locale): Stri
     formatMinuteOfDay(min, is24Hour, locale)
 
 /**
- * The week's title: just the month [weekStart] falls in.
+ * Every timeline's title, the day view's included: just the month [weekStart] falls in.
  *
  * The day numbers are already in the column headers directly below, so spelling
  * out "13.–19. Jul" restates them in the widest string in the bar. Naming the
@@ -2031,7 +2024,7 @@ private fun minToHm(min: Int, is24Hour: Boolean, locale: java.util.Locale): Stri
  * "December" with no year would be actively misleading while the reader is
  * looking straight at January dates.
  */
-private fun formatWeekTitle(
+private fun formatTimelineTitle(
     weekStart: LocalDate,
     weekEnd: LocalDate,
     locale: Locale,
@@ -2046,17 +2039,3 @@ private fun formatWeekTitle(
         forceYear = weekEnd.year != weekStart.year,
     )
 }
-
-/** The day's title: its weekday and date, abbreviated to the date alone when short of room. */
-private fun formatDayTitle(
-    date: LocalDate,
-    locale: Locale,
-    currentYear: Int,
-    abbreviated: Boolean = false,
-): String =
-    formatCalendarTitle(
-        date = date.toJavaLocalDate(),
-        locale = locale,
-        currentYear = currentYear,
-        skeleton = if (abbreviated) "dMMM" else "EEEdMMM",
-    )

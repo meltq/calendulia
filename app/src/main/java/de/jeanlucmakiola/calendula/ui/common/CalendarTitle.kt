@@ -8,9 +8,9 @@ import java.util.Locale
  * out in [locale]'s own order, with the year shown only when [date] falls outside
  * [currentYear].
  *
- * Pass [skeleton] *without* a year field — "LLLL" for a month, "EEEdMMM" for a
- * day. A skeleton is a field list, so wanting the year is just asking for one
- * more field; the locale still decides where it lands ("July 2026" vs "2026年7月").
+ * Pass [skeleton] *without* a year field, e.g. "LLLL" for a month. A skeleton
+ * is a field list, so wanting the year is just asking for one more field; the
+ * locale still decides where it lands ("July 2026" vs "2026年7月").
  *
  * Dropping the year in the current year is the one bit of policy here: the title
  * sits directly above a grid that already says which year it is, and the year's
