@@ -1591,8 +1591,7 @@ private fun ReminderPickerDialog(
     var customMode by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("") }
     val units = customReminderUnits(isAllDay)
-    var pickedUnit by rememberSaveable { mutableStateOf(units.first()) }
-    val unit = pickedUnit.takeIf { it in units } ?: units.first()
+    var unit by rememberSaveable { mutableStateOf(units.first()) }
     val customMinutes = amountText.toIntOrNull()
         ?.takeIf { it in 1..999 }
         ?.let { it * unit.minutesFactor }
@@ -1644,7 +1643,7 @@ private fun ReminderPickerDialog(
                 DialogUnitDropdown(
                     label = stringResource(reminderUnitLabel(unit)),
                     entries = units.map { stringResource(reminderUnitLabel(it)) },
-                    onPick = { pickedUnit = units[it] },
+                    onPick = { unit = units[it] },
                 )
             }
         }

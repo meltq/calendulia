@@ -49,6 +49,12 @@ class AllDayReminderEncodingTest {
     }
 
     @Test
+    fun `whole-day rounding matches the encoder and keeps the default sentinel`() {
+        assertThat(wholeDayReminders(listOf(2_880, 10, 1_500, 0, MINUTES_DEFAULT)))
+            .containsExactly(MINUTES_DEFAULT, 0, 1_440, 2_880).inOrder()
+    }
+
+    @Test
     fun `three weeks before fires at 9am local across a DST change`() {
         val afterDst = LocalDate.of(2026, 4, 10) // CEST; three weeks earlier is CET
         val raw = toProviderAllDayMinutes(3 * 10_080, afterDst, berlin, nineAm)
