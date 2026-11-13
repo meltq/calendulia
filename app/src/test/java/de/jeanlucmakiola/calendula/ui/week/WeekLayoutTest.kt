@@ -356,12 +356,12 @@ class WeekLayoutTest {
         )
         assertThat(state.allDaySpans.map { it.lane }).containsExactly(0, 0)
 
-        val preview = state.withStripPreview(StripDrag(held, dayShift = 2), zone).allDaySpans
+        val preview = state.withStripPreview(listOf(StripDrag(held, dayShift = 2)), zone).allDaySpans
         val moved = preview.single { it.event.instanceId == held.instanceId }
 
         assertThat(moved.event).isEqualTo(held)
         assertThat(moved.startCol).isEqualTo(2)
         assertThat(preview.map { it.lane }).containsExactly(0, 1)
-        assertThat(state.withStripPreview(StripDrag(held, dayShift = 2, overGrid = true), zone)).isSameInstanceAs(state)
+        assertThat(state.withStripPreview(listOf(StripDrag(held, dayShift = 2, overGrid = true)), zone)).isSameInstanceAs(state)
     }
 }

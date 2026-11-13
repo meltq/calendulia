@@ -14,8 +14,7 @@ import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.unit.IntSize
 import de.jeanlucmakiola.calendula.domain.EventInstance
-import de.jeanlucmakiola.calendula.ui.common.LocalEventMove
-import kotlinx.coroutines.flow.StateFlow
+import de.jeanlucmakiola.calendula.ui.common.nextMoveToken
 import kotlinx.datetime.LocalDate
 import kotlin.math.abs
 
@@ -107,11 +106,22 @@ data class MonthChipDrag(
     val time: String? = null,
 )
 
+/** A drop parked by a newer pickup while its write still runs — see [MonthDragController.held]. */
+data class HeldChip(
+    val copy: MonthChipDrag,
+    val token: Long,
+    val handedOver: Boolean = false,
+    /** Where the grid now draws the drop, in root coordinates, once a row seats it. */
+    val seat: Offset? = null,
+)
+
 /** Where a finished chip drag asks its event to go, as a whole-day shift. */
 data class MonthChipDrop(
     val event: EventInstance,
     val grabDate: LocalDate,
     val targetDate: LocalDate,
+    /** The drop's identity, which its held copy waits on — see [MonthDragController.settledToken]. */
+    val token: Long,
 )
 
 /**
@@ -167,19 +177,22 @@ class MonthDragController {
         private set
 
     /**
-     * The last drop this controller made, kept past [release] for [beginUndo] —
-     * the confirmation chip carries Undo long after the copy is gone.
+     * This controller's recent drops by token, kept past [release] for
+     * [beginUndo] — the confirmation chip carries Undo long after the copy is
+     * gone, and it may be any of them the chip offers to undo.
      */
-    private var undoable: MonthChipDrag? = null
+    private val undoable = LinkedHashMap<Long, MonthChipDrag>()
 
     /**
-     * The abandoned-move counter, read at the drop so the mark can't be a
-     * composition behind the tick it is compared against.
+     * Earlier drops still being written when another chip was picked up. They
+     * keep their copy and their ghost until their own token settles, rather than
+     * vanishing and flashing back on the old day (#494).
      */
-    var abandonedTicks: StateFlow<Int>? = null
+    var held: List<HeldChip> by mutableStateOf(emptyList())
+        private set
 
-    /** What [abandonedTicks] stood at when the settling chip was let go. */
-    var settledAbandonedMark: Int = 0
+    /** The token of the drop (or undo) [settling] is waiting on. */
+    var settledToken: Long = 0L
         private set
 
     private var event: EventInstance? = null
@@ -208,7 +221,7 @@ class MonthDragController {
         this.event = event
         this.grabDate = grabDate
         this.time = time
-        settling = null
+        parkSettling()
         isDragging = true
         liftedInstanceId = event.instanceId
         grab = pointerInRoot - chipInRoot
@@ -235,6 +248,39 @@ class MonthDragController {
     }
 
     /**
+     * Whether [event]'s chip belongs to a held drop and must stay a ghost: its
+     * source, or once a row seats it, the chip the grid draws on its target day.
+     */
+    fun isHeldChip(event: EventInstance, days: List<LocalDate>?): Boolean = held.any { parked ->
+        !parked.handedOver && (
+            parked.copy.event.instanceId == event.instanceId ||
+                (
+                    parked.seat != null && days != null && parked.copy.targetDate in days &&
+                        isSameEvent(event, parked.copy.event)
+                    )
+            )
+    }
+
+    /** Move a still-settling drop to [held] before a new pickup takes the slot. */
+    private fun parkSettling() {
+        val landed = settling
+        if (landed != null) held = held + HeldChip(landed, settledToken)
+        settling = null
+        settledInRoot = null
+        settledGhost = false
+    }
+
+    /** Stop ghosting the held drop [token]'s source while its copy fades. */
+    fun handOverHeld(token: Long) {
+        held = held.map { if (it.token == token) it.copy(handedOver = true) else it }
+    }
+
+    /** Drop the held copy [token] once it has faded. */
+    fun releaseHeld(token: Long) {
+        held = held.filterNot { it.token == token }
+    }
+
+    /**
      * Whether [days] holds the chip the grid has drawn for the settled drop —
      * the seat the copy is on its way to, which must ghost until it gets there.
      */
@@ -250,6 +296,13 @@ class MonthDragController {
      * nearest where the chip was let go is the one the finger was over.
      */
     fun noteSettled(token: Any) {
+        val row = rows[token]
+        if (row != null && held.any { it.seat == null }) {
+            held = held.map { parked ->
+                val target = parked.copy.targetDate
+                if (parked.seat != null || target == null) parked else parked.copy(seat = row.seatOf(parked.copy.event, target))
+            }
+        }
         val landed = settling ?: return
         val target = landed.targetDate ?: return
         val at = rows[token]?.seatOf(landed.event, target) ?: return
@@ -265,16 +318,16 @@ class MonthDragController {
      * there is no drop of this controller's left to undo, or the grid doesn't
      * seat the moved event where the chip would have to start from.
      */
-    fun beginUndo(): Boolean {
-        val last = undoable ?: return false
-        undoable = null
+    fun beginUndo(token: Long, dropToken: Long): Boolean {
+        val last = undoable.remove(dropToken) ?: return false
+        parkSettling()
         val from = last.targetDate ?: return false
         val at = rows.values.firstNotNullOfOrNull { it.seatOf(last.event, from) } ?: return false
         settling = last.copy(grabDate = from, targetDate = last.grabDate, topLeftInRoot = at)
         liftedInstanceId = last.event.instanceId
         settledGhost = true
         settledInRoot = null
-        settledAbandonedMark = abandonedTicks?.value ?: 0
+        settledToken = token
         return true
     }
 
@@ -294,10 +347,11 @@ class MonthDragController {
         )
         liftedInstanceId = landed.event.instanceId
         settledGhost = true
-        undoable = settling
-        settledAbandonedMark = abandonedTicks?.value ?: 0
+        settledToken = nextMoveToken()
+        undoable[settledToken] = requireNotNull(settling)
+        if (undoable.size > UNDOABLE_KEPT) undoable.remove(undoable.keys.first())
         drops++
-        return MonthChipDrop(landed.event, landed.grabDate, target)
+        return MonthChipDrop(landed.event, landed.grabDate, target, settledToken)
     }
 
     /**
@@ -355,9 +409,10 @@ class MonthDragController {
 
 @Composable
 fun rememberMonthDragController(): MonthDragController {
-    val controller = remember { MonthDragController() }
-    controller.abandonedTicks = LocalEventMove.current?.abandoned
-    return controller
+    return remember { MonthDragController() }
 }
 
 val LocalMonthDrag = compositionLocalOf<MonthDragController?> { null }
+
+/** How many recent drops a month controller keeps for an undo to carry back. */
+private const val UNDOABLE_KEPT = 8
