@@ -80,6 +80,7 @@ class BackupPlanTest {
     @Test
     fun `combined mode is one target holding every calendar`() {
         val target = backupTargets(listOf(cal(1L), cal(2L)), combined = true).single()
+        assertThat(target.key).isEqualTo(COMBINED_SERIES)
         assertThat(target.calendarIds).containsExactly(1L, 2L)
         assertThat(target.baseName).isEqualTo(COMBINED_BACKUP_BASE)
         assertThat(target.calendarName).isNull()
@@ -91,52 +92,108 @@ class BackupPlanTest {
         assertThat(backupFileName("Work", at)).isEqualTo("Work_2026-11-13_14-30-05.ics")
     }
 
+    private val work = BackupTarget("1", setOf(1L), "Work", "Work")
+
     @Test
-    fun `pruning keeps the newest files of the series and nothing else`() {
-        val target = BackupTarget(setOf(1L), "Work", "Work")
-        val existing = listOf(
-            "Work_2026-11-10_09-00-00.ics",
-            "Work_2026-11-12_09-00-00.ics",
-            "Work_2026-11-11_09-00-00.ics",
-            "Work notes.ics",
-            "Work_backup.ics",
-            "Workshop_2026-11-01_09-00-00.ics",
-            "Work-7_2026-11-01_09-00-00.ics",
-        )
-        val plan = planBackupFiles(listOf(target), existing, at, keep = 3).single()
+    fun `pruning keeps the newest recorded files and nothing else`() {
+        val ledger = mapOf("1" to listOf("Work_a.ics", "Work_b.ics", "Work_c.ics"))
+        val existing = setOf("Work_a.ics", "Work_b.ics", "Work_c.ics", "Work_2026-11-01_09-00-00.ics", "Work notes.ics")
+        val plan = planBackupFiles(listOf(work), ledger, existing, at, keep = 3).single()
         assertThat(plan.fileName).isEqualTo("Work_2026-11-13_14-30-05.ics")
-        assertThat(plan.prune).containsExactly("Work_2026-11-10_09-00-00.ics")
+        assertThat(plan.keep).containsExactly("Work_b.ics", "Work_c.ics").inOrder()
+        assertThat(plan.prune).containsExactly("Work_a.ics")
     }
 
     @Test
     fun `keeping one replaces every earlier file`() {
-        val target = BackupTarget(setOf(1L), "Work", "Work")
-        val existing = listOf("Work_2026-11-11_09-00-00.ics", "Work_2026-11-12_09-00-00.ics")
-        val plan = planBackupFiles(listOf(target), existing, at, keep = 1).single()
-        assertThat(plan.prune).containsExactly("Work_2026-11-11_09-00-00.ics", "Work_2026-11-12_09-00-00.ics").inOrder()
+        val ledger = mapOf("1" to listOf("Work_a.ics", "Work_b.ics"))
+        val plan = planBackupFiles(listOf(work), ledger, setOf("Work_a.ics", "Work_b.ics"), at, keep = 1).single()
+        assertThat(plan.keep).isEmpty()
+        assertThat(plan.prune).containsExactly("Work_a.ics", "Work_b.ics").inOrder()
+    }
+
+    @Test
+    fun `files gone from the folder are forgotten, not counted`() {
+        val ledger = mapOf("1" to listOf("Work_a.ics", "Work_b.ics"))
+        val plan = planBackupFiles(listOf(work), ledger, setOf("Work_b.ics"), at, keep = 2).single()
+        assertThat(plan.keep).containsExactly("Work_b.ics")
+        assertThat(plan.prune).isEmpty()
+    }
+
+    @Test
+    fun `a same-named calendar never prunes another calendar's files`() {
+        // Local "Work" (id 1) was backed up; the user now backs up a synced "Work" (id 9) instead.
+        val ledger = mapOf("1" to listOf("Work_a.ics"))
+        val synced = backupTargets(listOf(cal(9L, "Work")), combined = false).single()
+        val plan = planBackupFiles(listOf(synced), ledger, setOf("Work_a.ics"), at, keep = 1).single()
+        assertThat(plan.prune).isEmpty()
     }
 
     @Test
     fun `a rerun in the same second never prunes the file it writes`() {
-        val target = BackupTarget(setOf(1L), "Work", "Work")
-        val plan = planBackupFiles(listOf(target), listOf("Work_2026-11-13_14-30-05.ics"), at, keep = 1).single()
+        val name = "Work_2026-11-13_14-30-05.ics"
+        val plan = planBackupFiles(listOf(work), mapOf("1" to listOf(name)), setOf(name), at, keep = 1).single()
         assertThat(plan.prune).isEmpty()
     }
 
     @Test
     fun `the pre-411 backup file is the combined series' oldest member`() {
-        val target = BackupTarget(setOf(1L, 2L), COMBINED_BACKUP_BASE, null)
-        val existing = listOf(LEGACY_BACKUP_FILE, "calendula-backup_2026-11-12_09-00-00.ics")
-        assertThat(planBackupFiles(listOf(target), existing, at, keep = 3).single().prune).isEmpty()
-        assertThat(planBackupFiles(listOf(target), existing, at, keep = 2).single().prune)
+        val target = BackupTarget(COMBINED_SERIES, setOf(1L, 2L), COMBINED_BACKUP_BASE, null)
+        val newer = "calendula-backup_2026-11-12_09-00-00.ics"
+        val ledger = mapOf(COMBINED_SERIES to listOf(newer))
+        val existing = setOf(LEGACY_BACKUP_FILE, newer)
+        assertThat(planBackupFiles(listOf(target), ledger, existing, at, keep = 3).single().prune).isEmpty()
+        assertThat(planBackupFiles(listOf(target), ledger, existing, at, keep = 2).single().prune)
             .containsExactly(LEGACY_BACKUP_FILE)
     }
 
     @Test
     fun `per-calendar series leave the legacy combined file alone`() {
-        val target = BackupTarget(setOf(1L), "Work", "Work")
-        val plan = planBackupFiles(listOf(target), listOf(LEGACY_BACKUP_FILE), at, keep = 1).single()
+        val plan = planBackupFiles(listOf(work), emptyMap(), setOf(LEGACY_BACKUP_FILE), at, keep = 1).single()
         assertThat(plan.prune).isEmpty()
+    }
+
+    @Test
+    fun `the ledger records what the run kept, failed to delete and wrote`() {
+        val plan = planBackupFiles(
+            listOf(work),
+            mapOf("1" to listOf("Work_a.ics", "Work_b.ics")),
+            setOf("Work_a.ics", "Work_b.ics"),
+            at,
+            keep = 2,
+        ).single()
+        val next = updatedBackupLedger(
+            previous = mapOf("1" to listOf("Work_a.ics", "Work_b.ics"), "2" to listOf("Home_a.ics"), "7" to listOf("Gone.ics")),
+            written = listOf(plan),
+            writtenNames = mapOf("1" to "Work_new (1).ics"),
+            undeleted = setOf("Work_a.ics"),
+            liveKeys = setOf("1", "2"),
+        )
+        assertThat(next).containsExactly(
+            "1", listOf("Work_a.ics", "Work_b.ics", "Work_new (1).ics"),
+            "2", listOf("Home_a.ics"),
+        )
+    }
+
+    @Test
+    fun `a series whose write failed keeps its old entry`() {
+        val plan = planBackupFiles(listOf(work), mapOf("1" to listOf("Work_a.ics")), setOf("Work_a.ics"), at, keep = 1)
+        val next = updatedBackupLedger(
+            previous = mapOf("1" to listOf("Work_a.ics")),
+            written = plan,
+            writtenNames = emptyMap(),
+            undeleted = emptySet(),
+            liveKeys = setOf("1"),
+        )
+        assertThat(next).containsExactly("1", listOf("Work_a.ics"))
+    }
+
+    @Test
+    fun `the ledger round-trips through storage`() {
+        val ledger = mapOf("3" to listOf("Work_b.ics", "Work_a (1).ics"), COMBINED_SERIES to listOf("calendula-backup_x.ics"))
+        assertThat(parseBackupLedger(persistBackupLedger(ledger))).isEqualTo(ledger)
+        assertThat(persistBackupLedger(emptyMap())).isNull()
+        assertThat(parseBackupLedger("garbage|/x|4/")).isEmpty()
     }
 
     @Test
@@ -145,60 +202,19 @@ class BackupPlanTest {
         assertThat(normalizeBackupKeep(3)).isEqualTo(3)
         assertThat(normalizeBackupKeep(50)).isEqualTo(10)
     }
+
     @Test
     fun `a suffixed name that meets a real one is told apart again`() {
         val targets = backupTargets(
             listOf(cal(5L, "Work"), cal(6L, "Work"), cal(9L, "Work-5")),
             combined = false,
         )
-        assertThat(targets.map { it.baseName }.toSet()).hasSize(3)
         assertThat(targets.map { it.baseName }).containsExactly("Work-5-5", "Work-6", "Work-5-9").inOrder()
     }
 
     @Test
     fun `an emoji at the length limit is not split`() {
         val name = "a".repeat(59) + "\uD83D\uDCC5" + "tail"
-        val cleaned = sanitizeBackupName(name)
-        assertThat(cleaned).isEqualTo("a".repeat(59) + "\uD83D\uDCC5")
-        assertThat(Character.isHighSurrogate(cleaned.last())).isFalse()
-    }
-
-    @Test
-    fun `a renamed calendar keeps pruning the files of its old name`() {
-        val target = backupTargets(
-            listOf(cal(1L, "Job")),
-            combined = false,
-            previousBases = mapOf(1L to setOf("Work")),
-        ).single()
-        assertThat(target.formerBaseNames).containsExactly("Work")
-        val existing = listOf("Work_2026-11-10_09-00-00.ics", "Work_2026-11-12_09-00-00.ics")
-
-        val keepTwo = planBackupFiles(listOf(target), existing, at, keep = 2).single()
-        assertThat(keepTwo.prune).containsExactly("Work_2026-11-10_09-00-00.ics")
-        assertThat(keepTwo.liveFormerBaseNames).containsExactly("Work")
-        assertThat(updatedBackupBases(emptyMap(), listOf(keepTwo))).containsExactly(1L, setOf("Work", "Job"))
-
-        val keepOne = planBackupFiles(listOf(target), existing, at, keep = 1).single()
-        assertThat(keepOne.prune).hasSize(2)
-        assertThat(updatedBackupBases(mapOf(1L to setOf("Work"), 2L to setOf("X")), listOf(keepOne)))
-            .containsExactly(1L, setOf("Job"), 2L, setOf("X"))
-    }
-
-    @Test
-    fun `a former name now used by another calendar is not claimed`() {
-        val targets = backupTargets(
-            listOf(cal(1L, "Job"), cal(2L, "Work")),
-            combined = false,
-            previousBases = mapOf(1L to setOf("Work")),
-        )
-        assertThat(targets.first().formerBaseNames).isEmpty()
-    }
-
-    @Test
-    fun `series names round-trip through storage`() {
-        val bases = mapOf(3L to setOf("Work", "Job"), 1L to setOf("Home"))
-        assertThat(parseBackupBases(persistBackupBases(bases))).isEqualTo(bases)
-        assertThat(persistBackupBases(emptyMap())).isNull()
-        assertThat(parseBackupBases("garbage|x/y|4/")).isEmpty()
+        assertThat(sanitizeBackupName(name)).isEqualTo("a".repeat(59) + "\uD83D\uDCC5")
     }
 }

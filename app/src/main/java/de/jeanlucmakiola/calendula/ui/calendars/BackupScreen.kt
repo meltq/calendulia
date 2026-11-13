@@ -98,8 +98,6 @@ fun BackupScreen(
     val snackbarHostState = remember { SnackbarHostState() }
 
     // The one-calendar shortcut; the per-calendar selector owns its own launcher.
-    // The id is taken at the tap, so a result delivered into a recreated screen
-    // still knows what to export.
     var shortcutExportId by rememberSaveable { mutableStateOf<Long?>(null) }
     val createBackup = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.CreateDocument("text/calendar"),
@@ -345,7 +343,14 @@ private fun BackupContent(
             position = Position.Bottom,
             onClick = onEditKeep,
         )
-        GroupedHint(backupStatusText(autoBackup.status), style = MaterialTheme.typography.bodySmall)
+        GroupedHint(
+            if (selectedCount == 0) {
+                stringResource(R.string.calendars_auto_backup_nothing_selected)
+            } else {
+                backupStatusText(autoBackup.status)
+            },
+            style = MaterialTheme.typography.bodySmall,
+        )
     }
 }
 
@@ -395,7 +400,7 @@ private fun ExportCalendarPicker(
         )
         Button(
             onClick = {
-                runCatching { createBackup.launch("calendula-backup-${LocalDate.now()}.ics") }
+                runCatching { createBackup.launch(defaultBackupName()) }
             },
             enabled = selected.isNotEmpty(),
             modifier = Modifier

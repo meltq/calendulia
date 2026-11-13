@@ -37,11 +37,10 @@ sealed interface BackupUiState {
  *
  * A failure is raised only when *neither* is possible — deliberately not
  * [calendarListFailure] on its own, which would call an all-hidden device a
- * failure while its calendars are still perfectly exportable. When both
- * halves are dead the list itself usually says why (no calendars, everything
- * switched off); [FailureReason.NoImportTarget] covers the remaining case, where
- * calendars exist and are visible but every one of them is read-only, managed or
- * not synced to the device.
+ * failure while its calendars are still perfectly exportable. Since export
+ * reads hidden and read-only calendars too, both halves are dead only when there
+ * is no calendar at all, or every one is managed or not synced to the device
+ * ([FailureReason.NoImportTarget] unless the list itself says why).
  */
 fun backupUiState(calendars: List<CalendarSource>): BackupUiState {
     val exportable = calendars.filter { it.isBackupCandidate }

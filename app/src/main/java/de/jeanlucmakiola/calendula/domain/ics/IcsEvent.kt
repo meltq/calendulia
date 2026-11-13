@@ -36,6 +36,8 @@ data class IcsEvent(
     val availability: Availability = Availability.Busy,
     /** Source calendar name, emitted as `X-CALENDULA-CALENDAR` so a combined backup can fan back out. */
     val calendarName: String? = null,
+    /** The provider calendar the event was read from; not written to the file. */
+    val calendarId: Long? = null,
 )
 
 /**

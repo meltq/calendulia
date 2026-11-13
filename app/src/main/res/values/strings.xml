@@ -902,6 +902,7 @@
         <item quantity="other">%d calendars</item>
     </plurals>
     <string name="calendars_auto_backup_calendars_none">No calendar selected</string>
+    <string name="calendars_auto_backup_nothing_selected">No calendar is selected, so nothing is backed up.</string>
     <string name="calendars_auto_backup_calendars_hint">Local calendars are backed up unless you turn them off. Synced calendars already live on their server, so add them here only if you want a copy in the backup folder too.</string>
     <string name="calendars_auto_backup_combined">Single file</string>
     <string name="calendars_auto_backup_combined_on">All calendars in one file</string>

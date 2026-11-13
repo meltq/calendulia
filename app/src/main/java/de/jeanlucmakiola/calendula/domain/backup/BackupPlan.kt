@@ -51,23 +51,33 @@ data class BackupSelection(
 
 /** One backup file series: the calendars it holds and the name its files start with. */
 data class BackupTarget(
+    /** Stable identity of the series in the [BackupLedger]: the calendar id, or [COMBINED_SERIES]. */
+    val key: String,
     val calendarIds: Set<Long>,
     val baseName: String,
     /** The calendar name written into the file, or null for a combined file. */
     val calendarName: String?,
-    /** Names this calendar's series went by before a rename; their files are pruned with it. */
-    val formerBaseNames: Set<String> = emptySet(),
 )
 
 /** What one run writes and which earlier files it removes afterwards. */
 data class BackupFilePlan(
     val target: BackupTarget,
     val fileName: String,
+    /** Earlier files of this series that stay, oldest first. */
+    val keep: List<String>,
     /** Earlier files of this series beyond the retention count, oldest first. */
     val prune: List<String>,
-    /** Former names of the series that still have files after [prune], so they stay tracked. */
-    val liveFormerBaseNames: Set<String> = emptySet(),
 )
+
+/**
+ * The files the automatic backup has written, per series key, oldest first.
+ * Pruning only ever deletes names recorded here, so a series is its files, not
+ * whatever currently matches a calendar's name: renames, same-named calendars
+ * and the user's own files in the folder can't pull in the wrong ones.
+ */
+typealias BackupLedger = Map<String, List<String>>
+
+const val COMBINED_SERIES = "combined"
 
 /** The combined file's series name; also the fixed name used before #411. */
 const val COMBINED_BACKUP_BASE = "calendula-backup"
@@ -84,7 +94,6 @@ private const val ICS_EXTENSION = ".ics"
 private const val MAX_BASE_LENGTH = 60
 private const val STAMP_PATTERN = "yyyy-MM-dd_HH-mm-ss"
 private val STAMP_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern(STAMP_PATTERN)
-private const val STAMP_REGEX = "\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}"
 private val FORBIDDEN_CHARS = Regex("[\\\\/:*?\"<>|\\p{Cntrl}]")
 private val WHITESPACE = Regex("\\s+")
 
@@ -100,7 +109,7 @@ fun sanitizeBackupName(name: String, fallback: String = "calendar"): String {
         .replace(WHITESPACE, " ")
         .trim()
         .trimStart('.')
-    // Cut by code point, so an emoji at the limit isn't split into a lone surrogate.
+    // By code point, so an emoji at the limit isn't split into a lone surrogate.
     val end = if (cleaned.codePointCount(0, cleaned.length) > MAX_BASE_LENGTH) {
         cleaned.offsetByCodePoints(0, MAX_BASE_LENGTH)
     } else {
@@ -111,21 +120,16 @@ fun sanitizeBackupName(name: String, fallback: String = "calendar"): String {
 
 /**
  * The file series the automatic backup writes: one combined file, or one per
- * calendar named after it. Names are compared case-insensitively, as most
- * storage is; calendars whose names clash (a local and a synced "Personal")
- * take their id as a suffix until every series is distinct, so none prunes
- * another's files. [previousBases] — the series names each calendar's files
- * still carry from earlier runs — let a renamed calendar keep pruning its old
- * files.
+ * calendar named after it. Calendars whose names clash case-insensitively (a
+ * local and a synced "Personal") take their id as a suffix until every name in
+ * the run is distinct, so no two series write the same file.
  */
-fun backupTargets(
-    calendars: List<CalendarSource>,
-    combined: Boolean,
-    previousBases: Map<Long, Set<String>> = emptyMap(),
-): List<BackupTarget> {
+fun backupTargets(calendars: List<CalendarSource>, combined: Boolean): List<BackupTarget> {
     if (calendars.isEmpty()) return emptyList()
     if (combined) {
-        return listOf(BackupTarget(calendars.map { it.id }.toSet(), COMBINED_BACKUP_BASE, calendarName = null))
+        return listOf(
+            BackupTarget(COMBINED_SERIES, calendars.map { it.id }.toSet(), COMBINED_BACKUP_BASE, calendarName = null),
+        )
     }
     val bases = calendars.associateTo(LinkedHashMap()) { it.id to sanitizeBackupName(it.displayName) }
     while (true) {
@@ -136,15 +140,12 @@ fun backupTargets(
         if (clashing.isEmpty()) break
         clashing.forEach { (id, base) -> bases[id] = "$base-$id" }
     }
-    val current = bases.values.map { it.lowercase() }.toSet()
     return calendars.map { calendar ->
-        val base = bases.getValue(calendar.id)
         BackupTarget(
+            key = calendar.id.toString(),
             calendarIds = setOf(calendar.id),
-            baseName = base,
+            baseName = bases.getValue(calendar.id),
             calendarName = calendar.displayName,
-            formerBaseNames = previousBases[calendar.id].orEmpty()
-                .filterTo(mutableSetOf()) { it.lowercase() !in current },
         )
     }
 }
@@ -154,75 +155,74 @@ fun backupFileName(baseName: String, at: LocalDateTime): String =
     "${baseName}_${at.format(STAMP_FORMAT)}$ICS_EXTENSION"
 
 /**
- * Plan one run: a new file per target, and which of that target's earlier files
- * fall out of the newest [keep] (the new one included). Only names this app
- * writes for the target count — `<base>_<stamp>.ics`, plus the pre-#411
- * [LEGACY_BACKUP_FILE] for the combined series, which ranks oldest — so a user's
- * own files in the folder are never touched.
+ * Plan one run: a new file per target, and which of the series' recorded files
+ * ([ledger]) fall out of the newest [keep], the new one included. Recorded files
+ * no longer in the folder ([existing]) are forgotten. The pre-#411
+ * [LEGACY_BACKUP_FILE] joins the combined series as its oldest file.
  */
 fun planBackupFiles(
     targets: List<BackupTarget>,
-    existing: Collection<String>,
+    ledger: BackupLedger,
+    existing: Set<String>,
     at: LocalDateTime,
     keep: Int,
 ): List<BackupFilePlan> {
     val retain = keep.coerceAtLeast(1)
     return targets.map { target ->
         val fileName = backupFileName(target.baseName, at)
-        val series = (target.formerBaseNames + target.baseName).map { base ->
-            base to Regex("^${Regex.escape(base)}_($STAMP_REGEX)${Regex.escape(ICS_EXTENSION)}$")
+        val recorded = ledger[target.key].orEmpty()
+        val legacy = if (target.key == COMBINED_SERIES && LEGACY_BACKUP_FILE !in recorded) {
+            listOf(LEGACY_BACKUP_FILE)
+        } else {
+            emptyList()
         }
-        val earlier = existing
-            .filter { it != fileName }
-            .mapNotNull { name ->
-                series.firstNotNullOfOrNull { (base, regex) ->
-                    regex.find(name)?.let { SeriesFile(name, base, it.groupValues[1]) }
-                } ?: if (target.baseName == COMBINED_BACKUP_BASE && name == LEGACY_BACKUP_FILE) {
-                    SeriesFile(name, COMBINED_BACKUP_BASE, stamp = "")
-                } else {
-                    null
-                }
-            }
-            .sortedByDescending { it.stamp }
-        val kept = earlier.take(retain - 1)
+        val earlier = (legacy + recorded).filter { it in existing && it != fileName }.distinct()
+        val kept = earlier.takeLast(retain - 1)
         BackupFilePlan(
             target = target,
             fileName = fileName,
-            prune = earlier.drop(retain - 1).reversed().map { it.name },
-            liveFormerBaseNames = kept.map { it.base }.filterTo(mutableSetOf()) { it in target.formerBaseNames },
+            keep = kept,
+            prune = earlier.dropLast(kept.size),
         )
     }
 }
 
-private data class SeriesFile(val name: String, val base: String, val stamp: String)
-
 /**
- * The series names each calendar's files carry after a run that wrote
- * [written]: its current name plus former ones that still have files. Calendars
- * not written this run keep what [previous] had.
+ * The ledger after a run: each written series records what it kept, what it
+ * failed to delete ([undeleted]) and the file it just wrote ([writtenNames],
+ * by key, as the provider named it). Series not written this run keep their
+ * entry while their calendar still exists ([liveKeys]), so a calendar taken
+ * out of the backup still has its files pruned if it's ever put back.
  */
-fun updatedBackupBases(previous: Map<Long, Set<String>>, written: List<BackupFilePlan>): Map<Long, Set<String>> =
-    previous + written.filter { it.target.calendarName != null }.associate {
-        it.target.calendarIds.single() to (it.liveFormerBaseNames + it.target.baseName)
+fun updatedBackupLedger(
+    previous: BackupLedger,
+    written: List<BackupFilePlan>,
+    writtenNames: Map<String, String>,
+    undeleted: Set<String>,
+    liveKeys: Set<String>,
+): BackupLedger {
+    val next = previous.filterKeys { it in liveKeys || it == COMBINED_SERIES }.toMutableMap()
+    written.forEach { plan ->
+        val name = writtenNames[plan.target.key] ?: return@forEach
+        next[plan.target.key] = plan.prune.filter { it in undeleted } + plan.keep + name
     }
+    return next.filterValues { it.isNotEmpty() }
+}
 
-private const val BASES_ENTRY_SEP = "|"
-private const val BASES_KEY_SEP = "/"
+private const val LEDGER_ENTRY_SEP = "|"
+private const val LEDGER_KEY_SEP = "/"
 
-/** Stores the id → series names map; both separators are characters a sanitised name can't hold. */
-fun persistBackupBases(bases: Map<Long, Set<String>>): String? =
-    bases.filterValues { it.isNotEmpty() }.takeIf { it.isNotEmpty() }
+/** Stores the ledger; both separators are characters no name this app writes can hold. */
+fun persistBackupLedger(ledger: BackupLedger): String? =
+    ledger.filterValues { it.isNotEmpty() }.takeIf { it.isNotEmpty() }
         ?.entries?.sortedBy { it.key }
-        ?.joinToString(BASES_ENTRY_SEP) { (id, names) ->
-            (listOf(id.toString()) + names.sorted()).joinToString(BASES_KEY_SEP)
-        }
+        ?.joinToString(LEDGER_ENTRY_SEP) { (key, names) -> (listOf(key) + names).joinToString(LEDGER_KEY_SEP) }
 
-fun parseBackupBases(stored: String?): Map<Long, Set<String>> =
-    stored?.split(BASES_ENTRY_SEP).orEmpty().mapNotNull { entry ->
-        val parts = entry.split(BASES_KEY_SEP)
-        val id = parts.first().toLongOrNull() ?: return@mapNotNull null
-        val names = parts.drop(1).filter { it.isNotEmpty() }.toSet()
-        names.takeIf { it.isNotEmpty() }?.let { id to it }
+fun parseBackupLedger(stored: String?): BackupLedger =
+    stored?.split(LEDGER_ENTRY_SEP).orEmpty().mapNotNull { entry ->
+        val parts = entry.split(LEDGER_KEY_SEP)
+        val names = parts.drop(1).filter { it.isNotEmpty() }
+        parts.first().takeIf { it.isNotEmpty() && names.isNotEmpty() }?.let { it to names }
     }.toMap()
 
 /** Closest offered retention count to [stored], so a stray value still shows a row. */

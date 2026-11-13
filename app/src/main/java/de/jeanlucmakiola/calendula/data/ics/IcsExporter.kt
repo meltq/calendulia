@@ -60,22 +60,30 @@ class IcsExporter @Inject constructor(
 
     /**
      * Write [content] to [fileName] in [folder], overwriting the file of that
-     * name if [listing] (from [listFolder]) has one. Throws on failure.
+     * name if [listing] (from [listFolder]) has one. Returns the name the file
+     * ended up with — a provider may de-duplicate it. Throws on failure.
      */
-    fun writeToFolder(folder: Uri, listing: Map<String, Uri>, fileName: String, content: String) {
-        val uri = listing[fileName] ?: DocumentsContract.createDocument(
+    fun writeToFolder(folder: Uri, listing: Map<String, Uri>, fileName: String, content: String): String {
+        listing[fileName]?.let { uri ->
+            writeDocument(uri, content)
+            return fileName
+        }
+        val uri = DocumentsContract.createDocument(
             context.contentResolver,
             DocumentsContract.buildDocumentUriUsingTree(folder, DocumentsContract.getTreeDocumentId(folder)),
             MIME_CALENDAR,
             fileName,
         ) ?: throw IOException("Could not create backup file in the chosen folder")
         writeDocument(uri, content)
+        return DocumentFile.fromSingleUri(context, uri)?.name ?: fileName
     }
 
-    /** Delete [documents]; one that won't go is left behind. */
-    fun deleteDocuments(documents: Collection<Uri>) {
-        documents.forEach { runCatching { DocumentsContract.deleteDocument(context.contentResolver, it) } }
-    }
+    /** Delete the [names] files of [listing]; returns the ones that wouldn't go. */
+    fun deleteFromFolder(listing: Map<String, Uri>, names: Collection<String>): Set<String> =
+        names.filterTo(mutableSetOf()) { name ->
+            val uri = listing[name] ?: return@filterTo false
+            !runCatching { DocumentsContract.deleteDocument(context.contentResolver, uri) }.getOrDefault(false)
+        }
 
     private fun writableFolder(folder: Uri): DocumentFile {
         val dir = DocumentFile.fromTreeUri(context, folder)

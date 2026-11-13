@@ -471,9 +471,9 @@ restore runs through the normal import, whose targets stay `isEventTarget`. The
 automatic backup writes one `<calendar name>_<date>_<time>.ics` series per
 calendar, or one `calendula-backup_…` series in combined mode (#411), and prunes
 each series to the retention count after its new file has landed. Pruning only
-matches names of that series, so nothing else in the folder is touched (a
-renamed calendar's old names are remembered in `auto_backup_series` until their
-files are gone); the
+deletes names recorded in a per-series ledger of files the backup wrote
+(`auto_backup_files`, keyed by calendar id), never whatever happens to match a
+name, so renames, same-named calendars and the user's own files are safe; the
 pre-#411 fixed `calendula-backup.ics` counts as the combined series' oldest file,
 and an install that already had a folder stays on the combined layout.
 

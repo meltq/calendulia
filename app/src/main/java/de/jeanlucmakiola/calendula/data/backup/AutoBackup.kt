@@ -26,10 +26,10 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
-import de.jeanlucmakiola.calendula.domain.backup.BackupFilePlan
+import de.jeanlucmakiola.calendula.domain.backup.COMBINED_SERIES
 import de.jeanlucmakiola.calendula.domain.backup.backupTargets
 import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
-import de.jeanlucmakiola.calendula.domain.backup.updatedBackupBases
+import de.jeanlucmakiola.calendula.domain.backup.updatedBackupLedger
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.floret.android.hasPermission
 import kotlinx.coroutines.flow.first
@@ -136,57 +136,62 @@ class BackupWorker(
         if (!success && prefs.autoBackupStatus.first().consecutiveFailures >= FAILURE_NOTIFY_THRESHOLD) {
             notifyFailure(applicationContext)
         }
-        // A retry rewrites every series, so only a run that wrote nothing is
-        // retried; a partial one waits for the next interval rather than
-        // rotating the healthy calendars' history out with near-identical copies.
+        // Only a run that wrote nothing retries: a retry rewrites every series.
         return if (outcome == RunOutcome.Failed) Result.retry() else Result.success()
     }
 
     private enum class RunOutcome { Written, PartlyFailed, Failed, NothingSelected }
 
-    /**
-     * Writes each series and prunes it only once its new file has landed, so
-     * a failed write never costs an older backup.
-     */
+    /** Writes each series and prunes it only once its new file has landed. */
     private suspend fun runBackup(deps: Deps, prefs: SettingsPrefs, folder: Uri): RunOutcome {
         val repository = deps.repository()
         val exporter = deps.exporter()
+        // Without the calendar permission the list comes back empty.
         val all = repository.calendars().first()
-        // Without the calendar permission the list comes back empty: a failure,
-        // not an empty selection.
         if (all.isEmpty()) return RunOutcome.Failed
         val selection = prefs.autoBackupSelection.first()
-        val previousBases = prefs.autoBackupSeriesNames.first()
-        val targets = backupTargets(
-            calendars = all.filter(selection::selects),
-            combined = prefs.autoBackupCombined.first(),
-            previousBases = previousBases,
-        )
+        val targets = backupTargets(all.filter(selection::selects), combined = prefs.autoBackupCombined.first())
         if (targets.isEmpty()) return RunOutcome.NothingSelected
+        val ledger = prefs.autoBackupLedger.first()
         val listing = exporter.listFolder(folder)
         val plans = planBackupFiles(
             targets = targets,
+            ledger = ledger,
             existing = listing.keys,
             at = LocalDateTime.now(),
             keep = prefs.autoBackupKeep.first(),
         )
+        val events = repository.exportEvents(targets.flatMap { it.calendarIds }.toSet())
+        val byCalendar = events.groupBy { it.calendarId }
         val stamp = Clock.System.now()
-        val written = mutableListOf<BackupFilePlan>()
+        val writtenNames = mutableMapOf<String, String>()
+        val undeleted = mutableSetOf<String>()
         for (plan in plans) {
             try {
-                val events = repository.exportEvents(plan.target.calendarIds)
-                val content = IcsWriter().writeCalendar(events, stamp, plan.target.calendarName)
-                exporter.writeToFolder(folder, listing, plan.fileName, content)
-                written += plan
-                exporter.deleteDocuments(plan.prune.mapNotNull(listing::get))
+                val target = plan.target
+                val content = IcsWriter().writeCalendar(
+                    events = if (target.key == COMBINED_SERIES) events else byCalendar[target.calendarIds.single()].orEmpty(),
+                    dtStamp = stamp,
+                    calendarName = target.calendarName,
+                )
+                writtenNames[target.key] = exporter.writeToFolder(folder, listing, plan.fileName, content)
+                undeleted += exporter.deleteFromFolder(listing, plan.prune)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Backup of one series failed", e)
             }
         }
-        prefs.setAutoBackupSeriesNames(updatedBackupBases(previousBases, written))
-        return when (written.size) {
+        prefs.setAutoBackupLedger(
+            updatedBackupLedger(
+                previous = ledger,
+                written = plans,
+                writtenNames = writtenNames,
+                undeleted = undeleted,
+                liveKeys = all.map { it.id.toString() }.toSet(),
+            ),
+        )
+        return when (writtenNames.size) {
             plans.size -> RunOutcome.Written
             0 -> RunOutcome.Failed
             else -> RunOutcome.PartlyFailed

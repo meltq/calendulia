@@ -8,8 +8,9 @@ import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.backup.BackupSelection
 import de.jeanlucmakiola.calendula.domain.backup.DEFAULT_BACKUP_KEEP
 import de.jeanlucmakiola.calendula.domain.backup.normalizeBackupKeep
-import de.jeanlucmakiola.calendula.domain.backup.parseBackupBases
-import de.jeanlucmakiola.calendula.domain.backup.persistBackupBases
+import de.jeanlucmakiola.calendula.domain.backup.BackupLedger
+import de.jeanlucmakiola.calendula.domain.backup.parseBackupLedger
+import de.jeanlucmakiola.calendula.domain.backup.persistBackupLedger
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.parseAgendaRange
@@ -190,7 +191,7 @@ class SettingsPrefs @Inject constructor(
     val autoBackupSelection: Flow<BackupSelection> = prefs.snapshot { it.autoBackupSelection }
     val autoBackupCombined: Flow<Boolean> = prefs.snapshot { it.autoBackupCombined }
     val autoBackupKeep: Flow<Int> = prefs.flow(SettingsKeys.autoBackupKeep)
-    val autoBackupSeriesNames: Flow<Map<Long, Set<String>>> = prefs.flow(SettingsKeys.autoBackupSeriesNames)
+    val autoBackupLedger: Flow<BackupLedger> = prefs.flow(SettingsKeys.autoBackupLedger)
     val specialDatesEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.specialDatesEnabled)
     val specialDatesTypes: Flow<Set<SpecialDateType>> = prefs.snapshot { it.specialDatesTypes }
     val specialDatesCalendars: Flow<Map<SpecialDateType, Long>> = prefs.snapshot { it.specialDatesCalendars }
@@ -359,8 +360,7 @@ class SettingsPrefs @Inject constructor(
 
     suspend fun setAutoBackupKeep(keep: Int) = prefs.set(SettingsKeys.autoBackupKeep, keep)
 
-    suspend fun setAutoBackupSeriesNames(names: Map<Long, Set<String>>) =
-        prefs.set(SettingsKeys.autoBackupSeriesNames, names)
+    suspend fun setAutoBackupLedger(ledger: BackupLedger) = prefs.set(SettingsKeys.autoBackupLedger, ledger)
 
     /** Switch [calendar] in or out of the automatic backup (#147). */
     suspend fun setAutoBackupCalendar(calendar: CalendarSource, included: Boolean) {
@@ -757,9 +757,9 @@ object SettingsKeys {
     val autoBackupKeep: Pref<Int> =
         intPref("auto_backup_keep", DEFAULT_BACKUP_KEEP).coerced(::normalizeBackupKeep)
 
-    /** Each calendar's backup series name from its last run, so a rename still prunes the old files. */
-    val autoBackupSeriesNames: Pref<Map<Long, Set<String>>> =
-        nullableStringPref("auto_backup_series").map(::parseBackupBases, ::persistBackupBases)
+    /** The files the automatic backup wrote, per series; the only ones it ever prunes (#411). */
+    val autoBackupLedger: Pref<BackupLedger> =
+        nullableStringPref("auto_backup_files").map(::parseBackupLedger, ::persistBackupLedger)
 
     /** Master switch for the contact special-dates mirror (issue #15). Opt-in. */
     val specialDatesEnabled: Pref<Boolean> = booleanPref("special_dates_enabled", false)

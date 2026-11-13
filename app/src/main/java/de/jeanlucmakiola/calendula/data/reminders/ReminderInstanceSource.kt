@@ -4,6 +4,7 @@ import android.content.Context
 import android.provider.CalendarContract
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.data.calendar.instancesUri
+import de.jeanlucmakiola.calendula.data.calendar.reminderMinutesByEvent
 import de.jeanlucmakiola.calendula.domain.reminders.ReminderEventInstance
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -72,28 +73,8 @@ class ProviderReminderInstanceSource @Inject constructor(
         } ?: emptyList()
     }
 
-    override fun reminderMinutes(eventIds: Collection<Long>): Map<Long, List<Int>> {
-        if (eventIds.isEmpty()) return emptyMap()
-        val out = mutableMapOf<Long, MutableList<Int>>()
-        // Batched: the ids go into the selection literally, and an unbounded
-        // `IN (...)` would grow the SQL past what SQLite takes.
-        eventIds.distinct().chunked(EVENT_ID_BATCH).forEach { batch ->
-            context.contentResolver.query(
-                CalendarContract.Reminders.CONTENT_URI,
-                REMINDER_PROJECTION,
-                "${CalendarContract.Reminders.METHOD} = " +
-                    "${CalendarContract.Reminders.METHOD_ALERT} AND " +
-                    "${CalendarContract.Reminders.EVENT_ID} IN (${batch.joinToString(",")})",
-                null,
-                null,
-            )?.use { c ->
-                while (c.moveToNext()) {
-                    out.getOrPut(c.getLong(0)) { mutableListOf() } += c.getInt(1)
-                }
-            }
-        }
-        return out
-    }
+    override fun reminderMinutes(eventIds: Collection<Long>): Map<Long, List<Int>> =
+        context.contentResolver.reminderMinutesByEvent(eventIds, alertsOnly = true)
 
     override fun longestReminderMinutes(): Int = context.contentResolver.query(
         CalendarContract.Reminders.CONTENT_URI,
@@ -105,8 +86,6 @@ class ProviderReminderInstanceSource @Inject constructor(
     )?.use { c -> if (c.moveToFirst()) c.getInt(0) else 0 } ?: 0
 
     private companion object {
-        const val EVENT_ID_BATCH = 50
-
         val OCCURRENCE_PROJECTION = arrayOf(
             CalendarContract.Instances.EVENT_ID,
             CalendarContract.Instances.CALENDAR_ID,
@@ -115,11 +94,6 @@ class ProviderReminderInstanceSource @Inject constructor(
             CalendarContract.Instances.TITLE,
             CalendarContract.Instances.EVENT_LOCATION,
             CalendarContract.Instances.ALL_DAY,
-        )
-
-        val REMINDER_PROJECTION = arrayOf(
-            CalendarContract.Reminders.EVENT_ID,
-            CalendarContract.Reminders.MINUTES,
         )
     }
 }

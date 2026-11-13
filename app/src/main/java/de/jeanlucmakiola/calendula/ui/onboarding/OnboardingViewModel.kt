@@ -15,6 +15,7 @@ import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
 import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.backup.isBackedUpByDefault
 import de.jeanlucmakiola.calendula.domain.hasVisibilitySwitch
 import de.jeanlucmakiola.calendula.domain.orderedForManager
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
@@ -483,7 +484,7 @@ private fun List<CalendarSource>.allHidden(): Boolean =
  * A read-only subscription is not a backup, so it does not count.
  */
 private fun List<CalendarSource>.backupApplies(): Boolean {
-    val exportable = any { it.isLocal && it.canModifyContents && !it.isManaged }
+    val exportable = any { it.isBackedUpByDefault }
     val syncedTarget = any { !it.isLocal && it.canModifyContents }
     return exportable && !syncedTarget
 }
