@@ -129,7 +129,7 @@ import de.jeanlucmakiola.calendula.ui.common.dropStates
 import de.jeanlucmakiola.calendula.ui.common.OnUndoStarted
 import de.jeanlucmakiola.calendula.ui.common.ghostAlpha
 import de.jeanlucmakiola.calendula.ui.common.DragSnapHaptics
-import de.jeanlucmakiola.calendula.ui.common.HELD_SETTLE_MILLIS
+import de.jeanlucmakiola.calendula.ui.common.rememberHeldSettle
 import de.jeanlucmakiola.calendula.ui.common.SETTLE_FADE_MILLIS
 import de.jeanlucmakiola.calendula.ui.common.SETTLE_GRACE_MILLIS
 import de.jeanlucmakiola.calendula.ui.common.EventMoveScope
@@ -515,7 +515,7 @@ fun MonthScreen(
         val chipDrag = rememberMonthDragController()
         // Undo moves the event back, so the chip travels back too. The
         // signal comes from the write, not from the chip that offers it.
-        OnUndoStarted { token -> chipDrag.beginUndo(token) }
+        OnUndoStarted { start -> chipDrag.beginUndo(start.token, start.dropToken) }
         Box(
             modifier = Modifier
                 .padding(innerPadding)
@@ -667,25 +667,24 @@ private fun HeldMonthChip(
     origin: Offset,
     timeFit: MonthChipTimeFit?,
 ) {
-    val drops = dropStates()
-    val pending = parked.token in drops.pending
-    val abandoned = parked.token in drops.abandoned
-    var fading by remember { mutableStateOf(false) }
-    LaunchedEffect(pending, abandoned) {
-        if (pending) return@LaunchedEffect
-        // No seat to confirm this one, so give the grid a beat to re-read.
-        if (!abandoned) delay(HELD_SETTLE_MILLIS)
-        fading = true
-        controller.handOverHeld(parked.token)
-        delay(SETTLE_FADE_MILLIS.toLong())
-        controller.releaseHeld(parked.token)
+    val reduceMotion = rememberReduceMotion()
+    val glide = remember { Animatable(parked.copy.topLeftInRoot, Offset.VectorConverter) }
+    val glideSpec = MaterialTheme.motionScheme.fastSpatialSpec<Offset>()
+    val seat = parked.seat
+    val landed = parked.token !in dropStates().pending
+    // Carried onto its seat once the write is in, as the settling chip is.
+    LaunchedEffect(seat, landed) {
+        if (seat == null || !landed) return@LaunchedEffect
+        if (reduceMotion) glide.snapTo(seat) else glide.animateTo(seat, glideSpec)
     }
-    val alpha by animateFloatAsState(
-        targetValue = if (fading) 0f else 1f,
-        animationSpec = tween(SETTLE_FADE_MILLIS),
-        label = "held-chip-handover",
+    val alpha = rememberHeldSettle(
+        token = parked.token,
+        seated = seat != null,
+        timeoutMillis = MONTH_SETTLE_TIMEOUT_MILLIS,
+        onHandOver = { controller.handOverHeld(parked.token) },
+        onRelease = { controller.releaseHeld(parked.token) },
     )
-    MonthChipCopy(parked.copy, { parked.copy.topLeftInRoot }, origin, lift = 0f, alpha = alpha, timeFit = timeFit)
+    MonthChipCopy(parked.copy, { glide.value }, origin, lift = 0f, alpha = alpha, timeFit = timeFit)
 }
 
 /** [drag]'s chip floating over the grid with its top left at [at], in root coordinates. */
@@ -2311,7 +2310,7 @@ private fun MonthWeekRow(
     // Once the grid holds the settled chip, tell the controller where this row
     // has seated it, so the copy in flight can glide onto it. Keyed on the week,
     // which is what changes when the re-read lands.
-    LaunchedEffect(week, dragController?.settling) {
+    LaunchedEffect(week, dragController?.settling, dragController?.held) {
         dragController?.noteSettled(rowToken)
     }
 
@@ -2744,6 +2743,7 @@ private fun monthChipDragModifier(
                     beginMillis = drop.event.start.toEpochMilliseconds(),
                     endMillis = drop.event.end.toEpochMilliseconds(),
                     target = MoveTarget.ByDays(delta),
+                    isAllDay = drop.event.isAllDay,
                     token = drop.token,
                 ),
             )
@@ -2890,9 +2890,17 @@ private fun MonthBar(
     val moveAction = eventMoveAction(event)
     // The source stays put as a ghost while its floating copy travels.
     val monthDrag = LocalMonthDrag.current
-    val lifted = monthDrag?.liftedInstanceId == event.instanceId ||
-        monthDrag?.isSettledChip(event, days) == true ||
-        monthDrag?.isHeldSource(event) == true
+    // Derived, so a chip recomposes only when its own answer changes rather than
+    // on every lift, park and release anywhere in the grid.
+    val lifted by remember(monthDrag, event, days) {
+        derivedStateOf {
+            monthDrag != null && (
+                monthDrag.liftedInstanceId == event.instanceId ||
+                    monthDrag.isSettledChip(event, days) ||
+                    monthDrag.isHeldChip(event, days)
+                )
+        }
+    }
     val ghost = ghostAlpha(lifted)
     val shape = monthBarShape(continuesLeft, continuesRight)
     Box(

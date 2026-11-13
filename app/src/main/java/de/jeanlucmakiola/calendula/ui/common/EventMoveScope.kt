@@ -1,6 +1,9 @@
 package de.jeanlucmakiola.calendula.ui.common
 
 import androidx.compose.animation.core.animateFloatAsState
+import kotlinx.coroutines.delay
+import androidx.compose.animation.core.tween
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,8 +51,8 @@ class EventMoveScope(
      * every visible block reads it as a composition local.
      */
     val drops: StateFlow<DropStates>,
-    /** The token of the undo write that just began — see `RescheduleViewModel.undoStarted`. */
-    val undoStarted: StateFlow<Long?>,
+    /** The undo write that just began — see `RescheduleViewModel.undoStarted`. */
+    val undoStarted: StateFlow<UndoStart?>,
     /** Open an event in the edit form — the pointer-free route to the same change. */
     val edit: (EventInstance) -> Unit,
 ) {
@@ -85,7 +88,7 @@ data class DropStates(
 
 private val NO_DROPS = MutableStateFlow(DropStates())
 
-private val NEVER_UNDONE = MutableStateFlow<Long?>(null)
+private val NEVER_UNDONE = MutableStateFlow<UndoStart?>(null)
 
 /**
  * Every drop's progress — empty wherever moving is off. A drag overlay keeps
@@ -98,20 +101,55 @@ fun dropStates(): DropStates {
 }
 
 /**
- * Runs [onUndo] with the undo's token when an undo write begins, and never for
- * one that began before this composable came on screen.
+ * Runs [onUndo] when an undo write begins, and never for one that began before
+ * this composable came on screen.
  */
 @Composable
-fun OnUndoStarted(onUndo: (token: Long) -> Unit) {
+fun OnUndoStarted(onUndo: (UndoStart) -> Unit) {
     val flow = LocalEventMove.current?.undoStarted ?: NEVER_UNDONE
-    val token by flow.collectAsStateWithLifecycle()
-    var seen by remember { mutableStateOf(token) }
-    LaunchedEffect(token) {
-        val started = token
+    val start by flow.collectAsStateWithLifecycle()
+    var seen by remember { mutableStateOf(start) }
+    LaunchedEffect(start) {
+        val started = start
         if (started == null || started == seen) return@LaunchedEffect
         seen = started
         onUndo(started)
     }
+}
+
+/**
+ * The life of a drop parked by a newer pickup (#494): held while its [token]
+ * is pending, then a beat after the grid [seated] it — or [timeoutMillis] if it
+ * never does — handed over and faded, then released. Returns the copy's alpha.
+ * An abandoned drop skips the wait; nothing is coming to seat it.
+ */
+@Composable
+fun rememberHeldSettle(
+    token: Long,
+    seated: Boolean,
+    timeoutMillis: Long,
+    onHandOver: () -> Unit,
+    onRelease: () -> Unit,
+): Float {
+    val drops = dropStates()
+    val pending = token in drops.pending
+    val abandoned = token in drops.abandoned
+    val handOver by rememberUpdatedState(onHandOver)
+    val release by rememberUpdatedState(onRelease)
+    var fading by remember(token) { mutableStateOf(false) }
+    LaunchedEffect(token, pending, abandoned, seated) {
+        if (pending) return@LaunchedEffect
+        if (!abandoned) delay(if (seated) SETTLE_GRACE_MILLIS else timeoutMillis)
+        fading = true
+        handOver()
+        delay(SETTLE_FADE_MILLIS.toLong())
+        release()
+    }
+    return animateFloatAsState(
+        targetValue = if (fading) 0f else 1f,
+        animationSpec = tween(SETTLE_FADE_MILLIS),
+        label = "held-settle",
+    ).value
 }
 
 /** Opacity the source block keeps while its floating copy travels. */

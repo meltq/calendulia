@@ -111,6 +111,8 @@ data class HeldChip(
     val copy: MonthChipDrag,
     val token: Long,
     val handedOver: Boolean = false,
+    /** Where the grid now draws the drop, in root coordinates, once a row seats it. */
+    val seat: Offset? = null,
 )
 
 /** Where a finished chip drag asks its event to go, as a whole-day shift. */
@@ -175,10 +177,11 @@ class MonthDragController {
         private set
 
     /**
-     * The last drop this controller made, kept past [release] for [beginUndo] —
-     * the confirmation chip carries Undo long after the copy is gone.
+     * This controller's recent drops by token, kept past [release] for
+     * [beginUndo] — the confirmation chip carries Undo long after the copy is
+     * gone, and it may be any of them the chip offers to undo.
      */
-    private var undoable: MonthChipDrag? = null
+    private val undoable = LinkedHashMap<Long, MonthChipDrag>()
 
     /**
      * Earlier drops still being written when another chip was picked up. They
@@ -244,9 +247,19 @@ class MonthDragController {
         settledGhost = false
     }
 
-    /** Whether [event]'s chip is the source of a held drop, so still a ghost. */
-    fun isHeldSource(event: EventInstance): Boolean =
-        held.any { !it.handedOver && it.copy.event.instanceId == event.instanceId }
+    /**
+     * Whether [event]'s chip belongs to a held drop and must stay a ghost: its
+     * source, or once a row seats it, the chip the grid draws on its target day.
+     */
+    fun isHeldChip(event: EventInstance, days: List<LocalDate>?): Boolean = held.any { parked ->
+        !parked.handedOver && (
+            parked.copy.event.instanceId == event.instanceId ||
+                (
+                    parked.seat != null && days != null && parked.copy.targetDate in days &&
+                        isSameEvent(event, parked.copy.event)
+                    )
+            )
+    }
 
     /** Move a still-settling drop to [held] before a new pickup takes the slot. */
     private fun parkSettling() {
@@ -283,6 +296,13 @@ class MonthDragController {
      * nearest where the chip was let go is the one the finger was over.
      */
     fun noteSettled(token: Any) {
+        val row = rows[token]
+        if (row != null && held.any { it.seat == null }) {
+            held = held.map { parked ->
+                val target = parked.copy.targetDate
+                if (parked.seat != null || target == null) parked else parked.copy(seat = row.seatOf(parked.copy.event, target))
+            }
+        }
         val landed = settling ?: return
         val target = landed.targetDate ?: return
         val at = rows[token]?.seatOf(landed.event, target) ?: return
@@ -298,9 +318,9 @@ class MonthDragController {
      * there is no drop of this controller's left to undo, or the grid doesn't
      * seat the moved event where the chip would have to start from.
      */
-    fun beginUndo(token: Long): Boolean {
-        val last = undoable ?: return false
-        undoable = null
+    fun beginUndo(token: Long, dropToken: Long): Boolean {
+        val last = undoable.remove(dropToken) ?: return false
+        parkSettling()
         val from = last.targetDate ?: return false
         val at = rows.values.firstNotNullOfOrNull { it.seatOf(last.event, from) } ?: return false
         settling = last.copy(grabDate = from, targetDate = last.grabDate, topLeftInRoot = at)
@@ -327,8 +347,9 @@ class MonthDragController {
         )
         liftedInstanceId = landed.event.instanceId
         settledGhost = true
-        undoable = settling
         settledToken = nextMoveToken()
+        undoable[settledToken] = requireNotNull(settling)
+        if (undoable.size > UNDOABLE_KEPT) undoable.remove(undoable.keys.first())
         drops++
         return MonthChipDrop(landed.event, landed.grabDate, target, settledToken)
     }
@@ -392,3 +413,6 @@ fun rememberMonthDragController(): MonthDragController {
 }
 
 val LocalMonthDrag = compositionLocalOf<MonthDragController?> { null }
+
+/** How many recent drops a month controller keeps for an undo to carry back. */
+private const val UNDOABLE_KEPT = 8

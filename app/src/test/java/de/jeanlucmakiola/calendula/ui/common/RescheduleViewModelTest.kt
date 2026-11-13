@@ -127,6 +127,7 @@ class RescheduleViewModelTest {
         beginMillis = beginMillis,
         endMillis = endMillis,
         target = MoveTarget.ByDays(2),
+        isAllDay = false,
         token = nextMoveToken(),
     )
 
@@ -136,6 +137,7 @@ class RescheduleViewModelTest {
         beginMillis = beginMillis,
         endMillis = endMillis,
         target = MoveTarget.Start(Instant.fromEpochMilliseconds(beginMillis + 3_600_000L)),
+        isAllDay = false,
         token = nextMoveToken(),
     )
 
@@ -148,6 +150,7 @@ class RescheduleViewModelTest {
             Instant.fromEpochMilliseconds(beginMillis),
             Instant.fromEpochMilliseconds(endMillis + 3_600_000L),
         ),
+        isAllDay = false,
         token = nextMoveToken(),
     )
 
@@ -368,35 +371,52 @@ class RescheduleViewModelTest {
     }
 
     @Test
-    fun `a recurring occurrence that moved since the drop is not written`(
+    fun `a drop on a series written moments ago is not written`(
         @TempDir tempDir: Path,
     ) = runTest(dispatcher) {
-        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail(rrule = "FREQ=WEEKLY") } }
-        val vm = viewModel(tempDir, fake, present = emptyList())
+        // A whole-series write shifts every occurrence; the grid still draws the
+        // old ones, and another occurrence may now sit at the dragged time.
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail(rrule = "FREQ=DAILY") } }
+        val vm = viewModel(tempDir, fake)
+        vm.move(oneHourLater())
+        advanceUntilIdle()
+        vm.moveWithScope(RecurringWriteScope.AllEvents)
+        advanceUntilIdle()
+        vm.consumeOutcome()
 
-        val drop = toWednesday()
-        vm.move(drop)
+        val again = toWednesday()
+        vm.move(again)
         advanceUntilIdle()
 
         assertThat(vm.scopePrompt.value).isNull()
         assertThat(vm.outcome.value).isEqualTo(MoveOutcome.Stale)
-        assertThat(vm.drops.value.abandoned).containsExactly(drop.token)
-        assertThat(fake.updatedEvents).isEmpty()
+        assertThat(vm.drops.value.abandoned).containsExactly(again.token)
+        assertThat(fake.updatedEvents).hasSize(1)
     }
 
     @Test
-    fun `a deleted event reports itself as gone, not moved`(@TempDir tempDir: Path) = runTest(dispatcher) {
-        val fake = FakeCalendarDataSource().apply { eventDetailResult = { null } }
-        val vm = viewModel(tempDir, fake, present = emptyList())
-
+    fun `a single occurrence written leaves the rest of its series movable`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail(rrule = "FREQ=WEEKLY") } }
+        val vm = viewModel(tempDir, fake)
         vm.move(oneHourLater())
         advanceUntilIdle()
+        vm.moveWithScope(RecurringWriteScope.ThisEvent)
+        advanceUntilIdle()
 
-        assertThat(vm.outcome.value).isEqualTo(MoveOutcome.Gone)
+        // Another occurrence, a week on.
+        val week = 7 * 86_400_000L
+        vm.move(oneHourLater().copy(beginMillis = beginMillis + week, endMillis = endMillis + week, token = nextMoveToken()))
+        advanceUntilIdle()
+
+        assertThat(vm.scopePrompt.value).isNotNull()
     }
 
     @Test
-    fun `a failure stays on the chip while later drops land`(@TempDir tempDir: Path) = runTest(dispatcher) {
+    fun `chip messages wait their turn instead of replacing each other`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
         val fake = FakeCalendarDataSource().apply {
             eventDetailResult = { id ->
                 if (id == 42L) detail(rrule = "FREQ=WEEKLY;BYDAY=MO,WE", status = EventStatus.Cancelled) else detail()
@@ -408,8 +428,35 @@ class RescheduleViewModelTest {
         vm.move(toWednesday().copy(eventId = 7L, token = nextMoveToken()))
         advanceUntilIdle()
 
-        assertThat(fake.updatedEvents.map { it.first }).containsExactly(7L)
         assertThat(vm.outcome.value).isEqualTo(MoveOutcome.BlockedCancelledSeries)
+        vm.consumeOutcome()
+        assertThat((vm.outcome.value as MoveOutcome.Moved).undo?.eventId).isEqualTo(7L)
+        vm.consumeOutcome()
+        assertThat(vm.outcome.value).isNull()
+    }
+
+    @Test
+    fun `a full queue says so`(@TempDir tempDir: Path) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { detail() } }
+        val vm = slowViewModel(tempDir, fake)
+
+        repeat(9) { i -> vm.move(toWednesday().copy(eventId = 100L + i, token = nextMoveToken())) }
+        val refused = toWednesday().copy(eventId = 200L, token = nextMoveToken())
+        assertThat(vm.move(refused)).isFalse()
+
+        assertThat(vm.drops.value.abandoned).containsExactly(refused.token)
+        assertThat(vm.outcome.value).isEqualTo(MoveOutcome.QueueFull)
+    }
+
+    @Test
+    fun `a deleted event reports itself as gone, not moved`(@TempDir tempDir: Path) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { eventDetailResult = { null } }
+        val vm = viewModel(tempDir, fake, present = emptyList())
+
+        vm.move(oneHourLater())
+        advanceUntilIdle()
+
+        assertThat(vm.outcome.value).isEqualTo(MoveOutcome.Gone)
     }
 
     @Test
@@ -437,8 +484,10 @@ class RescheduleViewModelTest {
         vm.moveWithScope(RecurringWriteScope.AllEvents)
         advanceUntilIdle()
         assertThat(fake.updatedEvents.map { it.first }).containsExactly(42L)
-        // The skip stays on the chip; the grid shows the move itself.
+        // The skip has its turn, then the move it waited on, with its Undo.
         assertThat(vm.outcome.value).isEqualTo(MoveOutcome.Skipped)
+        vm.consumeOutcome()
+        assertThat((vm.outcome.value as MoveOutcome.Moved).undo?.eventId).isEqualTo(42L)
     }
 
     @Test
@@ -478,9 +527,9 @@ class RescheduleViewModelTest {
         advanceUntilIdle()
         val undo = (vm.outcome.value as MoveOutcome.Moved).undo!!
 
-        // A second drop parks on its scope dialog, which holds the pipeline.
+        // A second drop, of another event, parks on its scope dialog, which holds the pipeline.
         fake.eventDetailResult = { detail(rrule = "FREQ=WEEKLY;BYDAY=MO") }
-        vm.move(toWednesday())
+        vm.move(toWednesday().copy(eventId = 7L, token = nextMoveToken()))
         advanceUntilIdle()
 
         val abandoned = vm.abandonedCount
@@ -609,6 +658,7 @@ class RescheduleViewModelTest {
                 target = MoveTarget.Start(
                     Instant.fromEpochMilliseconds(beginMillis + 26 * 3_600_000L),
                 ),
+                isAllDay = false,
                 token = nextMoveToken(),
             ),
         )
@@ -630,6 +680,7 @@ class RescheduleViewModelTest {
                 beginMillis = beginMillis,
                 endMillis = endMillis,
                 target = MoveTarget.Start(Instant.fromEpochMilliseconds(beginMillis)),
+                isAllDay = false,
                 token = nextMoveToken(),
             ),
         )
@@ -752,6 +803,7 @@ class RescheduleViewModelTest {
                 beginMillis = beginMillis,
                 endMillis = endMillis,
                 target = MoveTarget.Start(Instant.fromEpochMilliseconds(beginMillis)),
+                isAllDay = false,
                 token = nextMoveToken(),
             ),
         )).isTrue()
@@ -865,6 +917,7 @@ class RescheduleViewModelTest {
                 beginMillis = beginMillis,
                 endMillis = endMillis,
                 target = MoveTarget.Span(sundayEvening, Instant.fromEpochMilliseconds(endMillis)),
+                isAllDay = false,
                 token = nextMoveToken(),
             ),
         )
@@ -937,6 +990,7 @@ class RescheduleViewModelTest {
                 beginMillis = dayStart,
                 endMillis = dayStart + 86_400_000L,
                 target = MoveTarget.Span(start, Instant.fromEpochMilliseconds(endMillis)),
+                isAllDay = true,
                 token = nextMoveToken(),
             ),
         )
@@ -974,6 +1028,7 @@ class RescheduleViewModelTest {
                 beginMillis = dayStart,
                 endMillis = dayStart + 86_400_000L,
                 target = MoveTarget.Span(eight, eight + 1.hours),
+                isAllDay = true,
                 token = nextMoveToken(),
             ),
         )

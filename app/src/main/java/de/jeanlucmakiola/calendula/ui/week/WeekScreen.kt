@@ -157,6 +157,7 @@ import de.jeanlucmakiola.calendula.ui.common.LocalEventMove
 import de.jeanlucmakiola.calendula.ui.common.MoveRequest
 import de.jeanlucmakiola.calendula.ui.common.MoveTarget
 import de.jeanlucmakiola.calendula.ui.common.TimelineDragController
+import de.jeanlucmakiola.calendula.ui.common.ghostsDerived
 import de.jeanlucmakiola.calendula.ui.common.StripDrag
 import de.jeanlucmakiola.calendula.ui.common.StripDrop
 import de.jeanlucmakiola.calendula.ui.common.TimelineDragOverlay
@@ -591,6 +592,7 @@ private fun WeekContent(
                 eventId = drop.event.eventId,
                 beginMillis = drop.event.start.toEpochMilliseconds(),
                 endMillis = drop.event.end.toEpochMilliseconds(),
+                isAllDay = drop.event.isAllDay,
                 target = MoveTarget.Start(start),
                 token = drop.token,
             ),
@@ -611,6 +613,7 @@ private fun WeekContent(
                 eventId = drop.event.eventId,
                 beginMillis = drop.event.start.toEpochMilliseconds(),
                 endMillis = drop.event.end.toEpochMilliseconds(),
+                isAllDay = drop.event.isAllDay,
                 target = MoveTarget.Span(drop.start, drop.end),
                 token = drop.token,
             ),
@@ -624,6 +627,7 @@ private fun WeekContent(
                 eventId = drop.event.eventId,
                 beginMillis = drop.event.start.toEpochMilliseconds(),
                 endMillis = drop.event.end.toEpochMilliseconds(),
+                isAllDay = drop.event.isAllDay,
                 target = when (drop) {
                     is StripDrop.Days -> MoveTarget.ByDays(drop.days)
                     is StripDrop.Timed -> MoveTarget.Span(drop.start, drop.end)
@@ -770,8 +774,7 @@ private fun WeekPager(
             // Until its days arrive a page shows their frame without events.
             val empty = remember(pageSpan, today) { emptySpan(pageSpan, today) }
             // A bar held over other days in the strip makes room there before it is dropped.
-            val held = (dragController.stripDrag ?: dragController.stripSettling)
-                ?.takeIf { page == pagerState.currentPage }
+            val held = dragController.stripPreviews().takeIf { page == pagerState.currentPage }.orEmpty()
             val zone = LocalTimelineZone.current
             val shown = remember(loaded, held, zone) { loaded?.withStripPreview(held, zone) }
             val stripHeight = shown?.allDayStripHeight()
@@ -796,22 +799,40 @@ private fun WeekPager(
 }
 
 /**
- * [this] with the strip bar [held] sideways laid out at the days it is over, so
- * the bars there move aside live. The bar keeps its own event, and with it its
- * key and the gesture on it; one moved off the page keeps a lane it is not seen in.
+ * [this] with the strip bars [held] sideways laid out at the days they are over,
+ * so the bars there move aside live. Each bar keeps its own event, and with it
+ * its key and the gesture on it; one moved off the page keeps a lane it is not
+ * seen in.
  */
-internal fun WeekUiState.Success.withStripPreview(held: StripDrag?, zone: TimeZone): WeekUiState.Success {
-    if (held == null || held.overGrid || held.dayShift == 0) return this
-    val id = held.event.instanceId
-    val original = allDaySpans.firstOrNull { it.event.instanceId == id } ?: return this
-    val events = allDaySpans.map { if (it.event.instanceId == id) it.event.shiftedDays(held.dayShift, zone) else it.event }
-    val spans = layoutAllDay(events, days, zone).map { if (it.event.instanceId == id) it.copy(event = original.event) else it }
-    return copy(allDaySpans = if (spans.any { it.event.instanceId == id }) spans else spans + original.copy(lane = 0))
+internal fun WeekUiState.Success.withStripPreview(held: List<StripDrag>, zone: TimeZone): WeekUiState.Success {
+    val shifts = held.filter { !it.overGrid && it.dayShift != 0 }.associate { it.event.instanceId to it.dayShift }
+    if (shifts.isEmpty()) return this
+    val originals = allDaySpans.filter { it.event.instanceId in shifts }.associateBy { it.event.instanceId }
+    if (originals.isEmpty()) return this
+    val events = allDaySpans.map { span ->
+        shifts[span.event.instanceId]?.let { span.event.shiftedDays(it, zone) } ?: span.event
+    }
+    val spans = layoutAllDay(events, days, zone).map { span ->
+        originals[span.event.instanceId]?.let { span.copy(event = it.event) } ?: span
+    }
+    val laidOut = spans.mapTo(HashSet()) { it.event.instanceId }
+    return copy(allDaySpans = spans + originals.values.filter { it.event.instanceId !in laidOut }.map { it.copy(lane = 0) })
 }
 
 private fun EventInstance.shiftedDays(days: Int, zone: TimeZone): EventInstance {
     val dates = dateZone(zone)
     return copy(start = start.plus(days, DateTimeUnit.DAY, dates), end = end.plus(days, DateTimeUnit.DAY, dates))
+}
+
+/** Whether these bars draw the strip drop [drop] at the days it was dropped on. */
+private fun List<PlacedBar>.drawStripDrop(drop: StripDrag, zone: TimeZone): Boolean {
+    val target = drop.event.spanFirstDay(zone).plus(drop.dayShift, DateTimeUnit.DAY)
+    return any { bar ->
+        bar.event.instanceId != drop.event.instanceId &&
+            (bar.event.eventId == drop.event.eventId ||
+                (drop.event.title.isNotBlank() && bar.event.title == drop.event.title)) &&
+            bar.event.spanFirstDay(zone) == target
+    }
 }
 
 /** A page with no events yet, for one whose days are still loading. */
@@ -1196,17 +1217,11 @@ private fun AllDayStrip(
     val sideways = held?.takeIf { !it.overGrid }
     val lifted = dragController.liftedInstanceId?.takeIf { active && dragController.stripDrag?.overGrid != false }
     val settling = dragController.stripSettling?.takeIf { active }
+    val heldStrips = dragController.heldStrips.takeIf { active }.orEmpty()
     // Seated once the re-read draws the event at the days it was dropped on.
-    LaunchedEffect(settling, bars) {
-        if (settling == null) return@LaunchedEffect
-        val target = settling.event.spanFirstDay(zone).plus(settling.dayShift, DateTimeUnit.DAY)
-        val landed = bars.any { bar ->
-            bar.event.instanceId != settling.event.instanceId &&
-                (bar.event.eventId == settling.event.eventId ||
-                    (settling.event.title.isNotBlank() && bar.event.title == settling.event.title)) &&
-                bar.event.spanFirstDay(zone) == target
-        }
-        if (landed) dragController.seatStrip()
+    LaunchedEffect(settling, heldStrips, bars) {
+        if (settling != null && bars.drawStripDrop(settling, zone)) dragController.seatStrip()
+        heldStrips.forEach { if (!it.seated && bars.drawStripDrop(it.drag, zone)) dragController.seatHeldStrip(it.token) }
     }
 
     Row(
@@ -1591,7 +1606,7 @@ private fun DayColumnCard(
                         widthFraction = 1f / block.laneCount,
                         y = top,
                         height = height,
-                        landing = dragController.ghosts(block),
+                        landing = dragController.ghostsDerived(block),
                     )
                     val topInset = hourCellBlockInset(showHourGrid, cuts.top)
                     val bottomInset = hourCellBlockInset(showHourGrid, cuts.bottom)
@@ -1759,7 +1774,7 @@ private fun EventBlock(
         onCancel = dragController::cancel,
         onRelease = { dragController.select(block.event, fromLift = draggable) },
     )
-    val lifted = draggable && dragController.ghosts(block)
+    val lifted = draggable && dragController.ghostsDerived(block)
     // Released in place, the block takes over the copy's lift without a dip.
     val takesOverLift = selected && dragController.selection?.fromLift == true
     val ghostFade = ghostAlpha(lifted)

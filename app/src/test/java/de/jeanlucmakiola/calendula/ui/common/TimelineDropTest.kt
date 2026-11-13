@@ -53,7 +53,7 @@ class TimelineDropTest {
     @Test
     fun `dropping the head asks for exactly where it landed`() {
         val target = LocalDate(2026, 9, 2)
-        val drop = TimelineDrop(overnight, target, 20 * 60, clipOffsetMin = 0)
+        val drop = TimelineDrop(overnight, target, 20 * 60, clipOffsetMin = 0, token = 0L)
 
         assertThat(drop.startInstant(zone)).isEqualTo(target.atTime(20, 0).toInstant(zone))
     }
@@ -63,7 +63,7 @@ class TimelineDropTest {
         val tail = blockOn(sun)
         val offset = tail.clipOffsetMinutes(sun, zone)
         // Dragged three days back, same height in the column: Sun 6 -> Thu 3.
-        val drop = TimelineDrop(overnight, LocalDate(2026, 9, 3), 0, offset)
+        val drop = TimelineDrop(overnight, LocalDate(2026, 9, 3), 0, offset, token = 0L)
 
         // The event began Sat 5 Sep 20:00, so it now begins Wed 2 Sep 20:00 —
         // the whole event moved three days, and no time of day was invented.
@@ -75,7 +75,7 @@ class TimelineDropTest {
     fun `dragging the tail down the column re-times the event across midnight`() {
         val offset = blockOn(sun).clipOffsetMinutes(sun, zone)
         // Tail top pulled from 00:00 to 03:00 on its own day.
-        val drop = TimelineDrop(overnight, sun, 3 * 60, offset)
+        val drop = TimelineDrop(overnight, sun, 3 * 60, offset, token = 0L)
 
         assertThat(drop.startInstant(zone)).isEqualTo(sat.atTime(23, 0).toInstant(zone))
     }
@@ -84,7 +84,7 @@ class TimelineDropTest {
     fun `pulling the tail above its own midnight moves the event earlier`() {
         val offset = blockOn(sun).clipOffsetMinutes(sun, zone)
         // The tail's top edge dragged an hour above the midnight it rests on.
-        val drop = TimelineDrop(overnight, sun, -60, offset)
+        val drop = TimelineDrop(overnight, sun, -60, offset, token = 0L)
 
         // Event was Sat 20:00 to Sun 08:00; it now begins an hour earlier.
         assertThat(drop.startInstant(zone)).isEqualTo(sat.atTime(19, 0).toInstant(zone))
@@ -92,7 +92,7 @@ class TimelineDropTest {
 
     @Test
     fun `a top edge dragged past the next midnight resolves onto the day after`() {
-        val drop = TimelineDrop(overnight, sat, 25 * 60, clipOffsetMin = 0)
+        val drop = TimelineDrop(overnight, sat, 25 * 60, clipOffsetMin = 0, token = 0L)
 
         assertThat(drop.startInstant(zone)).isEqualTo(sun.atTime(1, 0).toInstant(zone))
     }
@@ -130,7 +130,7 @@ class TimelineDropTest {
         val tail = layoutDay(listOf(overnightIntoDst), sun, berlin).single()
         val offset = tail.clipOffsetMinutes(sun, berlin)
         // Dropped back onto its own slot a week earlier, clear of the boundary.
-        val drop = TimelineDrop(overnightIntoDst, LocalDate(2026, 3, 22), 0, offset)
+        val drop = TimelineDrop(overnightIntoDst, LocalDate(2026, 3, 22), 0, offset, token = 0L)
 
         assertThat(drop.startInstant(berlin))
             .isEqualTo(LocalDate(2026, 3, 21).atTime(22, 0).toInstant(berlin))
@@ -155,7 +155,7 @@ class TimelineDropTest {
         )
         val block = layoutDay(listOf(event), fallBack, brussels).single()
         assertThat(block.clipOffsetMinutes(fallBack, brussels)).isEqualTo(0)
-        val drop = TimelineDrop(event, fallBack, block.startMin, clipOffsetMin = 0)
+        val drop = TimelineDrop(event, fallBack, block.startMin, clipOffsetMin = 0, token = 0L)
         assertThat(drop.startInstant(brussels)).isEqualTo(event.start)
     }
 
@@ -168,7 +168,7 @@ class TimelineDropTest {
         val tail = layoutDay(listOf(event), fallBack, brussels).single()
         val offset = tail.clipOffsetMinutes(fallBack, brussels)
         assertThat(offset).isEqualTo(2 * 60)
-        val drop = TimelineDrop(event, fallBack, tail.startMin, clipOffsetMin = offset)
+        val drop = TimelineDrop(event, fallBack, tail.startMin, clipOffsetMin = offset, token = 0L)
         assertThat(drop.startInstant(brussels)).isEqualTo(event.start)
     }
 
@@ -189,7 +189,7 @@ class TimelineDropTest {
             end = Instant.parse("2026-10-25T02:30:00Z"),
         )
         val block = layoutDay(listOf(event), fallBack, brussels).single()
-        val drop = TimelineDrop(event, fallBack, block.startMin + 15, clipOffsetMin = 0)
+        val drop = TimelineDrop(event, fallBack, block.startMin + 15, clipOffsetMin = 0, token = 0L)
         assertThat(drop.startInstant(brussels)).isEqualTo(Instant.parse("2026-10-25T01:45:00Z"))
     }
 
@@ -234,7 +234,7 @@ class TimelineDropTest {
             start = Instant.parse("2026-10-25T01:30:00Z"),
             end = Instant.parse("2026-10-25T03:00:00Z"),
         )
-        val drop = resizedDrop(event, ResizeEdge.Bottom, fallBack, 2 * 60 + 30, 15, brussels)
+        val drop = resizedSpan(event, ResizeEdge.Bottom, fallBack, 2 * 60 + 30, 15, brussels)
         assertThat(drop.start).isEqualTo(event.start)
         assertThat(drop.end).isEqualTo(Instant.parse("2026-10-25T01:45:00Z"))
     }
@@ -246,7 +246,7 @@ class TimelineDropTest {
             start = Instant.parse("2026-10-25T00:30:00Z"),
             end = Instant.parse("2026-10-25T01:15:00Z"),
         )
-        val drop = resizedDrop(event, ResizeEdge.Top, fallBack, 2 * 60, 60, brussels)
+        val drop = resizedSpan(event, ResizeEdge.Top, fallBack, 2 * 60, 60, brussels)
         assertThat(drop.start).isEqualTo(Instant.parse("2026-10-25T00:00:00Z"))
         assertThat(drop.end).isEqualTo(event.end)
     }
@@ -258,7 +258,7 @@ class TimelineDropTest {
             start = Instant.parse("2026-10-25T00:20:00Z"),
             end = Instant.parse("2026-10-25T01:10:00Z"),
         )
-        val drop = resizedDrop(event, ResizeEdge.Bottom, fallBack, 2 * 60 + 20, 30, brussels)
+        val drop = resizedSpan(event, ResizeEdge.Bottom, fallBack, 2 * 60 + 20, 30, brussels)
         assertThat(drop.end).isEqualTo(Instant.parse("2026-10-25T00:50:00Z"))
     }
 
@@ -270,7 +270,7 @@ class TimelineDropTest {
             start = Instant.parse("2026-10-24T23:00:00Z"),
             end = Instant.parse("2026-10-25T03:00:00Z"),
         )
-        val drop = resizedDrop(event, ResizeEdge.Bottom, fallBack, 60, 75, brussels)
+        val drop = resizedSpan(event, ResizeEdge.Bottom, fallBack, 60, 75, brussels)
         assertThat(drop.end).isEqualTo(Instant.parse("2026-10-25T00:15:00Z"))
     }
 }

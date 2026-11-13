@@ -92,6 +92,7 @@ fun EventMoveHost(
         MoveOutcome.Gone -> stringResource(R.string.event_move_gone)
         MoveOutcome.Stale -> stringResource(R.string.event_move_stale)
         MoveOutcome.Skipped -> stringResource(R.string.event_move_skipped)
+        MoveOutcome.QueueFull -> stringResource(R.string.event_move_queue_full)
         MoveOutcome.BlockedSeriesEnd -> stringResource(R.string.event_move_blocked_series_end)
         MoveOutcome.BlockedCancelledSeries -> stringResource(R.string.event_move_blocked_cancelled_series)
         MoveOutcome.Failed -> stringResource(R.string.event_move_failed)
