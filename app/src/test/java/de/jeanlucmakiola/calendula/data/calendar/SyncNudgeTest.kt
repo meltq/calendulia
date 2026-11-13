@@ -211,4 +211,13 @@ class SyncNudgeTest {
         sync.adapterTypes = setOf(dav.type)
         assertThat(repo.canRequestSync.first()).isTrue()
     }
+
+    @Test
+    fun `manual sync refused for some accounts says so`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(refusedTypes = setOf(google.type))
+        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.PartlyFailed)
+        assertThat(sync.requests).containsExactly(Request(dav, true))
+    }
 }

@@ -46,6 +46,8 @@ class SyncViewModel @Inject constructor(
     fun requestSync() {
         if (_inFlight.value) return
         _inFlight.value = true
+        // A repeat receipt must land as a new one, restarting the chip.
+        _result.value = null
         viewModelScope.launch {
             try {
                 // Listening before asking, so a sync that lands at once still counts.
@@ -54,7 +56,7 @@ class SyncViewModel @Inject constructor(
                 }
                 val outcome = repository.requestSync()
                 _result.value = outcome
-                if (outcome == SyncRequestResult.Requested) settled.await() else settled.cancel()
+                if (outcome == SyncRequestResult.Requested || outcome == SyncRequestResult.PartlyFailed) settled.await() else settled.cancel()
             } finally {
                 _inFlight.value = false
             }
@@ -74,6 +76,7 @@ class SyncViewModel @Inject constructor(
 @StringRes
 fun SyncRequestResult.messageRes(): Int = when (this) {
     SyncRequestResult.Requested -> R.string.sync_requested
+    SyncRequestResult.PartlyFailed -> R.string.sync_request_partly_failed
     SyncRequestResult.NothingToSync -> R.string.sync_nothing_to_sync
     SyncRequestResult.Failed -> R.string.sync_request_failed
 }

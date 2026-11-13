@@ -20,8 +20,8 @@ data class SyncAccount(val name: String, val type: String) {
  * itself stays the adapter's job; this only schedules it.
  */
 interface SyncRequester {
-    /** Whether a calendar sync adapter is installed for [accountType]; without one a request does nothing. */
-    fun hasAdapter(accountType: String): Boolean
+    /** Account types with a calendar sync adapter installed; for any other a request does nothing. */
+    fun adapterAccountTypes(): Set<String>
 
     /**
      * Schedule a sync of [account]; may throw if the system refuses. [userInitiated]
@@ -32,10 +32,11 @@ interface SyncRequester {
 
 @Singleton
 class AndroidSyncRequester @Inject constructor() : SyncRequester {
-    override fun hasAdapter(accountType: String): Boolean =
-        ContentResolver.getSyncAdapterTypes().any {
-            it.authority == CalendarContract.AUTHORITY && it.accountType == accountType
-        }
+    // Lists only adapters in packages visible to the app — hence the SyncAdapter <queries> entry.
+    override fun adapterAccountTypes(): Set<String> =
+        ContentResolver.getSyncAdapterTypes()
+            .filter { it.authority == CalendarContract.AUTHORITY }
+            .mapTo(mutableSetOf()) { it.accountType }
 
     override fun requestSync(account: SyncAccount, userInitiated: Boolean) {
         val extras = Bundle().apply {
@@ -57,4 +58,4 @@ fun List<CalendarSource>.syncAccounts(): Set<SyncAccount> =
         .filterTo(linkedSetOf()) { it.isSyncable }
 
 /** Outcome of a user-triggered sync request (#240). */
-enum class SyncRequestResult { Requested, NothingToSync, Failed }
+enum class SyncRequestResult { Requested, PartlyFailed, NothingToSync, Failed }

@@ -701,8 +701,8 @@ fun CalendarHost(
         EventMoveHost(
             reschedule,
             modifier = Modifier.fillMaxSize(),
-            actionFailure = selectionFailureMessage ?: syncMessage,
-            onActionFailureShown = {
+            notice = selectionFailureMessage ?: syncMessage,
+            onNoticeShown = {
                 if (selectionFailureMessage != null) eventActions.consumeFailure() else sync.consumeResult()
             },
         )

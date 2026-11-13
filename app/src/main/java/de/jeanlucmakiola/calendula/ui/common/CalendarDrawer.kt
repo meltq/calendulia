@@ -41,6 +41,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.ui.filter.CalendarFilterList
@@ -150,9 +152,16 @@ data class DrawerSync(val inFlight: Boolean, val onSync: () -> Unit)
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SyncNowRow(sync: DrawerSync) {
+    val inFlightText = stringResource(R.string.sync_requested)
     GroupedRow(
         title = stringResource(R.string.drawer_sync_now),
         position = Position.Bottom,
+        modifier = if (sync.inFlight) {
+            Modifier.semantics { stateDescription = inFlightText }
+        } else {
+            Modifier
+        },
+        dimmed = sync.inFlight,
         minHeight = 56.dp,
         leading = { DrawerLeadingIcon(Icons.Filled.Sync) },
         trailing = if (sync.inFlight) {

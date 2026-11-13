@@ -51,8 +51,8 @@ private val FAB_BAND = 88.dp
 fun EventMoveHost(
     viewModel: RescheduleViewModel,
     modifier: Modifier = Modifier,
-    actionFailure: String? = null,
-    onActionFailureShown: () -> Unit = {},
+    notice: String? = null,
+    onNoticeShown: () -> Unit = {},
 ) {
     val prompt by viewModel.scopePrompt.collectAsStateWithLifecycle()
     val outcome by viewModel.outcome.collectAsStateWithLifecycle()
@@ -81,7 +81,7 @@ fun EventMoveHost(
     }
     // A failed selection action (#141) shares the chip rather than stacking on it.
     val message = when (outcome) {
-        null -> actionFailure
+        null -> notice
         is MoveOutcome.Moved -> if (resizedLabel != null) {
             stringResource(R.string.event_resize_done, resizedLabel)
         } else {
@@ -116,10 +116,10 @@ fun EventMoveHost(
         viewModel.consumeOutcome()
     }
     // A failure waits for the chip to be free, then has its own turn.
-    LaunchedEffect(actionFailure, outcome == null) {
-        if (actionFailure == null || outcome != null) return@LaunchedEffect
+    LaunchedEffect(notice, outcome == null) {
+        if (notice == null || outcome != null) return@LaunchedEffect
         delay(CHIP_MILLIS)
-        onActionFailureShown()
+        onNoticeShown()
     }
 
     BoxWithConstraints(modifier = modifier.fillMaxSize()) {
@@ -138,7 +138,7 @@ fun EventMoveHost(
             // write anyway, so offering it would be a button that does nothing.
             val undo = content.undo?.takeIf { !writeInFlight }
             SnackChip(
-                visible = outcome != null || actionFailure != null,
+                visible = outcome != null || notice != null,
                 message = content.message,
                 maxWidth = chipMaxWidth,
                 actionLabel = stringResource(R.string.event_move_undo).takeIf { undo != null },

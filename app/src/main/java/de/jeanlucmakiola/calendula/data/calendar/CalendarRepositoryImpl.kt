@@ -111,7 +111,7 @@ class CalendarRepositoryImpl @Inject constructor(
         try {
             calendarIds().filterNotNull().distinct()
                 .mapNotNull { accountOf(it) }
-                .filterTo(linkedSetOf()) { canSync(it) }
+                .withAdapter()
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -125,11 +125,17 @@ class CalendarRepositoryImpl @Inject constructor(
             ?.let { SyncAccount(it.accountName, it.accountType) }
             ?: dataSource.calendarAccount(calendarId)
 
-    private fun canSync(account: SyncAccount): Boolean = account.isSyncable && try {
-        syncRequester.hasAdapter(account.type)
-    } catch (e: Exception) {
-        Log.w(TAG, "Sync adapters unreadable", e)
-        false
+    /** The syncable accounts among these whose type has a calendar sync adapter. */
+    private fun Collection<SyncAccount>.withAdapter(): Set<SyncAccount> {
+        val candidates = filter { it.isSyncable }
+        if (candidates.isEmpty()) return emptySet()
+        val adapterTypes = try {
+            syncRequester.adapterAccountTypes()
+        } catch (e: Exception) {
+            Log.w(TAG, "Sync adapters unreadable", e)
+            return emptySet()
+        }
+        return candidates.filterTo(linkedSetOf()) { it.type in adapterTypes }
     }
 
     private fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean = try {
@@ -140,11 +146,16 @@ class CalendarRepositoryImpl @Inject constructor(
         false
     }
 
-    private fun eventCalendar(eventId: Long, original: EventForm? = null): suspend () -> Collection<Long?> =
-        { listOf(original?.calendarId ?: dataSource.eventCalendarId(eventId)) }
+    /** The event's own calendar (from [original] when given, else read), plus [others]. */
+    private fun eventCalendar(
+        eventId: Long,
+        original: EventForm? = null,
+        vararg others: Long?,
+    ): suspend () -> Collection<Long?> =
+        { listOf(original?.calendarId ?: dataSource.eventCalendarId(eventId), *others) }
 
     private fun syncTargets(calendars: List<CalendarSource>): Set<SyncAccount> =
-        calendars.syncAccounts().filterTo(linkedSetOf(), ::canSync)
+        calendars.syncAccounts().withAdapter()
 
     override val canRequestSync: Flow<Boolean>
         get() = calendars().map { syncTargets(it).isNotEmpty() }.distinctUntilChanged().flowOn(io)
@@ -158,10 +169,12 @@ class CalendarRepositoryImpl @Inject constructor(
             Log.w(TAG, "Sync request skipped: calendars unreadable", e)
             return@withContext SyncRequestResult.Failed
         }
-        when {
-            accounts.isEmpty() -> SyncRequestResult.NothingToSync
-            accounts.count { requestSync(it, userInitiated = true) } > 0 -> SyncRequestResult.Requested
-            else -> SyncRequestResult.Failed
+        if (accounts.isEmpty()) return@withContext SyncRequestResult.NothingToSync
+        val sent = accounts.count { requestSync(it, userInitiated = true) }
+        when (sent) {
+            accounts.size -> SyncRequestResult.Requested
+            0 -> SyncRequestResult.Failed
+            else -> SyncRequestResult.PartlyFailed
         }
     }
 
@@ -383,7 +396,7 @@ class CalendarRepositoryImpl @Inject constructor(
         eventId: Long,
         original: EventForm,
         updated: EventForm,
-    ) = write({ listOf(original.calendarId ?: dataSource.eventCalendarId(eventId), updated.calendarId) }) {
+    ) = write(eventCalendar(eventId, original, updated.calendarId)) {
         dataSource.updateEvent(eventId, original, updated, allDayReminderTimeMinutes())
     }
 
@@ -396,7 +409,7 @@ class CalendarRepositoryImpl @Inject constructor(
         targetCalendarId: Long,
         original: EventForm,
         updated: EventForm,
-    ): Long = write({ listOf(original.calendarId ?: dataSource.eventCalendarId(eventId), targetCalendarId) }) {
+    ): Long = write(eventCalendar(eventId, original, targetCalendarId)) {
         dataSource.moveEvent(
             eventId, targetCalendarId, original, updated, allDayReminderTimeMinutes(),
         )

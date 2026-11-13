@@ -56,6 +56,10 @@
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
         </intent>
+        <!-- Sync adapters to ask for a calendar sync (#240, #303). -->
+        <intent>
+            <action android:name="android.content.SyncAdapter" />
+        </intent>
     </queries>
 
     <application

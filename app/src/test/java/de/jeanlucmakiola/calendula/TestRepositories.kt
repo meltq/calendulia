@@ -49,22 +49,24 @@ fun testRepository(
 ): CalendarRepositoryImpl = CalendarRepositoryImpl(source, prefs, settings, io, syncRequester)
 
 /**
- * Records every sync request; [accepts] false models the system refusing one,
- * [adapterTypes] the installed calendar sync adapters (null: every type has one).
+ * Records every sync request; [accepts] false models the system refusing all,
+ * [refusedTypes] refusing those account types, [adapterTypes] the installed
+ * calendar sync adapters (null: a fixed set covering the test accounts).
  */
 class RecordingSyncRequester(
     var accepts: Boolean = true,
     var adapterTypes: Set<String>? = null,
+    var refusedTypes: Set<String> = emptySet(),
 ) : SyncRequester {
     data class Request(val account: SyncAccount, val userInitiated: Boolean)
 
     val requests = mutableListOf<Request>()
 
-    override fun hasAdapter(accountType: String): Boolean =
-        adapterTypes?.contains(accountType) ?: true
+    override fun adapterAccountTypes(): Set<String> =
+        adapterTypes ?: setOf("bitfire.at.davdroid", "com.google", "LOCAL")
 
     override fun requestSync(account: SyncAccount, userInitiated: Boolean) {
-        if (!accepts) throw SecurityException("refused")
+        if (!accepts || account.type in refusedTypes) throw SecurityException("refused")
         requests += Request(account, userInitiated)
     }
 }
