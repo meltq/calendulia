@@ -1638,7 +1638,7 @@ private fun ReminderPickerDialog(
                 DialogAmountField(
                     value = amountText,
                     onValueChange = { amountText = it },
-                    placeholder = "10",
+                    placeholder = if (isAllDay) "1" else "10",
                 )
                 Spacer(Modifier.width(12.dp))
                 DialogUnitDropdown(
