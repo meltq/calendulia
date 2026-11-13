@@ -13,7 +13,6 @@ import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.atOccurrence
 import de.jeanlucmakiola.calendula.domain.descriptionRichText
-import de.jeanlucmakiola.calendula.domain.isEventTarget
 import de.jeanlucmakiola.calendula.domain.toDuplicateForm
 import de.jeanlucmakiola.calendula.ui.common.DeleteOutcome
 import de.jeanlucmakiola.calendula.ui.common.tryDeleteEvent
@@ -143,7 +142,7 @@ class EventDetailViewModel @Inject constructor(
      */
     fun duplicateForm(): EventForm? {
         val loaded = state.value as? EventDetailUiState.Success ?: return null
-        return loaded.detail.toDuplicateForm(loaded.isEventTarget, zoneSource.current())
+        return loaded.detail.toDuplicateForm(zoneSource.current())
     }
 
     private suspend fun loadDetail(target: Target): EventDetailUiState = try {
@@ -165,7 +164,6 @@ class EventDetailViewModel @Inject constructor(
             detail = corrected,
             calendarName = calendar?.displayName,
             canModify = calendar?.canModifyContents == true,
-            isEventTarget = calendar?.isEventTarget == true,
             isManaged = calendar?.isManaged == true,
             // Found here, off the main thread and once per load: the platform
             // matcher loads its metadata on first use.

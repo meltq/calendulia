@@ -16,8 +16,6 @@ sealed interface EventDetailUiState {
         val calendarName: String?,
         /** Whether the owning calendar allows modifying events (shows edit/delete). */
         val canModify: Boolean = false,
-        /** Whether the owning calendar takes new events, so a duplicate can stay in it. */
-        val isEventTarget: Boolean = false,
         /**
          * The event belongs to a managed special-dates calendar: its editable
          * fields (reminders, notes) can still be edited, but delete is hidden —

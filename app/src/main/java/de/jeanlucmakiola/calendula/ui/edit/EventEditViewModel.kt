@@ -306,7 +306,13 @@ class EventEditViewModel @Inject constructor(
     ) { local, external, palette, allCalendars, recentTimeZones ->
         val form = local.form ?: return@combine null
         val resolvedId = resolveEventCalendar(form.calendarId, external.hints, allCalendars)
-        val resolved = form.copy(calendarId = resolvedId)
+        // A colour is scoped to the calendar it came from, so one that came with
+        // a requested calendar the form couldn't take goes, as on [setCalendar].
+        val requestRefused = form.calendarId == null &&
+            external.hints.requested.let { it != null && it != resolvedId }
+        val resolved = form.copy(calendarId = resolvedId).let {
+            if (requestRefused) it.copy(colorKey = null, color = null) else it
+        }
         val resolvedCalendar = allCalendars.firstOrNull { it.id == resolvedId }
         // Editing an event in a managed calendar locks its synced fields. Keyed
         // off the calendar's durable marker, not a stored id, so it holds after a
@@ -677,9 +683,11 @@ class EventEditViewModel @Inject constructor(
      * The event falls back to the new calendar's colour until re-picked.
      */
     fun setCalendar(id: Long) {
-        // Re-picking the calendar the form already shows changes nothing, so it
-        // keeps a duplicate's colour and raises no unsaved change.
-        if (id == state.value?.form?.calendarId) return
+        // Confirming the calendar the form shows pins it and changes nothing else.
+        if (id == state.value?.form?.calendarId) {
+            pinShownCalendar()
+            return
+        }
         edit { it.copy(calendarId = id, colorKey = null, color = null) }
         // A fresh event re-inherits the new calendar's default reminder and
         // length unless the user has already hand-edited them (guarded inside).
@@ -691,13 +699,32 @@ class EventEditViewModel @Inject constructor(
     fun setAccessLevel(value: AccessLevel) = edit { it.copy(accessLevel = value) }
 
     /** Pick a palette colour (round-trips via its key); [argb] is its swatch. */
-    fun setColorKey(key: String, argb: Int) = edit { it.copy(colorKey = key, color = argb) }
+    fun setColorKey(key: String, argb: Int) {
+        pinShownCalendar()
+        edit { it.copy(colorKey = key, color = argb) }
+    }
 
     /** Pick a raw colour (local / opted-in calendars), clearing any palette key. */
-    fun setColorRaw(argb: Int) = edit { it.copy(colorKey = null, color = argb) }
+    fun setColorRaw(argb: Int) {
+        pinShownCalendar()
+        edit { it.copy(colorKey = null, color = argb) }
+    }
 
     /** Clear the colour so the event inherits its calendar's. */
-    fun clearColor() = edit { it.copy(colorKey = null, color = null) }
+    fun clearColor() {
+        pinShownCalendar()
+        edit { it.copy(colorKey = null, color = null) }
+    }
+
+    /**
+     * Fix a still-resolving form to the calendar and colour it shows, so a colour
+     * picked for that calendar stays with it. Not a change of its own.
+     */
+    private fun pinShownCalendar() {
+        val shown = state.value?.form ?: return
+        if (_form.value?.calendarId != null) return
+        applyDefault { it.copy(calendarId = shown.calendarId, colorKey = shown.colorKey, color = shown.color) }
+    }
 
     /** Bare RRULE value from the recurrence picker; null = does not repeat. */
     fun setRecurrence(rrule: String?) = edit { it.copy(rrule = rrule) }

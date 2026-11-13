@@ -841,4 +841,30 @@ class EventEditViewModelTest {
         assertThat(vm.hasUnsavedChanges.value).isFalse()
         job.cancel()
     }
+
+    @Test
+    fun `a duplicate that can't stay in its calendar drops its colour`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L, visible = false)) }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openImported(
+            importedForm(end = LocalDateTime(2030, 1, 15, 10, 0)).copy(calendarId = 2L, colorKey = "3", color = 7),
+            ImportSource.Insert,
+        )
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.form?.calendarId).isEqualTo(1L)
+        assertThat(vm.state.value?.form?.colorKey).isNull()
+        assertThat(vm.state.value?.form?.color).isNull()
+
+        vm.setColorRaw(9)
+        advanceUntilIdle()
+
+        assertThat(vm.state.value?.form?.calendarId).isEqualTo(1L)
+        assertThat(vm.state.value?.form?.color).isEqualTo(9)
+        job.cancel()
+    }
 }
