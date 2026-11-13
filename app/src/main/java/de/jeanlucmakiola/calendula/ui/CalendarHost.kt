@@ -456,7 +456,7 @@ fun CalendarHost(
     val selectionFailureMessage = eventActionFailureMessage(selectionFailure)
     val syncMessage = syncResult?.let { stringResource(it.messageRes()) }
     val launchAccessPicker = rememberSyncAccessPicker(sync)
-    var showSyncAccess by remember { mutableStateOf(false) }
+    var showSyncAccess by rememberSaveable { mutableStateOf(false) }
     val onEditEvent: (EventInstance) -> Unit = { event -> editKey = event.occurrenceKey() }
     // A tap opens the edit form instead of the detail screen when the user chose
     // so (#178) — only for events whose calendar takes writes. Both are read at
@@ -605,7 +605,7 @@ fun CalendarHost(
                         onOpenSettings()
                         switchScope.launch { drawerState.close() }
                     },
-                    sync = remember(syncTargets, syncInFlight, launchAccessPicker) {
+                    sync = remember(syncTargets, syncInFlight) {
                         DrawerSync(
                             canSync = syncTargets.reachable.isNotEmpty(),
                             inFlight = syncInFlight,
@@ -719,8 +719,8 @@ fun CalendarHost(
         if (showSyncAccess) {
             SyncAccessSheet(
                 accounts = syncTargets.needsAccess.toList(),
-                onGrant = { launchAccessPicker(setOf(it)) },
-                onDismissAccount = { sync.setAccessDismissed(it, dismissed = true) },
+                onGrant = launchAccessPicker,
+                onDismissAccount = sync::dismissAccess,
                 onDismiss = { showSyncAccess = false },
             )
         }

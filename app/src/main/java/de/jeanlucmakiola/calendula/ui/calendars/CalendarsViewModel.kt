@@ -57,10 +57,13 @@ class CalendarsViewModel @Inject constructor(
                 initialValue = emptyList(),
             )
 
-    /** Accounts the drawer was told not to ask sync-request access for (#240). */
+    /**
+     * Accounts the drawer was told not to ask sync-request access for (#240),
+     * limited to those still behind a visible calendar and still unreachable.
+     */
     val syncAccessDismissed: StateFlow<List<SyncAccount>> =
-        repository.syncAccessDismissed
-            .map { set -> set.sortedWith(compareBy({ it.name.lowercase() }, { it.type })) }
+        repository.syncTargets
+            .map { targets -> targets.dismissed.sortedWith(compareBy({ it.name.lowercase() }, { it.type })) }
             .catch { emit(emptyList()) }
             .stateWhileSubscribed(scope = viewModelScope, initialValue = emptyList())
 

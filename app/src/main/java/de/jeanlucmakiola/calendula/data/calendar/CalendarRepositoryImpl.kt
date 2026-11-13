@@ -184,7 +184,11 @@ class CalendarRepositoryImpl @Inject constructor(
 
     private fun targetsOf(calendars: List<CalendarSource>, dismissed: Set<SyncAccount>): SyncTargets =
         reach(calendars.syncAccounts().withAdapter()).let {
-            if (dismissed.isEmpty()) it else it.copy(needsAccess = it.needsAccess - dismissed)
+            if (dismissed.isEmpty()) {
+                it
+            } else {
+                it.copy(needsAccess = it.needsAccess - dismissed, dismissed = it.needsAccess intersect dismissed)
+            }
         }
 
     override val syncTargets: Flow<SyncTargets>

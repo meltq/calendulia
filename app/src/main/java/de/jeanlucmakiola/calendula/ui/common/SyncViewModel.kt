@@ -81,8 +81,8 @@ class SyncViewModel @Inject constructor(
     }
 
     /** Stop asking for [account]'s access (#240); undone from the calendar manager. */
-    fun setAccessDismissed(account: SyncAccount, dismissed: Boolean) {
-        viewModelScope.launch { repository.setSyncAccessDismissed(account, dismissed) }
+    fun dismissAccess(account: SyncAccount) {
+        viewModelScope.launch { repository.setSyncAccessDismissed(account, dismissed = true) }
     }
 
     fun consumeResult() {

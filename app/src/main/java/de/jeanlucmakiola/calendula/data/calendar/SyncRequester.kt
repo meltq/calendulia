@@ -81,22 +81,27 @@ fun List<CalendarSource>.syncAccounts(): Set<SyncAccount> =
 /**
  * Who a sync request can go to: [reachable] by name, [needsAccess] only once the
  * user lets the app see the account (Android 13+, see [accountAccessIntent]).
+ * [dismissed] are hidden accounts the user said not to ask about.
  */
-data class SyncTargets(val reachable: Set<SyncAccount>, val needsAccess: Set<SyncAccount>) {
+data class SyncTargets(
+    val reachable: Set<SyncAccount>,
+    val needsAccess: Set<SyncAccount>,
+    val dismissed: Set<SyncAccount> = emptySet(),
+) {
     companion object {
         val None = SyncTargets(emptySet(), emptySet())
     }
 }
 
 /**
- * The system account picker, limited to [accounts]: the one the user picks
- * becomes visible to the app, so sync requests can name it. One account per pick.
+ * The system account picker, limited to [account]: once picked it becomes
+ * visible to the app, so sync requests can name it.
  */
-fun accountAccessIntent(accounts: Collection<SyncAccount>, description: String): Intent =
+fun accountAccessIntent(account: SyncAccount, description: String): Intent =
     AccountManager.newChooseAccountIntent(
         null,
-        accounts.map { Account(it.name, it.type) },
-        accounts.map { it.type }.distinct().toTypedArray(),
+        listOf(Account(account.name, account.type)),
+        arrayOf(account.type),
         description,
         null,
         null,

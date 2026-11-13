@@ -280,7 +280,7 @@ class SyncNudgeTest {
 
         repo.setSyncAccessDismissed(google, dismissed = true)
 
-        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), emptySet()))
+        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), emptySet(), dismissed = setOf(google)))
         assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
 
         repo.setSyncAccessDismissed(google, dismissed = false)
@@ -296,7 +296,7 @@ class SyncNudgeTest {
         repo.setSyncAccessDismissed(dav, dismissed = true)
         repo.setSyncAccessDismissed(google, dismissed = true)
 
-        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets.None)
+        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(emptySet(), emptySet(), dismissed = setOf(dav, google)))
         assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.NothingToSync)
     }
 
@@ -309,5 +309,6 @@ class SyncNudgeTest {
         repo.createEvent(form(1L))
 
         assertThat(sync.requests).containsExactly(auto(dav))
+        assertThat(repo.syncTargets.first().dismissed).isEmpty()
     }
 }

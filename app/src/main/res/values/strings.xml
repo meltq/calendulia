@@ -400,7 +400,7 @@
     <string name="drawer_sync_access_summary">Pick each account Calendula may ask to sync</string>
     <string name="sync_access_hint">Android only lets Calendula ask an account to sync once you pick it here. Tap an account to allow it, or choose Don\'t ask to stop offering it.</string>
     <string name="sync_access_dont_ask">Don\'t ask</string>
-    <string name="calendars_sync_access_header">Not asked to sync</string>
+    <string name="calendars_sync_access_header">Not asked for sync access</string>
     <string name="calendars_sync_access_hint">Calendula won\'t offer to request syncs for these accounts. Ask again to bring them back to Allow sync requests in the menu.</string>
     <string name="calendars_sync_access_ask_again">Ask again</string>
     <string name="sync_access_picker_description">Choose an account Calendula may ask to sync your calendars</string>
