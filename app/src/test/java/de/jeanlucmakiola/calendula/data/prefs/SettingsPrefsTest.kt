@@ -733,8 +733,8 @@ class SettingsPrefsTest {
         prefs.setAutoBackupFolderUri("content://tree/new")
         assertThat(prefs.autoBackupCombined.first()).isTrue()
         assertThat(prefs.autoBackupLegacyInstall.first()).isFalse()
-        assertThat(prefs.autoBackupLedger.first())
-            .containsExactly("latest-combined", listOf("calendula-backup.ics"))
+        // A new folder starts a new ledger: the old file there isn't known to be ours.
+        assertThat(prefs.autoBackupLedger.first()).isEmpty()
 
         prefs.setAutoBackupCombined(false)
         assertThat(prefs.autoBackupCombined.first()).isFalse()
@@ -763,6 +763,20 @@ class SettingsPrefsTest {
         assertThat(prefs.autoBackupKeep.first()).isIn(listOf(3, 5))
         prefs.setAutoBackupKeep(99)
         assertThat(prefs.autoBackupKeep.first()).isEqualTo(10)
+    }
+
+    @Test
+    fun `a pre-411 install adopts its old file when the layout is pinned in place`(@TempDir tempDir: Path) = runTest {
+        val store = testDataStore(tempDir, "test_settings")
+        val prefs = SettingsPrefs(store)
+        store.updateData { p ->
+            val m = p.toMutablePreferences()
+            m[stringPreferencesKey("auto_backup_folder_uri")] = "content://tree/old"
+            m
+        }
+        prefs.setAutoBackupCombined(false)
+        assertThat(prefs.autoBackupLedger.first())
+            .containsExactly("latest-combined", listOf("calendula-backup.ics"))
     }
 
     private fun backupCalendar(id: Long, local: Boolean) = CalendarSource(

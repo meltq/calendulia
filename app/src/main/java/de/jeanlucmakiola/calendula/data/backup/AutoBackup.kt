@@ -159,8 +159,9 @@ class BackupWorker(
         val selection = prefs.autoBackupSelection.first()
         val targets = backupTargets(all.filter(selection::selects), combined = prefs.autoBackupCombined.first())
         if (targets.isEmpty()) return RunOutcome.NothingSelected
+        prefs.adoptLegacyBackupFile()
         val listing = exporter.listFolder(folder)
-        var ledger = prefs.autoBackupLedger.first()
+        val ledger = prefs.autoBackupLedger.first()
         // A listing still loading can't tell a gone file from a late one.
         val existing = if (listing.complete) listing.files.keys else listing.files.keys + ledger.values.flatten()
         val plans = planBackupFiles(
@@ -169,15 +170,13 @@ class BackupWorker(
             existing = existing,
             at = LocalDateTime.now(),
             keep = prefs.autoBackupKeep.first(),
-            legacyOwned = prefs.autoBackupLegacyInstall.first(),
         )
         val stamp = Clock.System.now()
         val liveKeys = all.map { it.id.toString() }.toSet()
-        suspend fun record(key: String, files: List<String>) {
-            ledger = withLedgerEntry(ledger, key, files, liveKeys)
-            prefs.setAutoBackupLedger(ledger)
-        }
+        suspend fun record(key: String, files: List<String>) =
+            prefs.updateAutoBackupLedger { withLedgerEntry(it, key, files, liveKeys) }
         var written = 0
+        val landedLatest = mutableSetOf<String>()
         for (plan in plans) {
             val target = plan.target
             val bytes = try {
@@ -202,28 +201,30 @@ class BackupWorker(
                 } catch (e: Exception) {
                     Log.w(TAG, "Backup of one series failed", e)
                 }
-                // The stable copy is best-effort: it never holds up the dated
-                // backup, its pruning or the run's status.
+                // Best-effort: the stable copy never holds up the dated backup,
+                // its pruning or the run's status. An old copy goes only once the
+                // new one has landed.
                 try {
+                    val latest = plan.latestName ?: return@withContext
                     val latestKey = latestLedgerKey(target.key)
-                    val latest = plan.latestName?.let { intended ->
-                        val landed = exporter.writeToFolder(folder, listing, intended, bytes)
-                        // A provider that renamed it leaves a copy to clean up next run.
-                        listOf(landed, intended).distinct()
-                    }.orEmpty()
-                    val owned = ledger[latestKey].orEmpty().filter { it !in plan.staleLatest }
-                    record(latestKey, plan.staleLatest + (latest.ifEmpty { owned }))
+                    // A provider that renamed it leaves a copy to clean up next run.
+                    val landed = exporter.writeToFolder(folder, listing, latest, bytes)
+                    record(latestKey, plan.staleLatest + landed)
+                    if (landed == latest) landedLatest += target.key
                     val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
-                    record(latestKey, plan.staleLatest.filter { it in staleLeft } + latest.ifEmpty { owned })
+                    record(latestKey, plan.staleLatest.filter { it in staleLeft } + landed)
                 } catch (e: Exception) {
                     Log.w(TAG, "Stable copy of one series failed", e)
                 }
             }
         }
-        replacedLatestCopies(targets, ledger, existing).forEach { (key, names) ->
-            withContext(NonCancellable) {
-                val left = exporter.deleteFromFolder(listing, names)
-                record(latestLedgerKey(key), names.filter { it in left })
+        // A layout switch retires the other layout's copies once every new one is there.
+        if (landedLatest.size == plans.size) {
+            replacedLatestCopies(targets, prefs.autoBackupLedger.first(), existing).forEach { (key, names) ->
+                withContext(NonCancellable) {
+                    val left = exporter.deleteFromFolder(listing, names)
+                    record(latestLedgerKey(key), names.filter { it in left })
+                }
             }
         }
         return when (written) {

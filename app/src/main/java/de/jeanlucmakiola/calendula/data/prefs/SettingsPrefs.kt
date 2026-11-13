@@ -354,6 +354,9 @@ class SettingsPrefs @Inject constructor(
     suspend fun setAutoBackupFolderUri(uri: String?) {
         prefs.edit {
             it.pinBackupLayout()
+            // The ledger says which files in the old folder are ours; in a new
+            // one a file of the same name may be the user's.
+            if (it[SettingsKeys.autoBackupFolderUri] != uri) it[SettingsKeys.autoBackupLedger] = emptyMap()
             it[SettingsKeys.autoBackupFolderUri] = uri
         }
     }
@@ -367,7 +370,15 @@ class SettingsPrefs @Inject constructor(
 
     suspend fun setAutoBackupKeep(keep: Int) = prefs.set(SettingsKeys.autoBackupKeep, keep)
 
-    suspend fun setAutoBackupLedger(ledger: BackupLedger) = prefs.set(SettingsKeys.autoBackupLedger, ledger)
+    /** Atomic, so a run's ledger writes never undo one made meanwhile (pinning the layout). */
+    suspend fun updateAutoBackupLedger(transform: (BackupLedger) -> BackupLedger) {
+        prefs.update(SettingsKeys.autoBackupLedger, transform)
+    }
+
+    /** Record a pre-#411 install's old file as its combined series' stable copy (see [pinBackupLayout]). */
+    suspend fun adoptLegacyBackupFile() {
+        prefs.edit { if (it.autoBackupLegacyInstall) it.adoptLegacyBackupFile() }
+    }
 
     /** Switch [calendar] in or out of the automatic backup (#147). */
     suspend fun setAutoBackupCalendar(calendar: CalendarSource, included: Boolean) {
@@ -839,12 +850,14 @@ val Preferences.autoBackupCombined: Boolean
 private fun MutablePreferences.pinBackupLayout() {
     if (this[SettingsKeys.autoBackupCombinedStored] != null) return
     val legacy = autoBackupLegacyInstall
+    if (legacy) adoptLegacyBackupFile()
     this[SettingsKeys.autoBackupCombinedStored] = legacy
-    if (legacy) {
-        val key = latestLedgerKey(COMBINED_SERIES)
-        val ledger = this[SettingsKeys.autoBackupLedger]
-        this[SettingsKeys.autoBackupLedger] = ledger + (key to (ledger[key].orEmpty() + LEGACY_BACKUP_FILE).distinct())
-    }
+}
+
+private fun MutablePreferences.adoptLegacyBackupFile() {
+    val key = latestLedgerKey(COMBINED_SERIES)
+    val ledger = this[SettingsKeys.autoBackupLedger]
+    this[SettingsKeys.autoBackupLedger] = ledger + (key to (ledger[key].orEmpty() + LEGACY_BACKUP_FILE).distinct())
 }
 
 /** An install that set up automatic backup before #411 and hasn't been pinned since. */

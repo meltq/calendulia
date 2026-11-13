@@ -472,7 +472,8 @@ automatic backup writes one `<calendar name>_<date>_<time>.ics` series per
 calendar, or one `calendula-backup_…` series in combined mode (#411), and prunes
 each series to the retention count after its new file has landed. Pruning only
 deletes names recorded in a per-series ledger of files the backup wrote
-(`auto_backup_files`, keyed by calendar id), never whatever happens to match a
+(`auto_backup_files`, keyed by calendar id, reset when the folder changes),
+never whatever happens to match a
 name, so renames, same-named calendars and the user's own files are safe.
 Each series also keeps a stable undated copy (`<calendar name>.ics`, or
 `calendula-backup.ics` combined) overwritten every run, so sync tools and

@@ -132,7 +132,8 @@ class BackupPlanTest {
 
     @Test
     fun `the pre-411 file is the combined stable copy only for the install that wrote it`() {
-        val owned = planBackupFiles(listOf(combined), emptyMap(), setOf(LEGACY_BACKUP_FILE), at, 1, legacyOwned = true)
+        val adopted = mapOf(latestLedgerKey(COMBINED_SERIES) to listOf(LEGACY_BACKUP_FILE))
+        val owned = planBackupFiles(listOf(combined), adopted, setOf(LEGACY_BACKUP_FILE), at, 1)
         assertThat(owned.single().latestName).isEqualTo(LEGACY_BACKUP_FILE)
         assertThat(owned.single().prune).isEmpty()
 
@@ -144,7 +145,7 @@ class BackupPlanTest {
     fun `a stable name recorded as a dated file by an earlier build is never pruned`() {
         val ledger = mapOf(COMBINED_SERIES to listOf(LEGACY_BACKUP_FILE, "calendula-backup_a.ics"))
         val plan = planBackupFiles(
-            listOf(combined), ledger, setOf(LEGACY_BACKUP_FILE, "calendula-backup_a.ics"), at, 1, legacyOwned = true,
+            listOf(combined), ledger, setOf(LEGACY_BACKUP_FILE, "calendula-backup_a.ics"), at, 1,
         ).single()
         assertThat(plan.prune).containsExactly("calendula-backup_a.ics")
     }
@@ -266,4 +267,13 @@ class BackupPlanTest {
         assertThat(targets.map { it.baseName }).containsExactly("Work-5-5", "Work-6", "Work-5-9").inOrder()
     }
 
+    @Test
+    fun `claiming a stable copy takes it off its previous owner`() {
+        val previous = mapOf(latestLedgerKey("1") to listOf("Work.ics", "Job.ics"))
+        val next = withLedgerEntry(previous, latestLedgerKey("2"), listOf("Work.ics"), setOf("1", "2"))
+        assertThat(next).containsExactly(
+            latestLedgerKey("1"), listOf("Job.ics"),
+            latestLedgerKey("2"), listOf("Work.ics"),
+        )
+    }
 }

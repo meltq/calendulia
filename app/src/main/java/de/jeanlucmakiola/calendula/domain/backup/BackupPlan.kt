@@ -158,9 +158,7 @@ fun backupFileName(baseName: String, at: LocalDateTime): String =
  * files no longer in the folder ([existing]) are forgotten. Each target also
  * gets its stable copy, which retention never touches. A stable name is only
  * written when the file is absent or this series owns it — or a series of this
- * run that is moving off it (a rename hand-off). [legacyOwned]: this install
- * wrote the pre-#411 [LEGACY_BACKUP_FILE], which is the combined series' stable
- * copy now.
+ * run that is moving off it (a rename hand-off).
  */
 fun planBackupFiles(
     targets: List<BackupTarget>,
@@ -168,7 +166,6 @@ fun planBackupFiles(
     existing: Set<String>,
     at: LocalDateTime,
     keep: Int,
-    legacyOwned: Boolean = false,
 ): List<BackupFilePlan> {
     val retain = keep.coerceAtLeast(1)
     val runKeys = targets.map { it.key }.toSet()
@@ -180,13 +177,11 @@ fun planBackupFiles(
         val fileName = backupFileName(target.baseName, at)
         val latest = latestFileName(target.baseName)
         val earlier = ledger[target.key].orEmpty()
-            .filter { it in existing && it != fileName && it != latest && it != LEGACY_BACKUP_FILE }
+            .filter { it in existing && it != fileName && it != latest }
             .distinct()
         val kept = earlier.takeLast(retain - 1)
         val owner = owners[latest]
-        val writable = latest !in existing ||
-            (owner != null && owner in runKeys) ||
-            (latest == LEGACY_BACKUP_FILE && target.key == COMBINED_SERIES && legacyOwned)
+        val writable = latest !in existing || (owner != null && owner in runKeys)
         BackupFilePlan(
             target = target,
             fileName = fileName,
@@ -240,6 +235,12 @@ fun withLedgerEntry(
         series in liveKeys || series == COMBINED_SERIES
     }.toMutableMap()
     next[key] = files.distinct()
+    // A stable copy has one owner: claiming it takes it off any other series.
+    if (key.startsWith(LATEST_PREFIX)) {
+        next.keys.filter { it != key && it.startsWith(LATEST_PREFIX) }.forEach { other ->
+            next[other] = next.getValue(other) - files.toSet()
+        }
+    }
     return next.filterValues { it.isNotEmpty() }
 }
 
