@@ -961,6 +961,42 @@ class CalendarRepositoryImplTest {
         assertThat(fake.lastCalendarEventsIds).containsExactly(2L)
     }
 
+    @Test
+    fun `copyEvents reports progress and skips what an earlier run copied`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        fun icsEvent(uid: String) = de.jeanlucmakiola.calendula.domain.ics.IcsEvent(
+            uid = uid,
+            summary = uid,
+            start = Instant.fromEpochMilliseconds(1_000_000_000L),
+            end = Instant.fromEpochMilliseconds(1_000_003_600L),
+            isAllDay = false,
+            zoneId = "UTC",
+        )
+        val fake = FakeCalendarDataSource().apply {
+            existingUidsResult = setOf("a")
+            calendarCopyRowsResult = de.jeanlucmakiola.calendula.domain.ics.CalendarCopyRows(
+                series = listOf(
+                    de.jeanlucmakiola.calendula.domain.ics.CopySeries(1, null, icsEvent("a")),
+                    de.jeanlucmakiola.calendula.domain.ics.CopySeries(2, null, icsEvent("b")),
+                ),
+                exceptions = emptyList(),
+            )
+        }
+        val repo = testRepository(fake, tempDir, Dispatchers.Unconfined)
+        val progress = mutableListOf<Pair<Int, Int>>()
+
+        val summary = repo.copyEvents(sourceCalendarId = 1L, targetCalendarId = 3L) { done, total ->
+            progress += done to total
+        }
+
+        assertThat(summary.imported).isEqualTo(1)
+        assertThat(summary.skippedDuplicate).isEqualTo(1)
+        assertThat(fake.importedEvents.map { it.first.uid to it.second }).containsExactly("b" to 3L)
+        assertThat(progress.first()).isEqualTo(0 to 2)
+        assertThat(progress.last()).isEqualTo(2 to 2)
+    }
+
     private fun parsedEvent(uid: String?, summary: String = "E") =
         de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent(
         uid = uid,

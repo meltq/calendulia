@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Schedule
@@ -89,8 +90,11 @@ fun BackupScreen(
     onImport: (Uri) -> Unit,
     visible: Boolean = true,
     viewModel: CalendarsViewModel = hiltViewModel(),
+    copyViewModel: CopyEventsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.backupState.collectAsStateWithLifecycle()
+    val copyRun by copyViewModel.run.collectAsStateWithLifecycle()
+    var showCopy by rememberSaveable { mutableStateOf(false) }
     val backupResult by viewModel.backupResult.collectAsStateWithLifecycle()
     val autoBackup by viewModel.autoBackup.collectAsStateWithLifecycle()
 
@@ -158,6 +162,9 @@ fun BackupScreen(
             is BackupUiState.Ready -> BackupContent(
                 exportable = s.exportable,
                 canImport = s.canImport,
+                canCopy = s.canCopy,
+                copyRun = copyRun,
+                onCopy = { showCopy = true },
                 autoBackup = autoBackup,
                 viewModel = viewModel,
                 onRestore = { runCatching { openBackup.launch(RESTORE_MIME_TYPES) } },
@@ -185,6 +192,23 @@ fun BackupScreen(
                 calendars = ready.exportable,
                 onExport = viewModel::exportBackup,
                 onDismiss = { showExportPicker = false },
+            )
+        }
+        if (showCopy) {
+            val calendars by copyViewModel.calendars.collectAsStateWithLifecycle()
+            val selection by copyViewModel.selection.collectAsStateWithLifecycle()
+            CopyEventsSheet(
+                calendars = calendars,
+                selection = selection,
+                run = copyRun,
+                onSelectSource = copyViewModel::setSource,
+                onSelectTarget = copyViewModel::setTarget,
+                onStart = copyViewModel::start,
+                onCancel = copyViewModel::cancel,
+                onDismiss = {
+                    showCopy = false
+                    copyViewModel.clearFinished()
+                },
             )
         }
         if (showBackupCalendars) {
@@ -249,6 +273,9 @@ private fun defaultBackupName(): String = "calendula-backup-${LocalDate.now()}.i
 private fun BackupContent(
     exportable: List<CalendarSource>,
     canImport: Boolean,
+    canCopy: Boolean,
+    copyRun: CopyRunState,
+    onCopy: () -> Unit,
     autoBackup: AutoBackupUiState,
     viewModel: CalendarsViewModel,
     onRestore: () -> Unit,
@@ -296,6 +323,16 @@ private fun BackupContent(
         leading = { LeadingAvatar(Icons.Default.FileUpload) },
         onClick = onRestoreClick,
     )
+    if (canCopy) {
+        GroupedRow(
+            title = stringResource(R.string.calendars_copy_action),
+            summary = (copyRun as? CopyRunState.Running)?.let { copyProgressText(it) }
+                ?: stringResource(R.string.calendars_copy_summary),
+            position = Position.Middle,
+            leading = { LeadingAvatar(Icons.Default.ContentCopy) },
+            onClick = onCopy,
+        )
+    }
     GroupedRow(
         title = stringResource(R.string.calendars_auto_backup),
         summary = stringResource(R.string.calendars_auto_backup_hint),

@@ -495,6 +495,20 @@ on whether an all-day exclusion is `yyyyMMdd` or a padded midnight stamp, so
 `exportExDates` drops the time part on the way out. Without this, an in-app
 backup→restore resurrected every occurrence the user had deleted.
 
+**Copying a calendar reads its exceptions too.** Backup & restore → Copy events
+(#325) reads every row of the source through `calendarCopyRows` — masters,
+one-offs *and* the exception rows the backup query leaves out — and
+`planCalendarCopy` turns them into the `ParsedIcsEvent`s that the normal
+`importEvents` inserts, so the UID dedup makes a re-run skip what landed before.
+The copy has no `_sync_id`, and an exception row only attaches through one, so
+overrides are written the way Calendula writes "only this event" on such a
+series: each exception adds its occurrence to the series' `EXDATE`, and a
+modified one becomes a standalone event with a UID derived from the series UID
+and the occurrence. The rows skip the `.ics` text: the writer pins a timed
+one-off to UTC and carries no colour, the direct mapping keeps both. Attendees
+and organizer are never read. The backup keeps excluding exceptions; a restore
+could not place a `RECURRENCE-ID` either.
+
 That re-encode is sampled where the reminder will actually *fire*, not at
 `DTSTART` (`importedAllDayReminderDate`). An imported series' `DTSTART` is only an
 anchor and is routinely ancient — Fossify writes a year-less contact birthday at

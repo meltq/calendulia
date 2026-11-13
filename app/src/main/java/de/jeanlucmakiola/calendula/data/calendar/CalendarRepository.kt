@@ -71,8 +71,27 @@ interface CalendarRepository {
      * Bulk-import parsed `.ics` [events] into [targetCalendarId]. Events whose
      * UID already exists in the target are skipped (idempotent restore); the
      * rest are inserted. See [CalendarDataSource.insertImportedEvent].
+     * [onProgress] gets the count of events handled so far after each one; a
+     * cancelled caller stops the import between events.
      */
-    suspend fun importEvents(targetCalendarId: Long, events: List<ParsedIcsEvent>): IcsImportSummary
+    suspend fun importEvents(
+        targetCalendarId: Long,
+        events: List<ParsedIcsEvent>,
+        onProgress: (done: Int) -> Unit = {},
+    ): IcsImportSummary
+
+    /**
+     * Copy every event of [sourceCalendarId] into [targetCalendarId] (#325),
+     * exceptions included (see
+     * [de.jeanlucmakiola.calendula.domain.ics.planCalendarCopy]). The source is only read. Runs
+     * through [importEvents], so a re-run skips what an earlier one copied.
+     * [onProgress] gets (done, total) once the source is read and after each event.
+     */
+    suspend fun copyEvents(
+        sourceCalendarId: Long,
+        targetCalendarId: Long,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): IcsImportSummary
 
     /** Create a new event from a validated form; returns the new `Events._ID`. */
     suspend fun createEvent(form: EventForm): Long

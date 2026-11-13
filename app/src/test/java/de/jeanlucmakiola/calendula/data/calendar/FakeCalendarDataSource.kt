@@ -8,6 +8,7 @@ import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.ics.CalendarCopyRows
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import java.time.ZoneId
@@ -88,6 +89,11 @@ internal class FakeCalendarDataSource : CalendarDataSource {
         lastCalendarEventsIds = calendarIds
         return calendarEventsResult
     }
+
+    var calendarCopyRowsResult: CalendarCopyRows = CalendarCopyRows(emptyList(), emptyList())
+
+    override fun calendarCopyRows(calendarId: Long, allDayReminderTimeMinutes: Int): CalendarCopyRows =
+        calendarCopyRowsResult
 
     override fun existingUids(calendarId: Long): Set<String> = existingUidsResult
 

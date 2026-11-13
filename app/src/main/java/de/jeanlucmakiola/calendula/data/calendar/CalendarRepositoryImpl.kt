@@ -14,6 +14,7 @@ import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
+import de.jeanlucmakiola.calendula.domain.ics.planCalendarCopy
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +31,8 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Instant
@@ -250,9 +253,22 @@ class CalendarRepositoryImpl @Inject constructor(
     override suspend fun exportEvents(calendarIds: Set<Long>) =
         withContext(io) { dataSource.calendarEvents(calendarIds, allDayReminderTimeMinutes()) }
 
+    override suspend fun copyEvents(
+        sourceCalendarId: Long,
+        targetCalendarId: Long,
+        onProgress: (done: Int, total: Int) -> Unit,
+    ): IcsImportSummary {
+        val events = withContext(io) {
+            planCalendarCopy(dataSource.calendarCopyRows(sourceCalendarId, allDayReminderTimeMinutes()))
+        }
+        onProgress(0, events.size)
+        return importEvents(targetCalendarId, events) { done -> onProgress(done, events.size) }
+    }
+
     override suspend fun importEvents(
         targetCalendarId: Long,
         events: List<ParsedIcsEvent>,
+        onProgress: (done: Int) -> Unit,
     ): IcsImportSummary = write {
         val existing = dataSource.existingUids(targetCalendarId)
         // Both are per-calendar, not per-event: looking them up once keeps a
@@ -266,6 +282,8 @@ class CalendarRepositoryImpl @Inject constructor(
         var failed = 0
         var notAttempted = 0
         for ((index, event) in events.withIndex()) {
+            currentCoroutineContext().ensureActive()
+            if (index > 0) onProgress(index)
             // A known UID means the event is already in this calendar — skip,
             // keeping a restore idempotent (no overwrite this pass).
             if (event.uid != null && event.uid in existing) {
@@ -296,6 +314,7 @@ class CalendarRepositoryImpl @Inject constructor(
                 Log.w(TAG, "Skipped an unimportable event", e)
             }
         }
+        if (notAttempted == 0) onProgress(events.size)
         IcsImportSummary(
             imported = imported,
             skippedDuplicate = skipped,

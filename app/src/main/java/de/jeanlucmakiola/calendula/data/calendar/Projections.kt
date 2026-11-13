@@ -156,10 +156,12 @@ internal object EventDetailProjection {
  * [EventDetailProjection] this reads `UID_2445` (to keep a row's identity across
  * backups) and `DURATION` (recurring rows carry it instead of DTEND), plus
  * `EXDATE` so a series exports the occurrences deleted from it. Modified-
- * occurrence and cancelled-exception rows are filtered out by the query
+ * occurrence and cancelled-exception rows are filtered out by the backup query
  * (`ORIGINAL_ID IS NULL`), so RECURRENCE-ID overrides aren't exported — a
  * documented v1 limit (import skips them too). EXDATE is unaffected by that
- * filter: it lives on the master row, not on an exception of its own.
+ * filter: it lives on the master row, not on an exception of its own. A
+ * calendar copy (#325) reads the exception rows too, through the trailing
+ * colour and series-link columns.
  */
 internal object EventExportProjection {
     val COLUMNS: Array<String> = arrayOf(
@@ -178,6 +180,11 @@ internal object EventExportProjection {
         CalendarContract.Events.STATUS,
         CalendarContract.Events.AVAILABILITY,
         CalendarContract.Events.CALENDAR_ID,
+        CalendarContract.Events.EVENT_COLOR,
+        CalendarContract.Events._SYNC_ID,
+        CalendarContract.Events.ORIGINAL_ID,
+        CalendarContract.Events.ORIGINAL_SYNC_ID,
+        CalendarContract.Events.ORIGINAL_INSTANCE_TIME,
     )
 
     const val IDX_ID = 0
@@ -195,6 +202,11 @@ internal object EventExportProjection {
     const val IDX_STATUS = 12
     const val IDX_AVAILABILITY = 13
     const val IDX_CALENDAR_ID = 14
+    const val IDX_EVENT_COLOR = 15
+    const val IDX_SYNC_ID = 16
+    const val IDX_ORIGINAL_ID = 17
+    const val IDX_ORIGINAL_SYNC_ID = 18
+    const val IDX_ORIGINAL_INSTANCE_TIME = 19
 }
 
 /**

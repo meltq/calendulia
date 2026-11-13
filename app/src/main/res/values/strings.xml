@@ -889,6 +889,27 @@
     <string name="calendars_restore_action">Restore from .ics file</string>
     <string name="calendars_restore_hint">Import events from a backup or another calendar app.</string>
     <string name="calendars_restore_unavailable">No calendar can take the imported events yet.</string>
+    <string name="calendars_copy_action">Copy events</string>
+    <string name="calendars_copy_summary">Copy one calendar\'s events into another, for example to move off Google.</string>
+    <string name="calendars_copy_hint">Copies every event, including repeating ones with the occurrences you changed or deleted. Guests and invitations stay behind, and the original calendar is left as it is.</string>
+    <string name="calendars_copy_from">From</string>
+    <string name="calendars_copy_to">To</string>
+    <string name="calendars_copy_choose">Choose a calendar</string>
+    <string name="calendars_copy_from_title">Copy from</string>
+    <string name="calendars_copy_to_title">Copy into</string>
+    <string name="calendars_copy_start">Copy</string>
+    <string name="calendars_copy_reading">Reading events…</string>
+    <plurals name="calendars_copy_progress">
+        <item quantity="one">%1$d of %2$d event</item>
+        <item quantity="other">%1$d of %2$d events</item>
+    </plurals>
+    <string name="calendars_copy_done">Copy complete</string>
+    <string name="calendars_copy_cancelled">Copy cancelled. Run it again to finish: events that were already copied are skipped.</string>
+    <string name="calendars_copy_failed">Couldn\'t copy the events.</string>
+    <plurals name="calendars_copy_stopped">
+        <item quantity="one">The target calendar stopped accepting events part way through. %d event was never copied.</item>
+        <item quantity="other">The target calendar stopped accepting events part way through. %d events were never copied.</item>
+    </plurals>
     <string name="calendars_auto_backup">Automatic backup</string>
     <string name="calendars_auto_backup_hint">Periodically export your calendars to a folder as .ics files.</string>
     <string name="calendars_auto_backup_folder">Backup folder</string>

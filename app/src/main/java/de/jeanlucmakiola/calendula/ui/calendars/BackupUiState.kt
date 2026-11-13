@@ -24,6 +24,8 @@ sealed interface BackupUiState {
     data class Ready(
         val exportable: List<CalendarSource>,
         val canImport: Boolean,
+        /** Some calendar can be copied into a different one (#325). */
+        val canCopy: Boolean = false,
     ) : BackupUiState
 }
 
@@ -50,5 +52,17 @@ fun backupUiState(calendars: List<CalendarSource>): BackupUiState {
             calendarListFailure(calendars) ?: FailureReason.NoImportTarget,
         )
     }
-    return BackupUiState.Ready(exportable = exportable, canImport = canImport)
+    return BackupUiState.Ready(
+        exportable = exportable,
+        canImport = canImport,
+        canCopy = exportable.any { copyTargets(calendars, it.id).isNotEmpty() },
+    )
 }
+
+/** Calendars a copy can read from: any a backup can (#325), synced and read-only ones included. */
+fun copySources(calendars: List<CalendarSource>): List<CalendarSource> =
+    calendars.filter { it.isBackupCandidate }
+
+/** Calendars a copy from [sourceId] can write into: the import targets, minus the source itself. */
+fun copyTargets(calendars: List<CalendarSource>, sourceId: Long?): List<CalendarSource> =
+    calendars.filter { it.isEventTarget && it.id != sourceId }

@@ -30,6 +30,9 @@ import de.jeanlucmakiola.calendula.domain.Reminder
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import de.jeanlucmakiola.calendula.domain.contacts.MANAGED_UID_PREFIX
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.ics.CalendarCopyRows
+import de.jeanlucmakiola.calendula.domain.ics.CopyException
+import de.jeanlucmakiola.calendula.domain.ics.CopySeries
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.semanticReminderMinutes
@@ -99,6 +102,13 @@ interface CalendarDataSource {
      * offsets (see [toIcsEvent]).
      */
     fun calendarEvents(calendarIds: Set<Long>, allDayReminderTimeMinutes: Int): List<IcsEvent>
+
+    /**
+     * Every event row of [calendarId] for a calendar copy (#325): the
+     * masters/one-offs [calendarEvents] reads, plus the modified and cancelled
+     * exception rows it leaves out, each with the keys that link it to its series.
+     */
+    fun calendarCopyRows(calendarId: Long, allDayReminderTimeMinutes: Int): CalendarCopyRows
 
     /**
      * The non-empty `Events.UID_2445` values present in [calendarId] — used to
@@ -788,12 +798,60 @@ class AndroidCalendarDataSource @Inject constructor(
             .associate { it.id to it.displayName }
         if (names.isEmpty()) return emptyList()
 
-        val idList = names.keys.joinToString(",")
         // Masters + one-offs only: no soft-deleted or exception rows.
-        val selection = "${CalendarContract.Events.CALENDAR_ID} IN ($idList) AND " +
+        val selection = "${CalendarContract.Events.CALENDAR_ID} IN (${names.keys.joinToString(",")}) AND " +
             "${CalendarContract.Events.DELETED} = 0 AND " +
             "${CalendarContract.Events.ORIGINAL_ID} IS NULL AND " +
             "${CalendarContract.Events.ORIGINAL_SYNC_ID} IS NULL"
+        val events = mutableListOf<IcsEvent>()
+        forEachExportRow(selection, allDayReminderTimeMinutes) { event ->
+            events += event(names[getLong(EventExportProjection.IDX_CALENDAR_ID)])
+        }
+        return events
+    }
+
+    override fun calendarCopyRows(calendarId: Long, allDayReminderTimeMinutes: Int): CalendarCopyRows {
+        val selection = "${CalendarContract.Events.CALENDAR_ID} = $calendarId AND " +
+            "${CalendarContract.Events.DELETED} = 0"
+        val series = mutableListOf<CopySeries>()
+        val exceptions = mutableListOf<CopyException>()
+        forEachExportRow(selection, allDayReminderTimeMinutes) { event ->
+            val color = getIntOrNull(EventExportProjection.IDX_EVENT_COLOR)
+            val originalId = getLongOrNull(EventExportProjection.IDX_ORIGINAL_ID)
+            val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)?.takeIf { it.isNotEmpty() }
+            if (originalId == null && originalSyncId == null) {
+                series += CopySeries(
+                    eventId = getLong(EventExportProjection.IDX_ID),
+                    syncId = getString(EventExportProjection.IDX_SYNC_ID)?.takeIf { it.isNotEmpty() },
+                    event = event(null),
+                    color = color,
+                )
+            } else {
+                // An exception without its occurrence time can't name what it replaces.
+                val originalInstance = getLongOrNull(EventExportProjection.IDX_ORIGINAL_INSTANCE_TIME)
+                    ?: return@forEachExportRow
+                exceptions += CopyException(
+                    originalId = originalId,
+                    originalSyncId = originalSyncId,
+                    originalInstance = originalInstance.toKotlinInstantFromEpochMillis(),
+                    event = event(null),
+                    color = color,
+                )
+            }
+        }
+        return CalendarCopyRows(series, exceptions)
+    }
+
+    /**
+     * Hand each Events row matching [selection], oldest first, to [row] with a
+     * mapper to [IcsEvent] that takes the calendar name to tag it with.
+     * Reminders are read in one batched pass ahead of the rows.
+     */
+    private fun forEachExportRow(
+        selection: String,
+        allDayReminderTimeMinutes: Int,
+        row: ColumnReader.(event: (calendarName: String?) -> IcsEvent) -> Unit,
+    ) {
         val eventIds = resolver.query(
             CalendarContract.Events.CONTENT_URI,
             arrayOf(CalendarContract.Events._ID),
@@ -802,7 +860,7 @@ class AndroidCalendarDataSource @Inject constructor(
             null,
         )?.use { c -> c.mapRows { getLong(0) } }.orEmpty()
         val reminders = resolver.reminderMinutesByEvent(eventIds, alertsOnly = false)
-        return resolver.query(
+        resolver.query(
             CalendarContract.Events.CONTENT_URI,
             EventExportProjection.COLUMNS,
             selection,
@@ -811,14 +869,15 @@ class AndroidCalendarDataSource @Inject constructor(
         )?.use { c ->
             c.mapRows {
                 val eventId = getLong(EventExportProjection.IDX_ID)
-                val calendarId = getLong(EventExportProjection.IDX_CALENDAR_ID)
-                toIcsEvent(
-                    reminderMinutes = reminders[eventId].orEmpty(),
-                    calendarName = names[calendarId],
-                    allDayReminderTimeMinutes = allDayReminderTimeMinutes,
-                )
+                row { calendarName ->
+                    toIcsEvent(
+                        reminderMinutes = reminders[eventId].orEmpty(),
+                        calendarName = calendarName,
+                        allDayReminderTimeMinutes = allDayReminderTimeMinutes,
+                    )
+                }
             }
-        } ?: emptyList()
+        }
     }
 
     override fun existingUids(calendarId: Long): Set<String> = resolver.query(

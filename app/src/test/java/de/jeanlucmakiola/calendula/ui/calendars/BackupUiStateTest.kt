@@ -97,4 +97,40 @@ class BackupUiStateTest {
         assertThat(state.exportable.map { it.id }).containsExactly(1L, 2L)
         assertThat(state.canImport).isTrue()
     }
+
+    @Test
+    fun `a read-only calendar can be copied into a writable one`() {
+        val readOnly = cal(1, writable = false)
+        val local = cal(2, local = true)
+
+        val state = ready(backupUiState(listOf(readOnly, local)))
+
+        assertThat(state.canCopy).isTrue()
+        assertThat(copySources(listOf(readOnly, local)).map { it.id }).containsExactly(1L, 2L)
+        assertThat(copyTargets(listOf(readOnly, local), 1L).map { it.id }).containsExactly(2L)
+    }
+
+    @Test
+    fun `a single writable calendar has nothing to copy into`() {
+        val only = cal(1, local = true)
+
+        assertThat(ready(backupUiState(listOf(only))).canCopy).isFalse()
+        assertThat(copyTargets(listOf(only), 1L)).isEmpty()
+    }
+
+    @Test
+    fun `a copy never targets a managed or switched-off calendar`() {
+        val source = cal(1)
+        val calendars = listOf(source, cal(2, managed = true), cal(3, visible = false))
+
+        assertThat(copyTargets(calendars, source.id)).isEmpty()
+    }
+
+    @Test
+    fun `choosing the target as source drops it`() {
+        assertThat(CopySelection(sourceId = 1, targetId = 2).withSource(2))
+            .isEqualTo(CopySelection(sourceId = 2, targetId = null))
+        assertThat(CopySelection(sourceId = 1, targetId = 2).withSource(3))
+            .isEqualTo(CopySelection(sourceId = 3, targetId = 2))
+    }
 }
