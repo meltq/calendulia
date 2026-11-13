@@ -271,4 +271,43 @@ class SyncNudgeTest {
 
         assertThat(sync.requests).containsExactly(auto(dav))
     }
+
+    @Test
+    fun `a dismissed hidden account no longer needs access`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(hiddenTypes = setOf(google.type))
+        sync.knownAccounts = setOf(dav, google)
+        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        repo.setSyncAccessDismissed(google, dismissed = true)
+
+        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), emptySet()))
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
+
+        repo.setSyncAccessDismissed(google, dismissed = false)
+        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), setOf(google)))
+    }
+
+    @Test
+    fun `with every hidden account dismissed there is nothing to sync or grant`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(hiddenTypes = setOf(dav.type, google.type))
+        sync.knownAccounts = setOf(dav, google)
+        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        repo.setSyncAccessDismissed(dav, dismissed = true)
+        repo.setSyncAccessDismissed(google, dismissed = true)
+
+        assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets.None)
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.NothingToSync)
+    }
+
+    @Test
+    fun `a dismissed account that becomes visible is still asked`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester()
+        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        repo.setSyncAccessDismissed(dav, dismissed = true)
+        repo.createEvent(form(1L))
+
+        assertThat(sync.requests).containsExactly(auto(dav))
+    }
 }

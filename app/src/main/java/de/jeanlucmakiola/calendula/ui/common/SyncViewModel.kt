@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
+import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
 import de.jeanlucmakiola.calendula.data.calendar.SyncRequestResult
 import de.jeanlucmakiola.calendula.data.calendar.SyncTargets
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
@@ -77,6 +78,11 @@ class SyncViewModel @Inject constructor(
                 _inFlight.value = false
             }
         }
+    }
+
+    /** Stop asking for [account]'s access (#240); undone from the calendar manager. */
+    fun setAccessDismissed(account: SyncAccount, dismissed: Boolean) {
+        viewModelScope.launch { repository.setSyncAccessDismissed(account, dismissed) }
     }
 
     fun consumeResult() {

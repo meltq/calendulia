@@ -25,7 +25,9 @@ the package list (recurring writes, save conflicts, reminder delivery).
    picker (`AccountManager.newChooseAccountIntent`) — the picked account
    becomes visible to the app. Access is re-read on every request and on
    every resume and drawer open, so a revoke simply puts the account back behind the
-   grant row. Whether and when the adapter syncs stays its call.
+   grant row. Per account the user can choose "Don't ask" instead
+   (`CalendarPrefs.syncAccessDismissed`); such accounts drop out of the grant
+   row and the receipts, and the calendar manager lists them to ask again. Whether and when the adapter syncs stays its call.
 2. **Observer-driven UI.** A `ContentObserver` on the provider triggers
    re-queries; every screen recomposes from fresh provider state. After a
    write, nothing is patched by hand — the views refresh from the provider.

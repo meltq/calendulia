@@ -85,6 +85,9 @@ import de.jeanlucmakiola.calendula.ui.common.curatedSourcePackage
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.GroupedHint
+import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
+import de.jeanlucmakiola.calendula.ui.common.sourceAppName
+import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
 import de.jeanlucmakiola.floret.identity.collapseExit
@@ -130,6 +133,7 @@ fun CalendarsScreen(
     val calendars by viewModel.calendars.collectAsStateWithLifecycle()
     val deleteLockedIds by viewModel.deleteLockedCalendarIds.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val syncAccessDismissed by viewModel.syncAccessDismissed.collectAsStateWithLifecycle()
 
     // null = list; NEW_CALENDAR_ID = create; any other id = edit that calendar.
     // [editorSession] bumps on every open so the editor's field state resets for
@@ -174,6 +178,8 @@ fun CalendarsScreen(
             onEdit = { calendar -> editorSession++; editorId = calendar.id },
             onSetVisible = viewModel::setCalendarVisible,
             onSetAccountVisible = viewModel::setAccountVisible,
+            syncAccessDismissed = syncAccessDismissed,
+            onAskSyncAccessAgain = viewModel::askSyncAccessAgain,
         )
     }
 }
@@ -191,6 +197,8 @@ private fun CalendarsList(
     onEdit: (CalendarSource) -> Unit,
     onSetVisible: (Long, Boolean) -> Unit,
     onSetAccountVisible: (Collection<Long>, Boolean) -> Unit,
+    syncAccessDismissed: List<SyncAccount>,
+    onAskSyncAccessAgain: (SyncAccount) -> Unit,
 ) {
     val context = LocalContext.current
     val snackbarHostState = remember { SnackbarHostState() }
@@ -321,6 +329,25 @@ private fun CalendarsList(
                     }
                 }
             }
+
+        if (syncAccessDismissed.isNotEmpty()) {
+            Spacer(Modifier.height(16.dp))
+            GroupedSectionHeader(stringResource(R.string.calendars_sync_access_header))
+            GroupedHint(stringResource(R.string.calendars_sync_access_hint), style = MaterialTheme.typography.bodySmall)
+            syncAccessDismissed.forEachIndexed { index, account ->
+                GroupedRow(
+                    title = account.name,
+                    summary = sourceAppName(account.type),
+                    position = positionOf(index, syncAccessDismissed.size),
+                    leading = { SourceLogo(account.type) },
+                    trailing = {
+                        TextButton(onClick = { onAskSyncAccessAgain(account) }) {
+                            Text(stringResource(R.string.calendars_sync_access_ask_again))
+                        }
+                    },
+                )
+            }
+        }
     }
 
 }

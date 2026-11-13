@@ -149,6 +149,12 @@ interface CalendarRepository {
      */
     val syncTargets: Flow<SyncTargets> get() = flowOf(SyncTargets.None)
 
+    /** Accounts the user said not to be asked about granting access for. */
+    val syncAccessDismissed: Flow<Set<SyncAccount>> get() = flowOf(emptySet())
+
+    /** Stop or resume asking for [account]'s sync-request access. */
+    suspend fun setSyncAccessDismissed(account: SyncAccount, dismissed: Boolean) {}
+
     /** Every provider notification and [refresh], including the app's own writes. */
     val providerChanges: Flow<Unit> get() = emptyFlow()
 }

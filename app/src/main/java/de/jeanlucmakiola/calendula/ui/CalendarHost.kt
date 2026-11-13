@@ -56,6 +56,7 @@ import de.jeanlucmakiola.calendula.ui.common.CalendarDrawer
 import de.jeanlucmakiola.calendula.ui.common.DrawerSync
 import de.jeanlucmakiola.calendula.ui.common.SyncViewModel
 import de.jeanlucmakiola.calendula.ui.common.RefreshSyncAccessOnOpen
+import de.jeanlucmakiola.calendula.ui.common.SyncAccessSheet
 import de.jeanlucmakiola.calendula.ui.common.rememberSyncAccessPicker
 import de.jeanlucmakiola.calendula.ui.common.messageRes
 import de.jeanlucmakiola.calendula.ui.common.CalendarFab
@@ -455,6 +456,7 @@ fun CalendarHost(
     val selectionFailureMessage = eventActionFailureMessage(selectionFailure)
     val syncMessage = syncResult?.let { stringResource(it.messageRes()) }
     val launchAccessPicker = rememberSyncAccessPicker(sync)
+    var showSyncAccess by remember { mutableStateOf(false) }
     val onEditEvent: (EventInstance) -> Unit = { event -> editKey = event.occurrenceKey() }
     // A tap opens the edit form instead of the detail screen when the user chose
     // so (#178) — only for events whose calendar takes writes. Both are read at
@@ -612,7 +614,7 @@ fun CalendarHost(
                                 sync.requestSync()
                                 switchScope.launch { drawerState.close() }
                             },
-                            onGrantAccess = { launchAccessPicker(syncTargets.needsAccess) },
+                            onGrantAccess = { showSyncAccess = true },
                         )
                     },
                 )
@@ -713,6 +715,15 @@ fun CalendarHost(
                 if (selectionFailureMessage != null) eventActions.consumeFailure() else sync.consumeResult()
             },
         )
+
+        if (showSyncAccess) {
+            SyncAccessSheet(
+                accounts = syncTargets.needsAccess.toList(),
+                onGrant = { launchAccessPicker(setOf(it)) },
+                onDismissAccount = { sync.setAccessDismissed(it, dismissed = true) },
+                onDismiss = { showSyncAccess = false },
+            )
+        }
 
         // The delete prompt and failure chip of a selected event's actions (#141).
         EventSelectionHost(host = chromeHost, viewModel = eventActions)

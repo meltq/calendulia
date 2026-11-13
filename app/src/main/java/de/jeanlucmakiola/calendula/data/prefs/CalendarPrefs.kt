@@ -7,6 +7,8 @@ import de.jeanlucmakiola.floret.prefs.PrefStore
 import de.jeanlucmakiola.floret.prefs.nullableBooleanPref
 import de.jeanlucmakiola.floret.prefs.nullableLongPref
 import de.jeanlucmakiola.floret.prefs.nullableStringPref
+import de.jeanlucmakiola.floret.prefs.stringSetPref
+import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
 import kotlinx.coroutines.flow.Flow
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -72,7 +74,28 @@ class CalendarPrefs @Inject constructor(
 
     suspend fun setLastUsedCalendarId(id: Long) = prefs.set(LAST_USED_CALENDAR, id)
 
+    /**
+     * Synced accounts the user chose never to be asked to grant sync-request
+     * access for (#240): no grant row, no "other accounts" receipt.
+     */
+    val syncAccessDismissed: Flow<Set<SyncAccount>> = prefs.flow(SYNC_ACCESS_DISMISSED)
+
+    suspend fun setSyncAccessDismissed(account: SyncAccount, dismissed: Boolean) {
+        prefs.update(SYNC_ACCESS_DISMISSED) { if (dismissed) it + account else it - account }
+    }
+
     private companion object {
+        val SYNC_ACCESS_DISMISSED = stringSetPref("sync_access_dismissed").map<Set<SyncAccount>>(
+            { stored -> stored.mapNotNullTo(mutableSetOf()) { it.toSyncAccount() } },
+            { accounts -> accounts.mapTo(mutableSetOf()) { "${it.type}$FIELD_SEPARATOR${it.name}" } },
+        )
+        const val FIELD_SEPARATOR = '\u001F'
+
+        fun String.toSyncAccount(): SyncAccount? {
+            val split = indexOf(FIELD_SEPARATOR)
+            return if (split <= 0) null else SyncAccount(name = substring(split + 1), type = substring(0, split))
+        }
+
         val HIDDEN_IDS = idSetPref("hidden_calendar_ids")
         val DISABLED_IDS = idSetPref("disabled_calendar_ids")
         val VISIBILITY_NOTICE = nullableBooleanPref("visibility_notice_pending")

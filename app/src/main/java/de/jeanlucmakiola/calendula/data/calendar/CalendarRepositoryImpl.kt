@@ -182,15 +182,22 @@ class CalendarRepositoryImpl @Inject constructor(
     ): suspend () -> Collection<Long?> =
         { listOf(original?.calendarId ?: dataSource.eventCalendarId(eventId), *others) }
 
-    private fun targetsOf(calendars: List<CalendarSource>): SyncTargets =
-        reach(calendars.syncAccounts().withAdapter())
+    private fun targetsOf(calendars: List<CalendarSource>, dismissed: Set<SyncAccount>): SyncTargets =
+        reach(calendars.syncAccounts().withAdapter()).let {
+            if (dismissed.isEmpty()) it else it.copy(needsAccess = it.needsAccess - dismissed)
+        }
 
     override val syncTargets: Flow<SyncTargets>
-        get() = calendars().map { targetsOf(it) }.flowOn(io)
+        get() = calendars().combine(prefs.syncAccessDismissed, ::targetsOf).flowOn(io)
+
+    override val syncAccessDismissed: Flow<Set<SyncAccount>> = prefs.syncAccessDismissed
+
+    override suspend fun setSyncAccessDismissed(account: SyncAccount, dismissed: Boolean) =
+        prefs.setSyncAccessDismissed(account, dismissed)
 
     override suspend fun requestSync(): SyncRequestResult = withContext(io) {
         val targets = try {
-            targetsOf(calendars().first())
+            targetsOf(calendars().first(), prefs.syncAccessDismissed.first())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
