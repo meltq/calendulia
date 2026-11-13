@@ -35,6 +35,18 @@ class CalendarPrefsTest {
     }
 
     @Test
+    fun `setCalendarsHidden adds and removes only the given ids`(@TempDir tempDir: Path) = runTest {
+        val prefs = testPrefs(tempDir)
+        prefs.setHiddenCalendarIds(setOf(9L))
+        prefs.setCalendarsHidden(listOf(1L, 2L), hidden = true)
+        assertThat(prefs.hiddenCalendarIds.first()).isEqualTo(setOf(1L, 2L, 9L))
+        prefs.setCalendarsHidden(listOf(2L, 3L), hidden = false)
+        assertThat(prefs.hiddenCalendarIds.first()).isEqualTo(setOf(1L, 9L))
+        prefs.setCalendarsHidden(listOf(1L, 9L), hidden = false)
+        assertThat(prefs.hiddenCalendarIds.first()).isEmpty()
+    }
+
+    @Test
     fun `garbage stored string is parsed defensively`(@TempDir tempDir: Path) = runTest {
         val store = testDataStore(tempDir, "test_prefs")
         val prefs = CalendarPrefs(store)

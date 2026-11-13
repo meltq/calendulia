@@ -28,4 +28,9 @@ class GroupVisibilityTest {
         assertThat(state).isEqualTo(ToggleableState.Indeterminate)
         assertThat(state.nextGroupVisible()).isTrue()
     }
+
+    @Test
+    fun `empty group is off`() {
+        assertThat(groupVisibility(emptyList(), hidden = emptySet())).isEqualTo(ToggleableState.Off)
+    }
 }

@@ -18,6 +18,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.semantics
@@ -77,10 +78,11 @@ private fun FilterList(
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         groups.forEach { group ->
+            val ids = group.calendars.map { it.id }
             GroupHeader(
                 title = accountGroupTitle(group),
-                state = groupVisibility(group.calendars.map { it.id }, hidden),
-                onToggle = { visible -> onSetGroupVisible(group.calendars.map { it.id }, visible) },
+                state = groupVisibility(ids, hidden),
+                onToggle = { visible -> onSetGroupVisible(ids, visible) },
             )
             group.calendars.forEachIndexed { index, cal ->
                 val visible = cal.id !in hidden
@@ -120,10 +122,11 @@ private fun GroupHeader(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
             .fillMaxWidth()
-            .padding(top = 4.dp)
+            .padding(horizontal = GroupedListInset / 2)
+            .clip(MaterialTheme.shapes.large)
             .clickable(onClickLabel = label, role = Role.Checkbox) { onToggle(state.nextGroupVisible()) }
             .semantics { toggleableState = state }
-            .padding(start = GroupedListInset, end = GroupedListInset + 16.dp),
+            .padding(start = GroupedListInset / 2, end = GroupedListInset / 2 + 16.dp),
     ) {
         Text(
             text = title,
