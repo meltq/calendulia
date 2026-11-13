@@ -89,10 +89,16 @@ identity instead:
 On import an entry matches the one calendar here with the same account name,
 account type and display name. No match, or more than one, skips it and the
 summary names it. A mirror calendar matches by `special_dates` instead, since
-its name is localised; when the mirror has not created it yet, it is matched
-after the import's sync, and its all-day reminders are applied through the
-mirror so its existing events follow. An id in the prefs whose calendar no
+its name is localised, and only when the imported settings keep the mirror on
+(otherwise the import tears it down). When the mirror has not created it yet,
+it is matched after the import's sync. Every mirror's all-day reminders are
+applied through the mirror so its existing events follow; one the file doesn't
+override inherits the default again. An id in the prefs whose calendar no
 longer exists is left out of the export.
+
+If this device's calendars can't be read, the per-calendar settings here are
+left untouched and the summary says so; an export in that state fails rather
+than writing a file without them.
 
 ## `app`
 

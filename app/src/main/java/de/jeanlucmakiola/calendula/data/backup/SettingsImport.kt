@@ -17,7 +17,8 @@ import de.jeanlucmakiola.floret.prefs.set
 
 /** What this device can take of a backup, read before planning. */
 data class ImportEnvironment(
-    val calendars: List<CalendarSource>,
+    /** Null when the calendar list can't be read: the per-calendar settings are then left alone. */
+    val calendars: List<CalendarSource>?,
     val managed: List<ManagedCalendarRow>,
     val contactsPermission: Boolean,
     val customFonts: Set<FontRole>,
@@ -27,8 +28,15 @@ data class ImportEnvironment(
 
 /** Something in the file this device could not take, for the import summary. */
 sealed interface SkippedSetting {
-    /** No calendar on this device matches the file's (or more than one does). */
-    data class Calendar(val displayName: String, val accountName: String) : SkippedSetting
+    /** No calendar on this device matches the file's, or [ambiguous]ly more than one does. */
+    data class Calendar(
+        val displayName: String,
+        val accountName: String,
+        val ambiguous: Boolean = false,
+    ) : SkippedSetting
+
+    /** The calendars couldn't be read, so the per-calendar settings were left as they are. */
+    data object CalendarsUnavailable : SkippedSetting
 
     /** A custom font: the font file itself is not part of the backup. */
     data class CustomFont(val role: FontRole) : SkippedSetting
@@ -44,7 +52,6 @@ sealed interface SkippedSetting {
 }
 
 data class SettingsImportSummary(
-    val settingsRestored: Int,
     val calendarsMatched: Int,
     val skipped: List<SkippedSetting>,
 )
@@ -52,16 +59,16 @@ data class SettingsImportSummary(
 /**
  * A validated backup laid onto this device: the stored values to write in one
  * edit, the side effects the engine runs after it, and the summary.
+ * [calendars] null leaves the per-calendar keys untouched.
  * [pendingSpecialDates] are mirror calendars that don't exist yet; the engine
  * matches them once the mirror's sync has created them.
  */
 data class SettingsImportPlan(
     val prefs: Map<Pref<*>, Any?>,
-    val calendars: Map<Long, CalendarSettings>,
+    val calendars: Map<Long, CalendarSettings>?,
     val pendingSpecialDates: List<CalendarSettings>,
     val language: LanguageChoice?,
     val launcherName: LauncherName?,
-    val settingsRestored: Int,
     val skipped: List<SkippedSetting>,
 )
 
@@ -105,31 +112,36 @@ fun planSettingsImport(
         }
     }
 
+    // The mirror's calendars are torn down when the imported settings leave it off.
+    val mirroring = prefs[SettingsKeys.specialDatesEnabled] == true
+    val available = environment.calendars
     val calendars = linkedMapOf<Long, CalendarSettings>()
     val pending = mutableListOf<CalendarSettings>()
-    backup.calendars.forEach { entry ->
-        val type = entry.calendar.specialDates
-        val id = if (type != null) {
-            environment.managed.firstOrNull { it.type == type }?.id
-        } else {
-            environment.calendars
-                .filter { !it.isManaged && it.matches(entry.calendar) }
-                .singleOrNull()?.id
-        }
-        when {
-            id != null -> calendars[id] = entry
-            type != null -> pending += entry
-            else -> skipped += entry.calendar.skipped()
+    if (available == null) {
+        if (backup.calendars.isNotEmpty()) skipped += SkippedSetting.CalendarsUnavailable
+    } else {
+        backup.calendars.forEach { entry ->
+            val type = entry.calendar.specialDates
+            if (type != null) {
+                if (!mirroring) return@forEach
+                val id = environment.managed.firstOrNull { it.type == type }?.id
+                if (id != null) calendars[id] = entry else pending += entry
+                return@forEach
+            }
+            val candidates = available.filter { !it.isManaged && it.matches(entry.calendar) }
+            when (candidates.size) {
+                1 -> calendars[candidates.single().id] = entry
+                else -> skipped += entry.calendar.skipped(ambiguous = candidates.size > 1)
+            }
         }
     }
 
     return SettingsImportPlan(
         prefs = prefs,
-        calendars = calendars,
+        calendars = calendars.takeIf { available != null },
         pendingSpecialDates = pending,
         language = language,
         launcherName = backup.launcherName,
-        settingsRestored = backup.prefs.size,
         skipped = skipped,
     )
 }
@@ -137,7 +149,7 @@ fun planSettingsImport(
 /** Writes the plan's stored values, replacing every backed-up setting and all per-calendar ones. */
 fun SettingsImportPlan.applyTo(target: MutablePreferences) {
     plainSection.apply(target, prefs)
-    target.writeCalendarSettings(calendars)
+    calendars?.let(target::writeCalendarSettings)
 }
 
 /**
@@ -173,11 +185,11 @@ fun MutablePreferences.addCalendarSettings(id: Long, entry: CalendarSettings) {
     }
 }
 
-fun CalendarIdentity.skipped(): SkippedSetting = SkippedSetting.Calendar(displayName, accountName)
+fun CalendarIdentity.skipped(ambiguous: Boolean = false): SkippedSetting =
+    SkippedSetting.Calendar(displayName, accountName, ambiguous)
 
 fun SettingsImportPlan.summary(calendarsMatched: Int, more: List<SkippedSetting> = emptyList()) =
     SettingsImportSummary(
-        settingsRestored = settingsRestored,
         calendarsMatched = calendarsMatched,
         skipped = skipped + more,
     )

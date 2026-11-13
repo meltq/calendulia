@@ -919,7 +919,7 @@
     <string name="settings_backup_export_done">Settings exported.</string>
     <string name="settings_backup_export_failed">Couldn\'t export the settings.</string>
     <string name="settings_backup_import_confirm_title">Replace your settings?</string>
-    <string name="settings_backup_import_confirm_message">Every setting is replaced with the one in the file. Your events and calendars stay as they are.</string>
+    <string name="settings_backup_import_confirm_message">Every setting is replaced with the one in the file. Your events and calendars stay as they are, apart from contact special dates, which follow the imported setting.</string>
     <string name="settings_backup_import_confirm_action">Replace</string>
     <string name="settings_backup_import_failed_not_backup">That file isn\'t a Calendula settings backup.</string>
     <string name="settings_backup_import_failed_newer">That backup is from a newer Calendula. Update the app to import it.</string>
@@ -936,6 +936,9 @@
     <string name="settings_backup_imported_skipped">Not imported</string>
     <!-- %1$s: calendar name, %2$s: its account -->
     <string name="settings_backup_skipped_calendar">%1$s (%2$s): no matching calendar on this phone</string>
+    <!-- %1$s: calendar name, %2$s: its account -->
+    <string name="settings_backup_skipped_calendar_ambiguous">%1$s (%2$s): more than one calendar on this phone has that name</string>
+    <string name="settings_backup_skipped_calendars_unavailable">Calendar settings: Calendula can\'t read your calendars, so they were left as they are</string>
     <string name="settings_backup_skipped_font_headings">Custom headings font: choose the font file again</string>
     <string name="settings_backup_skipped_font_body">Custom body font: choose the font file again</string>
     <string name="settings_backup_skipped_special_dates">Contact special dates: turn them on again to allow access to contacts</string>

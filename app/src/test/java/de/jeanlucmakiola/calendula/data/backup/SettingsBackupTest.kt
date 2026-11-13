@@ -37,7 +37,7 @@ class SettingsBackupTest {
     private val birthdays = calendar(3, "Birthdays", account = "Calendula", managed = true)
 
     private fun environment(
-        calendars: List<CalendarSource> = listOf(work, home, birthdays),
+        calendars: List<CalendarSource>? = listOf(work, home, birthdays),
         managed: List<ManagedCalendarRow> = listOf(ManagedCalendarRow(3, SpecialDateType.Birthday)),
         contacts: Boolean = true,
         fonts: Set<FontRole> = emptySet(),
@@ -119,7 +119,7 @@ class SettingsBackupTest {
         assertThat(target[CalendarPrefKeys.lastUsedCalendarId]).isEqualTo(12L)
         assertThat(target[SettingsKeys.perCalendarEventDuration]).containsExactly(11L, 30)
         assertThat(target[SettingsKeys.perCalendarReminderOverride]).containsExactly(12L, emptyList<Int>())
-        assertThat(plan.summary(plan.calendars.size).calendarsMatched).isEqualTo(2)
+        assertThat(plan.calendars).hasSize(2)
     }
 
     @Test
@@ -144,7 +144,33 @@ class SettingsBackupTest {
         val plan = import(roundTrip(source), target, environment(calendars = listOf(calendar(5, "Work"), calendar(6, "Work"))))
 
         assertThat(target[CalendarPrefKeys.hiddenCalendarIds]).isEmpty()
-        assertThat(plan.skipped).hasSize(1)
+        assertThat(plan.skipped).containsExactly(SkippedSetting.Calendar("Work", "me@example.org", ambiguous = true))
+    }
+
+    @Test
+    fun `unreadable calendars leave the per-calendar settings alone`() {
+        val source = mutablePreferencesOf()
+        source[CalendarPrefKeys.hiddenCalendarIds] = setOf(1L)
+        val target = mutablePreferencesOf()
+        target[SettingsKeys.perCalendarEventDuration] = mapOf(4L to 45)
+
+        val plan = import(roundTrip(source), target, environment(calendars = null))
+
+        assertThat(target[SettingsKeys.perCalendarEventDuration]).containsExactly(4L, 45)
+        assertThat(plan.skipped).containsExactly(SkippedSetting.CalendarsUnavailable)
+    }
+
+    @Test
+    fun `mirror calendars are left out when the import turns the mirror off`() {
+        val source = mutablePreferencesOf()
+        source[CalendarPrefKeys.hiddenCalendarIds] = setOf(3L)
+
+        val target = mutablePreferencesOf()
+        val plan = import(roundTrip(source), target)
+
+        assertThat(target[CalendarPrefKeys.hiddenCalendarIds]).isEmpty()
+        assertThat(plan.pendingSpecialDates).isEmpty()
+        assertThat(plan.skipped).isEmpty()
     }
 
     @Test
@@ -158,6 +184,7 @@ class SettingsBackupTest {
     @Test
     fun `a mirror calendar is matched by its date type`() {
         val source = mutablePreferencesOf()
+        source[SettingsKeys.specialDatesEnabled] = true
         source[SettingsKeys.perCalendarAllDayReminderOverride] = mapOf(3L to listOf(0, 10080))
 
         val target = mutablePreferencesOf()
@@ -170,6 +197,7 @@ class SettingsBackupTest {
     @Test
     fun `a mirror calendar that doesn't exist yet waits for the sync`() {
         val source = mutablePreferencesOf()
+        source[SettingsKeys.specialDatesEnabled] = true
         source[SettingsKeys.perCalendarAllDayReminderOverride] = mapOf(3L to listOf(0))
 
         val target = mutablePreferencesOf()

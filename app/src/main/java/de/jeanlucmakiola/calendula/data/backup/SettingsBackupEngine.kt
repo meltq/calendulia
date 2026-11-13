@@ -14,6 +14,7 @@ import de.jeanlucmakiola.calendula.data.contacts.ContactSpecialDatesDataSource
 import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesScheduler
 import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesSyncEngine
 import de.jeanlucmakiola.calendula.data.fonts.CustomFontStore
+import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefKeys
 import de.jeanlucmakiola.calendula.data.prefs.SettingsKeys
 import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.FontRole
@@ -53,10 +54,13 @@ class SettingsBackupEngine @Inject constructor(
 
     suspend fun export(): String = withContext(io) {
         val supported = supportedLanguages()
+        val snapshot = store.data.first()
+        // Without the list the per-calendar settings would silently drop out of the file.
+        val list = if (snapshot.hasCalendarSettings()) calendars.calendars() else emptyList()
         val backup = buildSettingsBackup(
-            snapshot = store.data.first(),
-            calendars = runCatching { calendars.calendars() }.getOrDefault(emptyList()),
-            managed = runCatching { calendars.findManagedCalendars() }.getOrDefault(emptyList()),
+            snapshot = snapshot,
+            calendars = list,
+            managed = if (list.any { it.isManaged }) calendars.findManagedCalendars() else emptyList(),
             language = LanguageChoice(AppLanguage.currentTag(context, supported)),
             launcherName = launcherNames.current(),
         )
@@ -80,7 +84,7 @@ class SettingsBackupEngine @Inject constructor(
             return@withContext BackupResult.Failure(BackupProblem.NOT_APPLIED, e.message.orEmpty())
         }
         val lateSkips = withContext(NonCancellable) { afterImport(plan, current) }
-        BackupResult.Success(plan.summary(plan.calendars.size + lateSkips.matched, lateSkips.skipped))
+        BackupResult.Success(plan.summary(plan.calendars.orEmpty().size + lateSkips.matched, lateSkips.skipped))
     }
 
     private class LateMatches(val matched: Int, val skipped: List<SkippedSetting>)
@@ -99,7 +103,7 @@ class SettingsBackupEngine @Inject constructor(
             if (mirroring) {
                 SpecialDatesScheduler.apply(context, enabled = true)
                 specialDates.sync()
-                late = matchSpecialDates(plan)
+                late = matchSpecialDates(plan, backup = plan.calendars != null)
             } else if (wasMirroring) {
                 SpecialDatesScheduler.apply(context, enabled = false)
                 specialDates.teardown()
@@ -129,10 +133,11 @@ class SettingsBackupEngine @Inject constructor(
     }
 
     /**
-     * The mirror's calendars exist now, so the entries for them get their ids;
-     * an all-day reminder goes through the mirror, which rewrites its events.
+     * The mirror's calendars exist now, so the entries for them get their ids.
+     * Each mirror's all-day reminders go through the mirror, which rewrites
+     * its events too; one the file doesn't override inherits again.
      */
-    private suspend fun matchSpecialDates(plan: SettingsImportPlan): LateMatches {
+    private suspend fun matchSpecialDates(plan: SettingsImportPlan, backup: Boolean): LateMatches {
         val managed = calendars.findManagedCalendars()
         val skipped = mutableListOf<SkippedSetting>()
         var matched = 0
@@ -142,26 +147,45 @@ class SettingsBackupEngine @Inject constructor(
             id?.let { it to entry }
         }
         if (resolved.isNotEmpty()) {
-            store.edit { prefs -> resolved.forEach { (id, entry) -> prefs.addCalendarSettings(id, entry) } }
+            store.edit { prefs ->
+                resolved.forEach { (id, entry) -> prefs.addCalendarSettings(id, entry.copy(allDayReminders = null)) }
+            }
         }
-        val mirrorEntries = plan.calendars.values + resolved.map { it.second }
-        mirrorEntries.forEach { entry ->
-            val type = entry.calendar.specialDates ?: return@forEach
-            val minutes = entry.allDayReminders ?: return@forEach
-            val override = if (minutes.isEmpty()) ReminderOverride.None else ReminderOverride.Minutes(minutes)
-            specialDates.applyReminders(type, override)
+        if (backup) {
+            val entries = (plan.calendars.orEmpty().values + resolved.map { it.second })
+                .mapNotNull { entry -> entry.calendar.specialDates?.let { it to entry } }
+                .toMap()
+            managed.map { it.type }.distinct().forEach { type ->
+                val minutes = entries[type]?.allDayReminders
+                val override = when {
+                    minutes == null -> ReminderOverride.Inherit
+                    minutes.isEmpty() -> ReminderOverride.None
+                    else -> ReminderOverride.Minutes(minutes)
+                }
+                specialDates.applyReminders(type, override)
+            }
         }
         return LateMatches(matched, skipped)
     }
 
+    /** The highest byte count [import] is worth reading. */
+    val maxImportBytes: Int get() = SettingsBackupSchema.format.maxChars
+
     private fun environment(current: Preferences): ImportEnvironment = ImportEnvironment(
-        calendars = runCatching { calendars.calendars() }.getOrDefault(emptyList()),
+        calendars = runCatching { calendars.calendars() }.getOrNull(),
         managed = runCatching { calendars.findManagedCalendars() }.getOrDefault(emptyList()),
         contactsPermission = contacts.hasPermission(),
         customFonts = FontRole.entries.filter { CustomFontStore.exists(context, it) }.toSet(),
         hasBackupFolder = current[SettingsKeys.autoBackupFolderUri] != null,
         supportedLanguages = supportedLanguages(),
     )
+
+    private fun Preferences.hasCalendarSettings(): Boolean =
+        this[CalendarPrefKeys.hiddenCalendarIds].isNotEmpty() ||
+            this[CalendarPrefKeys.lastUsedCalendarId] != null ||
+            this[SettingsKeys.perCalendarEventDuration].isNotEmpty() ||
+            this[SettingsKeys.perCalendarReminderOverride].isNotEmpty() ||
+            this[SettingsKeys.perCalendarAllDayReminderOverride].isNotEmpty()
 
     private fun supportedLanguages(): List<String> = AppLanguage.supportedTags(context, R.xml.locales_config)
 

@@ -11,7 +11,6 @@ import de.jeanlucmakiola.calendula.data.backup.SettingsImportSummary
 import de.jeanlucmakiola.floret.android.DocumentTooLargeException
 import de.jeanlucmakiola.floret.android.readDocumentBytes
 import de.jeanlucmakiola.floret.android.writeDocumentBytes
-import de.jeanlucmakiola.floret.backup.BackupFormat
 import de.jeanlucmakiola.floret.backup.BackupProblem
 import de.jeanlucmakiola.floret.backup.BackupResult
 import de.jeanlucmakiola.floret.di.IoDispatcher
@@ -67,7 +66,7 @@ class SettingsBackupViewModel @Inject constructor(
     fun import(uri: Uri) = launchWork {
         val text = try {
             withContext(io) {
-                context.contentResolver.readDocumentBytes(uri, BackupFormat.DEFAULT_MAX_CHARS).toString(Charsets.UTF_8)
+                context.contentResolver.readDocumentBytes(uri, engine.maxImportBytes).toString(Charsets.UTF_8)
             }
         } catch (e: CancellationException) {
             throw e

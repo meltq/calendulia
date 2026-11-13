@@ -186,7 +186,12 @@ private fun ImportSummaryDialog(summary: SettingsImportSummary, onDismiss: () ->
 
 @Composable
 private fun SkippedSetting.label(): String = when (this) {
-    is SkippedSetting.Calendar -> stringResource(R.string.settings_backup_skipped_calendar, displayName, accountName)
+    is SkippedSetting.Calendar -> stringResource(
+        if (ambiguous) R.string.settings_backup_skipped_calendar_ambiguous else R.string.settings_backup_skipped_calendar,
+        displayName,
+        accountName,
+    )
+    SkippedSetting.CalendarsUnavailable -> stringResource(R.string.settings_backup_skipped_calendars_unavailable)
     is SkippedSetting.CustomFont -> stringResource(
         when (role) {
             FontRole.BRAND -> R.string.settings_backup_skipped_font_headings
