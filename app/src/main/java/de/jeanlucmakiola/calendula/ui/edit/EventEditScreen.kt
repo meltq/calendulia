@@ -166,10 +166,10 @@ import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.groupedShape as floretGroupedShape
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.calendula.ui.common.reminderPresets
+import de.jeanlucmakiola.calendula.ui.common.customReminderUnits
 import de.jeanlucmakiola.calendula.ui.common.splitsSubDay
 import de.jeanlucmakiola.calendula.ui.common.GroupedLeadTimeRows
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
-import de.jeanlucmakiola.floret.reminders.ReminderUnit
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.formatTimeOfDay
@@ -1590,7 +1590,9 @@ private fun ReminderPickerDialog(
 ) {
     var customMode by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("") }
-    var unit by rememberSaveable { mutableStateOf(ReminderUnit.Minutes) }
+    val units = customReminderUnits(isAllDay)
+    var pickedUnit by rememberSaveable { mutableStateOf(units.first()) }
+    val unit = pickedUnit.takeIf { it in units } ?: units.first()
     val customMinutes = amountText.toIntOrNull()
         ?.takeIf { it in 1..999 }
         ?.let { it * unit.minutesFactor }
@@ -1641,8 +1643,8 @@ private fun ReminderPickerDialog(
                 Spacer(Modifier.width(12.dp))
                 DialogUnitDropdown(
                     label = stringResource(reminderUnitLabel(unit)),
-                    entries = ReminderUnit.entries.map { stringResource(reminderUnitLabel(it)) },
-                    onPick = { unit = ReminderUnit.entries[it] },
+                    entries = units.map { stringResource(reminderUnitLabel(it)) },
+                    onPick = { pickedUnit = units[it] },
                 )
             }
         }

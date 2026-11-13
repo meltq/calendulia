@@ -23,6 +23,13 @@ val ALLDAY_REMINDER_PRESETS = listOf(0) + DAY_SCALE_PRESETS
 fun reminderPresets(isAllDay: Boolean): List<Int> =
     if (isAllDay) ALLDAY_REMINDER_PRESETS else REMINDER_PRESETS
 
+/**
+ * Units the Custom step offers. All-day reminders fire on whole days at the
+ * all-day reminder time, so minutes and hours would be dropped on save.
+ */
+fun customReminderUnits(isAllDay: Boolean): List<ReminderUnit> =
+    if (isAllDay) listOf(ReminderUnit.Days, ReminderUnit.Weeks) else ReminderUnit.entries
+
 /** Whether a picker over [presets] splits its rows into sub-day and day-scale groups. */
 fun splitsSubDay(presets: Collection<Int>): Boolean = presets.any { it in 1 until DAY }
 

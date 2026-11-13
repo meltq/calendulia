@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.ui.common
 
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.floret.reminders.ReminderUnit
 import org.junit.jupiter.api.Test
 
 class ReminderPresetsTest {
@@ -28,6 +29,13 @@ class ReminderPresetsTest {
     fun `groups split sub-day from day-scale lead times, sorted`() {
         assertThat(groupReminderLeadTimes(listOf(2_880, 10, 0, 1_440, 45), splitSubDay = true))
             .containsExactly(listOf(0, 10, 45), listOf(1_440, 2_880)).inOrder()
+    }
+
+    @Test
+    fun `all-day custom offers whole-day units only`() {
+        assertThat(customReminderUnits(isAllDay = true))
+            .containsExactly(ReminderUnit.Days, ReminderUnit.Weeks).inOrder()
+        assertThat(customReminderUnits(isAllDay = false)).containsExactlyElementsIn(ReminderUnit.entries)
     }
 
     @Test

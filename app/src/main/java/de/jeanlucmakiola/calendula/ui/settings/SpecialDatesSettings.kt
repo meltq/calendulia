@@ -29,7 +29,6 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.contacts.hasContactsPermission
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
-import de.jeanlucmakiola.calendula.ui.common.ALLDAY_REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.GroupedRow
@@ -197,7 +196,7 @@ internal fun SpecialDatesScreen(
     reminderPickerType?.let { type ->
         ReminderDefaultPicker(
             title = stringResource(R.string.settings_special_dates_reminders),
-            presets = ALLDAY_REMINDER_PRESETS,
+            isAllDay = true,
             selected = state.reminderChoices[type] ?: ReminderOverride.None,
             // Managed calendars own their reminders outright — no "inherit global".
             allowInherit = false,

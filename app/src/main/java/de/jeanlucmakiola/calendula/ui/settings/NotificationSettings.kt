@@ -37,7 +37,6 @@ import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.calendula.ui.common.durationLabel
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
-import de.jeanlucmakiola.calendula.ui.common.reminderPresets
 import de.jeanlucmakiola.floret.android.hasPermission
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.ExpandIcon
@@ -244,7 +243,7 @@ internal fun NotificationsScreen(
     if (showDefaultReminder) {
         ReminderDefaultPicker(
             title = stringResource(R.string.settings_default_reminder),
-            presets = reminderPresets(isAllDay = false),
+            isAllDay = false,
             selected = state.defaultReminderMinutes.toReminderChoice(),
             allowInherit = false,
             onSelect = { viewModel.setDefaultReminderMinutes(it.minutesOrEmpty()) },
@@ -254,7 +253,7 @@ internal fun NotificationsScreen(
     if (showAllDayReminder) {
         ReminderDefaultPicker(
             title = stringResource(R.string.settings_default_reminder_allday),
-            presets = reminderPresets(isAllDay = true),
+            isAllDay = true,
             selected = state.defaultAllDayReminderMinutes.toReminderChoice(),
             allowInherit = false,
             onSelect = { viewModel.setDefaultAllDayReminderMinutes(it.minutesOrEmpty()) },
@@ -289,7 +288,7 @@ internal fun NotificationsScreen(
                     R.string.settings_default_reminder
                 },
             ),
-            presets = reminderPresets(target.isAllDay),
+            isAllDay = target.isAllDay,
             selected = map.reminderOverrideFor(target.calendarId),
             allowInherit = true,
             onSelect = {
