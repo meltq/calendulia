@@ -473,13 +473,15 @@ calendar, or one `calendula-backup_…` series in combined mode (#411), and prun
 each series to the retention count after its new file has landed. Pruning only
 deletes names recorded in a per-series ledger of files the backup wrote
 (`auto_backup_files`, keyed by calendar id), never whatever happens to match a
-name, so renames, same-named calendars and the user's own files are safe; the
+name, so renames, same-named calendars and the user's own files are safe.
 Each series also keeps a stable undated copy (`<calendar name>.ics`, or
 `calendula-backup.ics` combined) overwritten every run, so sync tools and
-subscriptions can follow one path; retention never touches it, it never
-overwrites a file the backup didn't write, and a renamed calendar's old copy is
-deleted while a deselected one's is kept. The pre-#411 fixed
-`calendula-backup.ics` simply is the combined series' stable copy, and an
+subscriptions can follow one path. Retention never touches it, and it is only
+written over a file the series itself (or a series renaming away from that name
+in the same run) recorded. A renamed calendar's old copy is deleted, and so is a
+copy the layout switch replaced (per-calendar ↔ combined); a calendar taken out
+of the backup keeps its last one. The pre-#411 fixed `calendula-backup.ics` is
+the combined series' stable copy for the install that wrote it, and an
 install that already had a folder stays on the combined layout.
 
 **A backup carries the series' deleted occurrences.** `EXDATE` lives on the

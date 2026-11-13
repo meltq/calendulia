@@ -28,8 +28,9 @@ import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.backup.backupTargets
 import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
-import de.jeanlucmakiola.calendula.domain.backup.updatedBackupLedger
-import de.jeanlucmakiola.calendula.domain.backup.updatedLatestLedger
+import de.jeanlucmakiola.calendula.domain.backup.latestLedgerKey
+import de.jeanlucmakiola.calendula.domain.backup.replacedLatestCopies
+import de.jeanlucmakiola.calendula.domain.backup.withLedgerEntry
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.floret.android.hasPermission
 import kotlinx.coroutines.NonCancellable
@@ -160,44 +161,69 @@ class BackupWorker(
         if (targets.isEmpty()) return RunOutcome.NothingSelected
         val listing = exporter.listFolder(folder)
         var ledger = prefs.autoBackupLedger.first()
+        // A listing still loading can't tell a gone file from a late one.
+        val existing = if (listing.complete) listing.files.keys else listing.files.keys + ledger.values.flatten()
         val plans = planBackupFiles(
             targets = targets,
             ledger = ledger,
-            // A listing still loading can't tell a gone file from a late one.
-            existing = if (listing.complete) listing.files.keys else listing.files.keys + ledger.values.flatten(),
+            existing = existing,
             at = LocalDateTime.now(),
             keep = prefs.autoBackupKeep.first(),
+            legacyOwned = prefs.autoBackupLegacyInstall.first(),
         )
         val stamp = Clock.System.now()
         val liveKeys = all.map { it.id.toString() }.toSet()
+        suspend fun record(key: String, files: List<String>) {
+            ledger = withLedgerEntry(ledger, key, files, liveKeys)
+            prefs.setAutoBackupLedger(ledger)
+        }
         var written = 0
         for (plan in plans) {
-            try {
-                val target = plan.target
-                val events = repository.exportEvents(target.calendarIds)
-                val content = IcsWriter().writeCalendar(events, stamp, target.calendarName)
-                // Not cancellable once the file exists: it must reach the
-                // ledger, or nothing would ever prune it.
-                withContext(NonCancellable) {
-                    val name = exporter.writeToFolder(folder, listing, plan.fileName, content)
-                    ledger = updatedBackupLedger(ledger, plan, name, undeleted = plan.prune, liveKeys)
-                    prefs.setAutoBackupLedger(ledger)
-                    plan.latestName?.let { latest ->
-                        val latestName = exporter.writeToFolder(folder, listing, latest, content)
-                        ledger = updatedLatestLedger(ledger, plan, latestName, plan.staleLatest, liveKeys)
-                        prefs.setAutoBackupLedger(ledger)
-                        val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
-                        ledger = updatedLatestLedger(ledger, plan, latestName, staleLeft, liveKeys)
-                    }
-                    val undeleted = exporter.deleteFromFolder(listing, plan.prune)
-                    ledger = updatedBackupLedger(ledger, plan, name, undeleted, liveKeys)
-                    prefs.setAutoBackupLedger(ledger)
-                }
-                written++
+            val target = plan.target
+            val bytes = try {
+                IcsWriter()
+                    .writeCalendar(repository.exportEvents(target.calendarIds), stamp, target.calendarName)
+                    .toByteArray(Charsets.UTF_8)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
-                Log.w(TAG, "Backup of one series failed", e)
+                Log.w(TAG, "Reading one series failed", e)
+                continue
+            }
+            // Not cancellable once a file exists: it must reach the ledger, or
+            // nothing would ever prune it.
+            withContext(NonCancellable) {
+                try {
+                    val name = exporter.writeToFolder(folder, listing, plan.fileName, bytes)
+                    record(target.key, plan.prune + plan.keep + name)
+                    val undeleted = exporter.deleteFromFolder(listing, plan.prune)
+                    record(target.key, plan.prune.filter { it in undeleted } + plan.keep + name)
+                    written++
+                } catch (e: Exception) {
+                    Log.w(TAG, "Backup of one series failed", e)
+                }
+                // The stable copy is best-effort: it never holds up the dated
+                // backup, its pruning or the run's status.
+                try {
+                    val latestKey = latestLedgerKey(target.key)
+                    val latest = plan.latestName?.let { intended ->
+                        val landed = exporter.writeToFolder(folder, listing, intended, bytes)
+                        // A provider that renamed it leaves a copy to clean up next run.
+                        listOf(landed, intended).distinct()
+                    }.orEmpty()
+                    val owned = ledger[latestKey].orEmpty().filter { it !in plan.staleLatest }
+                    record(latestKey, plan.staleLatest + (latest.ifEmpty { owned }))
+                    val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
+                    record(latestKey, plan.staleLatest.filter { it in staleLeft } + latest.ifEmpty { owned })
+                } catch (e: Exception) {
+                    Log.w(TAG, "Stable copy of one series failed", e)
+                }
+            }
+        }
+        replacedLatestCopies(targets, ledger, existing).forEach { (key, names) ->
+            withContext(NonCancellable) {
+                val left = exporter.deleteFromFolder(listing, names)
+                record(latestLedgerKey(key), names.filter { it in left })
             }
         }
         return when (written) {

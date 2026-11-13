@@ -131,10 +131,22 @@ class BackupPlanTest {
     private val combined = BackupTarget(COMBINED_SERIES, setOf(1L, 2L), COMBINED_BACKUP_BASE, null)
 
     @Test
-    fun `the pre-411 backup file becomes the combined series' stable copy`() {
-        val plan = planBackupFiles(listOf(combined), emptyMap(), setOf(LEGACY_BACKUP_FILE), at, keep = 1).single()
-        assertThat(plan.latestName).isEqualTo(LEGACY_BACKUP_FILE)
-        assertThat(plan.prune).isEmpty()
+    fun `the pre-411 file is the combined stable copy only for the install that wrote it`() {
+        val owned = planBackupFiles(listOf(combined), emptyMap(), setOf(LEGACY_BACKUP_FILE), at, 1, legacyOwned = true)
+        assertThat(owned.single().latestName).isEqualTo(LEGACY_BACKUP_FILE)
+        assertThat(owned.single().prune).isEmpty()
+
+        val foreign = planBackupFiles(listOf(combined), emptyMap(), setOf(LEGACY_BACKUP_FILE), at, 1)
+        assertThat(foreign.single().latestName).isNull()
+    }
+
+    @Test
+    fun `a stable name recorded as a dated file by an earlier build is never pruned`() {
+        val ledger = mapOf(COMBINED_SERIES to listOf(LEGACY_BACKUP_FILE, "calendula-backup_a.ics"))
+        val plan = planBackupFiles(
+            listOf(combined), ledger, setOf(LEGACY_BACKUP_FILE, "calendula-backup_a.ics"), at, 1, legacyOwned = true,
+        ).single()
+        assertThat(plan.prune).containsExactly("calendula-backup_a.ics")
     }
 
     @Test
@@ -173,12 +185,10 @@ class BackupPlanTest {
         ).single()
         assertThat(plan.latestName).isEqualTo("Job.ics")
         assertThat(plan.staleLatest).containsExactly("Work.ics")
-        assertThat(updatedLatestLedger(emptyMap(), plan, "Job.ics", emptySet(), setOf("1")))
-            .containsExactly(latestLedgerKey("1"), listOf("Job.ics"))
     }
 
     @Test
-    fun `a stable copy another calendar took over is not deleted, but rewritten by it`() {
+    fun `a stable copy is handed over to the calendar that takes its name in the same run`() {
         // Calendar 1 was "Work", is now "Job"; calendar 2 is now called "Work".
         val ledger = mapOf(latestLedgerKey("1") to listOf("Work.ics"))
         val plans = planBackupFiles(
@@ -193,46 +203,43 @@ class BackupPlanTest {
     }
 
     @Test
-    fun `a deleted calendar's ledger entries are dropped, its files left`() {
-        val plan = planBackupFiles(listOf(work), emptyMap(), emptySet(), at, keep = 1).single()
-        val next = updatedLatestLedger(
-            previous = mapOf(latestLedgerKey("7") to listOf("Gone.ics"), latestLedgerKey(COMBINED_SERIES) to listOf(LEGACY_BACKUP_FILE)),
-            plan = plan,
-            writtenName = "Work.ics",
-            undeleted = emptySet(),
-            liveKeys = setOf("1"),
-        )
-        assertThat(next.keys).containsExactly(latestLedgerKey("1"), latestLedgerKey(COMBINED_SERIES))
-    }
-
-    @Test
-    fun `the ledger records what the run kept, failed to delete and wrote`() {
+    fun `a deselected calendar's stable copy is not taken over by a same-named one`() {
+        // Calendar 3 "Personal" is out of the backup; calendar 9, also "Personal", is in.
+        val ledger = mapOf(latestLedgerKey("3") to listOf("Personal.ics"))
         val plan = planBackupFiles(
-            listOf(work),
-            mapOf("1" to listOf("Work_a.ics", "Work_b.ics")),
-            setOf("Work_a.ics", "Work_b.ics"),
-            at,
-            keep = 2,
+            listOf(BackupTarget("9", setOf(9L), "Personal", "Personal")), ledger, setOf("Personal.ics"), at, 1,
         ).single()
-        val next = updatedBackupLedger(
-            previous = mapOf("1" to listOf("Work_a.ics", "Work_b.ics"), "2" to listOf("Home_a.ics"), "7" to listOf("Gone.ics")),
-            plan = plan,
-            writtenName = "Work_new (1).ics",
-            undeleted = setOf("Work_a.ics"),
-            liveKeys = setOf("1", "2"),
-        )
-        assertThat(next).containsExactly(
-            "1", listOf("Work_a.ics", "Work_b.ics", "Work_new (1).ics"),
-            "2", listOf("Home_a.ics"),
-        )
+        assertThat(plan.latestName).isNull()
     }
 
     @Test
-    fun `a pruned file leaves the ledger once it is deleted`() {
-        val plan = planBackupFiles(listOf(work), mapOf("1" to listOf("Work_a.ics")), setOf("Work_a.ics"), at, keep = 1)
-            .single()
-        val next = updatedBackupLedger(mapOf("1" to listOf("Work_a.ics")), plan, "Work_new.ics", emptySet(), setOf("1"))
-        assertThat(next).containsExactly("1", listOf("Work_new.ics"))
+    fun `a layout switch replaces the other layout's stable copies, a deselected calendar keeps its own`() {
+        val ledger = mapOf(
+            latestLedgerKey("1") to listOf("Work.ics"),
+            latestLedgerKey("5") to listOf("Old.ics"),
+            latestLedgerKey(COMBINED_SERIES) to listOf(LEGACY_BACKUP_FILE),
+        )
+        val existing = setOf("Work.ics", "Old.ics", LEGACY_BACKUP_FILE)
+        assertThat(replacedLatestCopies(listOf(combined), ledger, existing))
+            .containsExactly("1", listOf("Work.ics"))
+        assertThat(replacedLatestCopies(listOf(work), ledger, existing))
+            .containsExactly(COMBINED_SERIES, listOf(LEGACY_BACKUP_FILE))
+    }
+
+    @Test
+    fun `a ledger entry is set, emptied away, and dropped with its calendar`() {
+        val previous = mapOf(
+            "1" to listOf("Work_a.ics"),
+            latestLedgerKey("7") to listOf("Gone.ics"),
+            latestLedgerKey(COMBINED_SERIES) to listOf(LEGACY_BACKUP_FILE),
+        )
+        val next = withLedgerEntry(previous, "1", listOf("Work_a.ics", "Work_b.ics", "Work_b.ics"), setOf("1"))
+        assertThat(next).containsExactly(
+            "1", listOf("Work_a.ics", "Work_b.ics"),
+            latestLedgerKey(COMBINED_SERIES), listOf(LEGACY_BACKUP_FILE),
+        )
+        assertThat(withLedgerEntry(next, "1", emptyList(), setOf("1")).keys)
+            .containsExactly(latestLedgerKey(COMBINED_SERIES))
     }
 
     @Test

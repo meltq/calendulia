@@ -1,12 +1,16 @@
 package de.jeanlucmakiola.calendula.data.prefs
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.backup.BackupSelection
+import de.jeanlucmakiola.calendula.domain.backup.COMBINED_SERIES
 import de.jeanlucmakiola.calendula.domain.backup.DEFAULT_BACKUP_KEEP
+import de.jeanlucmakiola.calendula.domain.backup.LEGACY_BACKUP_FILE
+import de.jeanlucmakiola.calendula.domain.backup.latestLedgerKey
 import de.jeanlucmakiola.calendula.domain.backup.normalizeBackupKeep
 import de.jeanlucmakiola.calendula.domain.backup.BackupLedger
 import de.jeanlucmakiola.calendula.domain.backup.parseBackupLedger
@@ -191,6 +195,7 @@ class SettingsPrefs @Inject constructor(
     val autoBackupSelection: Flow<BackupSelection> = prefs.snapshot { it.autoBackupSelection }
     val autoBackupCombined: Flow<Boolean> = prefs.snapshot { it.autoBackupCombined }
     val autoBackupKeep: Flow<Int> = prefs.flow(SettingsKeys.autoBackupKeep)
+    val autoBackupLegacyInstall: Flow<Boolean> = prefs.snapshot { it.autoBackupLegacyInstall }
     val autoBackupLedger: Flow<BackupLedger> = prefs.flow(SettingsKeys.autoBackupLedger)
     val specialDatesEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.specialDatesEnabled)
     val specialDatesTypes: Flow<Set<SpecialDateType>> = prefs.snapshot { it.specialDatesTypes }
@@ -348,15 +353,17 @@ class SettingsPrefs @Inject constructor(
      */
     suspend fun setAutoBackupFolderUri(uri: String?) {
         prefs.edit {
-            if (it[SettingsKeys.autoBackupCombinedStored] == null) {
-                it[SettingsKeys.autoBackupCombinedStored] = it[SettingsKeys.autoBackupFolderUri] != null
-            }
+            it.pinBackupLayout()
             it[SettingsKeys.autoBackupFolderUri] = uri
         }
     }
 
-    suspend fun setAutoBackupCombined(combined: Boolean) =
-        prefs.set(SettingsKeys.autoBackupCombinedStored, combined)
+    suspend fun setAutoBackupCombined(combined: Boolean) {
+        prefs.edit {
+            it.pinBackupLayout()
+            it[SettingsKeys.autoBackupCombinedStored] = combined
+        }
+    }
 
     suspend fun setAutoBackupKeep(keep: Int) = prefs.set(SettingsKeys.autoBackupKeep, keep)
 
@@ -822,7 +829,27 @@ val Preferences.autoBackupSelection: BackupSelection
  * files. Choosing a folder pins the answer (see [SettingsPrefs.setAutoBackupFolderUri]).
  */
 val Preferences.autoBackupCombined: Boolean
-    get() = this[SettingsKeys.autoBackupCombinedStored] ?: (this[SettingsKeys.autoBackupFolderUri] != null)
+    get() = this[SettingsKeys.autoBackupCombinedStored] ?: autoBackupLegacyInstall
+
+/**
+ * Store the layout the install is on, if it's still derived. Pinning forgets
+ * it was a pre-#411 install, so its old file is recorded as the combined
+ * series' own stable copy at the same time.
+ */
+private fun MutablePreferences.pinBackupLayout() {
+    if (this[SettingsKeys.autoBackupCombinedStored] != null) return
+    val legacy = autoBackupLegacyInstall
+    this[SettingsKeys.autoBackupCombinedStored] = legacy
+    if (legacy) {
+        val key = latestLedgerKey(COMBINED_SERIES)
+        val ledger = this[SettingsKeys.autoBackupLedger]
+        this[SettingsKeys.autoBackupLedger] = ledger + (key to (ledger[key].orEmpty() + LEGACY_BACKUP_FILE).distinct())
+    }
+}
+
+/** An install that set up automatic backup before #411 and hasn't been pinned since. */
+val Preferences.autoBackupLegacyInstall: Boolean
+    get() = this[SettingsKeys.autoBackupCombinedStored] == null && this[SettingsKeys.autoBackupFolderUri] != null
 
 val Preferences.specialDatesTypes: Set<SpecialDateType>
     get() = SettingsKeys.specialDateTypeEnabled.filterValues { this[it] }.keys

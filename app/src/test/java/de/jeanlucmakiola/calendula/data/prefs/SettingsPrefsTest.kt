@@ -726,9 +726,15 @@ class SettingsPrefsTest {
         }
         assertThat(prefs.autoBackupCombined.first()).isTrue()
 
-        // Picking another folder pins the layout instead of flipping it.
+        assertThat(prefs.autoBackupLegacyInstall.first()).isTrue()
+
+        // Picking another folder pins the layout instead of flipping it, and
+        // keeps the old file recognised as this install's own.
         prefs.setAutoBackupFolderUri("content://tree/new")
         assertThat(prefs.autoBackupCombined.first()).isTrue()
+        assertThat(prefs.autoBackupLegacyInstall.first()).isFalse()
+        assertThat(prefs.autoBackupLedger.first())
+            .containsExactly("latest-combined", listOf("calendula-backup.ics"))
 
         prefs.setAutoBackupCombined(false)
         assertThat(prefs.autoBackupCombined.first()).isFalse()

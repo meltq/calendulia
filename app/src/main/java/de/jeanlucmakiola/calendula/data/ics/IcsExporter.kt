@@ -39,15 +39,9 @@ class IcsExporter @Inject constructor(
         return context.contentResolver.listTreeFiles(folder)
     }
 
-    /** Write [content] as [fileName] into [folder]; returns the name the file ended up with. */
-    fun writeToFolder(folder: Uri, listing: TreeListing, fileName: String, content: String): String =
-        context.contentResolver.writeTreeFile(
-            tree = folder,
-            listing = listing,
-            name = fileName,
-            mimeType = MIME_CALENDAR,
-            bytes = content.toByteArray(Charsets.UTF_8),
-        )
+    /** Write the `.ics` [bytes] as [fileName] into [folder]; returns the name the file ended up with. */
+    fun writeToFolder(folder: Uri, listing: TreeListing, fileName: String, bytes: ByteArray): String =
+        context.contentResolver.writeTreeFile(folder, listing, fileName, MIME_CALENDAR, bytes)
 
     /** Delete [names] from the listed folder; returns the ones that didn't go. */
     fun deleteFromFolder(listing: TreeListing, names: Collection<String>): Set<String> =
