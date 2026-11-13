@@ -9,8 +9,6 @@ import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
-import de.jeanlucmakiola.floret.di.IoDispatcher
-import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -18,7 +16,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
@@ -34,15 +32,13 @@ import javax.inject.Inject
 class CopyEventsViewModel @Inject constructor(
     private val repository: CalendarRepository,
     private val savedState: SavedStateHandle,
-    @IoDispatcher io: CoroutineDispatcher,
 ) : ViewModel() {
 
-    /** Null until the first read. */
-    val calendars: StateFlow<List<CalendarSource>?> =
+    val calendars: StateFlow<CopyCalendars> =
         repository.calendars()
-            .catch { emit(emptyList()) }
-            .flowOn(io)
-            .stateWhileSubscribed(scope = viewModelScope, initialValue = null)
+            .map<List<CalendarSource>, CopyCalendars> { CopyCalendars.Ready(it) }
+            .catch { emit(CopyCalendars.Failure) }
+            .stateWhileSubscribed(scope = viewModelScope, initialValue = CopyCalendars.Loading)
 
     val selection: StateFlow<CopySelection> = combine(
         savedState.getStateFlow<Long?>(KEY_SOURCE, null),
@@ -118,6 +114,13 @@ data class CopySelection(val sourceId: Long? = null, val targetId: Long? = null)
     /** A target equal to the new source is dropped: a calendar is never copied into itself. */
     fun withSource(id: Long): CopySelection =
         CopySelection(sourceId = id, targetId = targetId?.takeIf { it != id })
+}
+
+/** The calendar list the copy sheet picks from. */
+sealed interface CopyCalendars {
+    data object Loading : CopyCalendars
+    data object Failure : CopyCalendars
+    data class Ready(val calendars: List<CalendarSource>) : CopyCalendars
 }
 
 sealed interface CopyRunState {

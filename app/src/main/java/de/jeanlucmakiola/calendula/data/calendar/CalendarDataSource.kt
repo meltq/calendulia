@@ -817,11 +817,19 @@ class AndroidCalendarDataSource @Inject constructor(
         val exceptions = mutableListOf<CopyException>()
         // Some adapters stamp the calendar's colour onto every row; that is no
         // colour of the event's own and would pin it in the target.
-        val calendarColor = calendars().firstOrNull { it.id == calendarId }?.color
+        val calendarColor = resolver.query(
+            ContentUris.withAppendedId(CalendarContract.Calendars.CONTENT_URI, calendarId),
+            arrayOf(CalendarContract.Calendars.CALENDAR_COLOR),
+            null,
+            null,
+            null,
+        )?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getInt(0) else null }
         forEachExportRow(selection, allDayReminderTimeMinutes) { event ->
             val color = getIntOrNull(EventExportProjection.IDX_EVENT_COLOR)?.takeIf { it != calendarColor }
             val originalId = getLongOrNull(EventExportProjection.IDX_ORIGINAL_ID)
-            val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)?.takeIf { it.isNotEmpty() }
+            val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)
+            // The same test the backup query makes: an empty ORIGINAL_SYNC_ID
+            // still marks an exception, one that can't be linked.
             if (originalId == null && originalSyncId == null) {
                 series += CopySeries(
                     eventId = getLong(EventExportProjection.IDX_ID),
@@ -835,7 +843,7 @@ class AndroidCalendarDataSource @Inject constructor(
                     ?: return@forEachExportRow
                 exceptions += CopyException(
                     originalId = originalId,
-                    originalSyncId = originalSyncId,
+                    originalSyncId = originalSyncId.takeIf { !it.isNullOrEmpty() },
                     originalInstance = originalInstance.toKotlinInstantFromEpochMillis(),
                     event = event(null),
                     color = color,

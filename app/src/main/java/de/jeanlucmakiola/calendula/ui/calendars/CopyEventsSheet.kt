@@ -25,6 +25,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.FailureReason
+import de.jeanlucmakiola.calendula.ui.common.CalendarFailure
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.CalendarPickerGroups
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
@@ -40,7 +42,7 @@ import de.jeanlucmakiola.floret.components.Position
  */
 @Composable
 fun CopyEventsSheet(
-    calendars: List<CalendarSource>?,
+    calendars: CopyCalendars,
     selection: CopySelection,
     run: CopyRunState,
     onSelectSource: (Long) -> Unit,
@@ -49,9 +51,10 @@ fun CopyEventsSheet(
     onCancel: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val sources = calendars?.let(::copySources).orEmpty()
+    val list = (calendars as? CopyCalendars.Ready)?.calendars.orEmpty()
+    val sources = copySources(list)
     val source = sources.firstOrNull { it.id == selection.sourceId }
-    val targets = calendars?.let { copyTargets(it, source?.id) }.orEmpty()
+    val targets = copyTargets(list, source?.id)
     val target = targets.firstOrNull { it.id == selection.targetId }
     val running = run is CopyRunState.Running
     var picking by rememberSaveable { mutableStateOf<CopyEnd?>(null) }
@@ -62,11 +65,18 @@ fun CopyEventsSheet(
         predictiveBack = true,
     ) {
         GroupedHint(stringResource(R.string.calendars_copy_hint), style = MaterialTheme.typography.bodySmall)
-        if (calendars == null) {
-            Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
-                CircularProgressIndicator()
+        when (calendars) {
+            CopyCalendars.Loading -> {
+                Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator()
+                }
+                return@FullScreenPicker
             }
-            return@FullScreenPicker
+            CopyCalendars.Failure -> {
+                CalendarFailure(reason = FailureReason.ProviderUnavailable, onRetry = onDismiss)
+                return@FullScreenPicker
+            }
+            is CopyCalendars.Ready -> Unit
         }
         if (sources.isEmpty() && !running) {
             GroupedHint(stringResource(R.string.calendars_copy_none))

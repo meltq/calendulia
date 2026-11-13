@@ -267,10 +267,10 @@ class CalendarRepositoryImpl @Inject constructor(
         }
         onProgress(0, events.size)
         // Checked between events, so cancelling stops the copy; a plain import
-        // keeps running to the end of its file. A finished run stays finished.
+        // keeps running to the end of its file.
         val context = currentCoroutineContext()
         return importEvents(targetCalendarId, events) { done ->
-            if (done < events.size) context.ensureActive()
+            context.ensureActive()
             onProgress(done, events.size)
         }
     }
