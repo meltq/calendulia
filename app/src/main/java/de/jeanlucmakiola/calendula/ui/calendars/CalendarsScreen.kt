@@ -392,7 +392,8 @@ internal fun CalendarEditor(
     val commit = {
         if (valid) {
             // Only the views toggled here are written, so a save never resets ones it didn't load.
-            val changes = (hiddenViews + seededHiddenViews - (hiddenViews intersect seededHiddenViews))
+            val changes = IMPLEMENTED_VIEWS
+                .filter { (it in hiddenViews) != (it in seededHiddenViews) }
                 .associateWith { it in hiddenViews }
             onSave(name.trim(), color, description.trim().ifEmpty { null }, changes)
         }
@@ -769,9 +770,9 @@ private fun HiddenViewsPicker(
     onToggle: (CalendarView, Boolean) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // Ahead of the store, so a second tap before the first write lands still flips.
+    // Seeded once and then ahead of the store: the picker is the only writer while
+    // it is open, so following each write back would only flicker a quick second tap.
     var shown by remember { mutableStateOf(hidden) }
-    LaunchedEffect(hidden) { shown = hidden }
     MultiOptionPicker(
         title = stringResource(R.string.calendars_hide_in_views),
         options = IMPLEMENTED_VIEWS,

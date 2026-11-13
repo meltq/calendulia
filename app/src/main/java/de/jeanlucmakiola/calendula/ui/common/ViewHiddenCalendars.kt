@@ -21,7 +21,7 @@ fun Map<Long, Set<CalendarView>>.calendarsHiddenIn(view: CalendarView): Set<Long
  * The calendars hidden in [view], shared by everything one view model shows so
  * the setting is read once rather than per page. A failed read hides nothing
  * rather than failing the view; the replay expires with the last subscriber, so
- * a view coming back never draws a stale set.
+ * a returning view filters against a fresh read.
  */
 fun Flow<Map<Long, Set<CalendarView>>>.calendarsHiddenIn(
     view: CalendarView,

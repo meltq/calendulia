@@ -30,7 +30,6 @@ import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.io.IOException
 import kotlin.coroutines.cancellation.CancellationException
 import kotlin.time.Clock
 import javax.inject.Inject
@@ -159,10 +158,11 @@ class CalendarsViewModel @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-        hiddenChanges: Map<CalendarView, Boolean> = emptyMap(),
+        hiddenChanges: Map<CalendarView, Boolean>,
     ) = write {
         val id = repository.createLocalCalendar(displayName, color, description)
-        applyHiddenChanges(id, hiddenChanges)
+        // The calendar exists now; a failed pref write must not read as a failed create.
+        bestEffort { settingsPrefs.applyCalendarHiddenChanges(id, hiddenChanges) }
     }
 
     fun updateCalendar(
@@ -172,21 +172,24 @@ class CalendarsViewModel @Inject constructor(
         description: String?,
         hiddenChanges: Map<CalendarView, Boolean>,
     ) = write {
+        // First: it doesn't depend on the provider, so a failed provider write shouldn't lose it.
+        settingsPrefs.applyCalendarHiddenChanges(id, hiddenChanges)
         repository.updateCalendar(id, displayName, color, description)
-        applyHiddenChanges(id, hiddenChanges)
-    }
-
-    private suspend fun applyHiddenChanges(id: Long, changes: Map<CalendarView, Boolean>) {
-        changes.forEach { (view, hidden) -> settingsPrefs.setCalendarHiddenIn(id, view, hidden) }
     }
 
     fun deleteCalendar(id: Long) = write {
         repository.deleteCalendar(id)
         // Tidy-up only: the delete already landed, so a failure here isn't its failure.
+        bestEffort { settingsPrefs.setCalendarHiddenViews(id, emptySet()) }
+    }
+
+    private suspend fun bestEffort(block: suspend () -> Unit) {
         try {
-            settingsPrefs.setCalendarHiddenViews(id, emptySet())
-        } catch (e: IOException) {
-            Log.w("CalendarsViewModel", "Could not clear hidden views of $id", e)
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("CalendarsViewModel", "Hidden-views write failed", e)
         }
     }
 

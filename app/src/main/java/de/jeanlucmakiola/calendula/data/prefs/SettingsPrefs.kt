@@ -278,10 +278,16 @@ class SettingsPrefs @Inject constructor(
     }
 
     /** Hide or show [calendarId] in one [view], against the stored set rather than a snapshot of it. */
-    suspend fun setCalendarHiddenIn(calendarId: Long, view: CalendarView, hidden: Boolean) {
+    suspend fun setCalendarHiddenIn(calendarId: Long, view: CalendarView, hidden: Boolean) =
+        applyCalendarHiddenChanges(calendarId, mapOf(view to hidden))
+
+    /** Hide (true) or show (false) [calendarId] in each view of [changes], in one write; other views keep theirs. */
+    suspend fun applyCalendarHiddenChanges(calendarId: Long, changes: Map<CalendarView, Boolean>) {
+        if (changes.isEmpty()) return
         prefs.update(SettingsKeys.perCalendarHiddenViews) { current ->
             val views = current[calendarId].orEmpty()
-            current.withHiddenViews(calendarId, if (hidden) views + view else views - view)
+            val next = views + changes.filterValues { it }.keys - changes.filterValues { !it }.keys
+            current.withHiddenViews(calendarId, next)
         }
     }
 
