@@ -802,6 +802,25 @@ class EventEditViewModelTest {
     }
 
     @Test
+    fun `a set-time reminder replaces a lead firing at the same moment`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val s = settings(tempDir)
+        s.setDefaultReminderMinutes(listOf(1_440, 10))
+        val vm = viewModel(tempDir, fake, s, zones = FakeZoneSource(berlin))
+        val job = activate(vm)
+
+        vm.openNew(LocalDate(2030, 1, 15), startMinutes = 20 * 60)
+        advanceUntilIdle()
+        vm.addFixedReminder(FixedTimeReminder(1, 20 * 60))
+        val form = vm.state.value!!.form!!
+        assertThat(form.reminders).containsExactly(10)
+        assertThat(form.fixedReminders).containsExactly(FixedTimeReminder(1, 20 * 60))
+        job.cancel()
+    }
+
+    @Test
     fun `a copy carrying only set-time reminders keeps them`(
         @TempDir tempDir: Path,
     ) = runTest(dispatcher) {

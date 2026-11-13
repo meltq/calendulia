@@ -364,20 +364,11 @@ class SettingsViewModel @Inject constructor(
      * A scan follows the write: switching reminders off cancels the scan alarm,
      * so switching them back on has to arm a new one (#75).
      */
-    fun setRemindersEnabled(enabled: Boolean) {
-        viewModelScope.launch {
-            prefs.setRemindersEnabled(enabled)
-            reminderScanner.scan()
-        }
-    }
+    fun setRemindersEnabled(enabled: Boolean) = saveAndScan { setRemindersEnabled(enabled) }
 
     /** Re-plans, since a muted calendar armed no wake-up for its next reminder. */
-    fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) {
-        viewModelScope.launch {
-            prefs.setCalendarRemindersEnabled(calendarId, enabled)
-            reminderScanner.scan()
-        }
-    }
+    fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) =
+        saveAndScan { setCalendarRemindersEnabled(calendarId, enabled) }
 
     /** [calendarId]'s reminder channel, created if needed so its system settings can open (#340). */
     suspend fun reminderChannelFor(calendarId: Long): String? = onChannels { channelFor(calendarId) }
@@ -410,12 +401,7 @@ class SettingsViewModel @Inject constructor(
     fun setDefaultAllDayReminderMinutes(minutes: List<Int>) = save { setDefaultAllDayReminderMinutes(minutes) }
 
     /** The armed alarm was planned for the old hour, so re-plan against the new one. */
-    fun setAllDayReminderTimeMinutes(minutesOfDay: Int) {
-        viewModelScope.launch {
-            prefs.setAllDayReminderTimeMinutes(minutesOfDay)
-            reminderScanner.scan()
-        }
-    }
+    fun setAllDayReminderTimeMinutes(minutesOfDay: Int) = saveAndScan { setAllDayReminderTimeMinutes(minutesOfDay) }
 
     fun setSnoozeMinutes(minutes: Int) = save { setSnoozeMinutes(minutes) }
 

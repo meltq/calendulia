@@ -348,18 +348,46 @@ class SettingsPrefs @Inject constructor(
     suspend fun setCalendarAllDayReminderOverride(calendarId: Long, override: ReminderOverride) =
         prefs.applyOverride(SettingsKeys.perCalendarAllDayReminderOverride, calendarId, override)
 
-    suspend fun setDefaultFixedTimeReminder(reminder: FixedTimeReminder?) =
-        prefs.set(SettingsKeys.defaultFixedTimeReminder, reminder)
+    /** The replaced default stays a known pattern, so events that got it keep reading as it. */
+    suspend fun setDefaultFixedTimeReminder(reminder: FixedTimeReminder?) {
+        prefs.edit {
+            retireFixedTimeReminder(it, it[SettingsKeys.defaultFixedTimeReminder])
+            it[SettingsKeys.defaultFixedTimeReminder] = reminder
+        }
+    }
 
-    /** [override] [FixedTimeOverride.Inherit] drops the calendar's entry. */
+    /** [override] [FixedTimeOverride.Inherit] drops the calendar's entry; a replaced value stays known. */
     suspend fun setCalendarFixedTimeReminderOverride(calendarId: Long, override: FixedTimeOverride) {
-        prefs.update(SettingsKeys.perCalendarFixedTimeReminderOverride) { current ->
-            when (override) {
+        prefs.edit {
+            val current = it[SettingsKeys.perCalendarFixedTimeReminderOverride]
+            retireFixedTimeReminder(it, current[calendarId])
+            it[SettingsKeys.perCalendarFixedTimeReminderOverride] = when (override) {
                 FixedTimeOverride.Inherit -> current - calendarId
                 FixedTimeOverride.Off -> current + (calendarId to null)
                 is FixedTimeOverride.At -> current + (calendarId to override.reminder)
             }
         }
+    }
+
+    /**
+     * Remember fixed-time reminders saved by hand (#459), so their rows read
+     * back as them; the defaults are known anyway and take no slot.
+     */
+    suspend fun rememberFixedTimeReminders(reminders: Collection<FixedTimeReminder>) {
+        prefs.edit {
+            val defaults = setOfNotNull(it[SettingsKeys.defaultFixedTimeReminder]) +
+                it[SettingsKeys.perCalendarFixedTimeReminderOverride].values.filterNotNull()
+            val fresh = reminders.filterNot { reminder -> reminder in defaults }
+            if (fresh.isNotEmpty()) {
+                it[SettingsKeys.recentFixedTimeReminders] = (fresh + it[SettingsKeys.recentFixedTimeReminders]).distinct()
+            }
+        }
+    }
+
+    private fun retireFixedTimeReminder(preferences: MutablePreferences, reminder: FixedTimeReminder?) {
+        if (reminder == null) return
+        preferences[SettingsKeys.recentFixedTimeReminders] =
+            (listOf(reminder) + preferences[SettingsKeys.recentFixedTimeReminders]).distinct()
     }
 
     suspend fun setDailyDigestEnabled(enabled: Boolean) = editDigest { it[SettingsKeys.dailyDigestEnabled] = enabled }
@@ -380,10 +408,6 @@ class SettingsPrefs @Inject constructor(
         }
     }
 
-    /** Remember a fixed-time reminder picked by hand, so it reads back as one later (#459). */
-    suspend fun addRecentFixedTimeReminder(reminder: FixedTimeReminder) {
-        prefs.update(SettingsKeys.recentFixedTimeReminders) { (listOf(reminder) + it).distinct() }
-    }
 
     suspend fun setCalendarInDailyDigest(calendarId: Long, included: Boolean) {
         prefs.update(SettingsKeys.digestExcludedCalendarIds) { if (included) it - calendarId else it + calendarId }
@@ -438,7 +462,7 @@ class SettingsPrefs @Inject constructor(
         /** 09:00 as minutes from midnight; the default all-day reminder fire time. */
         internal const val DEFAULT_ALLDAY_REMINDER_TIME = 540
         internal const val MINUTES_PER_DAY = 1_440
-        internal const val MAX_RECENT_FIXED_TIME_REMINDERS = 5
+        internal const val MAX_RECENT_FIXED_TIME_REMINDERS = 12
         /** Default snooze delay for the notification "Snooze" action. */
         const val DEFAULT_SNOOZE_MINUTES = 10
         const val DEFAULT_MULTI_DAY_COUNT = 3
@@ -787,8 +811,9 @@ object SettingsKeys {
     val dailyDigestArmedAt: Pref<Long> = longPref("daily_digest_armed_at", 0L)
 
     /**
-     * Fixed-time reminders last picked by hand in the editor, newest first —
-     * with the defaults, the patterns a stored offset is recognised as.
+     * Fixed-time reminders last saved by hand, and defaults since replaced,
+     * newest first — with the current defaults, the patterns a stored offset is
+     * recognised as. Capped, so the oldest falls out of recognition.
      */
     val recentFixedTimeReminders: Pref<List<FixedTimeReminder>> =
         nullableStringPref("recent_fixed_time_reminders").map(

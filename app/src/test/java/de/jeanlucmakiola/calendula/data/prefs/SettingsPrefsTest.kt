@@ -749,8 +749,14 @@ class SettingsPrefsTest {
             .isEqualTo(FixedTimeReminder(1, 1_200))
         assertThat(prefs.knownFixedTimeReminders.first()).containsExactly(FixedTimeReminder(1, 1_200), morning)
         val picked = FixedTimeReminder(3, 600)
-        prefs.addRecentFixedTimeReminder(picked)
+        prefs.rememberFixedTimeReminders(listOf(picked, morning))
         assertThat(prefs.knownFixedTimeReminders.first()).contains(picked)
+        // A default already known takes no recents slot.
+        assertThat(prefs.knownFixedTimeReminders.first()).hasSize(3)
+
+        // A replaced default stays known.
+        prefs.setDefaultFixedTimeReminder(FixedTimeReminder(1, 1_140))
+        assertThat(prefs.knownFixedTimeReminders.first()).contains(FixedTimeReminder(1, 1_200))
 
         prefs.setCalendarFixedTimeReminderOverride(2L, FixedTimeOverride.Inherit)
         assertThat(prefs.perCalendarFixedTimeReminderOverride.first().containsKey(2L)).isFalse()

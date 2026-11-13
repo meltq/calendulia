@@ -140,18 +140,24 @@ class ReminderScanner @Inject constructor(
      */
     private suspend fun postDigest(settings: DailyDigestSettings, lastFired: Long, now: Long): Long {
         val zone = ZoneId.systemDefault()
+        // Neither a moment already posted nor one that passed before the summary
+        // was last changed is owed.
+        val posted = try {
+            state.lastDigestMillis()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read the last daily summary", e)
+            now
+        }
         val schedule = scheduleDigest(
             timeMinutes = settings.timeMinutes,
             day = settings.day,
             zone = zone,
-            // A moment that passed before the summary was set up is not owed.
-            lastFiredMillis = maxOf(lastFired, settings.armedAtMillis),
+            lastFiredMillis = maxOf(lastFired, settings.armedAtMillis, posted),
             nowMillis = now,
-            lastPostedDay = state.lastDigestDay(),
         )
-        val day = schedule.dueDay ?: return schedule.nextAlarmMillis
-        // A failed summary must not cost the event reminders this pass owes.
-        if (notifier.canPost()) {
+        val day = schedule.dueDay
+        if (day != null && notifier.canPost()) {
+            // A failed summary must not cost the event reminders this pass owes.
             try {
                 // A day either side: all-day occurrences sit at UTC midnight, which
                 // can fall outside the local day they stand for.
@@ -159,7 +165,7 @@ class ReminderScanner @Inject constructor(
                 val to = day.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
                 val left = settings.excludedCalendarIds + calendarPrefs.pendingDisabledCalendarIds.first()
                 digestNotifier.post(day, digestEntries(source.occurrences(from, to), day, zone, left))
-                state.setLastDigestDay(day)
+                state.setLastDigestMillis(schedule.dueAtMillis)
             } catch (e: Exception) {
                 Log.w(TAG, "Daily summary failed", e)
             }

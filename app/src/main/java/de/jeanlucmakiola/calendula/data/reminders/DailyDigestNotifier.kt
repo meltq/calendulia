@@ -12,8 +12,10 @@ import de.jeanlucmakiola.calendula.MainActivity
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
+import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
 import de.jeanlucmakiola.calendula.domain.reminders.ReminderEventInstance
 import kotlinx.coroutines.flow.first
+import kotlinx.datetime.isoDayNumber
 import kotlinx.datetime.toKotlinLocalDate
 import java.time.DayOfWeek
 import java.time.LocalDate
@@ -50,6 +52,7 @@ class DailyDigestNotifier @Inject constructor(
         val is24Hour = settingsPrefs.timeFormat.first()
             .is24Hour(android.text.format.DateFormat.is24HourFormat(context))
         val today = LocalDate.now(zone)
+        val firstDayOfWeek = DayOfWeek.of(settingsPrefs.weekStart.first().resolveFirstDay(locale).isoDayNumber)
         val dayLabel = when (day) {
             today -> context.getString(R.string.reminder_day_today)
             today.plusDays(1) -> context.getString(R.string.reminder_day_tomorrow)
@@ -58,7 +61,7 @@ class DailyDigestNotifier @Inject constructor(
         val allDay = context.getString(R.string.event_detail_all_day)
         val lines = listed.map { entry ->
             // Read against the listed day, so a timed event on it shows its bare
-            // range and one crossing midnight its dates; the week start never shows.
+            // range and one crossing midnight its dates.
             val time = if (entry.isAllDay) allDay else reminderTimeText(
                 beginMillis = entry.beginMillis,
                 endMillis = entry.endMillis,
@@ -67,7 +70,7 @@ class DailyDigestNotifier @Inject constructor(
                 locale = locale,
                 is24Hour = is24Hour,
                 today = day,
-                firstDayOfWeek = DayOfWeek.MONDAY,
+                firstDayOfWeek = firstDayOfWeek,
                 todayLabel = allDay,
                 tomorrowLabel = context.getString(R.string.reminder_day_tomorrow),
                 yesterdayLabel = context.getString(R.string.reminder_day_yesterday),

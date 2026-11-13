@@ -4,8 +4,6 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.floret.prefs.PrefStore
 import de.jeanlucmakiola.floret.prefs.nullableLongPref
-import de.jeanlucmakiola.floret.prefs.nullableStringPref
-import java.time.LocalDate
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -29,13 +27,16 @@ class ReminderStatePrefs @Inject constructor(
 
     suspend fun setLastScanMillis(millis: Long) = prefs.set(LAST_SCAN, millis)
 
-    /** The day the last daily summary listed (#459), so a re-run scan never posts it twice. */
-    suspend fun lastDigestDay(): LocalDate? = prefs.get(LAST_DIGEST_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+    /**
+     * The moment of the last daily summary posted (#459): recorded at once, so a
+     * pass failing after posting can't post it again before the watermark moves.
+     */
+    suspend fun lastDigestMillis(): Long = prefs.get(LAST_DIGEST) ?: 0L
 
-    suspend fun setLastDigestDay(day: LocalDate) = prefs.set(LAST_DIGEST_DAY, day.toString())
+    suspend fun setLastDigestMillis(millis: Long) = prefs.set(LAST_DIGEST, millis)
 
     private companion object {
         val LAST_SCAN = nullableLongPref("reminder_last_scan_millis")
-        val LAST_DIGEST_DAY = nullableStringPref("reminder_last_digest_day")
+        val LAST_DIGEST = nullableLongPref("reminder_last_digest_millis")
     }
 }

@@ -27,6 +27,18 @@ class FixedTimeReminderTest {
     }
 
     @Test
+    fun `a series offset counts clock minutes, so a DST-side occurrence bakes in no hour`() {
+        // Opened on the Sunday clocks go back: the real span is 15 hours, the clock face says 14.
+        val start = at("2026-10-25T10:00")
+        assertThat(eveningBefore.offsetMinutes(start, berlin)).isEqualTo(15 * 60)
+        val offset = eveningBefore.offsetMinutes(start, berlin, wallClock = true)
+        assertThat(offset).isEqualTo(14 * 60)
+        // Read back the same way on any occurrence of the series.
+        assertThat(fixedTimeReminderAt(offset, at("2026-11-01T10:00"), berlin, wallClock = true)).isEqualTo(eveningBefore)
+        assertThat(fixedTimeReminderAt(offset, start, berlin, wallClock = true)).isEqualTo(eveningBefore)
+    }
+
+    @Test
     fun `an offset reads back as the pattern it was written from`() {
         val start = at("2026-03-29T10:00")
         val offset = eveningBefore.offsetMinutes(start, berlin)

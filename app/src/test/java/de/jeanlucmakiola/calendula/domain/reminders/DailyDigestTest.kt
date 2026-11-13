@@ -29,12 +29,13 @@ class DailyDigestTest {
     }
 
     @Test
-    fun `a day already listed is not listed again`() {
-        val schedule = scheduleDigest(
-            eight, DigestDay.Tomorrow, zone, millis("2026-06-10T19:00"), millis("2026-06-10T20:01"),
-            lastPostedDay = LocalDate.of(2026, 6, 11),
-        )
-        assertThat(schedule.dueDay).isNull()
+    fun `the due moment is reported so it can be recorded`() {
+        val schedule = scheduleDigest(eight, DigestDay.Tomorrow, zone, millis("2026-06-10T19:00"), millis("2026-06-10T20:01"))
+        assertThat(schedule.dueAtMillis).isEqualTo(millis("2026-06-10T20:00"))
+        // Recorded, it is no longer owed.
+        assertThat(
+            scheduleDigest(eight, DigestDay.Tomorrow, zone, schedule.dueAtMillis, millis("2026-06-10T20:02")).dueDay,
+        ).isNull()
     }
 
     @Test

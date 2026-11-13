@@ -332,12 +332,16 @@ fun EventForm.problems(deviceZone: TimeZone): Set<EventFormProblem> = buildSet {
  * cleared so the create resolves to a writable calendar, which lets a read-only
  * event be copied into an editable one. [instance]'s own times carry over.
  */
-fun EventDetail.toDuplicateForm(canModify: Boolean, zone: TimeZone): EventForm =
+fun EventDetail.toDuplicateForm(
+    canModify: Boolean,
+    zone: TimeZone,
+    knownFixed: Set<FixedTimeReminder> = emptySet(),
+): EventForm =
     toEditForm(
         beginMillis = instance.start.toEpochMilliseconds(),
         endMillis = instance.end.toEpochMilliseconds(),
         zone = zone,
-    ).copy(
+    ).withFixedTimeRemindersRead(knownFixed, zone).copy(
         rrule = null,
         calendarId = instance.calendarId.takeIf { canModify },
         status = status.forNewEvent(),
@@ -350,7 +354,9 @@ fun EventDetail.toDuplicateForm(canModify: Boolean, zone: TimeZone): EventForm =
  */
 fun EventForm.withFixedTimeRemindersRead(known: Set<FixedTimeReminder>, deviceZone: TimeZone): EventForm {
     if (isAllDay || reminders.isEmpty()) return this
-    val split = splitTimedReminders(reminders, startInstant(resolvedZone(deviceZone)), deviceZone, known)
+    val split = splitTimedReminders(
+        reminders, startInstant(resolvedZone(deviceZone)), deviceZone, known, wallClock = rrule != null,
+    )
     return copy(reminders = split.leadMinutes, fixedReminders = (fixedReminders + split.fixed).distinct())
 }
 
@@ -358,5 +364,5 @@ fun EventForm.withFixedTimeRemindersRead(known: Set<FixedTimeReminder>, deviceZo
 fun EventForm.fixedReminderOffsets(deviceZone: TimeZone): List<Int> {
     if (isAllDay || fixedReminders.isEmpty()) return emptyList()
     val start = startInstant(resolvedZone(deviceZone))
-    return fixedReminders.map { it.offsetMinutes(start, deviceZone) }
+    return fixedReminders.map { it.offsetMinutes(start, deviceZone, wallClock = rrule != null) }
 }

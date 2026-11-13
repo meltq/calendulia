@@ -416,13 +416,17 @@ plans it like any lead time. Only the editor knows it as a pattern
 (`EventForm.fixedReminders`), and it re-derives the offset from the start it
 saves with, so moving the event, in the form or by drag, keeps the wall clock.
 Reading a row back is a guess, made in one place (`classifyTimedReminder`): an
-offset is fixed-time only when it lands on a known pattern — a configured
-default, or one picked by hand on this device (`recentFixedTimeReminders`).
-Guessing from the offset's shape alone would turn ordinary leads ("12 hours
-before") into fixed ones; guessing wrong never moves an alarm, only how a later
-time change treats it. Limits: a recurring series stores one offset, so an occurrence whose
-lead spans a DST change fires an hour off the named time (as in every other
-app reading that row), and on another device or app the row is just a lead time.
+offset is fixed-time only when it lands on a known pattern — a current or
+replaced default, or one saved by hand on this device
+(`recentFixedTimeReminders`, capped). Guessing from the offset's shape alone
+would turn ordinary leads ("12 hours before") into fixed ones. Limits: where a
+lead and a known pattern coincide ("1 day before" on an event at the default's
+own time) the pattern wins, and a pattern that falls out of the recents reads as
+a lead again — either way the alarm fires at the same moment until the start's
+time of day changes. A recurring series stores one offset for all occurrences,
+so it counts clock minutes rather than real ones (`wallClock`); the occurrence
+whose lead spans a DST change then fires an hour off, as in every other app
+reading that row. On another device or app the row is simply a lead time.
 New timed events get the default (`SettingsKeys.defaultFixedTimeReminder`, with
 a per-calendar inherit/off/value override) like the lead-time defaults.
 
@@ -432,10 +436,11 @@ counts after a long gap, and it is dropped once the day it lists has passed.
 It is independent of the event-reminder switch, posts on its own channel
 (`DailyDigestNotifier`), lists switched-on calendars minus its own exclusions,
 and replaces the previous summary — or withdraws it when the day is empty.
-Two guards keep it to one per day: the day last listed is recorded right after
-posting (`ReminderStatePrefs.lastDigestDay`), so a pass failing later can't post
-it twice, and changing the switch, time or day stamps `dailyDigestArmedAt`, so a
-moment that passed before the change is not owed by it.
+Two guards keep it to one per moment: the moment posted is recorded at once
+(`ReminderStatePrefs.lastDigestMillis`), so a pass failing later can't post it
+again, and changing the switch, time or day stamps `dailyDigestArmedAt`, so a
+moment that passed before the change is not owed by it. A failing summary is
+logged and skipped; it never costs the event reminders of the same pass.
 The per-calendar reminder mute does not apply: a calendar too noisy to ping per
 event can still belong in the overview, and the summary has its own
 per-calendar switch next to it.

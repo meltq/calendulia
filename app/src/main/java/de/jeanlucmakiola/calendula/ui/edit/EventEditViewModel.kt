@@ -17,6 +17,7 @@ import de.jeanlucmakiola.calendula.data.prefs.resolveDefaultFixedTimeReminder
 import de.jeanlucmakiola.calendula.data.prefs.resolveDefaultReminder
 import de.jeanlucmakiola.calendula.domain.reminders.FIXED_ORDER
 import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
+import de.jeanlucmakiola.calendula.domain.fixedReminderOffsets
 import de.jeanlucmakiola.calendula.domain.withFixedTimeRemindersRead
 import de.jeanlucmakiola.calendula.domain.canSaveApartFromSeries
 import de.jeanlucmakiola.calendula.domain.AccessLevel
@@ -725,14 +726,19 @@ class EventEditViewModel @Inject constructor(
         edit { it.copy(reminders = it.reminders - minutes) }
     }
 
-    /** Add an "N days before at HH:MM" reminder (#459); timed events only. */
+    /**
+     * Add an "N days before at HH:MM" reminder (#459); timed events only. A lead
+     * time landing on the same moment is replaced by it — the two would be one
+     * row once saved.
+     */
     fun addFixedReminder(reminder: FixedTimeReminder) {
         _remindersTouched.value = true
-        edit {
-            if (it.isAllDay) it else it.copy(fixedReminders = (it.fixedReminders + reminder).distinct().sortedWith(FIXED_ORDER))
+        edit { form ->
+            if (form.isAllDay) return@edit form
+            val withFixed = form.copy(fixedReminders = (form.fixedReminders + reminder).distinct().sortedWith(FIXED_ORDER))
+            val offsets = withFixed.fixedReminderOffsets(zoneSource.current()).toSet()
+            withFixed.copy(reminders = form.reminders.filterNot { it in offsets })
         }
-        // Remembered so the row reads back as this reminder when reopened.
-        viewModelScope.launch { withContext(io) { settingsPrefs.addRecentFixedTimeReminder(reminder) } }
     }
 
     fun removeFixedReminder(reminder: FixedTimeReminder) {
@@ -921,6 +927,10 @@ class EventEditViewModel @Inject constructor(
                 // id only — never the form's content.
                 Log.w(TAG, "Save failed (scope=$scope, eventId=${target?.eventId})", e)
                 SaveUiState.Failed
+            }
+            // Remembered once saved, so the rows read back as these reminders (#459).
+            if (result == SaveUiState.Saved && !form.isAllDay && form.fixedReminders.isNotEmpty()) {
+                runCatching { settingsPrefs.rememberFixedTimeReminders(form.fixedReminders) }
             }
             settle(result)
         }
