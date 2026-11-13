@@ -149,11 +149,12 @@ class CalendarRepositoryImpl @Inject constructor(
      */
     private fun reach(accounts: Set<SyncAccount>): SyncTargets {
         if (accounts.isEmpty()) return SyncTargets.None
+        // Unreadable access counts as reachable: a grant can't fix a failing read.
         val addressable = try {
             syncRequester.addressableAccounts(accounts.mapTo(mutableSetOf()) { it.type })
         } catch (e: Exception) {
             Log.w(TAG, "Account visibility unreadable", e)
-            emptySet()
+            null
         }
         if (addressable == null) return SyncTargets(reachable = accounts, needsAccess = emptySet())
         val (reachable, hidden) = accounts.partition { it in addressable }
@@ -199,13 +200,13 @@ class CalendarRepositoryImpl @Inject constructor(
             return@withContext if (targets.needsAccess.isEmpty()) {
                 SyncRequestResult.NothingToSync
             } else {
-                SyncRequestResult.Failed
+                SyncRequestResult.NeedsAccess
             }
         }
         val sent = targets.reachable.count { requestSync(it, userInitiated = true) }
         when {
             sent == 0 -> SyncRequestResult.Failed
-            sent < targets.reachable.size || targets.needsAccess.isNotEmpty() -> SyncRequestResult.PartlyFailed
+            sent < targets.reachable.size -> SyncRequestResult.PartlyFailed
             else -> SyncRequestResult.Requested
         }
     }

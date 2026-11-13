@@ -5,6 +5,8 @@ import android.util.Log
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -461,9 +463,10 @@ fun CalendarHost(
     val syncMessage = syncResult?.let { stringResource(it.messageRes()) }
     // The system account picker grants access to one account per pick; whatever
     // the outcome, access is re-read rather than trusted from the result.
-    val accessPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        sync.refreshAccess()
-    }
+    // Access can also be granted or revoked in system settings: re-read on every
+    // resume, which covers the picker returning too.
+    val accessPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {}
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { sync.refreshAccess() }
     val accessPickerDescription = stringResource(R.string.sync_access_picker_description)
     val launchAccessPicker: (Set<SyncAccount>) -> Unit = { accounts ->
         try {
@@ -569,11 +572,6 @@ fun CalendarHost(
         val stayingPut = remember { StayingPut() }
         val chromeHost = remember { ChromeHost() }
         val drawerState = rememberDrawerState(DrawerValue.Closed)
-        // Account access can be granted or revoked outside the app; re-read it
-        // whenever the drawer that offers the grant opens.
-        LaunchedEffect(drawerState.targetValue) {
-            if (drawerState.targetValue == DrawerValue.Open) sync.refreshAccess()
-        }
         val density = LocalDensity.current
         val topBarBottom = TopAppBarDefaults.windowInsets.getTop(density) +
             with(density) { TopAppBarDefaults.TopAppBarExpandedHeight.toPx() }
@@ -628,15 +626,14 @@ fun CalendarHost(
                         DrawerSync(
                             canSync = syncTargets.reachable.isNotEmpty(),
                             inFlight = syncInFlight,
-                            needsAccess = syncTargets.needsAccess.map { it.name },
+                            needsAccess = syncTargets.needsAccess.map { it.name }.distinct(),
                             onSync = {
                                 sync.requestSync()
                                 switchScope.launch { drawerState.close() }
                             },
-                            onGrantAccess = {
-                                launchAccessPicker(syncTargets.needsAccess)
-                                switchScope.launch { drawerState.close() }
-                            },
+                            // The drawer stays open: one pick grants one account,
+                            // and the row is right there for the next.
+                            onGrantAccess = { launchAccessPicker(syncTargets.needsAccess) },
                         )
                     },
                 )

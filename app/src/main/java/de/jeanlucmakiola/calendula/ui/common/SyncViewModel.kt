@@ -45,7 +45,7 @@ class SyncViewModel @Inject constructor(
         .flatMapLatest { repository.syncTargets.catch { emit(SyncTargets.None) } }
         .stateWhileSubscribed(scope = viewModelScope, initialValue = SyncTargets.None)
 
-    /** Re-read account access: after the picker returns, and whenever the drawer opens. */
+    /** Re-read account access: whenever the app resumes, which includes the picker returning. */
     fun refreshAccess() {
         accessChecks.update { it + 1 }
     }
@@ -91,6 +91,7 @@ class SyncViewModel @Inject constructor(
 fun SyncRequestResult.messageRes(): Int = when (this) {
     SyncRequestResult.Requested -> R.string.sync_requested
     SyncRequestResult.PartlyFailed -> R.string.sync_request_partly_failed
+    SyncRequestResult.NeedsAccess -> R.string.sync_request_needs_access
     SyncRequestResult.NothingToSync -> R.string.sync_nothing_to_sync
     SyncRequestResult.Failed -> R.string.sync_request_failed
 }

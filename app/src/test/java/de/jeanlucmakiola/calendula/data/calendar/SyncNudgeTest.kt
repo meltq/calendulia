@@ -233,7 +233,7 @@ class SyncNudgeTest {
         assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), setOf(google)))
 
         sync.requests.clear()
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.PartlyFailed)
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
         assertThat(sync.requests).containsExactly(Request(dav, true))
     }
 
@@ -250,24 +250,24 @@ class SyncNudgeTest {
     }
 
     @Test
-    fun `only hidden accounts make manual sync fail without asking anyone`(@TempDir dir: Path) = runTest {
+    fun `only hidden accounts make manual sync ask for access, asking no one`(@TempDir dir: Path) = runTest {
         val sync = RecordingSyncRequester(hiddenTypes = setOf(dav.type, google.type))
         sync.knownAccounts = setOf(dav, google)
         val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
 
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Failed)
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.NeedsAccess)
         repo.createEvent(form(1L))
         assertThat(sync.requests).isEmpty()
     }
 
     @Test
-    fun `unreadable account visibility asks no one`(@TempDir dir: Path) = runTest {
+    fun `unreadable account visibility counts as reachable`(@TempDir dir: Path) = runTest {
         val sync = RecordingSyncRequester(hiddenTypes = setOf("other"))
         sync.visibilityError = SecurityException("no")
         val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
 
         repo.createEvent(form(1L))
 
-        assertThat(sync.requests).isEmpty()
+        assertThat(sync.requests).containsExactly(auto(dav))
     }
 }

@@ -104,4 +104,4 @@ fun accountAccessIntent(accounts: Collection<SyncAccount>, description: String):
     )
 
 /** Outcome of a user-triggered sync request (#240). */
-enum class SyncRequestResult { Requested, PartlyFailed, NothingToSync, Failed }
+enum class SyncRequestResult { Requested, PartlyFailed, NeedsAccess, NothingToSync, Failed }
