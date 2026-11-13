@@ -28,9 +28,9 @@ class CalendarPrefs @Inject constructor(
 ) {
     private val prefs = PrefStore(store)
 
-    val hiddenCalendarIds: Flow<Set<Long>> = prefs.flow(HIDDEN_IDS)
+    val hiddenCalendarIds: Flow<Set<Long>> = prefs.flow(CalendarPrefKeys.hiddenCalendarIds)
 
-    suspend fun setHiddenCalendarIds(ids: Set<Long>) = prefs.set(HIDDEN_IDS, ids)
+    suspend fun setHiddenCalendarIds(ids: Set<Long>) = prefs.set(CalendarPrefKeys.hiddenCalendarIds, ids)
 
     /**
      * Switch-offs the provider does not know about yet, because writing
@@ -41,10 +41,10 @@ class CalendarPrefs @Inject constructor(
      * second visibility model: `CalendarVisibilityReconciler` drains it entry by
      * entry as soon as the app may write, and nothing adds to it while it may.
      */
-    val pendingDisabledCalendarIds: Flow<Set<Long>> = prefs.flow(DISABLED_IDS)
+    val pendingDisabledCalendarIds: Flow<Set<Long>> = prefs.flow(CalendarPrefKeys.pendingDisabledCalendarIds)
 
     suspend fun addPendingDisabledCalendarIds(ids: Collection<Long>) {
-        prefs.update(DISABLED_IDS) { it + ids }
+        prefs.update(CalendarPrefKeys.pendingDisabledCalendarIds) { it + ids }
     }
 
     /**
@@ -52,7 +52,7 @@ class CalendarPrefs @Inject constructor(
      * them, so a run that fails part-way never re-applies what already landed.
      */
     suspend fun removePendingDisabledCalendarIds(ids: Collection<Long>) {
-        prefs.update(DISABLED_IDS) { it - ids.toSet() }
+        prefs.update(CalendarPrefKeys.pendingDisabledCalendarIds) { it - ids.toSet() }
     }
 
     /**
@@ -60,24 +60,26 @@ class CalendarPrefs @Inject constructor(
      * owed. Null until the reconciler has evaluated it (which needs the calendar
      * permission), false once it has been shown or was never needed.
      */
-    val visibilityNoticePending: Flow<Boolean?> = prefs.flow(VISIBILITY_NOTICE)
+    val visibilityNoticePending: Flow<Boolean?> = prefs.flow(CalendarPrefKeys.visibilityNoticePending)
 
-    suspend fun setVisibilityNoticePending(pending: Boolean) = prefs.set(VISIBILITY_NOTICE, pending)
+    suspend fun setVisibilityNoticePending(pending: Boolean) = prefs.set(CalendarPrefKeys.visibilityNoticePending, pending)
 
     /**
      * The calendar the user last created an event in; preselected in the
      * event form. Null until the first event is created.
      */
-    val lastUsedCalendarId: Flow<Long?> = prefs.flow(LAST_USED_CALENDAR)
+    val lastUsedCalendarId: Flow<Long?> = prefs.flow(CalendarPrefKeys.lastUsedCalendarId)
 
-    suspend fun setLastUsedCalendarId(id: Long) = prefs.set(LAST_USED_CALENDAR, id)
+    suspend fun setLastUsedCalendarId(id: Long) = prefs.set(CalendarPrefKeys.lastUsedCalendarId, id)
 
-    private companion object {
-        val HIDDEN_IDS = idSetPref("hidden_calendar_ids")
-        val DISABLED_IDS = idSetPref("disabled_calendar_ids")
-        val VISIBILITY_NOTICE = nullableBooleanPref("visibility_notice_pending")
-        val LAST_USED_CALENDAR = nullableLongPref("last_used_calendar_id")
-    }
+}
+
+/** Every key [CalendarPrefs] stores; the names are on-disk data. */
+internal object CalendarPrefKeys {
+    val hiddenCalendarIds: Pref<Set<Long>> = idSetPref("hidden_calendar_ids")
+    val pendingDisabledCalendarIds: Pref<Set<Long>> = idSetPref("disabled_calendar_ids")
+    val visibilityNoticePending: Pref<Boolean?> = nullableBooleanPref("visibility_notice_pending")
+    val lastUsedCalendarId: Pref<Long?> = nullableLongPref("last_used_calendar_id")
 }
 
 /** A comma-joined id set; non-numeric tokens are dropped, and an empty set removes the key. */

@@ -910,6 +910,38 @@
         <item>Weeks</item>
     </string-array>
     <string name="calendars_backup_failed">Couldn\'t export the backup.</string>
+    <string name="settings_backup_header">Settings</string>
+    <string name="settings_backup_hint">Save Calendula\'s settings to a file and restore them after reinstalling or on a new phone. Events aren\'t part of it.</string>
+    <string name="settings_backup_export">Export settings</string>
+    <string name="settings_backup_export_summary">Save every setting to a .json file</string>
+    <string name="settings_backup_import">Import settings</string>
+    <string name="settings_backup_import_summary">Replace the current settings with a saved file</string>
+    <string name="settings_backup_export_done">Settings exported.</string>
+    <string name="settings_backup_export_failed">Couldn\'t export the settings.</string>
+    <string name="settings_backup_import_confirm_title">Replace your settings?</string>
+    <string name="settings_backup_import_confirm_message">Every setting is replaced with the one in the file. Your events and calendars stay as they are.</string>
+    <string name="settings_backup_import_confirm_action">Replace</string>
+    <string name="settings_backup_import_failed_not_backup">That file isn\'t a Calendula settings backup.</string>
+    <string name="settings_backup_import_failed_newer">That backup is from a newer Calendula. Update the app to import it.</string>
+    <string name="settings_backup_import_failed_invalid">That settings backup is damaged and wasn\'t imported.</string>
+    <string name="settings_backup_import_failed_too_large">That file is too large to be a settings backup.</string>
+    <string name="settings_backup_import_failed_unreadable">Couldn\'t read that file.</string>
+    <string name="settings_backup_import_failed">Couldn\'t import the settings.</string>
+    <string name="settings_backup_imported_title">Settings imported</string>
+    <string name="settings_backup_imported_body">Your settings now match the ones in the file.</string>
+    <plurals name="settings_backup_imported_calendars">
+        <item quantity="one">Calendar settings were applied to %d calendar.</item>
+        <item quantity="other">Calendar settings were applied to %d calendars.</item>
+    </plurals>
+    <string name="settings_backup_imported_skipped">Not imported</string>
+    <!-- %1$s: calendar name, %2$s: its account -->
+    <string name="settings_backup_skipped_calendar">%1$s (%2$s): no matching calendar on this phone</string>
+    <string name="settings_backup_skipped_font_headings">Custom headings font: choose the font file again</string>
+    <string name="settings_backup_skipped_font_body">Custom body font: choose the font file again</string>
+    <string name="settings_backup_skipped_special_dates">Contact special dates: turn them on again to allow access to contacts</string>
+    <string name="settings_backup_skipped_auto_backup">Automatic backup: choose the backup folder again</string>
+    <!-- %1$s: the language's name -->
+    <string name="settings_backup_skipped_language">%1$s isn\'t available in this version</string>
     <plurals name="calendars_backup_done">
         <item quantity="one">Exported %d event.</item>
         <item quantity="other">Exported %d events.</item>

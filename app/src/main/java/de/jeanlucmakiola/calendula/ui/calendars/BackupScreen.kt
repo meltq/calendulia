@@ -76,7 +76,9 @@ private val RESTORE_MIME_TYPES = arrayOf(
 
 /**
  * Backup & restore (#69): `.ics` export and restore for local calendars, with
- * optional automatic backup. Shares [CalendarsViewModel] with the manager.
+ * optional automatic backup, and the app's settings as JSON (#481). Shares
+ * [CalendarsViewModel] with the manager; the settings block works whatever
+ * state the calendar list is in.
  *
  * A full-screen destination hoisted in `CalendarHost`; [onBack] pops it,
  * [onImport] hands a picked file to the app's normal .ics import flow.
@@ -87,6 +89,7 @@ fun BackupScreen(
     onImport: (Uri) -> Unit,
     visible: Boolean = true,
     viewModel: CalendarsViewModel = hiltViewModel(),
+    settingsBackup: SettingsBackupViewModel = hiltViewModel(),
 ) {
     val state by viewModel.backupState.collectAsStateWithLifecycle()
     val backupResult by viewModel.backupResult.collectAsStateWithLifecycle()
@@ -132,6 +135,8 @@ fun BackupScreen(
         }
     }
 
+    val settings = rememberSettingsBackupActions(settingsBackup)
+
     CollapsingScaffold(
         title = stringResource(R.string.settings_section_backup),
         onBack = onBack,
@@ -144,8 +149,14 @@ fun BackupScreen(
         visible = visible,
     ) {
         when (val s = state) {
-            BackupUiState.Loading -> BackupLoading()
-            is BackupUiState.Failure -> CalendarFailure(reason = s.reason, onRetry = onBack)
+            BackupUiState.Loading -> {
+                Box(Modifier.weight(1f)) { BackupLoading() }
+                SettingsBackupSection(settings)
+            }
+            is BackupUiState.Failure -> {
+                Box(Modifier.weight(1f)) { CalendarFailure(reason = s.reason, onRetry = onBack) }
+                SettingsBackupSection(settings)
+            }
             is BackupUiState.Ready -> BackupContent(
                 exportable = s.exportable,
                 canImport = s.canImport,
@@ -158,6 +169,7 @@ fun BackupScreen(
                 },
                 onExportPick = { showExportPicker = true },
                 onEditInterval = { showInterval = true },
+                settings = settings,
             )
         }
     }
@@ -173,6 +185,7 @@ fun BackupScreen(
             )
         }
     }
+    SettingsBackupDialogs(settings, settingsBackup, snackbarHostState)
     if (showInterval) {
         BackupIntervalDialog(
             currentMinutes = autoBackup.intervalMinutes,
@@ -213,6 +226,7 @@ private fun BackupContent(
     onExportAll: () -> Unit,
     onExportPick: () -> Unit,
     onEditInterval: () -> Unit,
+    settings: SettingsBackupActions,
 ) {
     val manageCalendars = LocalManageCalendars.current
     // Restore never depends on export eligibility, and never disappears: when no
@@ -233,6 +247,7 @@ private fun BackupContent(
             leading = { LeadingAvatar(Icons.Default.FileUpload) },
             onClick = onRestoreClick,
         )
+        SettingsBackupSection(settings)
         return
     }
 
@@ -277,6 +292,7 @@ private fun BackupContent(
         )
         GroupedHint(backupStatusText(autoBackup.status), style = MaterialTheme.typography.bodySmall)
     }
+    SettingsBackupSection(settings)
 }
 
 /**
