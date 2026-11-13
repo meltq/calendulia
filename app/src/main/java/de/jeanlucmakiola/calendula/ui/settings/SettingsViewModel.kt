@@ -37,7 +37,9 @@ import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
+import de.jeanlucmakiola.calendula.domain.DefaultCalendarRef
 import de.jeanlucmakiola.calendula.domain.effectiveDefaultCalendar
+import de.jeanlucmakiola.calendula.domain.unavailableDefaultCalendar
 import de.jeanlucmakiola.calendula.domain.isEventTarget
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
@@ -128,7 +130,8 @@ class SettingsViewModel @Inject constructor(
         perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
         writableCalendars = calendars.filter { it.canModifyContents && it.isVisibleInSystem },
         eventTargetCalendars = calendars.filter { it.isEventTarget },
-        defaultNewEventCalendar = effectiveDefaultCalendar(this[SettingsKeys.defaultNewEventCalendarId], calendars),
+        defaultNewEventCalendar = effectiveDefaultCalendar(this[SettingsKeys.defaultNewEventCalendar], calendars),
+        unavailableDefaultCalendar = unavailableDefaultCalendar(this[SettingsKeys.defaultNewEventCalendar], calendars),
         allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
         managedCalendarIds = specialDatesCalendars.values.toSet(),
     )
@@ -362,7 +365,9 @@ class SettingsViewModel @Inject constructor(
 
     fun setAutofocusEventTitle(enabled: Boolean) = save { setAutofocusEventTitle(enabled) }
 
-    fun setDefaultNewEventCalendar(id: Long?) = save { setDefaultNewEventCalendarId(id) }
+    /** [calendar] null goes back to Automatic. */
+    fun setDefaultNewEventCalendar(calendar: CalendarSource?) =
+        save { setDefaultNewEventCalendar(calendar?.let(DefaultCalendarRef::of)) }
 
     fun setDefaultEventDuration(minutes: Int) = save { setDefaultEventDurationMinutes(minutes) }
 

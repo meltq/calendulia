@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.data.prefs
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import de.jeanlucmakiola.calendula.domain.DefaultCalendarRef
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
@@ -163,7 +164,7 @@ class SettingsPrefs @Inject constructor(
     val defaultFormFields: Flow<Set<EventFormField>> = prefs.flow(SettingsKeys.defaultFormFields)
     val recentTimeZones: Flow<List<String>> = prefs.flow(SettingsKeys.recentTimeZones)
     val autofocusEventTitle: Flow<Boolean> = prefs.flow(SettingsKeys.autofocusEventTitle)
-    val defaultNewEventCalendarId: Flow<Long?> = prefs.flow(SettingsKeys.defaultNewEventCalendarId)
+    val defaultNewEventCalendar: Flow<DefaultCalendarRef?> = prefs.flow(SettingsKeys.defaultNewEventCalendar)
     val defaultEventDurationMinutes: Flow<Int> = prefs.flow(SettingsKeys.defaultEventDurationMinutes)
     val perCalendarEventDuration: Flow<Map<Long, Int>> = prefs.flow(SettingsKeys.perCalendarEventDuration)
     val remindersEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.remindersEnabled)
@@ -258,8 +259,9 @@ class SettingsPrefs @Inject constructor(
 
     suspend fun setAutofocusEventTitle(enabled: Boolean) = prefs.set(SettingsKeys.autofocusEventTitle, enabled)
 
-    /** [id] null goes back to Automatic. */
-    suspend fun setDefaultNewEventCalendarId(id: Long?) = prefs.set(SettingsKeys.defaultNewEventCalendarId, id)
+    /** [calendar] null goes back to Automatic. */
+    suspend fun setDefaultNewEventCalendar(calendar: DefaultCalendarRef?) =
+        prefs.set(SettingsKeys.defaultNewEventCalendar, calendar)
 
     suspend fun setDefaultEventDurationMinutes(minutes: Int) =
         prefs.set(SettingsKeys.defaultEventDurationMinutes, minutes)
@@ -579,7 +581,8 @@ object SettingsKeys {
      * calendar). Kept when the calendar stops being a target, which only makes
      * it fall back for as long as that lasts.
      */
-    val defaultNewEventCalendarId: Pref<Long?> = nullableLongPref("default_new_event_calendar_id")
+    val defaultNewEventCalendar: Pref<DefaultCalendarRef?> =
+        nullableStringPref("default_new_event_calendar").map(DefaultCalendarRef::decode) { it?.encode() }
 
     /**
      * How long a new **timed** event lasts, in minutes (#54). Per-calendar

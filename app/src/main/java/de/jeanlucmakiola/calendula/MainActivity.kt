@@ -426,10 +426,14 @@ class MainActivity : AppCompatActivity() {
     private fun Intent.longExtraOrNull(key: String): Long? =
         if (hasExtra(key)) getLongExtra(key, 0L) else null
 
-    /** The calendar an insert intent names (#429); callers pass it as an int or a long. */
+    /** The calendar an insert intent names (#429); callers pass it as an int, a long or a string. */
     @Suppress("DEPRECATION")
     private fun Intent.calendarIdExtraOrNull(): Long? =
-        (extras?.get(CalendarContract.Events.CALENDAR_ID) as? Number)?.toLong()?.takeIf { it > 0 }
+        when (val value = extras?.get(CalendarContract.Events.CALENDAR_ID)) {
+            is Number -> value.toLong()
+            is String -> value.trim().toLongOrNull()
+            else -> null
+        }?.takeIf { it > 0 }
 
     /**
      * The date a launcher/clock date tap points at, parsed from the AOSP calendar

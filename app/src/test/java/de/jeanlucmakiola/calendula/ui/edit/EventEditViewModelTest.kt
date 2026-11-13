@@ -10,6 +10,7 @@ import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.time.FakeZoneSource
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.DefaultCalendarRef
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.FormTime
@@ -727,7 +728,7 @@ class EventEditViewModelTest {
     ) = runTest(dispatcher) {
         val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L)) }
         val s = settings(tempDir)
-        s.setDefaultNewEventCalendarId(2L)
+        s.setDefaultNewEventCalendar(DefaultCalendarRef.of(cal(2L)))
         s.setCalendarReminderOverride(2L, ReminderOverride.Minutes(listOf(5)))
         val p = prefs(tempDir)
         p.setLastUsedCalendarId(1L)
@@ -749,7 +750,7 @@ class EventEditViewModelTest {
     ) = runTest(dispatcher) {
         val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L, visible = false)) }
         val s = settings(tempDir)
-        s.setDefaultNewEventCalendarId(2L)
+        s.setDefaultNewEventCalendar(DefaultCalendarRef.of(cal(2L)))
         val vm = viewModel(tempDir, fake, s)
         val job = activate(vm)
 
@@ -766,7 +767,7 @@ class EventEditViewModelTest {
     ) = runTest(dispatcher) {
         val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L), cal(3L)) }
         val s = settings(tempDir)
-        s.setDefaultNewEventCalendarId(2L)
+        s.setDefaultNewEventCalendar(DefaultCalendarRef.of(cal(2L)))
         val vm = viewModel(tempDir, fake, s)
         val job = activate(vm)
 
@@ -787,7 +788,7 @@ class EventEditViewModelTest {
     ) = runTest(dispatcher) {
         val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L)) }
         val s = settings(tempDir)
-        s.setDefaultNewEventCalendarId(2L)
+        s.setDefaultNewEventCalendar(DefaultCalendarRef.of(cal(2L)))
         val vm = viewModel(tempDir, fake, s)
         val job = activate(vm)
 

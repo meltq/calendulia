@@ -14,7 +14,7 @@ import kotlin.time.Instant
  * next full hour, and a placeholder hour for a missing end that the form then
  * stretches to the default-duration setting (the intent is opened as
  * `ImportSource.InsertOpenEnded`, #54). [calendarId] is the calendar the
- * intent names, if any; the editor preselects it while writable and otherwise
+ * intent names, if any; the editor preselects it while it is a target and otherwise
  * resolves the calendar like a plain new event (#429).
  *
  * Pure (no Android types) so it is unit-testable; the intent parsing that reads

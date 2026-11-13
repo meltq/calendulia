@@ -184,7 +184,7 @@ class EventEditViewModel @Inject constructor(
     // reminders with the settings default (#49). Null while there's nothing to ask.
     private val _importReminderPrompt = MutableStateFlow<ImportReminderPrompt?>(null)
     // A calendar named by an insert intent or a duplicate's source (#429); wins
-    // over the default calendar while it can still take events.
+    // over the default calendar while it is an event target.
     private val _requestedCalendarId = MutableStateFlow<Long?>(null)
     // The form as the user received it: the loaded event, or a new form with its
     // prefill and auto-applied defaults. Anything else is an unsaved change.
@@ -269,7 +269,7 @@ class EventEditViewModel @Inject constructor(
 
     private val calendarHints: Flow<NewEventCalendarHints> = combine(
         _requestedCalendarId,
-        settingsPrefs.defaultNewEventCalendarId,
+        settingsPrefs.defaultNewEventCalendar,
         prefs.lastUsedCalendarId,
         ::NewEventCalendarHints,
     )
@@ -414,9 +414,9 @@ class EventEditViewModel @Inject constructor(
      * Seed a fresh event from a prefilled [form] — a parsed single-event `.ics`
      * file ([ImportSource.File]) or an external `ACTION_INSERT` intent (another
      * app/widget creating an event, e.g. Google Maps' "add to calendar";
-     * [ImportSource.Insert]; #30, #49). For an insert, a set [EventForm.calendarId]
-     * is the calendar the caller asked for: it is preselected while writable, and
-     * the form otherwise resolves its calendar like a new event (#429).
+     * [ImportSource.Insert]; #30, #49). A set [EventForm.calendarId] is the
+     * calendar the caller asked for: it is preselected while it is an event
+     * target, and the form otherwise resolves its calendar like a new event (#429).
      *
      * Reminders are handled per [source], because the two paths mean different
      * things by "no reminders":
@@ -439,9 +439,8 @@ class EventEditViewModel @Inject constructor(
     fun openImported(form: EventForm, source: ImportSource) {
         if (_form.value != null || _editTarget.value != null) return
         _revealed.value = form.populatedFields()
-        val insert = source != ImportSource.File
-        _requestedCalendarId.value = form.calendarId.takeIf { insert }
-        open(if (insert) form.copy(calendarId = null) else form)
+        _requestedCalendarId.value = form.calendarId
+        open(form.copy(calendarId = null))
         if (source.ownsDuration) _durationTouched.value = true else applyDefaultDuration()
         when (source) {
             ImportSource.Insert, ImportSource.InsertOpenEnded ->

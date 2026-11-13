@@ -102,6 +102,8 @@ data class SettingsUiState(
     val eventTargetCalendars: List<CalendarSource> = emptyList(),
     /** The default calendar for new events (#429); null is Automatic, also when the stored one fell out. */
     val defaultNewEventCalendar: CalendarSource? = null,
+    /** The stored default while it exists but takes no new events, named on the Automatic row. */
+    val unavailableDefaultCalendar: CalendarSource? = null,
     /**
      * Whether the event-colour picker is offered on calendars that publish no
      * colour palette (the colour may then not survive their next sync).

@@ -90,6 +90,9 @@ internal fun EventFormScreen(
         GroupedRow(
             title = stringResource(R.string.settings_default_calendar),
             summary = state.defaultNewEventCalendar?.displayName?.orUnnamed()
+                ?: state.unavailableDefaultCalendar?.let {
+                    stringResource(R.string.settings_default_calendar_unavailable, it.displayName.orUnnamed())
+                }
                 ?: stringResource(R.string.settings_default_calendar_automatic),
             position = Position.Alone,
             leading = {
@@ -188,7 +191,7 @@ internal fun EventFormScreen(
             calendars = state.eventTargetCalendars,
             selectedId = state.defaultNewEventCalendar?.id,
             onSelect = { id ->
-                viewModel.setDefaultNewEventCalendar(id)
+                viewModel.setDefaultNewEventCalendar(state.eventTargetCalendars.firstOrNull { it.id == id })
                 showDefaultCalendar = false
             },
             onDismiss = { showDefaultCalendar = false },
