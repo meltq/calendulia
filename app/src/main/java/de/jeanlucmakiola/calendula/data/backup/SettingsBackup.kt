@@ -10,7 +10,6 @@ import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.floret.backup.BackupDocument
 import de.jeanlucmakiola.floret.backup.BackupResult
 import de.jeanlucmakiola.floret.backup.PrefsSection
-import de.jeanlucmakiola.floret.backup.invalidBackup
 import de.jeanlucmakiola.floret.backup.optBoolean
 import de.jeanlucmakiola.floret.backup.optIntList
 import de.jeanlucmakiola.floret.backup.optObject
@@ -164,8 +163,6 @@ private fun CalendarSettings.toJson(): JsonObject = buildJsonObject {
  * reads as an ordinary calendar, which then simply finds no match.
  */
 private fun JsonObject.toCalendarSettings(): CalendarSettings {
-    val duration = optInt(KEY_EVENT_DURATION)
-    if (duration != null && duration <= 0) invalidBackup("$KEY_EVENT_DURATION: $duration")
     return CalendarSettings(
         calendar = CalendarIdentity(
             accountName = requireString(KEY_ACCOUNT_NAME),
@@ -175,7 +172,7 @@ private fun JsonObject.toCalendarSettings(): CalendarSettings {
         ),
         hidden = optBoolean(KEY_HIDDEN) ?: false,
         lastUsed = optBoolean(KEY_LAST_USED) ?: false,
-        eventDurationMinutes = duration,
+        eventDurationMinutes = optInt(KEY_EVENT_DURATION),
         reminders = optIntList(KEY_REMINDERS),
         allDayReminders = optIntList(KEY_ALL_DAY_REMINDERS),
     )

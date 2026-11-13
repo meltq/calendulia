@@ -6,6 +6,7 @@ import de.jeanlucmakiola.calendula.data.appname.LauncherName
 import de.jeanlucmakiola.calendula.data.calendar.ManagedCalendarRow
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefKeys
 import de.jeanlucmakiola.calendula.data.prefs.SettingsKeys
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
@@ -123,7 +124,9 @@ fun planSettingsImport(
         backup.calendars.forEach { entry ->
             val type = entry.calendar.specialDates
             if (type != null) {
-                if (!mirroring) return@forEach
+                // The mirror only keeps calendars for the types the imported settings switch on.
+                val typeOn = prefs[SettingsKeys.specialDateTypeEnabled.getValue(type)] != false
+                if (!mirroring || !typeOn) return@forEach
                 val id = environment.managed.firstOrNull { it.type == type }?.id
                 if (id != null) calendars[id] = entry else pending += entry
                 return@forEach
@@ -160,7 +163,7 @@ fun MutablePreferences.writeCalendarSettings(calendars: Map<Long, CalendarSettin
     this[CalendarPrefKeys.hiddenCalendarIds] = calendars.filterValues { it.hidden }.keys
     this[CalendarPrefKeys.lastUsedCalendarId] = calendars.entries.firstOrNull { it.value.lastUsed }?.key
     this[SettingsKeys.perCalendarEventDuration] =
-        calendars.mapNotNull { (id, entry) -> entry.eventDurationMinutes?.let { id to it } }.toMap()
+        calendars.mapNotNull { (id, entry) -> entry.eventDurationMinutes?.let { id to it.clampDuration() } }.toMap()
     this[SettingsKeys.perCalendarReminderOverride] =
         calendars.mapNotNull { (id, entry) -> entry.reminders?.let { id to it } }.toMap()
     this[SettingsKeys.perCalendarAllDayReminderOverride] =
@@ -174,7 +177,8 @@ fun MutablePreferences.addCalendarSettings(id: Long, entry: CalendarSettings) {
         this[CalendarPrefKeys.lastUsedCalendarId] = id
     }
     entry.eventDurationMinutes?.let {
-        this[SettingsKeys.perCalendarEventDuration] = this[SettingsKeys.perCalendarEventDuration] + (id to it)
+        this[SettingsKeys.perCalendarEventDuration] =
+            this[SettingsKeys.perCalendarEventDuration] + (id to it.clampDuration())
     }
     entry.reminders?.let {
         this[SettingsKeys.perCalendarReminderOverride] = this[SettingsKeys.perCalendarReminderOverride] + (id to it)
@@ -198,6 +202,9 @@ private fun CalendarSource.matches(identity: CalendarIdentity): Boolean =
     accountType == identity.accountType &&
         accountName == identity.accountName &&
         displayName == identity.displayName
+
+/** The same range the per-calendar duration setter clamps to. */
+private fun Int.clampDuration(): Int = coerceIn(SettingsPrefs.MIN_EVENT_DURATION, SettingsPrefs.MAX_EVENT_DURATION)
 
 private fun FontRole.fontPref(): Pref<String> = when (this) {
     FontRole.BRAND -> SettingsKeys.brandFont

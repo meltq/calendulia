@@ -13,8 +13,10 @@ import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
 import de.jeanlucmakiola.calendula.data.contacts.ContactSpecialDatesDataSource
 import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesScheduler
 import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesSyncEngine
+import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesSyncResult
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.data.prefs.SpecialDatesStalledReason
 import de.jeanlucmakiola.calendula.data.fonts.CustomFontStore
-import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefKeys
 import de.jeanlucmakiola.calendula.data.prefs.SettingsKeys
 import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.FontRole
@@ -24,6 +26,7 @@ import de.jeanlucmakiola.floret.backup.BackupResult
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import de.jeanlucmakiola.floret.locale.AppLanguage
 import de.jeanlucmakiola.floret.prefs.get
+import de.jeanlucmakiola.floret.prefs.rawValue
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
@@ -46,6 +49,7 @@ class SettingsBackupEngine @Inject constructor(
     private val calendars: CalendarDataSource,
     private val contacts: ContactSpecialDatesDataSource,
     private val specialDates: SpecialDatesSyncEngine,
+    private val settingsPrefs: SettingsPrefs,
     private val reminderScanner: ReminderScanner,
     private val launcherNames: LauncherNameManager,
     @ApplicationContext private val context: Context,
@@ -75,16 +79,17 @@ class SettingsBackupEngine @Inject constructor(
         }
         val current = store.data.first()
         val plan = planSettingsImport(backup, current, environment(current))
-        try {
-            withContext(NonCancellable) { store.edit { plan.applyTo(it) } }
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "Settings import could not be written", e)
-            return@withContext BackupResult.Failure(BackupProblem.NOT_APPLIED, e.message.orEmpty())
+        // Once the write starts, the side effects have to follow it, whoever cancels.
+        withContext(NonCancellable) {
+            try {
+                store.edit { plan.applyTo(it) }
+            } catch (e: Exception) {
+                Log.w(TAG, "Settings import could not be written", e)
+                return@withContext BackupResult.Failure(BackupProblem.NOT_APPLIED, e.message.orEmpty())
+            }
+            val lateSkips = afterImport(plan, current)
+            BackupResult.Success(plan.summary(plan.calendars.orEmpty().size + lateSkips.matched, lateSkips.skipped))
         }
-        val lateSkips = withContext(NonCancellable) { afterImport(plan, current) }
-        BackupResult.Success(plan.summary(plan.calendars.orEmpty().size + lateSkips.matched, lateSkips.skipped))
     }
 
     private class LateMatches(val matched: Int, val skipped: List<SkippedSetting>)
@@ -102,8 +107,15 @@ class SettingsBackupEngine @Inject constructor(
         step("special dates") {
             if (mirroring) {
                 SpecialDatesScheduler.apply(context, enabled = true)
-                specialDates.sync()
-                late = matchSpecialDates(plan, backup = plan.calendars != null)
+                val result = specialDates.sync()
+                if (result != SpecialDatesSyncResult.Disabled) {
+                    val stalled = SpecialDatesStalledReason.PermissionRevoked
+                        .takeIf { result == SpecialDatesSyncResult.PermissionMissing }
+                    settingsPrefs.recordSpecialDatesRun(System.currentTimeMillis(), stalled)
+                }
+                if (result == SpecialDatesSyncResult.Success) {
+                    late = matchSpecialDates(plan, backup = plan.calendars != null)
+                }
             } else if (wasMirroring) {
                 SpecialDatesScheduler.apply(context, enabled = false)
                 specialDates.teardown()
@@ -155,8 +167,11 @@ class SettingsBackupEngine @Inject constructor(
             val entries = (plan.calendars.orEmpty().values + resolved.map { it.second })
                 .mapNotNull { entry -> entry.calendar.specialDates?.let { it to entry } }
                 .toMap()
-            managed.map { it.type }.distinct().forEach { type ->
+            val stored = store.data.first()[SettingsKeys.perCalendarAllDayReminderOverride]
+            managed.distinctBy { it.type }.forEach { (id, type) ->
                 val minutes = entries[type]?.allDayReminders
+                // The sync wrote the events with the stored override; only a change needs rewriting.
+                if (stored[id] == minutes) return@forEach
                 val override = when {
                     minutes == null -> ReminderOverride.Inherit
                     minutes.isEmpty() -> ReminderOverride.None
@@ -181,11 +196,7 @@ class SettingsBackupEngine @Inject constructor(
     )
 
     private fun Preferences.hasCalendarSettings(): Boolean =
-        this[CalendarPrefKeys.hiddenCalendarIds].isNotEmpty() ||
-            this[CalendarPrefKeys.lastUsedCalendarId] != null ||
-            this[SettingsKeys.perCalendarEventDuration].isNotEmpty() ||
-            this[SettingsKeys.perCalendarReminderOverride].isNotEmpty() ||
-            this[SettingsKeys.perCalendarAllDayReminderOverride].isNotEmpty()
+        SettingsBackupSchema.perCalendar.any { rawValue(it) != null }
 
     private fun supportedLanguages(): List<String> = AppLanguage.supportedTags(context, R.xml.locales_config)
 

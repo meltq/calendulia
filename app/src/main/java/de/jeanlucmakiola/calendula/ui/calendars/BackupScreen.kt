@@ -10,6 +10,9 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -149,12 +152,14 @@ fun BackupScreen(
         visible = visible,
     ) {
         when (val s = state) {
-            BackupUiState.Loading -> {
-                Box(Modifier.weight(1f)) { BackupLoading() }
+            // The settings block still works here, below a state that scrolls
+            // away with it rather than squeezing it off a short screen.
+            BackupUiState.Loading -> Column(Modifier.verticalScroll(rememberScrollState())) {
+                Box(Modifier.fillMaxWidth().heightIn(min = STATE_MIN_HEIGHT), contentAlignment = Alignment.Center) { BackupLoading() }
                 SettingsBackupSection(settings)
             }
-            is BackupUiState.Failure -> {
-                Box(Modifier.weight(1f)) { CalendarFailure(reason = s.reason, onRetry = onBack) }
+            is BackupUiState.Failure -> Column(Modifier.verticalScroll(rememberScrollState())) {
+                Box(Modifier.fillMaxWidth().heightIn(min = STATE_MIN_HEIGHT), contentAlignment = Alignment.Center) { CalendarFailure(reason = s.reason, onRetry = onBack) }
                 SettingsBackupSection(settings)
             }
             is BackupUiState.Ready -> BackupContent(
@@ -449,5 +454,6 @@ private fun BackupIntervalDialog(
     )
 }
 
+private val STATE_MIN_HEIGHT = 360.dp
 private const val MINUTES_PER_DAY = 1_440L
 private const val MINUTES_PER_WEEK = 10_080L

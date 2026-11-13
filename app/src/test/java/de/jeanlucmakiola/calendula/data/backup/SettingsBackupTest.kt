@@ -148,6 +148,52 @@ class SettingsBackupTest {
     }
 
     @Test
+    fun `every per-calendar key travels with its calendar`() {
+        val source = mutablePreferencesOf()
+        source[CalendarPrefKeys.hiddenCalendarIds] = setOf(1L)
+        source[CalendarPrefKeys.lastUsedCalendarId] = 1L
+        source[SettingsKeys.perCalendarEventDuration] = mapOf(1L to 30)
+        source[SettingsKeys.perCalendarReminderOverride] = mapOf(1L to listOf(5))
+        source[SettingsKeys.perCalendarAllDayReminderOverride] = mapOf(1L to listOf(0))
+
+        val target = mutablePreferencesOf()
+        import(roundTrip(source), target, environment(calendars = listOf(calendar(9, "Work")), managed = emptyList()))
+
+        // One assertion per key in the schema: a new per-calendar key fails here until it is carried.
+        SettingsBackupSchema.perCalendar.forEach { pref ->
+            assertThat(target.asMap().keys.map { it.name }).contains(pref.name)
+        }
+        assertThat(target[SettingsKeys.perCalendarAllDayReminderOverride]).containsExactly(9L, listOf(0))
+    }
+
+    @Test
+    fun `a mirror type the import switches off is left out`() {
+        val source = mutablePreferencesOf()
+        source[SettingsKeys.specialDatesEnabled] = true
+        source[SettingsKeys.specialDateTypeEnabled.getValue(SpecialDateType.Birthday)] = false
+        source[CalendarPrefKeys.hiddenCalendarIds] = setOf(3L)
+
+        val target = mutablePreferencesOf()
+        val plan = import(roundTrip(source), target)
+
+        assertThat(target[CalendarPrefKeys.hiddenCalendarIds]).isEmpty()
+        assertThat(plan.pendingSpecialDates).isEmpty()
+        assertThat(plan.skipped).isEmpty()
+    }
+
+    @Test
+    fun `an out-of-range calendar length is clamped, not refused`() {
+        val text = """{"format":"calendula-settings","version":1,"exportedAt":1,"calendars":[
+            {"account_name":"me@example.org","account_type":"com.google","display_name":"Work","event_duration_minutes":5000}]}"""
+        val backup = (decodeSettingsBackup(text) as BackupResult.Success).value
+
+        val target = mutablePreferencesOf()
+        import(backup, target)
+
+        assertThat(target[SettingsKeys.perCalendarEventDuration]).containsExactly(1L, 1440)
+    }
+
+    @Test
     fun `unreadable calendars leave the per-calendar settings alone`() {
         val source = mutablePreferencesOf()
         source[CalendarPrefKeys.hiddenCalendarIds] = setOf(1L)

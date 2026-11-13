@@ -4,12 +4,15 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -33,6 +36,7 @@ import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.ui.common.LeadingAvatar
 import de.jeanlucmakiola.floret.backup.BackupProblem
 import de.jeanlucmakiola.floret.components.GroupedHint
+import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.components.Position
@@ -89,11 +93,18 @@ fun SettingsBackupSection(actions: SettingsBackupActions) {
         dimmed = actions.busy,
         onClick = { if (!actions.busy) actions.import() },
     )
+    if (actions.busy) {
+        LinearProgressIndicator(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = GroupedListInset, vertical = 16.dp),
+        )
+    }
 }
 
 /**
  * The import's confirmation and summary dialogs, and the snackbars for
- * everything else. Plain confirmations, so [AlertDialog]s.
+ * everything else.
  */
 @Composable
 fun SettingsBackupDialogs(
@@ -113,8 +124,8 @@ fun SettingsBackupDialogs(
             is SettingsBackupResult.ImportFailed -> importFailed.getValue(r.problem)
             is SettingsBackupResult.Imported, null -> return@LaunchedEffect
         }
-        viewModel.consumeResult()
         snackbarHostState.showSnackbar(message)
+        viewModel.consumeResult()
     }
 
     (result as? SettingsBackupResult.Imported)?.let { imported ->

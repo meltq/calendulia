@@ -82,7 +82,7 @@ identity instead:
 | `special_dates` | String? | `Birthday`/`Anniversary`/`Custom` for a contact-dates mirror calendar. |
 | `hidden` | Boolean | Hidden in the drawer's filter. |
 | `last_used` | Boolean | Preselected for new events. |
-| `event_duration_minutes` | Int? | Per-calendar default length. |
+| `event_duration_minutes` | Int? | Per-calendar default length, clamped to 1–1440 like the setting. |
 | `reminders` | Int[]? | Timed reminder override; `[]` is "no reminder". |
 | `all_day_reminders` | Int[]? | All-day reminder override. |
 
@@ -90,7 +90,7 @@ On import an entry matches the one calendar here with the same account name,
 account type and display name. No match, or more than one, skips it and the
 summary names it. A mirror calendar matches by `special_dates` instead, since
 its name is localised, and only when the imported settings keep the mirror on
-(otherwise the import tears it down). When the mirror has not created it yet,
+and the type (otherwise the import tears that calendar down). When the mirror has not created it yet,
 it is matched after the import's sync. Every mirror's all-day reminders are
 applied through the mirror so its existing events follow; one the file doesn't
 override inherits the default again. An id in the prefs whose calendar no
