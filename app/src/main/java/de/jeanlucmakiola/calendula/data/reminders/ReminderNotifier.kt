@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -18,6 +19,7 @@ import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
+import de.jeanlucmakiola.calendula.ui.common.resolvableMapsIntent
 import de.jeanlucmakiola.floret.android.hasPermission
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.isoDayNumber
@@ -110,6 +112,11 @@ class ReminderNotifier @Inject constructor(
                 context.getString(R.string.reminder_action_dismiss),
                 actionIntent(alert, ReminderActionReceiver.ACTION_DISMISS),
             )
+            .apply {
+                mapIntent(alert)?.let {
+                    addAction(R.drawable.ic_notification_map, context.getString(R.string.event_detail_open_in_maps), it)
+                }
+            }
             .build()
         val manager = NotificationManagerCompat.from(context)
         cancelLegacy(alert)
@@ -180,6 +187,22 @@ class ReminderNotifier @Inject constructor(
         MainActivity.eventDetailIntent(context, alert.eventId, alert.beginMillis, alert.endMillis),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
+
+    /**
+     * Opens [alert]'s location in maps like the detail screen does, started
+     * directly (no receiver trampoline). Leaves the notification up for a later
+     * snooze or dismiss. Null without a location or an app to open it.
+     */
+    private fun mapIntent(alert: ReminderAlert): PendingIntent? {
+        val location = alert.location?.takeIf { it.isNotBlank() } ?: return null
+        val intent = context.resolvableMapsIntent(location) ?: return null
+        return PendingIntent.getActivity(
+            context,
+            ReminderActionReceiver.requestCode(alert, ReminderActionReceiver.ACTION_MAP),
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
 
     /** Channel creation is idempotent; re-running refreshes the localized name. */
     private fun ensureChannel() {

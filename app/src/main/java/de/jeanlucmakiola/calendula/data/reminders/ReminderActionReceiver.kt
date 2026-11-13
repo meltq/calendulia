@@ -74,6 +74,9 @@ class ReminderActionReceiver : BroadcastReceiver() {
          */
         const val ACTION_OPEN = "de.jeanlucmakiola.calendula.reminders.OPEN"
 
+        /** Not handled here either — the "Open in maps" button starts the maps app directly. */
+        const val ACTION_MAP = "de.jeanlucmakiola.calendula.reminders.MAP"
+
         private const val EXTRA_ALERT_KEY = "alert_key"
         private const val EXTRA_EVENT_ID = "event_id"
         private const val EXTRA_CALENDAR_ID = "calendar_id"
@@ -115,6 +118,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
                 ACTION_DISMISS -> 2
                 ACTION_SHOW -> 3
                 ACTION_OPEN -> 4
+                ACTION_MAP -> 5
                 else -> 0
             }
             return (identity(alert, action).toInt() shl 3) + actionOffset
