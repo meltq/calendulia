@@ -124,14 +124,14 @@ class SyncNudgeTest {
     }
 
     @Test
-    fun `a failed write asks for no sync`(@TempDir dir: Path) = runTest {
+    fun `a failed write still nudges, since part of it may have landed`(@TempDir dir: Path) = runTest {
         val sync = RecordingSyncRequester()
         val source = fake().apply { writeError = IllegalStateException("boom") }
         val repo = testRepository(source, dir, Dispatchers.Unconfined, syncRequester = sync)
 
         assertThrows<IllegalStateException> { repo.deleteEvent(10L) }
 
-        assertThat(sync.requests).isEmpty()
+        assertThat(sync.requests).containsExactly(auto(dav))
     }
 
     @Test
@@ -239,5 +239,25 @@ class SyncNudgeTest {
         sync.hiddenTypes = setOf("other")
         repo.createEvent(form(1L))
         assertThat(sync.requests).containsExactly(auto(dav))
+    }
+
+    @Test
+    fun `unreadable account visibility falls back to the account-less request`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(hiddenTypes = setOf("other"))
+        sync.visibilityError = SecurityException("no")
+        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        repo.createEvent(form(1L))
+
+        assertThat(sync.requests).containsExactly(Request(null, false))
+    }
+
+    @Test
+    fun `a refused account-less request reports a failure`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(accepts = false, hiddenTypes = setOf(dav.type))
+        sync.knownAccounts = setOf(dav, google)
+        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Failed)
     }
 }

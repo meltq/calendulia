@@ -88,10 +88,11 @@ class CalendarRepositoryImpl @Inject constructor(
     override val providerChanges: Flow<Unit> get() = ticks
 
     /**
-     * Run a provider write on [io], then re-query whether or not it threw. Once
-     * it succeeded, the accounts behind [syncCalendars] (read before the write,
-     * which may delete the row) get one sync nudge each (#303) — once per write,
-     * so a multi-row save or a whole import asks once per account.
+     * Run a provider write on [io], then re-query whether or not it threw. The
+     * accounts behind [syncCalendars] (read before the write, which may delete
+     * the row) then get one sync nudge each (#303), also after a failure, which
+     * may have landed part of a multi-row write. Once per write, so a multi-row
+     * save or a whole import asks once per account.
      */
     private suspend fun <T> write(
         syncCalendars: suspend () -> Collection<Long?>,
@@ -99,10 +100,11 @@ class CalendarRepositoryImpl @Inject constructor(
     ): T = withContext(io) {
         val accounts = syncAccountsOf(syncCalendars)
         try {
-            block().also { requestSyncs(accounts, userInitiated = false) }
+            block()
         } finally {
             refresh()
             writes.tryEmit(Unit)
+            requestSyncs(accounts, userInitiated = false)
         }
     }
 
@@ -147,7 +149,7 @@ class CalendarRepositoryImpl @Inject constructor(
     private fun requestSyncs(accounts: Set<SyncAccount>, userInitiated: Boolean): Int {
         if (accounts.isEmpty()) return 0
         val addressable = try {
-            syncRequester.addressableAccounts()
+            syncRequester.addressableAccounts(accounts.mapTo(mutableSetOf()) { it.type })
         } catch (e: Exception) {
             Log.w(TAG, "Account visibility unreadable", e)
             emptySet()
