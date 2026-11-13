@@ -301,6 +301,12 @@ interface CalendarDataSource {
      */
     fun deleteOccurrence(eventId: Long, beginMillis: Long)
 
+    /** The account [calendarId] belongs to; null when the row is gone or unreadable. */
+    fun calendarAccount(calendarId: Long): SyncAccount?
+
+    /** The calendar event [eventId] lives in; null when the row is gone or unreadable. */
+    fun eventCalendarId(eventId: Long): Long?
+
     fun registerChangeListener(listener: () -> Unit)
     fun unregisterChangeListener(listener: () -> Unit)
 }
@@ -881,8 +887,7 @@ class AndroidCalendarDataSource @Inject constructor(
         return eventId
     }
 
-    /** The account a calendar belongs to, for scoping a `Colors` lookup. */
-    private fun calendarAccount(calendarId: Long): CalendarAccount? = resolver.query(
+    override fun calendarAccount(calendarId: Long): SyncAccount? = resolver.query(
         ContentUris.withAppendedId(CalendarContract.Calendars.CONTENT_URI, calendarId),
         arrayOf(
             CalendarContract.Calendars.ACCOUNT_NAME,
@@ -891,13 +896,17 @@ class AndroidCalendarDataSource @Inject constructor(
         null, null, null,
     )?.use { c ->
         if (c.moveToFirst()) {
-            CalendarAccount(name = c.getString(0).orEmpty(), type = c.getString(1).orEmpty())
+            SyncAccount(name = c.getString(0).orEmpty(), type = c.getString(1).orEmpty())
         } else {
             null
         }
     }
 
-    private data class CalendarAccount(val name: String, val type: String)
+    override fun eventCalendarId(eventId: Long): Long? = resolver.query(
+        ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, eventId),
+        arrayOf(CalendarContract.Events.CALENDAR_ID),
+        null, null, null,
+    )?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getLong(0) else null }
 
     /**
      * The raw provider `MINUTES` to store for one of [form]'s reminders: an

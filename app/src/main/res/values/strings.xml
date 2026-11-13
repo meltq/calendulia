@@ -395,6 +395,10 @@
 
     <!-- Jump to date (drawer) -->
     <string name="drawer_jump_to_date">Jump to date</string>
+    <string name="drawer_sync_now">Sync now</string>
+    <string name="sync_requested">Sync requested</string>
+    <string name="sync_request_failed">Couldn\'t request a sync</string>
+    <string name="sync_nothing_to_sync">No synced calendars to sync</string>
 
     <!-- Agenda view -->
     <string name="agenda_today_action">Today</string>

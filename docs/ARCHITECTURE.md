@@ -10,6 +10,12 @@ the package list (recurring writes, save conflicts, reminder delivery).
 1. **`CalendarContract` is the single source of truth.** No app database,
    no caching layer, no sync code. Reads query the provider; writes go
    straight back to it. Sync is DAVx5's / Google's / the system's job.
+   The app only *asks* for one through `ContentResolver.requestSync`: an
+   expedited nudge for the account after each of its own writes to a synced
+   calendar (#303, once per write, so a multi-row save or an import asks once
+   per account, and never `MANUAL`, which would override master-sync-off), and
+   a manual request from the drawer's "Sync now" (#240). Both go through
+   `SyncRequester`; whether and when the adapter syncs stays its call.
 2. **Observer-driven UI.** A `ContentObserver` on the provider triggers
    re-queries; every screen recomposes from fresh provider state. After a
    write, nothing is patched by hand — the views refresh from the provider.

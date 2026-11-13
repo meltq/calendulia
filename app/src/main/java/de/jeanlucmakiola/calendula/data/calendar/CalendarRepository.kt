@@ -134,6 +134,15 @@ interface CalendarRepository {
 
     /** Delete a recurring event from the occurrence at [beginMillis] onwards. */
     suspend fun deleteEventFromOccurrence(eventId: Long, beginMillis: Long)
+
+    /**
+     * Ask every account behind a visible synced calendar to sync now (#240).
+     * Only a request: the adapter may still run it late, or fail.
+     */
+    suspend fun requestSync(): SyncRequestResult = SyncRequestResult.NothingToSync
+
+    /** Every provider notification and [refresh], including the app's own writes. */
+    val providerChanges: Flow<Unit> get() = emptyFlow()
 }
 
 class NoSuchEventException(eventId: Long) :

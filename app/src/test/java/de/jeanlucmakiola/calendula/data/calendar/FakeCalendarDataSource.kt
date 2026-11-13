@@ -64,6 +64,15 @@ internal class FakeCalendarDataSource : CalendarDataSource {
     val updatedCalendars = mutableListOf<UpdatedCalendar>()
     val deletedCalendarIds = mutableListOf<Long>()
 
+    /** eventId → calendarId, for [eventCalendarId]. */
+    val eventCalendars = mutableMapOf<Long, Long>()
+
+    override fun calendarAccount(calendarId: Long): SyncAccount? =
+        calendarsResult.firstOrNull { it.id == calendarId }
+            ?.let { SyncAccount(it.accountName, it.accountType) }
+
+    override fun eventCalendarId(eventId: Long): Long? = eventCalendars[eventId]
+
     private val listeners = mutableListOf<() -> Unit>()
 
     /** How often [calendars] was queried — the repository shares one read per tick. */

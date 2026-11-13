@@ -35,6 +35,7 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import de.jeanlucmakiola.calendula.ui.common.rememberHeld
 import de.jeanlucmakiola.calendula.ui.common.screen
 import de.jeanlucmakiola.calendula.ui.common.ViewScreen
@@ -52,6 +53,9 @@ import de.jeanlucmakiola.calendula.ui.calendars.CalendarsScreen
 import de.jeanlucmakiola.calendula.ui.common.BelowTopBarClip
 import de.jeanlucmakiola.calendula.ui.common.StayingPut
 import de.jeanlucmakiola.calendula.ui.common.CalendarDrawer
+import de.jeanlucmakiola.calendula.ui.common.DrawerSync
+import de.jeanlucmakiola.calendula.ui.common.SyncViewModel
+import de.jeanlucmakiola.calendula.ui.common.messageRes
 import de.jeanlucmakiola.calendula.ui.common.CalendarFab
 import de.jeanlucmakiola.calendula.ui.common.CalendarTopBar
 import de.jeanlucmakiola.calendula.ui.common.ChromeHost
@@ -441,6 +445,13 @@ fun CalendarHost(
     val eventActions: EventActionsViewModel = hiltViewModel()
     val moveOutcome by reschedule.outcome.collectAsStateWithLifecycle()
     val selectionFailure by eventActions.failure.collectAsStateWithLifecycle()
+    // "Sync now" in the drawer (#240); its receipt shares the move chip.
+    val sync: SyncViewModel = hiltViewModel()
+    val syncAvailable by sync.available.collectAsStateWithLifecycle()
+    val syncInFlight by sync.inFlight.collectAsStateWithLifecycle()
+    val syncResult by sync.result.collectAsStateWithLifecycle()
+    val selectionFailureMessage = eventActionFailureMessage(selectionFailure)
+    val syncMessage = syncResult?.let { stringResource(it.messageRes()) }
     val onEditEvent: (EventInstance) -> Unit = { event -> editKey = event.occurrenceKey() }
     // A tap opens the edit form instead of the detail screen when the user chose
     // so (#178) — only for events whose calendar takes writes. Both are read at
@@ -588,6 +599,13 @@ fun CalendarHost(
                         onOpenSettings()
                         switchScope.launch { drawerState.close() }
                     },
+                    sync = DrawerSync(
+                        inFlight = syncInFlight,
+                        onSync = {
+                            sync.requestSync()
+                            switchScope.launch { drawerState.close() }
+                        },
+                    ).takeIf { syncAvailable },
                 )
             },
         ) {
@@ -613,10 +631,11 @@ fun CalendarHost(
                         // A fresh event, like a duplicate from the detail screen (#52).
                         openImportForm(form, ImportSource.Insert)
                     },
-                    chipShown = moveOutcome != null || selectionFailure != null,
+                    chipShown = moveOutcome != null || selectionFailure != null || syncResult != null,
                     onDismissChip = {
                         reschedule.consumeOutcome()
                         eventActions.consumeFailure()
+                        sync.consumeResult()
                     },
                 )
                 CalendarFab(chromeHost, todayInToolbar, fabSelection)
@@ -679,8 +698,10 @@ fun CalendarHost(
         EventMoveHost(
             reschedule,
             modifier = Modifier.fillMaxSize(),
-            actionFailure = eventActionFailureMessage(selectionFailure),
-            onActionFailureShown = eventActions::consumeFailure,
+            actionFailure = selectionFailureMessage ?: syncMessage,
+            onActionFailureShown = {
+                if (selectionFailureMessage != null) eventActions.consumeFailure() else sync.consumeResult()
+            },
         )
 
         // The delete prompt and failure chip of a selected event's actions (#141).

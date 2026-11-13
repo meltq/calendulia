@@ -47,6 +47,7 @@ class CalendarRepositoryImpl @Inject constructor(
     private val prefs: CalendarPrefs,
     private val settingsPrefs: SettingsPrefs,
     @IoDispatcher private val io: CoroutineDispatcher,
+    private val syncRequester: SyncRequester,
 ) : CalendarRepository {
 
     /** The configured wall-clock fire time for all-day reminders, read per write. */
@@ -84,13 +85,63 @@ class CalendarRepositoryImpl @Inject constructor(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
-    /** Run a provider write on [io], then re-query whether or not it threw. */
-    private suspend fun <T> write(block: suspend () -> T): T = withContext(io) {
+    override val providerChanges: Flow<Unit> get() = ticks
+
+    /**
+     * Run a provider write on [io], then re-query whether or not it threw. The
+     * accounts behind [syncCalendars] (read before the write, which may delete
+     * the row) get one sync nudge each afterwards (#303) — once per write, so a
+     * multi-row save or a whole import asks once per account.
+     */
+    private suspend fun <T> write(
+        syncCalendars: suspend () -> Collection<Long?> = { emptyList() },
+        block: suspend () -> T,
+    ): T = withContext(io) {
+        val accounts = syncAccountsOf(syncCalendars)
         try {
             block()
         } finally {
             refresh()
             writes.tryEmit(Unit)
+            accounts.forEach { requestSync(it, userInitiated = false) }
+        }
+    }
+
+    private suspend fun syncAccountsOf(calendarIds: suspend () -> Collection<Long?>): Set<SyncAccount> =
+        try {
+            calendarIds().filterNotNull().distinct()
+                .mapNotNull { dataSource.calendarAccount(it) }
+                .filterTo(linkedSetOf()) { it.isSyncable }
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "No sync nudge: the calendar account could not be read", e)
+            emptySet()
+        }
+
+    private fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean = try {
+        syncRequester.requestSync(account, userInitiated)
+    } catch (e: Exception) {
+        Log.w(TAG, "Sync request failed", e)
+        false
+    }
+
+    private fun eventCalendar(eventId: Long): suspend () -> Collection<Long?> =
+        { listOf(dataSource.eventCalendarId(eventId)) }
+
+    override suspend fun requestSync(): SyncRequestResult = withContext(io) {
+        val accounts = try {
+            dataSource.calendars().syncAccounts()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Sync request skipped: calendars unreadable", e)
+            return@withContext SyncRequestResult.Failed
+        }
+        when {
+            accounts.isEmpty() -> SyncRequestResult.NothingToSync
+            accounts.count { requestSync(it, userInitiated = true) } > 0 -> SyncRequestResult.Requested
+            else -> SyncRequestResult.Failed
         }
     }
 
@@ -253,7 +304,7 @@ class CalendarRepositoryImpl @Inject constructor(
     override suspend fun importEvents(
         targetCalendarId: Long,
         events: List<ParsedIcsEvent>,
-    ): IcsImportSummary = write {
+    ): IcsImportSummary = write({ listOf(targetCalendarId) }) {
         val existing = dataSource.existingUids(targetCalendarId)
         // Both are per-calendar, not per-event: looking them up once keeps a
         // thousand-event restore to two extra queries. The palette is the
@@ -304,7 +355,7 @@ class CalendarRepositoryImpl @Inject constructor(
         )
     }
 
-    override suspend fun createEvent(form: EventForm): Long = write {
+    override suspend fun createEvent(form: EventForm): Long = write({ listOf(form.calendarId) }) {
         dataSource.insertEvent(form, allDayReminderTimeMinutes())
     }
 
@@ -312,11 +363,11 @@ class CalendarRepositoryImpl @Inject constructor(
         eventId: Long,
         original: EventForm,
         updated: EventForm,
-    ) = write {
+    ) = write({ listOf(dataSource.eventCalendarId(eventId), updated.calendarId) }) {
         dataSource.updateEvent(eventId, original, updated, allDayReminderTimeMinutes())
     }
 
-    override suspend fun deleteEvent(eventId: Long) = write {
+    override suspend fun deleteEvent(eventId: Long) = write(eventCalendar(eventId)) {
         dataSource.deleteEvent(eventId)
     }
 
@@ -325,7 +376,7 @@ class CalendarRepositoryImpl @Inject constructor(
         targetCalendarId: Long,
         original: EventForm,
         updated: EventForm,
-    ): Long = write {
+    ): Long = write({ listOf(dataSource.eventCalendarId(eventId), targetCalendarId) }) {
         dataSource.moveEvent(
             eventId, targetCalendarId, original, updated, allDayReminderTimeMinutes(),
         )
@@ -336,7 +387,7 @@ class CalendarRepositoryImpl @Inject constructor(
         beginMillis: Long,
         original: EventForm,
         form: EventForm,
-    ): Long = write {
+    ): Long = write(eventCalendar(eventId)) {
         dataSource.updateOccurrence(
             eventId, beginMillis, original, form, allDayReminderTimeMinutes(),
         )
@@ -347,7 +398,7 @@ class CalendarRepositoryImpl @Inject constructor(
         beginMillis: Long,
         original: EventForm,
         updated: EventForm,
-    ): Long = write {
+    ): Long = write(eventCalendar(eventId)) {
         dataSource.updateEventFromOccurrence(
             eventId, beginMillis, original, updated, allDayReminderTimeMinutes(),
         )
@@ -357,14 +408,14 @@ class CalendarRepositoryImpl @Inject constructor(
 
     override val seriesSplits: Flow<SeriesSplit> = splits
 
-    override suspend fun deleteOccurrence(eventId: Long, beginMillis: Long) = write {
+    override suspend fun deleteOccurrence(eventId: Long, beginMillis: Long) = write(eventCalendar(eventId)) {
         dataSource.deleteOccurrence(eventId, beginMillis)
     }
 
     override suspend fun deleteEventFromOccurrence(
         eventId: Long,
         beginMillis: Long,
-    ) = write {
+    ) = write(eventCalendar(eventId)) {
         dataSource.deleteEventFromOccurrence(eventId, beginMillis)
     }
 

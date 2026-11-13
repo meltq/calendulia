@@ -5,6 +5,8 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepositoryImpl
+import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
+import de.jeanlucmakiola.calendula.data.calendar.SyncRequester
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import kotlinx.coroutines.CoroutineDispatcher
@@ -43,7 +45,20 @@ fun testRepository(
     io: CoroutineDispatcher,
     prefs: CalendarPrefs = testPrefs(dir),
     settings: SettingsPrefs = testSettings(dir),
-): CalendarRepositoryImpl = CalendarRepositoryImpl(source, prefs, settings, io)
+    syncRequester: SyncRequester = RecordingSyncRequester(),
+): CalendarRepositoryImpl = CalendarRepositoryImpl(source, prefs, settings, io, syncRequester)
+
+/** Records every sync request; [accepts] false models the system refusing one. */
+class RecordingSyncRequester(var accepts: Boolean = true) : SyncRequester {
+    data class Request(val account: SyncAccount, val userInitiated: Boolean)
+
+    val requests = mutableListOf<Request>()
+
+    override fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean {
+        requests += Request(account, userInitiated)
+        return accepts
+    }
+}
 
 /** Installs [dispatcher] as `Dispatchers.Main` around each test. */
 @OptIn(ExperimentalCoroutinesApi::class)

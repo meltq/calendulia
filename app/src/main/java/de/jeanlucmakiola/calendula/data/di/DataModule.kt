@@ -11,9 +11,11 @@ import dagger.hilt.InstallIn
 import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import de.jeanlucmakiola.calendula.data.calendar.AndroidCalendarDataSource
+import de.jeanlucmakiola.calendula.data.calendar.AndroidSyncRequester
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepositoryImpl
+import de.jeanlucmakiola.calendula.data.calendar.SyncRequester
 import de.jeanlucmakiola.calendula.data.contacts.AndroidContactSpecialDatesDataSource
 import de.jeanlucmakiola.calendula.data.contacts.AndroidSpecialDatesCalendarSpec
 import de.jeanlucmakiola.calendula.data.contacts.ContactSpecialDatesDataSource
@@ -48,6 +50,12 @@ abstract class DataBindModule {
     abstract fun bindCalendarRepository(
         impl: CalendarRepositoryImpl,
     ): CalendarRepository
+
+    @Binds
+    @Singleton
+    abstract fun bindSyncRequester(
+        impl: AndroidSyncRequester,
+    ): SyncRequester
 
     @Binds
     @Singleton
