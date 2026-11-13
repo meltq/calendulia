@@ -1,5 +1,7 @@
 package de.jeanlucmakiola.calendula.domain
 
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
+import de.jeanlucmakiola.calendula.domain.reminders.splitTimedReminders
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
 import kotlinx.datetime.LocalTime
@@ -40,6 +42,11 @@ data class EventForm(
     val description: String = "",
     /** Reminder lead times in minutes before the start, deduplicated. */
     val reminders: List<Int> = emptyList(),
+    /**
+     * "N days before at HH:MM" reminders of a timed event (#459), written as lead
+     * times measured from [start] at save time. Always empty on an all-day event.
+     */
+    val fixedReminders: List<FixedTimeReminder> = emptyList(),
     val availability: Availability = Availability.Busy,
     val accessLevel: AccessLevel = AccessLevel.Default,
     /** Confirmed / Tentative / Cancelled (#388). */
@@ -286,7 +293,7 @@ fun EventForm.populatedFields(): Set<EventFormField> = buildSet {
     if (location.isNotBlank()) add(EventFormField.Location)
     if (description.isNotBlank()) add(EventFormField.Description)
     if (timezone != null) add(EventFormField.Timezone)
-    if (reminders.isNotEmpty()) add(EventFormField.Reminders)
+    if (reminders.isNotEmpty() || fixedReminders.isNotEmpty()) add(EventFormField.Reminders)
     if (rrule != null) add(EventFormField.Recurrence)
     if (availability != Availability.Busy) add(EventFormField.Availability)
     if (status != EventStatus.Confirmed) add(EventFormField.Status)
@@ -334,3 +341,21 @@ fun EventDetail.toDuplicateForm(canModify: Boolean, zone: TimeZone): EventForm =
         calendarId = instance.calendarId.takeIf { canModify },
         status = status.forNewEvent(),
     )
+
+/**
+ * This form with its timed reminders read back into lead times and
+ * [EventForm.fixedReminders] ([splitTimedReminders]), the wall clock taken in
+ * [deviceZone]. All-day forms come back untouched.
+ */
+fun EventForm.withFixedTimeRemindersRead(known: Set<FixedTimeReminder>, deviceZone: TimeZone): EventForm {
+    if (isAllDay || reminders.isEmpty()) return this
+    val split = splitTimedReminders(reminders, startInstant(resolvedZone(deviceZone)), deviceZone, known)
+    return copy(reminders = split.leadMinutes, fixedReminders = (fixedReminders + split.fixed).distinct())
+}
+
+/** The offsets [EventForm.fixedReminders] store for this form's start; empty for an all-day form. */
+fun EventForm.fixedReminderOffsets(deviceZone: TimeZone): List<Int> {
+    if (isAllDay || fixedReminders.isEmpty()) return emptyList()
+    val start = startInstant(resolvedZone(deviceZone))
+    return fixedReminders.map { it.offsetMinutes(start, deviceZone) }
+}

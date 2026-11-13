@@ -10,6 +10,9 @@ import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.reminders.DailyDigestSettings
+import de.jeanlucmakiola.calendula.domain.reminders.DigestDay
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
@@ -718,4 +721,51 @@ class SettingsPrefsTest {
         prefs.recordSpecialDatesRun(2000L, null)
         assertThat(prefs.specialDatesStatus.first()).isEqualTo(SpecialDatesStatus(2000L, null))
     }
+
+    @Test
+    fun `fixed-time reminder defaults to off and round-trips`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        assertThat(prefs.defaultFixedTimeReminder.first()).isNull()
+        val evening = FixedTimeReminder(1, 1_200)
+        prefs.setDefaultFixedTimeReminder(evening)
+        assertThat(prefs.defaultFixedTimeReminder.first()).isEqualTo(evening)
+        prefs.setDefaultFixedTimeReminder(null)
+        assertThat(prefs.defaultFixedTimeReminder.first()).isNull()
+    }
+
+    @Test
+    fun `per-calendar fixed-time overrides keep inherit, off and a value apart`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        val morning = FixedTimeReminder(2, 480)
+        prefs.setDefaultFixedTimeReminder(FixedTimeReminder(1, 1_200))
+        prefs.setCalendarFixedTimeReminderOverride(1L, FixedTimeOverride.Off)
+        prefs.setCalendarFixedTimeReminderOverride(2L, FixedTimeOverride.At(morning))
+        val overrides = prefs.perCalendarFixedTimeReminderOverride.first()
+        assertThat(overrides.fixedTimeOverrideFor(1L)).isEqualTo(FixedTimeOverride.Off)
+        assertThat(overrides.fixedTimeOverrideFor(2L)).isEqualTo(FixedTimeOverride.At(morning))
+        assertThat(overrides.fixedTimeOverrideFor(3L)).isEqualTo(FixedTimeOverride.Inherit)
+        assertThat(resolveDefaultFixedTimeReminder(FixedTimeReminder(1, 1_200), overrides, 1L)).isNull()
+        assertThat(resolveDefaultFixedTimeReminder(FixedTimeReminder(1, 1_200), overrides, 3L))
+            .isEqualTo(FixedTimeReminder(1, 1_200))
+        assertThat(prefs.knownFixedTimeReminders.first()).containsExactly(FixedTimeReminder(1, 1_200), morning)
+
+        prefs.setCalendarFixedTimeReminderOverride(2L, FixedTimeOverride.Inherit)
+        assertThat(prefs.perCalendarFixedTimeReminderOverride.first().containsKey(2L)).isFalse()
+    }
+
+    @Test
+    fun `daily summary is off by default and its settings round-trip`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        assertThat(prefs.dailyDigest.first()).isEqualTo(DailyDigestSettings())
+        prefs.setDailyDigestEnabled(true)
+        prefs.setDailyDigestTimeMinutes(420)
+        prefs.setDailyDigestDay(DigestDay.Today)
+        prefs.setCalendarInDailyDigest(5L, included = false)
+        assertThat(prefs.dailyDigest.first()).isEqualTo(
+            DailyDigestSettings(enabled = true, timeMinutes = 420, day = DigestDay.Today, excludedCalendarIds = setOf(5L)),
+        )
+        prefs.setCalendarInDailyDigest(5L, included = true)
+        assertThat(prefs.dailyDigest.first().excludedCalendarIds).isEmpty()
+    }
 }
+

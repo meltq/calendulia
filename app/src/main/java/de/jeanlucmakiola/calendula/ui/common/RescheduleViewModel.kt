@@ -23,9 +23,12 @@ import de.jeanlucmakiola.calendula.domain.resolvedZone
 import de.jeanlucmakiola.calendula.domain.shiftedByDays
 import de.jeanlucmakiola.calendula.domain.shiftedTo
 import de.jeanlucmakiola.calendula.domain.toEditForm
+import de.jeanlucmakiola.calendula.domain.withFixedTimeRemindersRead
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -172,6 +175,7 @@ class RescheduleViewModel @Inject constructor(
     private val repository: CalendarRepository,
     @IoDispatcher private val io: CoroutineDispatcher,
     private val zoneSource: ZoneSource,
+    private val settingsPrefs: SettingsPrefs,
 ) : ViewModel() {
 
     private val _scopePrompt = MutableStateFlow<MoveScopePrompt?>(null)
@@ -457,7 +461,9 @@ class RescheduleViewModel @Inject constructor(
             dropped
         }
 
+        // Read fixed-time reminders out, so the move keeps them on their wall clock (#459).
         val original = detail.toEditForm(request.beginMillis, request.endMillis, zone)
+            .withFixedTimeRemindersRead(settingsPrefs.knownFixedTimeReminders.first(), zone)
         val shifted = when (val target = request.target) {
             is MoveTarget.Start -> original.shiftedTo(target.instant, zone)
             is MoveTarget.ByDays -> original.shiftedByDays(target.days, zone)

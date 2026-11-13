@@ -5,6 +5,9 @@ import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.reminders.DailyDigestSettings
+import de.jeanlucmakiola.calendula.domain.reminders.DigestDay
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.parseAgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.storageValue
@@ -177,6 +180,19 @@ class SettingsPrefs @Inject constructor(
         prefs.flow(SettingsKeys.perCalendarReminderOverride)
     val perCalendarAllDayReminderOverride: Flow<Map<Long, List<Int>>> =
         prefs.flow(SettingsKeys.perCalendarAllDayReminderOverride)
+    val defaultFixedTimeReminder: Flow<FixedTimeReminder?> = prefs.flow(SettingsKeys.defaultFixedTimeReminder)
+    val perCalendarFixedTimeReminderOverride: Flow<Map<Long, FixedTimeReminder?>> =
+        prefs.flow(SettingsKeys.perCalendarFixedTimeReminderOverride)
+
+    /**
+     * Every "N days before at HH:MM" the defaults name, so an offset landing on
+     * one reads back as that reminder rather than a lead time (#459).
+     */
+    val knownFixedTimeReminders: Flow<Set<FixedTimeReminder>> = prefs.snapshot {
+        setOfNotNull(it[SettingsKeys.defaultFixedTimeReminder]) +
+            it[SettingsKeys.perCalendarFixedTimeReminderOverride].values.filterNotNull()
+    }
+    val dailyDigest: Flow<DailyDigestSettings> = prefs.snapshot { it.dailyDigest }
     val autoBackupEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.autoBackupEnabled)
     val autoBackupIntervalMinutes: Flow<Long> = prefs.flow(SettingsKeys.autoBackupIntervalMinutes)
     val autoBackupFolderUri: Flow<String?> = prefs.flow(SettingsKeys.autoBackupFolderUri)
@@ -329,6 +345,31 @@ class SettingsPrefs @Inject constructor(
     suspend fun setCalendarAllDayReminderOverride(calendarId: Long, override: ReminderOverride) =
         prefs.applyOverride(SettingsKeys.perCalendarAllDayReminderOverride, calendarId, override)
 
+    suspend fun setDefaultFixedTimeReminder(reminder: FixedTimeReminder?) =
+        prefs.set(SettingsKeys.defaultFixedTimeReminder, reminder)
+
+    /** [override] [FixedTimeOverride.Inherit] drops the calendar's entry. */
+    suspend fun setCalendarFixedTimeReminderOverride(calendarId: Long, override: FixedTimeOverride) {
+        prefs.update(SettingsKeys.perCalendarFixedTimeReminderOverride) { current ->
+            when (override) {
+                FixedTimeOverride.Inherit -> current - calendarId
+                FixedTimeOverride.Off -> current + (calendarId to null)
+                is FixedTimeOverride.At -> current + (calendarId to override.reminder)
+            }
+        }
+    }
+
+    suspend fun setDailyDigestEnabled(enabled: Boolean) = prefs.set(SettingsKeys.dailyDigestEnabled, enabled)
+
+    suspend fun setDailyDigestTimeMinutes(minutesOfDay: Int) =
+        prefs.set(SettingsKeys.dailyDigestTimeMinutes, minutesOfDay)
+
+    suspend fun setDailyDigestDay(day: DigestDay) = prefs.set(SettingsKeys.dailyDigestDay, day)
+
+    suspend fun setCalendarInDailyDigest(calendarId: Long, included: Boolean) {
+        prefs.update(SettingsKeys.digestExcludedCalendarIds) { if (included) it - calendarId else it + calendarId }
+    }
+
     suspend fun setAutoBackupEnabled(enabled: Boolean) = prefs.set(SettingsKeys.autoBackupEnabled, enabled)
 
     suspend fun setAutoBackupIntervalMinutes(minutes: Long) =
@@ -378,6 +419,8 @@ class SettingsPrefs @Inject constructor(
         /** 09:00 as minutes from midnight; the default all-day reminder fire time. */
         internal const val DEFAULT_ALLDAY_REMINDER_TIME = 540
         internal const val MINUTES_PER_DAY = 1_440
+        /** 20:00, when the daily summary arrives until changed. */
+        internal const val DEFAULT_DIGEST_TIME = 1_200
         /** Default snooze delay for the notification "Snooze" action. */
         const val DEFAULT_SNOOZE_MINUTES = 10
         const val DEFAULT_MULTI_DAY_COUNT = 3
@@ -694,6 +737,34 @@ object SettingsKeys {
     val perCalendarAllDayReminderOverride: Pref<Map<Long, List<Int>>> =
         reminderOverridePref("per_calendar_allday_reminder_override")
 
+    /**
+     * The "N days before at HH:MM" reminder added to new **timed** events
+     * (#459), or null for none — the factory default. Stored as `days@minute`.
+     */
+    val defaultFixedTimeReminder: Pref<FixedTimeReminder?> =
+        nullableStringPref("default_fixed_time_reminder").map(FixedTimeReminder::parse) { it?.toToken() }
+
+    /**
+     * Per-calendar overrides of [defaultFixedTimeReminder]: present with a
+     * value replaces it, present as null turns it off, absent inherits.
+     * Serialised as `id=days@minute` or `id=none`, joined by `;`.
+     */
+    val perCalendarFixedTimeReminderOverride: Pref<Map<Long, FixedTimeReminder?>> =
+        nullableStringPref("per_calendar_fixed_time_reminder").map(::parseFixedTimeOverrides) {
+            it.toStoredFixedTimeOverrides()
+        }
+
+    /** The daily summary notification (#459): opt-in, and which day it lists at what time. */
+    val dailyDigestEnabled: Pref<Boolean> = booleanPref("daily_digest_enabled", false)
+    val dailyDigestTimeMinutes: Pref<Int> =
+        intPref("daily_digest_time_minutes", SettingsPrefs.DEFAULT_DIGEST_TIME).coerced {
+            it.coerceIn(0, SettingsPrefs.MINUTES_PER_DAY - 1)
+        }
+    val dailyDigestDay: Pref<DigestDay> = enumPref("daily_digest_day", DigestDay.Tomorrow)
+
+    /** Calendars left out of the daily summary; every other one is in. */
+    val digestExcludedCalendarIds: Pref<Set<Long>> = idSetPref("digest_excluded_calendar_ids")
+
     /** Whether periodic automatic `.ics` export of local calendars is on (issue #8). */
     val autoBackupEnabled: Pref<Boolean> = booleanPref("auto_backup_enabled", false)
 
@@ -889,6 +960,56 @@ data class BackupStatus(
     val lastSuccess: Boolean,
     val consecutiveFailures: Int,
 )
+
+/** The daily summary's settings, read together. */
+internal val Preferences.dailyDigest: DailyDigestSettings
+    get() = DailyDigestSettings(
+        enabled = this[SettingsKeys.dailyDigestEnabled],
+        timeMinutes = this[SettingsKeys.dailyDigestTimeMinutes],
+        day = this[SettingsKeys.dailyDigestDay],
+        excludedCalendarIds = this[SettingsKeys.digestExcludedCalendarIds],
+    )
+
+/** A calendar's choice for the fixed-time default, as a picker returns it. */
+sealed interface FixedTimeOverride {
+    data object Inherit : FixedTimeOverride
+    data object Off : FixedTimeOverride
+    data class At(val reminder: FixedTimeReminder) : FixedTimeOverride
+}
+
+/** [calendarId]'s entry read as a [FixedTimeOverride]. */
+fun Map<Long, FixedTimeReminder?>.fixedTimeOverrideFor(calendarId: Long): FixedTimeOverride = when {
+    !containsKey(calendarId) -> FixedTimeOverride.Inherit
+    else -> getValue(calendarId)?.let { FixedTimeOverride.At(it) } ?: FixedTimeOverride.Off
+}
+
+/** The fixed-time reminder a new timed event on [calendarId] gets, or null for none. */
+fun resolveDefaultFixedTimeReminder(
+    global: FixedTimeReminder?,
+    overrides: Map<Long, FixedTimeReminder?>,
+    calendarId: Long?,
+): FixedTimeReminder? =
+    if (calendarId != null && overrides.containsKey(calendarId)) overrides[calendarId] else global
+
+private fun parseFixedTimeOverrides(stored: String?): Map<Long, FixedTimeReminder?> =
+    stored?.split(ENTRY_SEP).orEmpty().mapNotNull { entry ->
+        val parts = entry.split(KEY_VALUE_SEP)
+        if (parts.size != 2) return@mapNotNull null
+        val calendarId = parts[0].trim().toLongOrNull() ?: return@mapNotNull null
+        val value = parts[1].trim()
+        if (value == NONE) return@mapNotNull calendarId to null
+        val reminder = FixedTimeReminder.parse(value) ?: return@mapNotNull null
+        calendarId to reminder
+    }.toMap()
+
+private fun Map<Long, FixedTimeReminder?>.toStoredFixedTimeOverrides(): String? =
+    if (isEmpty()) {
+        null
+    } else {
+        entries.sortedBy { it.key }.joinToString(ENTRY_SEP) { (id, reminder) ->
+            "$id$KEY_VALUE_SEP${reminder?.toToken() ?: NONE}"
+        }
+    }
 
 /**
  * The lead times to prefill on a new event: the matching per-calendar override

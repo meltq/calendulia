@@ -1,5 +1,7 @@
 package de.jeanlucmakiola.calendula.ui.settings
 
+import de.jeanlucmakiola.calendula.domain.reminders.DailyDigestSettings
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -96,6 +98,12 @@ data class SettingsUiState(
     val perCalendarReminderOverride: Map<Long, List<Int>> = emptyMap(),
     /** Per-calendar overrides of [defaultAllDayReminderMinutes] for all-day events. */
     val perCalendarAllDayReminderOverride: Map<Long, List<Int>> = emptyMap(),
+    /** The "N days before at HH:MM" default for new timed events (#459); null = none. */
+    val defaultFixedTimeReminder: FixedTimeReminder? = null,
+    /** Per-calendar overrides of [defaultFixedTimeReminder]: absent inherits, null turns it off. */
+    val perCalendarFixedTimeReminderOverride: Map<Long, FixedTimeReminder?> = emptyMap(),
+    /** The daily summary notification (#459). */
+    val dailyDigest: DailyDigestSettings = DailyDigestSettings(),
     /** Switched-on calendars you can edit: the per-calendar duration and reminder-override rows. */
     val writableCalendars: List<CalendarSource> = emptyList(),
     /** Switched-on calendars, each with its own notification switch and channel (#145, #272). */

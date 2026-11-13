@@ -9,7 +9,11 @@ import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.time.FakeZoneSource
+import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.Reminder
+import de.jeanlucmakiola.calendula.domain.ReminderMethod
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.FormTime
@@ -719,4 +723,61 @@ class EventEditViewModelTest {
         assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.Idle)
         job.cancel()
     }
+
+    @Test
+    fun `a new timed event gets the fixed-time default, and a calendar can turn it off`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L), cal(2L)) }
+        val s = settings(tempDir)
+        val evening = FixedTimeReminder(1, 1_200)
+        s.setDefaultFixedTimeReminder(evening)
+        s.setCalendarFixedTimeReminderOverride(2L, FixedTimeOverride.Off)
+        val vm = viewModel(tempDir, fake, s)
+        val job = activate(vm)
+
+        vm.openNew(LocalDate(2030, 1, 15), startMinutes = 600)
+        advanceUntilIdle()
+        assertThat(vm.state.value!!.form!!.fixedReminders).containsExactly(evening)
+
+        vm.setCalendar(2L)
+        advanceUntilIdle()
+        assertThat(vm.state.value!!.form!!.fixedReminders).isEmpty()
+        job.cancel()
+    }
+
+    @Test
+    fun `an event's set-time reminder opens as one and saves without a conflict`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val zone = FakeZoneSource().current()
+        val start = Instant.fromEpochMilliseconds(beginMillis)
+        val evening = FixedTimeReminder(1, 1_200)
+        val offset = evening.offsetMinutes(start, zone)
+        val fake = FakeCalendarDataSource().apply {
+            calendarsResult = listOf(cal(1L))
+            eventDetailResult = {
+                detail(calendarId = 1L).copy(reminders = listOf(Reminder(offset, ReminderMethod.Alert)))
+            }
+        }
+        val s = settings(tempDir)
+        s.setDefaultFixedTimeReminder(evening)
+        val vm = viewModel(tempDir, fake, s)
+        val job = activate(vm)
+
+        vm.openForEdit(eventId = 42L, beginMillis = beginMillis, endMillis = endMillis)
+        advanceUntilIdle()
+        val form = vm.state.value!!.form!!
+        assertThat(form.fixedReminders).containsExactly(evening)
+        assertThat(form.reminders).isEmpty()
+        assertThat(vm.hasUnsavedChanges.value).isFalse()
+
+        vm.setTitle("Renamed")
+        vm.save()
+        advanceUntilIdle()
+        assertThat(vm.state.value?.saveState).isEqualTo(SaveUiState.Saved)
+        assertThat(fake.updatedEvents.single().third.fixedReminders).containsExactly(evening)
+        job.cancel()
+    }
 }
+

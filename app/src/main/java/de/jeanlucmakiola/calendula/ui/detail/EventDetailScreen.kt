@@ -108,6 +108,7 @@ import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.timeOfDayFormatter
 import de.jeanlucmakiola.calendula.ui.common.withRepeatedHourZone
 import de.jeanlucmakiola.calendula.ui.common.recurrenceText
+import de.jeanlucmakiola.calendula.ui.common.fixedTimeReminderLabel
 import de.jeanlucmakiola.calendula.ui.common.reminderLeadTimeLabel
 import kotlinx.coroutines.launch
 import kotlinx.datetime.TimeZone
@@ -532,7 +533,8 @@ private fun EventDetailContent(
                     .sortedBy { it.minutes }
                     .forEach { reminder ->
                         Text(
-                            text = reminderLeadTimeLabel(reminder.minutes),
+                            text = state.fixedReminders[reminder.minutes]?.let { fixedTimeReminderLabel(it) }
+                                ?: reminderLeadTimeLabel(reminder.minutes),
                             style = MaterialTheme.typography.titleMedium,
                             modifier = Modifier.padding(vertical = 2.dp),
                         )

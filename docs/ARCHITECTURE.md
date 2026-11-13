@@ -409,6 +409,32 @@ off switch (#272): the scan plans nothing for those calendars (so they arm no
 wake-ups; toggling it re-scans), and `ReminderNotifier.post` checks it again
 for snoozes.
 
+**Reminders at a set time (#459).** "1 day before at 20:00" on a timed event
+is an ordinary `Reminders` row whose offset is the distance from that wall-clock
+moment (device zone) to the start, so it syncs and fires everywhere — the scan
+plans it like any lead time. Only the editor knows it as a pattern
+(`EventForm.fixedReminders`), and it re-derives the offset from the start it
+saves with, so moving the event, in the form or by drag, keeps the wall clock.
+Reading a row back is a guess, made in one place (`splitTimedReminders`): an
+offset landing on a configured default's pattern is fixed-time; otherwise one
+reaching back past the start's day is, unless it is a whole number of days or a
+short preset. Guessing wrong never moves an alarm, only how a later time change
+treats it. Limits: a recurring series stores one offset, so an occurrence whose
+lead spans a DST change fires an hour off the named time (as in every other
+app reading that row), and on another device or app the row is just a lead time.
+New timed events get the default (`SettingsKeys.defaultFixedTimeReminder`, with
+a per-calendar inherit/off/value override) like the lead-time defaults.
+
+**The daily summary (#459)** rides the same scan and watermark: its moment is
+due when it falls in `(lastScan, now]` (`scheduleDigest`), only the latest one
+counts after a long gap, and it is dropped once the day it lists has passed.
+It is independent of the event-reminder switch, posts on its own channel
+(`DailyDigestNotifier`), lists switched-on calendars minus its own exclusions,
+and replaces the previous summary — or withdraws it when the day is empty.
+The per-calendar reminder mute does not apply: a calendar too noisy to ping per
+event can still belong in the overview, and the summary has its own
+per-calendar switch next to it.
+
 Deliberately absent: a fallback to the provider's `EVENT_REMINDER` broadcast.
 Keeping both would double-post wherever the provider works, and Etar's way out —
 a latch that disables its own scheduling once a real broadcast arrives — cannot

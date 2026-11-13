@@ -51,13 +51,14 @@ class EventDetailViewModelTest {
     )
 
     private fun viewModel(tempDir: Path, fake: FakeCalendarDataSource): EventDetailViewModel {
+        val settings = testSettings(tempDir, CoroutineScope(dispatcher))
         val repo = testRepository(
             fake, tempDir, dispatcher,
             prefs = testPrefs(tempDir, CoroutineScope(dispatcher)),
-            settings = testSettings(tempDir, CoroutineScope(dispatcher)),
+            settings = settings,
         )
         // Only `shareUri()` touches the exporter, and nothing here shares.
-        return EventDetailViewModel(repo, IcsExporter(ContextWrapper(null)), dispatcher, FakeZoneSource())
+        return EventDetailViewModel(repo, IcsExporter(ContextWrapper(null)), dispatcher, FakeZoneSource(), settings)
     }
 
     private fun fakeSource(description: () -> String?) = FakeCalendarDataSource().apply {

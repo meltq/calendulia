@@ -33,7 +33,14 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
+import de.jeanlucmakiola.calendula.data.prefs.fixedTimeOverrideFor
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.reminders.DailyDigestSettings
+import de.jeanlucmakiola.calendula.domain.reminders.DigestDay
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
+import de.jeanlucmakiola.calendula.ui.common.FixedTimeReminderPicker
+import de.jeanlucmakiola.calendula.ui.common.fixedTimeReminderLabel
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.DurationPicker
 import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
@@ -47,6 +54,7 @@ import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.ExpandIcon
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSwitchRow
+import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.SelectedCheck
 import de.jeanlucmakiola.floret.identity.collapseExit
@@ -84,10 +92,24 @@ internal fun NotificationsScreen(
         }
     }
 
+    val toggleDigest: (Boolean) -> Unit = { enabled ->
+        viewModel.setDailyDigestEnabled(enabled)
+        val needsPermission = enabled &&
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            !context.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
+        if (needsPermission) {
+            launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     var showDefaultReminder by remember { mutableStateOf(false) }
     var showAllDayReminder by remember { mutableStateOf(false) }
     var showAllDayReminderTime by remember { mutableStateOf(false) }
     var showSnooze by remember { mutableStateOf(false) }
+    var showFixedDefault by remember { mutableStateOf(false) }
+    var fixedOverrideFor by remember { mutableStateOf<Long?>(null) }
+    var showDigestDay by remember { mutableStateOf(false) }
+    var showDigestTime by remember { mutableStateOf(false) }
     var overrideDialog by remember { mutableStateOf<OverrideTarget?>(null) }
     var calendarSectionExpanded by remember { mutableStateOf(false) }
     var expandedCalendars by remember { mutableStateOf(emptySet<Long>()) }
@@ -128,6 +150,12 @@ internal fun NotificationsScreen(
             onClick = { showDefaultReminder = true },
         )
         GroupedRow(
+            title = stringResource(R.string.settings_fixed_reminder),
+            summary = fixedReminderChoiceLabel(state.defaultFixedTimeReminder),
+            position = Position.Middle,
+            onClick = { showFixedDefault = true },
+        )
+        GroupedRow(
             title = stringResource(R.string.settings_default_reminder_allday),
             summary = reminderChoiceLabel(state.defaultAllDayReminderMinutes),
             position = Position.Middle,
@@ -141,6 +169,19 @@ internal fun NotificationsScreen(
             ),
             position = Position.Bottom,
             onClick = { showAllDayReminderTime = true },
+        )
+
+        Spacer(Modifier.height(24.dp))
+        DailyDigestRows(
+            digest = state.dailyDigest,
+            onEnable = { enabled ->
+                toggleDigest(enabled)
+            },
+            onPickDay = { showDigestDay = true },
+            onPickTime = { showDigestTime = true },
+            onOpenSound = {
+                scope.launch { viewModel.digestChannel()?.let { context.openNotificationSettings(it) } }
+            },
         )
 
         // Reliability is a soft, optional battery-optimisation exemption via
@@ -219,6 +260,8 @@ internal fun NotificationsScreen(
                                 onOpenSound = { openCalendarSound(calendar.id) },
                                 onOpenSpecialDates = onOpenSpecialDates,
                                 onEditOverride = { overrideDialog = it },
+                                onEditFixedOverride = { fixedOverrideFor = calendar.id },
+                                onSetInDigest = { viewModel.setCalendarInDailyDigest(calendar.id, it) },
                             )
                         }
                     }
@@ -227,6 +270,43 @@ internal fun NotificationsScreen(
         }
     }
 
+    if (showFixedDefault) {
+        FixedTimeReminderPicker(
+            title = stringResource(R.string.settings_fixed_reminder),
+            selected = state.defaultFixedTimeReminder?.let { FixedTimeOverride.At(it) } ?: FixedTimeOverride.Off,
+            onSelect = { viewModel.setDefaultFixedTimeReminder((it as? FixedTimeOverride.At)?.reminder) },
+            onDismiss = { showFixedDefault = false },
+        )
+    }
+    fixedOverrideFor?.let { calendarId ->
+        FixedTimeReminderPicker(
+            title = stringResource(R.string.settings_fixed_reminder),
+            selected = state.perCalendarFixedTimeReminderOverride.fixedTimeOverrideFor(calendarId),
+            onSelect = { viewModel.setCalendarFixedTimeReminderOverride(calendarId, it) },
+            onDismiss = { fixedOverrideFor = null },
+            inheritedLabel = fixedReminderChoiceLabel(state.defaultFixedTimeReminder),
+        )
+    }
+    if (showDigestDay) {
+        OptionPicker(
+            title = stringResource(R.string.settings_digest_day),
+            options = DigestDay.entries,
+            selected = state.dailyDigest.day,
+            label = { stringResource(digestDayLabel(it)) },
+            onSelect = viewModel::setDailyDigestDay,
+            onDismiss = { showDigestDay = false },
+        )
+    }
+    if (showDigestTime) {
+        TimePickerAlert(
+            initial = LocalTime(state.dailyDigest.timeMinutes / 60, state.dailyDigest.timeMinutes % 60),
+            onConfirm = {
+                viewModel.setDailyDigestTimeMinutes(it.hour * 60 + it.minute)
+                showDigestTime = false
+            },
+            onDismiss = { showDigestTime = false },
+        )
+    }
     if (showSnooze) {
         DurationPicker(
             title = stringResource(R.string.settings_snooze_duration),
@@ -320,9 +400,12 @@ private fun CalendarNotificationRows(
     onOpenSound: () -> Unit,
     onOpenSpecialDates: () -> Unit,
     onEditOverride: (OverrideTarget) -> Unit,
+    onEditFixedOverride: () -> Unit,
+    onSetInDigest: (Boolean) -> Unit,
 ) {
     val managed = calendar.id in state.managedCalendarIds
     val takesOverrides = calendar.canModifyContents && !managed
+    val digestOn = state.dailyDigest.enabled
     Column {
         GroupedSwitchRow(
             title = stringResource(R.string.settings_calendar_notifications),
@@ -334,10 +417,19 @@ private fun CalendarNotificationRows(
         GroupedRow(
             title = stringResource(R.string.settings_notification_sound),
             summary = stringResource(R.string.settings_calendar_notification_sound_hint),
-            position = if (managed || takesOverrides) Position.Middle else Position.Bottom,
+            position = if (managed || takesOverrides || digestOn) Position.Middle else Position.Bottom,
             trailing = { ExternalLinkIcon() },
             onClick = onOpenSound,
         )
+        if (digestOn) {
+            GroupedSwitchRow(
+                title = stringResource(R.string.settings_calendar_in_digest),
+                checked = calendar.id !in state.dailyDigest.excludedCalendarIds,
+                onCheckedChange = onSetInDigest,
+                summary = stringResource(R.string.settings_calendar_in_digest_hint),
+                position = if (managed || takesOverrides) Position.Middle else Position.Bottom,
+            )
+        }
         if (managed) {
             GroupedRow(
                 title = stringResource(R.string.settings_default_reminder_allday),
@@ -360,6 +452,19 @@ private fun CalendarNotificationRows(
                 position = Position.Middle,
                 onClick = { onEditOverride(OverrideTarget(calendar.id, isAllDay = false)) },
             )
+            GroupedRow(
+                title = stringResource(R.string.settings_fixed_reminder),
+                summary = when (val fixed = state.perCalendarFixedTimeReminderOverride.fixedTimeOverrideFor(calendar.id)) {
+                    FixedTimeOverride.Inherit -> stringResource(
+                        R.string.settings_calendar_reminder_inherits,
+                        fixedReminderChoiceLabel(state.defaultFixedTimeReminder),
+                    )
+                    FixedTimeOverride.Off -> stringResource(R.string.reminder_none)
+                    is FixedTimeOverride.At -> fixedTimeReminderLabel(fixed.reminder)
+                },
+                position = Position.Middle,
+                onClick = onEditFixedOverride,
+            )
             val allDay = state.perCalendarAllDayReminderOverride.reminderOverrideFor(calendar.id)
             GroupedRow(
                 title = stringResource(R.string.settings_default_reminder_allday),
@@ -370,6 +475,68 @@ private fun CalendarNotificationRows(
         }
     }
 }
+
+/**
+ * The daily summary (#459): its switch, and once on, which day it lists, when,
+ * and its channel's system settings.
+ */
+@Composable
+private fun DailyDigestRows(
+    digest: DailyDigestSettings,
+    onEnable: (Boolean) -> Unit,
+    onPickDay: () -> Unit,
+    onPickTime: () -> Unit,
+    onOpenSound: () -> Unit,
+) {
+    GroupedSwitchRow(
+        title = stringResource(R.string.settings_digest),
+        checked = digest.enabled,
+        onCheckedChange = onEnable,
+        summary = if (digest.enabled) {
+            stringResource(
+                R.string.settings_digest_summary,
+                stringResource(digestDayLabel(digest.day)),
+                settingsTimeOfDay(digest.timeMinutes),
+            )
+        } else {
+            stringResource(R.string.settings_digest_hint)
+        },
+        position = if (digest.enabled) Position.Top else Position.Alone,
+    )
+    AnimatedVisibility(visible = digest.enabled, enter = expandEnter(), exit = collapseExit()) {
+        Column {
+            GroupedRow(
+                title = stringResource(R.string.settings_digest_day),
+                summary = stringResource(digestDayLabel(digest.day)),
+                position = Position.Middle,
+                onClick = onPickDay,
+            )
+            GroupedRow(
+                title = stringResource(R.string.settings_digest_time),
+                summary = settingsTimeOfDay(digest.timeMinutes),
+                position = Position.Middle,
+                onClick = onPickTime,
+            )
+            GroupedRow(
+                title = stringResource(R.string.settings_notification_sound),
+                summary = stringResource(R.string.settings_digest_sound_hint),
+                position = Position.Bottom,
+                trailing = { ExternalLinkIcon() },
+                onClick = onOpenSound,
+            )
+        }
+    }
+}
+
+private fun digestDayLabel(day: DigestDay): Int = when (day) {
+    DigestDay.Today -> R.string.settings_digest_day_today
+    DigestDay.Tomorrow -> R.string.settings_digest_day_tomorrow
+}
+
+/** A fixed-time default's label, or "None". */
+@Composable
+private fun fixedReminderChoiceLabel(reminder: FixedTimeReminder?): String =
+    reminder?.let { fixedTimeReminderLabel(it) } ?: stringResource(R.string.reminder_none)
 
 @Composable
 private fun ExternalLinkIcon() {
