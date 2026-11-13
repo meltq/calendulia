@@ -69,7 +69,9 @@ class SyncViewModel @Inject constructor(
                 }
                 val outcome = repository.requestSync()
                 _result.value = outcome
-                val sent = outcome == SyncRequestResult.Requested || outcome == SyncRequestResult.PartlyFailed
+                val sent = outcome == SyncRequestResult.Requested ||
+                    outcome == SyncRequestResult.SomeNeedAccess ||
+                    outcome == SyncRequestResult.PartlyFailed
                 if (sent) settled.await() else settled.cancel()
             } finally {
                 _inFlight.value = false
@@ -92,6 +94,7 @@ fun SyncRequestResult.messageRes(): Int = when (this) {
     SyncRequestResult.Requested -> R.string.sync_requested
     SyncRequestResult.PartlyFailed -> R.string.sync_request_partly_failed
     SyncRequestResult.NeedsAccess -> R.string.sync_request_needs_access
+    SyncRequestResult.SomeNeedAccess -> R.string.sync_request_some_need_access
     SyncRequestResult.NothingToSync -> R.string.sync_nothing_to_sync
     SyncRequestResult.Failed -> R.string.sync_request_failed
 }

@@ -1,12 +1,6 @@
 package de.jeanlucmakiola.calendula.ui
 
-import android.content.ActivityNotFoundException
-import android.util.Log
 import androidx.activity.compose.BackHandler
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.compose.LifecycleEventEffect
 import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
@@ -50,7 +44,6 @@ import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
@@ -60,10 +53,10 @@ import de.jeanlucmakiola.calendula.ui.calendars.CalendarsScreen
 import de.jeanlucmakiola.calendula.ui.common.BelowTopBarClip
 import de.jeanlucmakiola.calendula.ui.common.StayingPut
 import de.jeanlucmakiola.calendula.ui.common.CalendarDrawer
-import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
-import de.jeanlucmakiola.calendula.data.calendar.accountAccessIntent
 import de.jeanlucmakiola.calendula.ui.common.DrawerSync
 import de.jeanlucmakiola.calendula.ui.common.SyncViewModel
+import de.jeanlucmakiola.calendula.ui.common.RefreshSyncAccessOnOpen
+import de.jeanlucmakiola.calendula.ui.common.rememberSyncAccessPicker
 import de.jeanlucmakiola.calendula.ui.common.messageRes
 import de.jeanlucmakiola.calendula.ui.common.CalendarFab
 import de.jeanlucmakiola.calendula.ui.common.CalendarTopBar
@@ -461,23 +454,7 @@ fun CalendarHost(
     val syncResult by sync.result.collectAsStateWithLifecycle()
     val selectionFailureMessage = eventActionFailureMessage(selectionFailure)
     val syncMessage = syncResult?.let { stringResource(it.messageRes()) }
-    // Access is re-read on resume (covering the picker's return), never trusted from the result.
-    var accessPickerOpen by remember { mutableStateOf(false) }
-    val accessPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        accessPickerOpen = false
-    }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { sync.refreshAccess() }
-    val accessPickerDescription = stringResource(R.string.sync_access_picker_description)
-    val launchAccessPicker: (Set<SyncAccount>) -> Unit = { accounts ->
-        if (!accessPickerOpen) {
-            try {
-                accessPicker.launch(accountAccessIntent(accounts, accessPickerDescription))
-                accessPickerOpen = true
-            } catch (e: ActivityNotFoundException) {
-                Log.w("CalendarHost", "No account picker", e)
-            }
-        }
-    }
+    val launchAccessPicker = rememberSyncAccessPicker(sync)
     val onEditEvent: (EventInstance) -> Unit = { event -> editKey = event.occurrenceKey() }
     // A tap opens the edit form instead of the detail screen when the user chose
     // so (#178) — only for events whose calendar takes writes. Both are read at
@@ -575,9 +552,7 @@ fun CalendarHost(
         val stayingPut = remember { StayingPut() }
         val chromeHost = remember { ChromeHost() }
         val drawerState = rememberDrawerState(DrawerValue.Closed)
-        LaunchedEffect(drawerState.targetValue) {
-            if (drawerState.targetValue == DrawerValue.Open) sync.refreshAccess()
-        }
+        RefreshSyncAccessOnOpen(drawerState, sync)
         val density = LocalDensity.current
         val topBarBottom = TopAppBarDefaults.windowInsets.getTop(density) +
             with(density) { TopAppBarDefaults.TopAppBarExpandedHeight.toPx() }
@@ -628,7 +603,7 @@ fun CalendarHost(
                         onOpenSettings()
                         switchScope.launch { drawerState.close() }
                     },
-                    sync = remember(syncTargets, syncInFlight, accessPickerDescription) {
+                    sync = remember(syncTargets, syncInFlight, launchAccessPicker) {
                         DrawerSync(
                             canSync = syncTargets.reachable.isNotEmpty(),
                             inFlight = syncInFlight,

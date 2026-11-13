@@ -401,6 +401,7 @@
     <string name="sync_access_picker_description">Choose an account Calendula may ask to sync your calendars</string>
     <string name="sync_requested">Sync requested</string>
     <string name="sync_request_failed">Couldn\'t request a sync</string>
+    <string name="sync_request_some_need_access">Sync requested. Allow sync requests in the menu for the other accounts</string>
     <string name="sync_request_needs_access">Allow sync requests in the menu first</string>
     <string name="sync_request_partly_failed">Sync requested, but not for every account</string>
     <string name="sync_nothing_to_sync">No synced calendars to sync</string>

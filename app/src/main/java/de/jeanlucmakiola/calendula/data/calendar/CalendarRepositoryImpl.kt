@@ -161,9 +161,10 @@ class CalendarRepositoryImpl @Inject constructor(
         return SyncTargets(reachable.toSet(), hidden.toSet())
     }
 
-    /** Ask each reachable one of [accounts] once; returns how many were asked. */
-    private fun requestSyncs(accounts: Set<SyncAccount>, userInitiated: Boolean): Int =
-        reach(accounts).reachable.count { requestSync(it, userInitiated) }
+    /** Ask each reachable one of [accounts] once. */
+    private fun requestSyncs(accounts: Set<SyncAccount>, userInitiated: Boolean) {
+        reach(accounts).reachable.forEach { requestSync(it, userInitiated) }
+    }
 
     private fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean = try {
         syncRequester.requestSync(account, userInitiated)
@@ -206,7 +207,8 @@ class CalendarRepositoryImpl @Inject constructor(
         val sent = targets.reachable.count { requestSync(it, userInitiated = true) }
         when {
             sent == 0 -> SyncRequestResult.Failed
-            sent < targets.reachable.size || targets.needsAccess.isNotEmpty() -> SyncRequestResult.PartlyFailed
+            sent < targets.reachable.size -> SyncRequestResult.PartlyFailed
+            targets.needsAccess.isNotEmpty() -> SyncRequestResult.SomeNeedAccess
             else -> SyncRequestResult.Requested
         }
     }
