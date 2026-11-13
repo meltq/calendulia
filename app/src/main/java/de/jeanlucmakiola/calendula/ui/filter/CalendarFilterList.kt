@@ -1,19 +1,28 @@
 package de.jeanlucmakiola.calendula.ui.filter
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.TriStateCheckbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -47,6 +56,7 @@ fun CalendarFilterList(
             groups = s.groups,
             hidden = s.hidden,
             onSetVisible = viewModel::setVisible,
+            onSetGroupVisible = viewModel::setGroupVisible,
             modifier = modifier,
         )
     }
@@ -62,20 +72,15 @@ private fun FilterList(
     groups: List<CalendarAccountGroup>,
     hidden: Set<Long>,
     onSetVisible: (Long, Boolean) -> Unit,
+    onSetGroupVisible: (List<Long>, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         groups.forEach { group ->
-            Text(
-                text = accountGroupTitle(group),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(
-                    start = GroupedListInset,
-                    end = GroupedListInset,
-                    top = 12.dp,
-                    bottom = 4.dp,
-                ),
+            GroupHeader(
+                title = accountGroupTitle(group),
+                state = groupVisibility(group.calendars.map { it.id }, hidden),
+                onToggle = { visible -> onSetGroupVisible(group.calendars.map { it.id }, visible) },
             )
             group.calendars.forEachIndexed { index, cal ->
                 val visible = cal.id !in hidden
@@ -93,6 +98,43 @@ private fun FilterList(
                     onClick = { onSetVisible(cal.id, !visible) },
                 )
             }
+        }
+    }
+}
+
+/**
+ * An account's header doubling as the group's parent checkbox (#143): checked
+ * when every calendar shows, indeterminate when some do. Tapping it shows all,
+ * or hides all when the group is fully shown.
+ */
+@Composable
+private fun GroupHeader(
+    title: String,
+    state: ToggleableState,
+    onToggle: (Boolean) -> Unit,
+) {
+    val label = stringResource(
+        if (state.nextGroupVisible()) R.string.filter_group_show_all else R.string.filter_group_hide_all,
+    )
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(top = 4.dp)
+            .clickable(onClickLabel = label, role = Role.Checkbox) { onToggle(state.nextGroupVisible()) }
+            .semantics { toggleableState = state }
+            .padding(start = GroupedListInset, end = GroupedListInset + 16.dp),
+    ) {
+        Text(
+            text = title,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier
+                .weight(1f)
+                .padding(end = 8.dp),
+        )
+        Box(Modifier.size(48.dp), contentAlignment = Alignment.Center) {
+            TriStateCheckbox(state = state, onClick = null)
         }
     }
 }

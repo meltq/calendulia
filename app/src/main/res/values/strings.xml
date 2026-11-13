@@ -550,6 +550,9 @@
 
     <!-- Calendar filter (M3) -->
     <string name="filter_title">Calendars</string>
+    <!-- TalkBack action on a drawer account header that toggles all its calendars -->
+    <string name="filter_group_show_all">Show all calendars in this group</string>
+    <string name="filter_group_hide_all">Hide all calendars in this group</string>
 
     <!-- Settings (M4) -->
     <string name="settings_title">Settings</string>

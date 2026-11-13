@@ -14,7 +14,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -49,12 +48,11 @@ class FilterViewModel @Inject constructor(
             )
 
     /** Show or hide a single calendar; persists the new hidden set. */
-    fun setVisible(calendarId: Long, visible: Boolean) {
-        viewModelScope.launch {
-            val current = prefs.hiddenCalendarIds.first()
-            val next = if (visible) current - calendarId else current + calendarId
-            if (next != current) prefs.setHiddenCalendarIds(next)
-        }
+    fun setVisible(calendarId: Long, visible: Boolean) = setGroupVisible(listOf(calendarId), visible)
+
+    /** Show or hide every calendar in [calendarIds] at once (#143). */
+    fun setGroupVisible(calendarIds: Collection<Long>, visible: Boolean) {
+        viewModelScope.launch { prefs.setCalendarsHidden(calendarIds, hidden = !visible) }
     }
 }
 
