@@ -617,6 +617,49 @@ class SettingsPrefsTest {
     }
 
     @Test
+    fun `per-calendar hidden views round-trip and clear back to every view`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val prefs = testSettings(tempDir)
+        assertThat(prefs.perCalendarHiddenViews.first()).isEmpty()
+        prefs.setCalendarHiddenViews(7L, setOf(CalendarView.Month, CalendarView.Agenda))
+        prefs.setCalendarHiddenViews(9L, setOf(CalendarView.MultiDay))
+        assertThat(prefs.perCalendarHiddenViews.first()).containsExactly(
+            7L, setOf(CalendarView.Month, CalendarView.Agenda),
+            9L, setOf(CalendarView.MultiDay),
+        )
+        prefs.setCalendarHiddenViews(7L, emptySet())
+        assertThat(prefs.perCalendarHiddenViews.first()).containsExactly(9L, setOf(CalendarView.MultiDay))
+    }
+
+    @Test
+    fun `garbage hidden-views entries are dropped, the rest survive`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val store = testDataStore(tempDir, "test_settings")
+        val prefs = SettingsPrefs(store)
+        store.updateData { p ->
+            val m = p.toMutablePreferences()
+            // A bad id, only an unknown view, no separator, and a good entry with one unknown view.
+            m[stringPreferencesKey("per_calendar_hidden_views")] = "x=Month;7=Year;8;9=Month,Year,Agenda"
+            m
+        }
+        assertThat(prefs.perCalendarHiddenViews.first())
+            .containsExactly(9L, setOf(CalendarView.Month, CalendarView.Agenda))
+    }
+
+    @Test
+    fun `hidden views serialise in view order and drop empty entries`() {
+        val stored = mapOf(
+            3L to setOf(CalendarView.Agenda, CalendarView.Month),
+            1L to emptySet(),
+        ).toStoredHiddenViews()
+        assertThat(stored).isEqualTo("3=Month,Agenda")
+        assertThat(emptyMap<Long, Set<CalendarView>>().toStoredHiddenViews()).isNull()
+        assertThat(parseHiddenViews(stored)).containsExactly(3L, setOf(CalendarView.Month, CalendarView.Agenda))
+    }
+
+    @Test
     fun `resolveDefaultEventDuration prefers the calendar's own length`() {
         val overrides = mapOf(7L to 480)
         assertThat(resolveDefaultEventDuration(60, overrides, calendarId = 7L)).isEqualTo(480)

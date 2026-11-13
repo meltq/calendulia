@@ -22,7 +22,7 @@ import de.jeanlucmakiola.calendula.widget.today
 import de.jeanlucmakiola.calendula.widget.widgetEntryPoint
 import de.jeanlucmakiola.calendula.widget.widgetLoadContext
 import de.jeanlucmakiola.calendula.widget.widgetState
-import de.jeanlucmakiola.calendula.widget.withoutCalendars
+import de.jeanlucmakiola.calendula.ui.common.withoutCalendars
 import de.jeanlucmakiola.floret.prefs.toEnum
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.LocalDate

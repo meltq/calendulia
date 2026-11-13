@@ -72,6 +72,11 @@ import de.jeanlucmakiola.calendula.domain.stateLabels
 import de.jeanlucmakiola.calendula.data.calendar.CalendarColorPalette
 import de.jeanlucmakiola.calendula.ui.common.AccountKey
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
+import de.jeanlucmakiola.calendula.ui.common.icon
+import de.jeanlucmakiola.calendula.ui.common.label
+import de.jeanlucmakiola.floret.components.MultiOptionPicker
 import de.jeanlucmakiola.calendula.ui.common.CalendarVisibilitySwitch
 import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
 import de.jeanlucmakiola.calendula.ui.common.groupByAccount
@@ -130,12 +135,15 @@ fun CalendarsScreen(
     val calendars by viewModel.calendars.collectAsStateWithLifecycle()
     val deleteLockedIds by viewModel.deleteLockedCalendarIds.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
+    val hiddenViews by viewModel.hiddenViews.collectAsStateWithLifecycle()
 
     // null = list; NEW_CALENDAR_ID = create; any other id = edit that calendar.
     // [editorSession] bumps on every open so the editor's field state resets for
     // a fresh open while still surviving configuration changes within one open.
     var editorId by rememberSaveable { mutableStateOf<Long?>(null) }
     var editorSession by rememberSaveable { mutableStateOf(0) }
+    // A synced calendar has no editor; tapping it opens its hidden-views picker.
+    var hidingId by rememberSaveable { mutableStateOf<Long?>(null) }
 
     if (editorId != null) {
         val editing = calendars.firstOrNull { it.id == editorId }
@@ -145,13 +153,15 @@ fun CalendarsScreen(
             initialName = editing?.displayName.orEmpty(),
             initialColor = editing?.color ?: CalendarColorPalette.all.first(),
             initialDescription = editing?.description.orEmpty(),
+            showHiddenViews = true,
+            initialHiddenViews = editing?.let { hiddenViews[it.id] }.orEmpty(),
             deleteLocked = editing != null && editing.id in deleteLockedIds,
-            onSave = { name, color, description ->
+            onSave = { name, color, description, views ->
                 val id = editorId
                 if (id == null || id == NEW_CALENDAR_ID) {
-                    viewModel.createCalendar(name, color, description)
+                    viewModel.createCalendar(name, color, description, views)
                 } else {
-                    viewModel.updateCalendar(id, name, color, description)
+                    viewModel.updateCalendar(id, name, color, description, views)
                 }
                 editorId = null
             },
@@ -165,6 +175,7 @@ fun CalendarsScreen(
         CalendarsList(
             local = calendars.filter { it.isLocal },
             synced = calendars.filterNot { it.isLocal },
+            hiddenViews = hiddenViews,
             error = error,
             onConsumeError = viewModel::consumeError,
             onOpenBackup = onOpenBackup,
@@ -172,9 +183,27 @@ fun CalendarsScreen(
             visible = visible,
             onAdd = { editorSession++; editorId = NEW_CALENDAR_ID },
             onEdit = { calendar -> editorSession++; editorId = calendar.id },
+            onEditHiddenViews = { calendar -> hidingId = calendar.id },
             onSetVisible = viewModel::setCalendarVisible,
             onSetAccountVisible = viewModel::setAccountVisible,
         )
+        hidingId?.let { id ->
+            val calendar = calendars.firstOrNull { it.id == id }
+            if (calendar == null) {
+                // Gone (deleted or account removed) while the picker was up.
+                LaunchedEffect(id) { hidingId = null }
+            } else {
+                val hidden = hiddenViews[id].orEmpty()
+                HiddenViewsPicker(
+                    calendarName = calendar.displayName.orUnnamed(),
+                    hidden = hidden,
+                    onToggle = { view, hide ->
+                        viewModel.setHiddenViews(id, if (hide) hidden + view else hidden - view)
+                    },
+                    onDismiss = { hidingId = null },
+                )
+            }
+        }
     }
 }
 
@@ -182,6 +211,7 @@ fun CalendarsScreen(
 private fun CalendarsList(
     local: List<CalendarSource>,
     synced: List<CalendarSource>,
+    hiddenViews: Map<Long, Set<CalendarView>>,
     error: Boolean,
     onConsumeError: () -> Unit,
     onOpenBackup: () -> Unit,
@@ -189,6 +219,7 @@ private fun CalendarsList(
     visible: Boolean,
     onAdd: () -> Unit,
     onEdit: (CalendarSource) -> Unit,
+    onEditHiddenViews: (CalendarSource) -> Unit,
     onSetVisible: (Long, Boolean) -> Unit,
     onSetAccountVisible: (Collection<Long>, Boolean) -> Unit,
 ) {
@@ -241,6 +272,7 @@ private fun CalendarsList(
                 local.forEachIndexed { index, calendar ->
                     CalendarManagerRow(
                         calendar = calendar,
+                        hiddenViews = hiddenViews[calendar.id].orEmpty(),
                         last = index == local.lastIndex,
                         onSetVisible = onSetVisible,
                         onClick = { onEdit(calendar) },
@@ -315,8 +347,10 @@ private fun CalendarsList(
                     ordered.forEachIndexed { index, calendar ->
                         CalendarManagerRow(
                             calendar = calendar,
+                            hiddenViews = hiddenViews[calendar.id].orEmpty(),
                             last = index == ordered.lastIndex,
                             onSetVisible = onSetVisible,
+                            onClick = { onEditHiddenViews(calendar) },
                         )
                     }
                 }
@@ -339,19 +373,25 @@ internal fun CalendarEditor(
     initialName: String,
     initialColor: Int,
     initialDescription: String,
-    onSave: (name: String, color: Int, description: String?) -> Unit,
+    onSave: (name: String, color: Int, description: String?, hiddenViews: Set<CalendarView>) -> Unit,
     onDelete: () -> Unit,
     onClose: () -> Unit,
     deleteLocked: Boolean = false,
+    showHiddenViews: Boolean = false,
+    initialHiddenViews: Set<CalendarView> = emptySet(),
 ) {
     var name by rememberSaveable(sessionKey) { mutableStateOf(initialName) }
+    var hiddenViews by rememberSaveable(sessionKey) { mutableStateOf(initialHiddenViews.toList()) }
+    var pickHiddenViews by rememberSaveable(sessionKey) { mutableStateOf(false) }
     var color by rememberSaveable(sessionKey) { mutableStateOf(initialColor) }
     var description by rememberSaveable(sessionKey) { mutableStateOf(initialDescription) }
     var confirmDelete by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
 
     val valid = name.isNotBlank()
-    val commit = { if (valid) onSave(name.trim(), color, description.trim().ifEmpty { null }) }
+    val commit = {
+        if (valid) onSave(name.trim(), color, description.trim().ifEmpty { null }, hiddenViews.toSet())
+    }
 
     FullScreenPicker(
         title = stringResource(
@@ -403,11 +443,32 @@ internal fun CalendarEditor(
             }
         }
 
+        if (showHiddenViews) {
+            Spacer(Modifier.height(20.dp))
+            GroupedRow(
+                title = stringResource(R.string.calendars_hide_in_views),
+                summary = hiddenViewsSummary(hiddenViews.toSet()),
+                position = Position.Alone,
+                onClick = { pickHiddenViews = true },
+            )
+        }
+
         if (!isNew && !deleteLocked) {
             Spacer(Modifier.height(24.dp))
             DeleteCalendarRow(onClick = { confirmDelete = true })
         }
         Spacer(Modifier.height(24.dp))
+    }
+
+    if (pickHiddenViews) {
+        HiddenViewsPicker(
+            calendarName = name.trim().orUnnamed(),
+            hidden = hiddenViews.toSet(),
+            onToggle = { view, hide ->
+                hiddenViews = if (hide) (hiddenViews + view).distinct() else hiddenViews - view
+            },
+            onDismiss = { pickHiddenViews = false },
+        )
     }
 
     if (confirmDelete) {
@@ -636,7 +697,7 @@ private fun EditorSectionLabel(text: String) {
  * plain writable one (#76), then its own description.
  */
 @Composable
-private fun calendarRowSummary(calendar: CalendarSource): String? {
+private fun calendarRowSummary(calendar: CalendarSource, hiddenViews: Set<CalendarView>): String? {
     val states = calendar.stateLabels().map { label ->
         stringResource(
             when (label) {
@@ -646,7 +707,8 @@ private fun calendarRowSummary(calendar: CalendarSource): String? {
             },
         )
     }
-    val parts = states + listOfNotNull(calendar.description?.takeIf { it.isNotBlank() })
+    val hidden = if (hiddenViews.isEmpty()) null else hiddenViewsSummary(hiddenViews)
+    val parts = states + listOfNotNull(hidden, calendar.description?.takeIf { it.isNotBlank() })
     return parts.joinToString(" · ").ifEmpty { null }
 }
 
@@ -662,6 +724,7 @@ private fun calendarRowSummary(calendar: CalendarSource): String? {
 @Composable
 private fun CalendarManagerRow(
     calendar: CalendarSource,
+    hiddenViews: Set<CalendarView>,
     last: Boolean,
     onSetVisible: (Long, Boolean) -> Unit,
     onClick: (() -> Unit)? = null,
@@ -669,7 +732,7 @@ private fun CalendarManagerRow(
     val disabled = !calendar.isVisibleInSystem || calendar.isNotSynced
     GroupedRow(
         title = calendar.displayName.orUnnamed(),
-        summary = calendarRowSummary(calendar),
+        summary = calendarRowSummary(calendar, hiddenViews),
         position = if (last) Position.Bottom else Position.Middle,
         container = MaterialTheme.colorScheme.surfaceContainerHighest,
         dimmed = disabled,
@@ -687,6 +750,43 @@ private fun CalendarManagerRow(
         },
         onClick = onClick,
     )
+}
+
+/**
+ * Which views one calendar stays out of (#270). Applies each toggle as it is
+ * made; display only, so reminders and search keep the calendar.
+ */
+@Composable
+private fun HiddenViewsPicker(
+    calendarName: String,
+    hidden: Set<CalendarView>,
+    onToggle: (CalendarView, Boolean) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    MultiOptionPicker(
+        title = stringResource(R.string.calendars_hide_in_views),
+        options = IMPLEMENTED_VIEWS,
+        selected = hidden,
+        label = { it.label() },
+        onToggle = onToggle,
+        onDismiss = onDismiss,
+        leading = { Icon(it.icon, contentDescription = null) },
+        header = {
+            GroupedHint(
+                stringResource(R.string.calendars_hide_in_views_hint, calendarName),
+                verticalPadding = 8.dp,
+            )
+        },
+        predictiveBack = true,
+    )
+}
+
+/** "Shown in every view", or the views [hidden] names, in the app's view order. */
+@Composable
+private fun hiddenViewsSummary(hidden: Set<CalendarView>): String {
+    if (hidden.isEmpty()) return stringResource(R.string.calendars_hide_in_views_none)
+    val names = IMPLEMENTED_VIEWS.filter { it in hidden }.map { it.label() }
+    return stringResource(R.string.calendars_hidden_in, names.joinToString(", "))
 }
 
 /** Fade a leading element to the M3 disabled emphasis when [disabled]. */

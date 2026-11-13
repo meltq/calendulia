@@ -1,6 +1,8 @@
 package de.jeanlucmakiola.calendula.ui.month
 
 import de.jeanlucmakiola.calendula.ui.common.startOfWeek
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.instancesIn
 import de.jeanlucmakiola.calendula.ui.common.dayRange
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -67,6 +69,8 @@ class MonthViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val zone = TimeZone.currentSystemDefault()
+
+    private val hiddenViews = settingsPrefs.perCalendarHiddenViews
 
     /** First day of the week, from the Settings preference (AUTO → locale). */
     val weekStart: StateFlow<DayOfWeek> = settingsPrefs.firstDayOfWeek(viewModelScope)
@@ -152,7 +156,7 @@ class MonthViewModel @Inject constructor(
     ) { (ym, ws) ->
         combine(
             repository.calendars(),
-            repository.instances(monthGridRange(ym, ws, zone)),
+            repository.instancesIn(CalendarView.Month, monthGridRange(ym, ws, zone), hiddenViews),
             today,
         ) { calendars, instances, today ->
             buildState(ym, ws, calendars, instances, today)
@@ -224,7 +228,7 @@ class MonthViewModel @Inject constructor(
                 val range = dayRange(first, last, zone)
                 combine(
                     repository.calendars(),
-                    repository.instances(range),
+                    repository.instancesIn(CalendarView.Month, range, hiddenViews),
                     today,
                 ) { calendars, instances, today ->
                     buildContinuousState(window, ws, style, calendars, instances, today)

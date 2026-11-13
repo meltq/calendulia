@@ -165,6 +165,7 @@ class SettingsPrefs @Inject constructor(
     val autofocusEventTitle: Flow<Boolean> = prefs.flow(SettingsKeys.autofocusEventTitle)
     val defaultEventDurationMinutes: Flow<Int> = prefs.flow(SettingsKeys.defaultEventDurationMinutes)
     val perCalendarEventDuration: Flow<Map<Long, Int>> = prefs.flow(SettingsKeys.perCalendarEventDuration)
+    val perCalendarHiddenViews: Flow<Map<Long, Set<CalendarView>>> = prefs.flow(SettingsKeys.perCalendarHiddenViews)
     val remindersEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.remindersEnabled)
     val allowColorOnUnsupportedCalendars: Flow<Boolean> =
         prefs.flow(SettingsKeys.allowColorOnUnsupportedCalendars)
@@ -268,6 +269,13 @@ class SettingsPrefs @Inject constructor(
             } else {
                 current + (calendarId to minutes.coerceIn(MIN_EVENT_DURATION, MAX_EVENT_DURATION))
             }
+        }
+    }
+
+    /** Hide [calendarId] in [views] only (#270); an empty set shows it everywhere again. */
+    suspend fun setCalendarHiddenViews(calendarId: Long, views: Set<CalendarView>) {
+        prefs.update(SettingsKeys.perCalendarHiddenViews) { current ->
+            if (views.isEmpty()) current - calendarId else current + (calendarId to views)
         }
     }
 
@@ -587,6 +595,15 @@ object SettingsKeys {
      */
     val perCalendarEventDuration: Pref<Map<Long, Int>> =
         nullableStringPref("per_calendar_event_duration").map(::parseDurationOverrides) { it.toStoredDurations() }
+
+    /**
+     * Views each calendar is hidden in (#270): a display-only filter on top of
+     * `Calendars.VISIBLE` and the drawer's filter, so reminders and search never
+     * see it. A calendar absent shows in every view. Serialised as
+     * `id=Month,Agenda;id=Week`.
+     */
+    val perCalendarHiddenViews: Pref<Map<Long, Set<CalendarView>>> =
+        nullableStringPref("per_calendar_hidden_views").map(::parseHiddenViews) { it.toStoredHiddenViews() }
 
     /**
      * Whether Calendula posts reminder notifications (v1.4). On by default — for
@@ -976,6 +993,28 @@ private fun parseDurationOverrides(stored: String?): Map<Long, Int> =
             ?: return@mapNotNull null
         calendarId to minutes
     }.toMap()
+
+/**
+ * Parse the per-calendar hidden-views map (`id=View,View` entries joined by `;`).
+ * Unknown view names and malformed entries are dropped; an entry left with no
+ * views is dropped with them.
+ */
+internal fun parseHiddenViews(stored: String?): Map<Long, Set<CalendarView>> =
+    stored?.split(ENTRY_SEP).orEmpty().mapNotNull { entry ->
+        val parts = entry.split(KEY_VALUE_SEP)
+        if (parts.size != 2) return@mapNotNull null
+        val calendarId = parts[0].trim().toLongOrNull() ?: return@mapNotNull null
+        val views = parts[1].split(LIST_SEP)
+            .mapNotNullTo(mutableSetOf()) { name -> CalendarView.entries.firstOrNull { it.name == name.trim() } }
+        if (views.isEmpty()) null else calendarId to views
+    }.toMap()
+
+internal fun Map<Long, Set<CalendarView>>.toStoredHiddenViews(): String? =
+    entries.filter { it.value.isNotEmpty() }.sortedBy { it.key }
+        .joinToString(ENTRY_SEP) { (id, views) ->
+            "$id$KEY_VALUE_SEP" + views.sortedBy { it.ordinal }.joinToString(LIST_SEP) { it.name }
+        }
+        .ifEmpty { null }
 
 private fun Map<Long, Int>.toStoredDurations(): String =
     entries.sortedBy { it.key }.joinToString(ENTRY_SEP) { (id, minutes) ->

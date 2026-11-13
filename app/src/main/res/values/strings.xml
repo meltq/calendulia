@@ -863,6 +863,11 @@
     <string name="calendars_color_label">Color</string>
     <string name="calendars_description_label">Description</string>
     <string name="calendars_description_hint">Add a description</string>
+    <string name="calendars_hide_in_views">Hide in views</string>
+    <string name="calendars_hide_in_views_hint">Events from “%1$s” stay out of the views checked here. Reminders, search and widgets still include them.</string>
+    <string name="calendars_hide_in_views_none">Shown in every view</string>
+    <string name="calendars_hidden_in">Hidden in %1$s</string>
+    <string name="filter_hidden_in_view">Hidden in this view</string>
     <string name="color_name_mauve">Mauve</string>
     <string name="color_name_red">Red</string>
     <string name="color_name_orange">Orange</string>

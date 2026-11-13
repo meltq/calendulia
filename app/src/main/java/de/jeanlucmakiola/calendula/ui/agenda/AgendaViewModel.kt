@@ -1,6 +1,8 @@
 package de.jeanlucmakiola.calendula.ui.agenda
 
 import de.jeanlucmakiola.calendula.ui.common.dayRange
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.instancesIn
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -138,7 +140,7 @@ class AgendaViewModel @Inject constructor(
             )
             combine(
                 repository.calendars(),
-                repository.instances(window),
+                repository.instancesIn(CalendarView.Agenda, window, settingsPrefs.perCalendarHiddenViews),
                 today,
             ) { calendars, instances, today ->
                 buildState(params, calendars, instances, today)

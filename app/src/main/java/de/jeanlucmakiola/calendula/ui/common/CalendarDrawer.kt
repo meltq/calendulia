@@ -112,7 +112,7 @@ fun CalendarDrawer(
             Spacer(Modifier.height(16.dp))
 
             DrawerSectionHeader(stringResource(R.string.filter_title))
-            CalendarFilterList()
+            CalendarFilterList(currentView = currentView)
 
             Spacer(Modifier.height(16.dp))
             GroupedRow(

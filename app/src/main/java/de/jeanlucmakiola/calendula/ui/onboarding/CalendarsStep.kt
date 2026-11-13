@@ -89,7 +89,7 @@ internal fun CalendarsStep(
             initialName = "",
             initialColor = CalendarColorPalette.all.first(),
             initialDescription = "",
-            onSave = { name, color, description ->
+            onSave = { name, color, description, _ ->
                 if (!submitted) {
                     submitted = true
                     onCreateLocal(name, color, description)

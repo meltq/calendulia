@@ -22,6 +22,8 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.ui.common.CalendarAccountGroup
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.calendarsHiddenIn
 import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.GroupedListInset
@@ -32,10 +34,12 @@ import de.jeanlucmakiola.floret.components.positionOf
  * Calendar-visibility filter (M3), rendered inline in the navigation drawer.
  * Every calendar grouped by account, each with a colour swatch and a visibility
  * switch; toggling writes straight to DataStore and every calendar view
- * re-filters live. Three states (Loading / Failure / Success).
+ * re-filters live. Three states (Loading / Failure / Success). A calendar hidden
+ * in [currentView] through its per-view setting (#270) says so on its row.
  */
 @Composable
 fun CalendarFilterList(
+    currentView: CalendarView,
     modifier: Modifier = Modifier,
     viewModel: FilterViewModel = hiltViewModel(),
 ) {
@@ -46,6 +50,7 @@ fun CalendarFilterList(
         is FilterUiState.Success -> FilterList(
             groups = s.groups,
             hidden = s.hidden,
+            hiddenInView = s.hiddenViews.calendarsHiddenIn(currentView),
             onSetVisible = viewModel::setVisible,
             modifier = modifier,
         )
@@ -61,6 +66,7 @@ fun CalendarFilterList(
 private fun FilterList(
     groups: List<CalendarAccountGroup>,
     hidden: Set<Long>,
+    hiddenInView: Set<Long>,
     onSetVisible: (Long, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -81,6 +87,7 @@ private fun FilterList(
                 val visible = cal.id !in hidden
                 GroupedRow(
                     title = cal.displayName.orUnnamed(),
+                    summary = if (cal.id in hiddenInView) stringResource(R.string.filter_hidden_in_view) else null,
                     position = positionOf(index, group.calendars.size),
                     minHeight = 56.dp,
                     leading = { CalendarColorChip(cal.color) },

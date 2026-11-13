@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.calendarListFailure
 import de.jeanlucmakiola.calendula.ui.common.groupByAccount
@@ -23,6 +24,7 @@ import javax.inject.Inject
 class FilterViewModel @Inject constructor(
     private val repository: CalendarRepository,
     private val prefs: CalendarPrefs,
+    settingsPrefs: SettingsPrefs,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -30,7 +32,8 @@ class FilterViewModel @Inject constructor(
         combine(
             repository.calendars(),
             prefs.hiddenCalendarIds,
-        ) { calendars, hidden ->
+            settingsPrefs.perCalendarHiddenViews,
+        ) { calendars, hidden, hiddenViews ->
             // Calendars switched off device-wide don't belong in the drawer's
             // hide/show list; they live only in Settings → Calendars.
             val enabled = calendars.filter { it.isVisibleInSystem }
@@ -38,7 +41,7 @@ class FilterViewModel @Inject constructor(
             if (failure != null) {
                 FilterUiState.Failure(failure)
             } else {
-                FilterUiState.Success(enabled.groupByAccount(), hidden)
+                FilterUiState.Success(enabled.groupByAccount(), hidden, hiddenViews)
             }
         }
             .catch { emit(FilterUiState.Failure(FailureReason.ProviderUnavailable)) }

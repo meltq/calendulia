@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.widget
 
+import de.jeanlucmakiola.calendula.ui.common.withoutCalendars
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager

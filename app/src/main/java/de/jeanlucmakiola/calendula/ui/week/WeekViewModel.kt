@@ -19,7 +19,9 @@ import de.jeanlucmakiola.calendula.domain.displayPriority
 import de.jeanlucmakiola.calendula.domain.displayStart
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.calendarListFailure
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.PageStateCache
+import de.jeanlucmakiola.calendula.ui.common.instancesIn
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
@@ -89,7 +91,10 @@ abstract class PagedTimelineViewModel(
     private val io: CoroutineDispatcher,
     gridRule: Flow<(LocalDate) -> DaysGrid>,
     initialRule: (LocalDate) -> DaysGrid,
+    private val view: CalendarView,
 ) : ViewModel() {
+
+    private val hiddenViews = settingsPrefs.perCalendarHiddenViews
 
     /**
      * The zone every page is laid out in; drags and drops resolve in it too, and
@@ -167,7 +172,7 @@ abstract class PagedTimelineViewModel(
         zone.flatMapLatest { zone ->
             combine(
                 repository.calendars(),
-                repository.instances(spanRange(span.start, span.count, zone)),
+                repository.instancesIn(view, spanRange(span.start, span.count, zone), hiddenViews),
                 today,
             ) { calendars, instances, today ->
                 buildState(span, calendars, instances, today, zone)
@@ -240,6 +245,7 @@ class WeekViewModel @Inject constructor(
         rule
     },
     initialRule = { DaysGrid.weeks(DayOfWeek.MONDAY) },
+    view = CalendarView.Week,
 )
 
 /**
@@ -264,6 +270,7 @@ class MultiDayViewModel @Inject constructor(
         { anchor: LocalDate -> DaysGrid.startingAt(anchor, count) }
     },
     initialRule = { DaysGrid.startingAt(it, SettingsPrefs.DEFAULT_MULTI_DAY_COUNT) },
+    view = CalendarView.MultiDay,
 )
 
 /** The day view: the timeline one day at a time. */
@@ -282,6 +289,7 @@ class DayViewModel @Inject constructor(
     io = io,
     gridRule = flowOf { _: LocalDate -> DaysGrid.days },
     initialRule = { DaysGrid.days },
+    view = CalendarView.Day,
 )
 
 /**

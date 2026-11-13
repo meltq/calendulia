@@ -15,6 +15,7 @@ import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
@@ -104,6 +105,19 @@ class CalendarsViewModel @Inject constructor(
             initialValue = emptySet(),
         )
 
+    /** The views each calendar is hidden in (#270). */
+    val hiddenViews: StateFlow<Map<Long, Set<CalendarView>>> =
+        settingsPrefs.perCalendarHiddenViews
+            .catch { emit(emptyMap()) }
+            .stateWhileSubscribed(
+                scope = viewModelScope,
+                initialValue = emptyMap(),
+            )
+
+    fun setHiddenViews(id: Long, views: Set<CalendarView>) {
+        viewModelScope.launch { settingsPrefs.setCalendarHiddenViews(id, views) }
+    }
+
     private val _error = MutableStateFlow(false)
     val error: StateFlow<Boolean> = _error.asStateFlow()
 
@@ -139,16 +153,30 @@ class CalendarsViewModel @Inject constructor(
         }
     }
 
-    fun createCalendar(displayName: String, color: Int, description: String?) = write {
-        repository.createLocalCalendar(displayName, color, description)
+    fun createCalendar(
+        displayName: String,
+        color: Int,
+        description: String?,
+        hiddenViews: Set<CalendarView> = emptySet(),
+    ) = write {
+        val id = repository.createLocalCalendar(displayName, color, description)
+        if (hiddenViews.isNotEmpty()) settingsPrefs.setCalendarHiddenViews(id, hiddenViews)
     }
 
-    fun updateCalendar(id: Long, displayName: String, color: Int, description: String?) = write {
+    fun updateCalendar(
+        id: Long,
+        displayName: String,
+        color: Int,
+        description: String?,
+        hiddenViews: Set<CalendarView>,
+    ) = write {
         repository.updateCalendar(id, displayName, color, description)
+        settingsPrefs.setCalendarHiddenViews(id, hiddenViews)
     }
 
     fun deleteCalendar(id: Long) = write {
         repository.deleteCalendar(id)
+        settingsPrefs.setCalendarHiddenViews(id, emptySet())
     }
 
     /**
