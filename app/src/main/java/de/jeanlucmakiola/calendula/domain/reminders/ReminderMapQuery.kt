@@ -1,15 +1,14 @@
 package de.jeanlucmakiola.calendula.domain.reminders
 
-private val linkRegex = Regex(
-    """(?:https?://|www\.)\S+|\b[a-z0-9-]+(?:\.[a-z0-9-]+)*\.[a-z]{2,}/\S*""",
-    RegexOption.IGNORE_CASE,
-)
+// Same link shape the detail screen linkifies (ui/detail/WebLinks.kt).
+private val webLinkRegex = Regex("""https?://[^\s<>"]+""", RegexOption.IGNORE_CASE)
 
 /**
- * What a reminder's "Open in maps" button looks up for [location], or null
- * when there is no place to find: blank, or nothing but (meeting) links.
+ * What a reminder's "Open in maps" button looks up for [location] — the same
+ * text the detail screen's location card opens in maps — or null when there is
+ * no place to find: blank, or nothing but web (meeting) links.
  */
 fun reminderMapQuery(location: String?): String? {
     val trimmed = location?.trim()?.takeIf { it.isNotEmpty() } ?: return null
-    return trimmed.takeIf { linkRegex.replace(it, "").any(Char::isLetterOrDigit) }
+    return trimmed.takeIf { webLinkRegex.replace(it, "").any(Char::isLetterOrDigit) }
 }
