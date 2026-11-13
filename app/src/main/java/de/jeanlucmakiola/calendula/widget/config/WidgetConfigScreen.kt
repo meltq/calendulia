@@ -69,6 +69,16 @@ import de.jeanlucmakiola.floret.glance.GlanceWidgetPreview
 import de.jeanlucmakiola.floret.glance.WallpaperWindow
 import de.jeanlucmakiola.floret.glance.WidgetBackground
 import kotlin.math.roundToInt
+import de.jeanlucmakiola.floret.components.GroupedSliderRow
+import de.jeanlucmakiola.floret.components.InfoPopover
+import de.jeanlucmakiola.calendula.widget.AgendaWidgetStyle
+import java.text.NumberFormat
+import de.jeanlucmakiola.floret.locale.currentLocale
+import androidx.compose.runtime.remember
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.layout.Row
 
 private val PreviewMaxHeight = 280.dp
 
@@ -236,6 +246,42 @@ private fun ConfigOptions(
             onSelect = { onAppearance(state.appearance.copy(background = it)) },
             position = Position.Top,
         )
+        val faded = state.appearance.background != WidgetBackground.TRANSPARENT
+        val content = state.draft.content
+        val classic = state.kind == WidgetKind.AGENDA && content.style == AgendaWidgetStyle.CLASSIC
+        if (faded) {
+            val opacity = state.appearance.opacity
+            GroupedSliderRow(
+                title = stringResource(R.string.widget_config_opacity),
+                value = opacity,
+                onValueChange = { onAppearance(state.appearance.copy(opacity = it)) },
+                position = Position.Middle,
+                valueLabel = currentLocale().let { locale ->
+                    remember(opacity, locale) { NumberFormat.getPercentInstance(locale).format(opacity) }
+                },
+                valueRange = MIN_OPACITY..1f,
+                steps = OPACITY_STEPS,
+                titleAccessory = {
+                    InfoPopover(
+                        text = stringResource(
+                            if (classic) R.string.widget_config_readability_hint_classic else R.string.widget_config_readability_hint,
+                        ),
+                        contentDescription = stringResource(R.string.widget_config_readability_info),
+                    )
+                },
+            )
+        }
+        if (faded && classic) {
+            GroupedRow(
+                title = stringResource(R.string.widget_config_invert_text),
+                summary = stringResource(R.string.widget_config_invert_text_summary),
+                position = Position.Middle,
+                trailing = {
+                    Switch(checked = content.invertText, onCheckedChange = { onContent(content.copy(invertText = it)) })
+                },
+                onClick = { onContent(content.copy(invertText = !content.invertText)) },
+            )
+        }
         GroupedChoiceRow(
             title = stringResource(R.string.settings_theme),
             options = WidgetTheme.entries,
@@ -265,6 +311,7 @@ private fun ContentOptions(
     onCalendarShown: (Long, Boolean) -> Unit,
 ) {
     val options = state.draft.content
+    var showStyle by rememberSaveable { mutableStateOf(false) }
     var showRange by rememberSaveable { mutableStateOf(false) }
     var showSize by rememberSaveable { mutableStateOf(false) }
     var showPast by rememberSaveable { mutableStateOf(false) }
@@ -277,6 +324,12 @@ private fun ContentOptions(
     GroupedSectionHeader(stringResource(R.string.widget_config_content))
     rows.forEach { option ->
         when (option) {
+            WidgetOption.STYLE -> GroupedRow(
+                title = stringResource(R.string.widget_config_style),
+                summary = agendaStyleLabel(options.style),
+                position = position(option),
+                onClick = { showStyle = true },
+            )
             WidgetOption.RANGE -> GroupedRow(
                 title = stringResource(R.string.widget_config_range),
                 summary = agendaRangeLabel(options.range),
@@ -319,6 +372,17 @@ private fun ContentOptions(
         )
     }
 
+    if (showStyle) {
+        OptionPicker(
+            title = stringResource(R.string.widget_config_style),
+            predictiveBack = true,
+            options = AgendaWidgetStyle.entries,
+            selected = options.style,
+            label = { agendaStyleLabel(it) },
+            onSelect = { onChange(options.copy(style = it)) },
+            onDismiss = { showStyle = false },
+        )
+    }
     if (showRange) {
         AgendaRangePicker(
             title = stringResource(R.string.widget_config_range),
@@ -355,6 +419,18 @@ private fun ContentOptions(
         )
     }
 }
+
+@Composable
+private fun agendaStyleLabel(style: AgendaWidgetStyle): String = stringResource(
+    when (style) {
+        AgendaWidgetStyle.CARDS -> R.string.widget_config_style_cards
+        AgendaWidgetStyle.CLASSIC -> R.string.widget_config_style_classic
+    },
+)
+
+/** The faintest fill the opacity slider allows, and its 10% steps between that and opaque. */
+private const val MIN_OPACITY = 0.2f
+private const val OPACITY_STEPS = 7
 
 @Composable
 internal fun backgroundLabel(background: WidgetBackground): String = stringResource(

@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.1] — 2026-11-12
+
+### Added
+- **A classic style for the agenda widget.** Its settings now have a Style option: Cards keeps the new look, Classic brings back the 2.23 layout with a line per day and a colour stripe beside each event, under the current header. Dates in another year show the year. Classic has an Invert text colour switch, so its text stays readable on light and dark wallpapers ([#489]).
+- **Widget opacity.** Every widget with a Solid or Tinted background has an Opacity slider from 20 to 100%. Below 50%, the card-style widgets back their content like a Transparent widget so it stays readable ([#489]).
+
+### Fixed
+- **Week numbers match your region.** With weeks starting on Sunday, the month and week views showed every week number one too low. Rows are now numbered by your region's rules, so ISO regions such as Germany are unchanged ([#493]).
+- **The month widget shows events at every height.** At some sizes a week row had room for a little more than the date but not a full line of events, and drew none. It now fits a slimmer line there, and a row with a single line shows "+N" on days with more events than fit ([#491]).
+- **Dimmed past events in dark widgets are readable again.** They used to turn pastel with white text on top ([#475]).
+- **A widget set to Light or Dark matches the system colours.** With Material You, the + button and today's date could look different from a widget that follows the app ([#475]).
+
+### Changed
+- **Fewer permissions.** Calendula no longer asks for network state, wake lock or foreground service access, which a library added without the app needing them ([#448]).
+- Translation updates from [Calendula's Weblate](https://weblate.dev.jeanlucmakiola.de/projects/calendula/).
+
 ## [2.24.0] — 2026-11-06
 
 ### Added
@@ -1952,3 +1968,8 @@ automatically, with zero telemetry and no internet permission.
 [#473]: https://codeberg.org/jlmakiola/calendula/issues/473
 [#476]: https://codeberg.org/jlmakiola/calendula/issues/476
 [#483]: https://codeberg.org/jlmakiola/calendula/issues/483
+[#448]: https://codeberg.org/jlmakiola/calendula/issues/448
+[#475]: https://codeberg.org/jlmakiola/calendula/issues/475
+[#489]: https://codeberg.org/jlmakiola/calendula/issues/489
+[#491]: https://codeberg.org/jlmakiola/calendula/issues/491
+[#493]: https://codeberg.org/jlmakiola/calendula/issues/493
