@@ -38,8 +38,6 @@ import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.DefaultCalendarRef
-import de.jeanlucmakiola.calendula.domain.effectiveDefaultCalendar
-import de.jeanlucmakiola.calendula.domain.unavailableDefaultCalendar
 import de.jeanlucmakiola.calendula.domain.isEventTarget
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
@@ -92,7 +90,10 @@ class SettingsViewModel @Inject constructor(
                 initialValue = SettingsUiState(dynamicColorAvailable = dynamicColorAvailable),
             )
 
-    private fun Preferences.toUiState(calendars: List<CalendarSource>) = SettingsUiState(
+    private fun Preferences.toUiState(
+        calendars: List<CalendarSource>,
+        defaultCalendar: CalendarSource? = this[SettingsKeys.defaultNewEventCalendar]?.find(calendars),
+    ) = SettingsUiState(
         themeMode = this[SettingsKeys.themeMode],
         dynamicColor = this[SettingsKeys.dynamicColor] && dynamicColorAvailable,
         dynamicColorAvailable = dynamicColorAvailable,
@@ -130,8 +131,8 @@ class SettingsViewModel @Inject constructor(
         perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
         writableCalendars = calendars.filter { it.canModifyContents && it.isVisibleInSystem },
         eventTargetCalendars = calendars.filter { it.isEventTarget },
-        defaultNewEventCalendar = effectiveDefaultCalendar(this[SettingsKeys.defaultNewEventCalendar], calendars),
-        unavailableDefaultCalendar = unavailableDefaultCalendar(this[SettingsKeys.defaultNewEventCalendar], calendars),
+        defaultNewEventCalendar = defaultCalendar?.takeIf { it.isEventTarget },
+        unavailableDefaultCalendar = defaultCalendar?.takeUnless { it.isEventTarget },
         allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
         managedCalendarIds = specialDatesCalendars.values.toSet(),
     )

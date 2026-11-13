@@ -65,10 +65,8 @@ class NewEventCalendarTest {
             val hints = NewEventCalendarHints(default = default, lastUsed = 2L)
             assertThat(resolveEventCalendar(null, hints, calendars)).isEqualTo(2L)
             assertThat(effectiveDefaultCalendar(default, calendars)).isNull()
-            assertThat(unavailableDefaultCalendar(default, calendars)?.id).isEqualTo(id)
         }
         assertThat(effectiveDefaultCalendar(ref(99L), calendars)).isNull()
-        assertThat(unavailableDefaultCalendar(ref(99L), calendars)).isNull()
     }
 
     @Test
@@ -81,17 +79,16 @@ class NewEventCalendarTest {
     @Test
     fun `the effective default is the stored calendar while it is a target`() {
         assertThat(effectiveDefaultCalendar(ref(3L), calendars)?.id).isEqualTo(3L)
-        assertThat(unavailableDefaultCalendar(ref(3L), calendars)).isNull()
         assertThat(effectiveDefaultCalendar(null, calendars)).isNull()
     }
 
     @Test
-    fun `a reused id under another calendar is not the default`() {
-        val reused = ref(3L).copy(displayName = "Deleted calendar")
-        assertThat(effectiveDefaultCalendar(reused, calendars)).isNull()
+    fun `the default survives a rename and a new id, but not another account`() {
+        assertThat(effectiveDefaultCalendar(ref(3L).copy(displayName = "Old name"), calendars)?.id).isEqualTo(3L)
+        assertThat(effectiveDefaultCalendar(ref(3L).copy(id = 99L), calendars)?.id).isEqualTo(3L)
+        // The id was handed to another calendar of the account; the name decides.
+        assertThat(effectiveDefaultCalendar(ref(3L).copy(id = 2L), calendars)?.id).isEqualTo(3L)
         assertThat(effectiveDefaultCalendar(ref(3L).copy(accountName = "other"), calendars)).isNull()
-        assertThat(resolveEventCalendar(null, NewEventCalendarHints(default = reused, lastUsed = 2L), calendars))
-            .isEqualTo(2L)
     }
 
     @Test

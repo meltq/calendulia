@@ -441,6 +441,7 @@ class EventEditViewModel @Inject constructor(
         _revealed.value = form.populatedFields()
         _requestedCalendarId.value = form.calendarId
         open(form.copy(calendarId = null))
+        dropColorOffRequestedCalendar(form)
         if (source.ownsDuration) _durationTouched.value = true else applyDefaultDuration()
         when (source) {
             ImportSource.Insert, ImportSource.InsertOpenEnded ->
@@ -452,6 +453,20 @@ class EventEditViewModel @Inject constructor(
                 _remindersTouched.value = true
                 maybePromptImportedReminderDefault(form)
             }
+        }
+    }
+
+    /**
+     * A duplicate carries its source's colour, which is scoped to that calendar's
+     * account. When the form lands elsewhere, the colour goes as on [setCalendar].
+     */
+    private fun dropColorOffRequestedCalendar(form: EventForm) {
+        if (form.colorKey == null && form.color == null) return
+        val opened = session
+        viewModelScope.launch {
+            val resolved = resolvedCalendarId.first()
+            if (opened != session || _form.value?.calendarId != null) return@launch
+            if (resolved != form.calendarId) applyDefault { it.copy(colorKey = null, color = null) }
         }
     }
 

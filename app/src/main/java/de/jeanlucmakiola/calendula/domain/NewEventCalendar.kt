@@ -2,9 +2,8 @@ package de.jeanlucmakiola.calendula.domain
 
 /**
  * The calendar chosen as default for new events (#429). Provider ids are
- * device-local and can be handed out again, so the account and name ride along
- * and the choice only holds while the calendar under [id] still matches them,
- * e.g. not after a backup restore onto another device.
+ * device-local and get reassigned when an account is re-added or a backup is
+ * restored onto another device, so the account and name ride along: see [find].
  */
 data class DefaultCalendarRef(
     val id: Long,
@@ -12,11 +11,16 @@ data class DefaultCalendarRef(
     val accountName: String,
     val displayName: String,
 ) {
-    fun matches(calendar: CalendarSource): Boolean =
-        calendar.id == id &&
-            calendar.accountType == accountType &&
-            calendar.accountName == accountName &&
-            calendar.displayName == displayName
+    /**
+     * The calendar this refers to: the exact one, else the account's calendar of
+     * that name (the id changed), else the id within the account (it was renamed).
+     */
+    fun find(calendars: List<CalendarSource>): CalendarSource? {
+        val inAccount = calendars.filter { it.accountType == accountType && it.accountName == accountName }
+        return inAccount.firstOrNull { it.id == id && it.displayName == displayName }
+            ?: inAccount.singleOrNull { it.displayName == displayName }
+            ?: inAccount.firstOrNull { it.id == id }
+    }
 
     fun encode(): String = listOf(id.toString(), accountType, accountName, displayName).joinToString(SEPARATOR)
 
@@ -55,23 +59,18 @@ fun resolveEventCalendar(
     picked: Long?,
     hints: NewEventCalendarHints,
     calendars: List<CalendarSource>,
-): Long? = picked
-    ?: hints.requested?.takeIf { id -> calendars.any { it.id == id && it.isEventTarget } }
-    ?: effectiveDefaultCalendar(hints.default, calendars)?.id
-    ?: hints.lastUsed?.takeIf { id -> calendars.any { it.id == id && it.isEventTarget } }
-    ?: calendars.firstOrNull { it.isEventTarget }?.id
+): Long? {
+    fun Long.ifTarget() = takeIf { id -> calendars.any { it.id == id && it.isEventTarget } }
+    return picked
+        ?: hints.requested?.ifTarget()
+        ?: effectiveDefaultCalendar(hints.default, calendars)?.id
+        ?: hints.lastUsed?.ifTarget()
+        ?: calendars.firstOrNull { it.isEventTarget }?.id
+}
 
 /**
  * The default calendar setting as it applies now: null ("Automatic") when unset,
  * or when the stored calendar is gone, read-only or switched off.
  */
 fun effectiveDefaultCalendar(default: DefaultCalendarRef?, calendars: List<CalendarSource>): CalendarSource? =
-    default?.let { ref -> calendars.firstOrNull { ref.matches(it) && it.isEventTarget } }
-
-/**
- * The stored default calendar while it still exists but can't take new events
- * (switched off, read-only, managed), so the setting can say why it reads
- * Automatic. Null when it applies, is unset or is gone.
- */
-fun unavailableDefaultCalendar(default: DefaultCalendarRef?, calendars: List<CalendarSource>): CalendarSource? =
-    default?.let { ref -> calendars.firstOrNull { ref.matches(it) && !it.isEventTarget } }
+    default?.find(calendars)?.takeIf { it.isEventTarget }
