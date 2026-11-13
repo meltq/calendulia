@@ -59,13 +59,15 @@ class ReminderRingService : Service() {
     private var notificationId = RING_NOTIFICATION_ID
     private var lastStartId: Int? = null
 
+    /** The start the system would redeliver, so a takeover can mark it done. */
+    private var ringStartId: Int? = null
+
     /** Whether the ring's players were ever built, so a stop-only service builds none. */
     private var rang = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        val previousStart = lastStartId
         lastStartId = startId
         if (intent?.action == ACTION_STOP) {
             stop(intent)
@@ -77,14 +79,14 @@ class ReminderRingService : Service() {
             return START_NOT_STICKY
         }
         try {
-            return startRing(intent, alert, previousStart)
+            return startRing(intent, alert, startId)
         } finally {
             // Only now, once alerts.ringing says whether it rings, so a stop sent meanwhile is never skipped.
             if (flags and START_FLAG_REDELIVERY == 0) alerts.removePending(alert)
         }
     }
 
-    private fun startRing(intent: Intent, alert: ReminderAlert, previousStart: Int?): Int {
+    private fun startRing(intent: Intent, alert: ReminderAlert, startId: Int): Int {
         val notification = IntentCompat.getParcelableExtra(intent, EXTRA_NOTIFICATION, Notification::class.java)
         if (notification == null) {
             stopIfIdle()
@@ -111,7 +113,8 @@ class ReminderRingService : Service() {
         if (previous?.key == alert.key) return START_NOT_STICKY
         // Only the newest start is redelivered after a process death; the older
         // ones are done, so a handled reminder never rings again.
-        previousStart?.let { stopSelfResult(it) }
+        ringStartId?.let { stopSelfResult(it) }
+        ringStartId = startId
         alerts.ringing = alert
         if (previous != null) {
             // Its screen closes either way; another occurrence goes back to the shade.
