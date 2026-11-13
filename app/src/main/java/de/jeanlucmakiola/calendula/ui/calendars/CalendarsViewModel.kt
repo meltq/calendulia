@@ -20,6 +20,8 @@ import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -217,12 +219,16 @@ class CalendarsViewModel @Inject constructor(
         }
     }
 
+    /** Selection writes since the calendar picker opened; the run after it waits for them. */
+    private val selectionWrites = mutableListOf<Job>()
+
     fun setAutoBackupCalendar(calendar: CalendarSource, included: Boolean) {
-        viewModelScope.launch { settingsPrefs.setAutoBackupCalendar(calendar, included) }
+        selectionWrites += viewModelScope.launch { settingsPrefs.setAutoBackupCalendar(calendar, included) }
     }
 
     fun setAutoBackupCombined(combined: Boolean) {
         viewModelScope.launch {
+            if (settingsPrefs.autoBackupCombined.first() == combined) return@launch
             settingsPrefs.setAutoBackupCombined(combined)
             runBackupIfActive()
         }
@@ -230,14 +236,24 @@ class CalendarsViewModel @Inject constructor(
 
     fun setAutoBackupKeep(keep: Int) {
         viewModelScope.launch {
+            if (settingsPrefs.autoBackupKeep.first() == keep) return@launch
             settingsPrefs.setAutoBackupKeep(keep)
             runBackupIfActive()
         }
     }
 
-    /** After the calendar choice is closed, back up what is now selected rather than at the next interval. */
-    fun autoBackupCalendarsChosen() {
-        viewModelScope.launch { runBackupIfActive() }
+    /**
+     * After the calendar choice is closed, back up what is now selected rather
+     * than at the next interval — only if it changed, since every run rotates
+     * an older backup out.
+     */
+    fun autoBackupCalendarsChosen(before: BackupSelection) {
+        val pending = selectionWrites.toList()
+        selectionWrites.clear()
+        viewModelScope.launch {
+            pending.joinAll()
+            if (settingsPrefs.autoBackupSelection.first() != before) runBackupIfActive()
+        }
     }
 
     private suspend fun runBackupIfActive() {

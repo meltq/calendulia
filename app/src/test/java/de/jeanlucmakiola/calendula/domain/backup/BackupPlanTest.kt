@@ -277,4 +277,11 @@ class BackupPlanTest {
             latestLedgerKey("2"), listOf("Work.ics"),
         )
     }
+
+    @Test
+    fun `a claimed hand-off shows as held elsewhere`() {
+        val ledger = mapOf(latestLedgerKey("1") to listOf("Job.ics"), latestLedgerKey("2") to listOf("Work.ics"), "2" to listOf("Work_a.ics"))
+        assertThat(ledger.latestHeldElsewhere("1")).containsExactly("Work.ics")
+        assertThat(ledger.latestHeldElsewhere("2")).containsExactly("Job.ics")
+    }
 }

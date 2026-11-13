@@ -251,6 +251,10 @@ fun withLedgerEntry(
     return next.filterValues { it.isNotEmpty() }
 }
 
+/** Stable copies recorded under any series but [key] — a hand-off that has already been claimed. */
+fun BackupLedger.latestHeldElsewhere(key: String): Set<String> =
+    filterKeys { it.startsWith(LATEST_PREFIX) && it != latestLedgerKey(key) }.values.flatten().toSet()
+
 /** `Work.ics`: the series' stable copy. */
 fun latestFileName(baseName: String): String = "$baseName$ICS_EXTENSION"
 

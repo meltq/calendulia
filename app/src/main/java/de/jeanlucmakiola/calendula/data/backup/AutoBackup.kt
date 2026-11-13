@@ -28,6 +28,7 @@ import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.backup.backupTargets
 import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
+import de.jeanlucmakiola.calendula.domain.backup.latestHeldElsewhere
 import de.jeanlucmakiola.calendula.domain.backup.latestLedgerKey
 import de.jeanlucmakiola.calendula.domain.backup.replacedLatestCopies
 import de.jeanlucmakiola.calendula.domain.backup.withLedgerEntry
@@ -210,21 +211,24 @@ class BackupWorker(
                     val landed = exporter.writeToFolder(folder, listing, latest, bytes)
                     // A provider that renamed it leaves a copy to clean up next
                     // run; the intended name stays ours only if it already was.
-                    val ownsLatest = landed == latest || latest in listing.files ||
-                        latest in ledger[latestKey].orEmpty()
+                    val ownsLatest = landed == latest || latest in ledger[latestKey].orEmpty()
                     val current = listOfNotNull(landed, latest.takeIf { ownsLatest })
-                    record(latestKey, plan.staleLatest + plan.handOff + current)
+                    // A hand-off stays on record only until its new owner claimed it.
+                    suspend fun recordLatest(stale: List<String>) = prefs.updateAutoBackupLedger(folder.toString()) {
+                        val pending = plan.handOff - it.latestHeldElsewhere(target.key)
+                        withLedgerEntry(it, latestKey, stale + pending + current, liveKeys)
+                    }
+                    recordLatest(plan.staleLatest)
                     if (landed == latest) landedLatest += target.key
                     val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
-                    record(latestKey, plan.staleLatest.filter { it in staleLeft } + plan.handOff + current)
+                    recordLatest(plan.staleLatest.filter { it in staleLeft })
                 } catch (e: Exception) {
                     Log.w(TAG, "Stable copy of one series failed", e)
                 }
             }
         }
         // A layout switch retires the other layout's copies once every new one is there.
-        val stableCopies = plans.count { it.latestName != null }
-        if (stableCopies > 0 && landedLatest.size == stableCopies) {
+        if (landedLatest.size == plans.size) {
             replacedLatestCopies(targets, prefs.autoBackupLedger.first(), existing).forEach { (key, names) ->
                 withContext(NonCancellable) {
                     val left = exporter.deleteFromFolder(listing, names)

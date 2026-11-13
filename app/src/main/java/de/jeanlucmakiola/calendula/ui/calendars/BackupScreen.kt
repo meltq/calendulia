@@ -119,6 +119,7 @@ fun BackupScreen(
     ) { uri -> uri?.let(viewModel::setAutoBackupFolder) }
     var showInterval by remember { mutableStateOf(false) }
     var showBackupCalendars by rememberSaveable { mutableStateOf(false) }
+    var selectionBefore by remember { mutableStateOf<BackupSelection?>(null) }
     var showKeep by rememberSaveable { mutableStateOf(false) }
 
     val backupFailedText = stringResource(R.string.calendars_backup_failed)
@@ -167,7 +168,10 @@ fun BackupScreen(
                 },
                 onExportPick = { showExportPicker = true },
                 onEditInterval = { showInterval = true },
-                onEditCalendars = { showBackupCalendars = true },
+                onEditCalendars = {
+                    selectionBefore = autoBackup.selection
+                    showBackupCalendars = true
+                },
                 onEditKeep = { showKeep = true },
             )
         }
@@ -190,7 +194,7 @@ fun BackupScreen(
                 onCheckedChange = viewModel::setAutoBackupCalendar,
                 onDismiss = {
                     showBackupCalendars = false
-                    viewModel.autoBackupCalendarsChosen()
+                    viewModel.autoBackupCalendarsChosen(selectionBefore ?: autoBackup.selection)
                 },
             )
         }
