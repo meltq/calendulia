@@ -27,6 +27,7 @@ class ReminderChannelPlanTest {
             existing = emptyList(),
             existingGroupIds = emptyList(),
             unnamed = "Unnamed",
+            description = DESC,
         )
         assertThat(plan.groups).hasSize(2)
         assertThat(plan.channels.map { it.id })
@@ -46,6 +47,7 @@ class ReminderChannelPlanTest {
             existing = emptyList(),
             existingGroupIds = emptyList(),
             unnamed = "Unnamed",
+            description = DESC,
         )
         assertThat(plan.groups).hasSize(1)
         assertThat(plan.groups.single().isLocal).isTrue()
@@ -62,6 +64,7 @@ class ReminderChannelPlanTest {
             existing = emptyList(),
             existingGroupIds = emptyList(),
             unnamed = "Unnamed",
+            description = DESC,
         )
         assertThat(plan.groups.filter { it.ambiguous }.map { it.accountType })
             .containsExactly("com.google", "bitfire.at.davdroid")
@@ -72,7 +75,7 @@ class ReminderChannelPlanTest {
     fun `stale reminder channels and groups go, foreign ones stay`() {
         val current = calendar(1, "me@example.org", "com.google")
         fun plan(calendars: List<CalendarSource>, existing: List<String> = emptyList(), groups: List<String> = emptyList()) =
-            planReminderChannels(calendars, existing.map { ExistingReminderChannel(it, "Cal ${it.last()}") }, groups, "Unnamed")
+            planReminderChannels(calendars, existing.map { ExistingReminderChannel(it, "Cal ${it.last()}", DESC) }, groups, "Unnamed", DESC)
         val keptGroup = plan(listOf(current)).groups.single().id
         val goneGroup = plan(listOf(calendar(9, "old", "com.google"))).groups.single().id
         val result = plan(
@@ -91,15 +94,22 @@ class ReminderChannelPlanTest {
                 calendar(1, "a", "com.google"),
                 calendar(2, "a", "com.google"),
                 calendar(3, "a", "com.google").copy(displayName = ""),
+                calendar(4, "a", "com.google"),
             ),
             existing = listOf(
-                ExistingReminderChannel(reminderChannelId(1), "Cal 1"),
-                ExistingReminderChannel(reminderChannelId(2), "Old name"),
+                ExistingReminderChannel(reminderChannelId(1), "Cal 1", DESC),
+                ExistingReminderChannel(reminderChannelId(4), "Cal 4", "Old description"),
+                ExistingReminderChannel(reminderChannelId(2), "Old name", DESC),
             ),
             existingGroupIds = emptyList(),
             unnamed = "Unnamed",
+            description = DESC,
         )
-        assertThat(plan.channelsToWrite.map { it.calendarId }).containsExactly(2L, 3L)
-        assertThat(plan.channelsToWrite.last().name).isEqualTo("Unnamed")
+        assertThat(plan.channelsToWrite.map { it.calendarId }).containsExactly(2L, 3L, 4L)
+        assertThat(plan.channelsToWrite.single { it.calendarId == 3L }.name).isEqualTo("Unnamed")
+    }
+
+    private companion object {
+        const val DESC = "Reminders"
     }
 }

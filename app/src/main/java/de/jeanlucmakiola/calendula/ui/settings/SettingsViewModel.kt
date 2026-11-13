@@ -46,6 +46,7 @@ import de.jeanlucmakiola.calendula.ui.common.TimelineScale
 import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
 import de.jeanlucmakiola.calendula.ui.theme.AppFontSettings
 import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -364,8 +365,26 @@ class SettingsViewModel @Inject constructor(
         save { setCalendarRemindersEnabled(calendarId, enabled) }
 
     /** [calendarId]'s reminder channel, created if needed so its system settings can open (#340). */
-    suspend fun reminderChannelFor(calendarId: Long): String? =
-        withContext(io) { runCatching { reminderChannels.channelFor(calendarId) }.getOrNull() }
+    suspend fun reminderChannelFor(calendarId: Long): String? = withContext(io) {
+        try {
+            reminderChannels.channelFor(calendarId)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    /** Create the per-calendar channels before showing the app's channel list, even with reminders off. */
+    suspend fun syncReminderChannels() = withContext(io) {
+        try {
+            reminderChannels.sync()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Unit
+        }
+    }
 
     fun setAutofocusEventTitle(enabled: Boolean) = save { setAutofocusEventTitle(enabled) }
 

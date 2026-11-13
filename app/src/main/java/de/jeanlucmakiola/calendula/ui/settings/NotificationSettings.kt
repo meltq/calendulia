@@ -114,7 +114,12 @@ internal fun NotificationsScreen(
             summary = stringResource(R.string.settings_notification_sound_hint),
             position = Position.Middle,
             trailing = { ExternalLinkIcon() },
-            onClick = { context.openNotificationSettings() },
+            onClick = {
+                scope.launch {
+                    viewModel.syncReminderChannels()
+                    context.openNotificationSettings()
+                }
+            },
         )
         GroupedRow(
             title = stringResource(R.string.settings_default_reminder),

@@ -8,7 +8,9 @@ import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
+import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.ui.common.sourceAppLabel
+import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -28,32 +30,61 @@ class ReminderChannels @Inject constructor(
     private val manager: NotificationManager
         get() = context.getSystemService(NotificationManager::class.java)
 
-    /** Bring the channels in line with the provider's calendars. */
+    /** What the last [sync] saw, so an unchanged provider costs no channel writes. */
+    @Volatile
+    private var lastSync: Any? = null
+
+    /**
+     * Bring the channels in line with the provider's calendars. A calendar that
+     * syncs no events gets none, and an empty snapshot changes nothing: that is
+     * a provider hiccup far more often than every calendar gone at once.
+     */
     fun sync() {
+        val calendars = calendarDataSource.calendars().filter { it.isLocal || it.syncsEvents }
+        if (calendars.isEmpty()) return
         val manager = manager
         val existing = manager.notificationChannels
-        val plan = plan(existing)
+        val key = syncKey(calendars, existing)
+        if (key == lastSync && existing.none { it.id == LEGACY_REMINDER_CHANNEL_ID }) return
+        val groups = manager.notificationChannelGroups
+        val plan = plan(calendars, existing, groups.map { it.id })
         plan.staleChannelIds.forEach(manager::deleteNotificationChannel)
         plan.staleGroupIds.forEach(manager::deleteNotificationChannelGroup)
-        val groupNames = manager.notificationChannelGroups.associate { it.id to it.name?.toString() }
+        val groupNames = groups.associate { it.id to it.name?.toString() }
         write(
             groups = plan.groups.filter { groupNames[it.id] != groupLabel(it) },
             channels = plan.channelsToWrite,
             existing = existing,
         )
-        if (plan.channels.isNotEmpty()) retireLegacyChannel()
+        retireLegacyChannel()
+        lastSync = syncKey(calendars, manager.notificationChannels)
     }
+
+    private fun syncKey(calendars: List<CalendarSource>, channels: List<NotificationChannel>): Any = listOf(
+        calendars.map { listOf(it.id, it.displayName, it.accountName, it.accountType, it.isLocal) },
+        Locale.getDefault(),
+        channels.mapTo(HashSet()) { it.id },
+    )
 
     /**
      * The channel to post [calendarId]'s reminder on, created first if a sync
-     * has not got to it yet. Null when the calendar no longer exists.
+     * has not got to it yet. Null when the calendar no longer exists. Should the
+     * calendar lookup fail, the channel is still created, plainly named and
+     * ungrouped, for the next sync to name and file — a reminder is never lost
+     * to its channel.
      */
     fun channelFor(calendarId: Long): String? {
         val id = reminderChannelId(calendarId)
         val manager = manager
         if (manager.getNotificationChannel(id) != null) return id
         val existing = manager.notificationChannels
-        val plan = plan(existing)
+        val plan = try {
+            plan(calendarDataSource.calendars(), existing, emptyList())
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not look up calendar $calendarId for its channel", e)
+            write(emptyList(), listOf(ReminderChannelSpec(id, calendarId, context.getString(R.string.reminder_channel_name), null)), existing)
+            return id
+        }
         val spec = plan.channels.firstOrNull { it.calendarId == calendarId } ?: return null
         val knownGroups = manager.notificationChannelGroups.mapTo(HashSet()) { it.id }
         write(
@@ -64,11 +95,16 @@ class ReminderChannels @Inject constructor(
         return id
     }
 
-    private fun plan(existing: List<NotificationChannel>): ReminderChannelPlan = planReminderChannels(
-        calendars = calendarDataSource.calendars(),
-        existing = existing.map { ExistingReminderChannel(it.id, it.name.toString()) },
-        existingGroupIds = manager.notificationChannelGroups.map { it.id },
+    private fun plan(
+        calendars: List<CalendarSource>,
+        existing: List<NotificationChannel>,
+        existingGroupIds: List<String>,
+    ): ReminderChannelPlan = planReminderChannels(
+        calendars = calendars,
+        existing = existing.map { ExistingReminderChannel(it.id, it.name.toString(), it.description) },
+        existingGroupIds = existingGroupIds,
         unnamed = context.getString(R.string.calendar_unnamed),
+        description = context.getString(R.string.reminder_channel_description),
     )
 
     private fun write(
@@ -94,7 +130,7 @@ class ReminderChannels @Inject constructor(
                     current?.importance ?: template?.importance ?: NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
                     description = context.getString(R.string.reminder_channel_description)
-                    group = spec.groupId
+                    spec.groupId?.let { group = it }
                     if (current == null && template != null) inheritFrom(template)
                 }
             },
@@ -114,6 +150,8 @@ class ReminderChannels @Inject constructor(
         lightColor = template.lightColor
         lockscreenVisibility = template.lockscreenVisibility
         setShowBadge(template.canShowBadge())
+        // Only honoured with Do Not Disturb access, so usually left to the user.
+        setBypassDnd(template.canBypassDnd())
     }
 
     /**

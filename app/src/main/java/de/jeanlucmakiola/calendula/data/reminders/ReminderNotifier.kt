@@ -65,7 +65,12 @@ class ReminderNotifier @Inject constructor(
     /** Post [alert], unless its calendar is silenced or gone. */
     suspend fun post(alert: ReminderAlert) {
         if (isSilenced(alert.calendarId)) return
-        val channelId = channels.channelFor(alert.calendarId) ?: return
+        val channelId = try {
+            channels.channelFor(alert.calendarId)
+        } catch (e: Exception) {
+            Log.w(TAG, "No channel for the reminder of event ${alert.eventId}", e)
+            null
+        } ?: return
         val title = displayTitle(alert)
         val is24Hour = settingsPrefs.timeFormat.first()
             .is24Hour(android.text.format.DateFormat.is24HourFormat(context))

@@ -90,7 +90,10 @@ class ReminderScanner @Inject constructor(
         val lookahead = reminderQueryHorizon(LOOKAHEAD_MILLIS, source.longestReminderMinutes())
         // Reach into the past too: an all-day "at time of event" encodes to a
         // negative offset, and a catch-up pass needs the occurrences it missed.
+        // Calendars muted in-app (#272) plan nothing, so they arm no wake-ups.
+        val muted = settingsPrefs.mutedReminderCalendarIds.first()
         val occurrences = source.occurrences(now - PAST_WINDOW_MILLIS, now + lookahead)
+            .filter { it.calendarId !in muted }
         val planned = planReminders(
             instances = occurrences,
             minutesByEvent = source.reminderMinutes(occurrences.map { it.eventId })
@@ -127,8 +130,6 @@ class ReminderScanner @Inject constructor(
     private fun syncChannels() {
         try {
             channels.sync()
-        } catch (e: SecurityException) {
-            throw e
         } catch (e: Exception) {
             Log.w(TAG, "Reminder channel sync failed", e)
         }

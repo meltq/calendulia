@@ -35,18 +35,18 @@ data class ReminderChannelGroupSpec(
 data class ReminderChannelSpec(
     val id: String,
     val calendarId: Long,
-    /** The calendar's display name; blank when it has none. */
     val name: String,
-    val groupId: String,
+    /** Null only for a channel created before its calendar could be looked up. */
+    val groupId: String?,
 )
 
 /** What a channel already looks like in the system, as far as the plan compares it. */
-data class ExistingReminderChannel(val id: String, val name: String)
+data class ExistingReminderChannel(val id: String, val name: String, val description: String?)
 
 data class ReminderChannelPlan(
     val groups: List<ReminderChannelGroupSpec>,
     val channels: List<ReminderChannelSpec>,
-    /** The [channels] that are missing or whose name changed. */
+    /** The [channels] that are missing, or whose name or (localized) description changed. */
     val channelsToWrite: List<ReminderChannelSpec>,
     val staleChannelIds: List<String>,
     val staleGroupIds: List<String>,
@@ -64,6 +64,7 @@ fun planReminderChannels(
     existing: Collection<ExistingReminderChannel>,
     existingGroupIds: Collection<String>,
     unnamed: String,
+    description: String,
 ): ReminderChannelPlan {
     val (local, synced) = calendars.partition { it.isLocal }
     val groups = buildList {
@@ -98,7 +99,7 @@ fun planReminderChannels(
         channels = channels,
         channelsToWrite = channels.filter { spec ->
             val current = existingById[spec.id]
-            current == null || current.name != spec.name
+            current == null || current.name != spec.name || current.description != description
         },
         staleChannelIds = existingById.keys.filter { isReminderChannelId(it) && it !in wantedChannels },
         staleGroupIds = existingGroupIds.filter { isReminderGroupId(it) && it !in wantedGroups },

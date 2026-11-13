@@ -96,7 +96,7 @@ data class SettingsUiState(
     val perCalendarReminderOverride: Map<Long, List<Int>> = emptyMap(),
     /** Per-calendar overrides of [defaultAllDayReminderMinutes] for all-day events. */
     val perCalendarAllDayReminderOverride: Map<Long, List<Int>> = emptyMap(),
-    /** Writable calendars, shown as per-calendar reminder-override rows. */
+    /** Switched-on calendars you can edit: the per-calendar duration and reminder-override rows. */
     val writableCalendars: List<CalendarSource> = emptyList(),
     /** Switched-on calendars, each with its own notification switch and channel (#145, #272). */
     val reminderCalendars: List<CalendarSource> = emptyList(),
