@@ -98,6 +98,10 @@ data class SettingsUiState(
     val perCalendarAllDayReminderOverride: Map<Long, List<Int>> = emptyMap(),
     /** Writable calendars, shown as per-calendar reminder-override rows. */
     val writableCalendars: List<CalendarSource> = emptyList(),
+    /** Switched-on calendars, each with its own notification switch and channel (#145, #272). */
+    val reminderCalendars: List<CalendarSource> = emptyList(),
+    /** Calendars whose reminders Calendula doesn't post (#272). */
+    val mutedReminderCalendarIds: Set<Long> = emptySet(),
     /**
      * Whether the event-colour picker is offered on calendars that publish no
      * colour palette (the colour may then not survive their next sync).

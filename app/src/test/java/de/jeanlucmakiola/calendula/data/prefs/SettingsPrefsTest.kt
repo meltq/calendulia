@@ -602,6 +602,19 @@ class SettingsPrefsTest {
     }
 
     @Test
+    fun `calendar notifications default on and toggle per calendar`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val prefs = testSettings(tempDir)
+        assertThat(prefs.mutedReminderCalendarIds.first()).isEmpty()
+        prefs.setCalendarRemindersEnabled(7L, false)
+        prefs.setCalendarRemindersEnabled(9L, false)
+        assertThat(prefs.mutedReminderCalendarIds.first()).containsExactly(7L, 9L)
+        prefs.setCalendarRemindersEnabled(7L, true)
+        assertThat(prefs.mutedReminderCalendarIds.first()).containsExactly(9L)
+    }
+
+    @Test
     fun `garbage per-calendar duration entries are dropped, the rest survive`(
         @TempDir tempDir: Path,
     ) = runTest {

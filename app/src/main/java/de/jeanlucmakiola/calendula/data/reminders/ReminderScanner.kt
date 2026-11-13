@@ -14,6 +14,7 @@ import de.jeanlucmakiola.calendula.domain.reminders.reminderWatermark
 import de.jeanlucmakiola.calendula.domain.reminders.scheduleReminders
 import de.jeanlucmakiola.floret.android.hasPermission
 import de.jeanlucmakiola.floret.di.IoDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.SupervisorJob
@@ -43,6 +44,7 @@ class ReminderScanner @Inject constructor(
     private val source: ReminderInstanceSource,
     private val calendarDataSource: CalendarDataSource,
     private val notifier: ReminderNotifier,
+    private val channels: ReminderChannels,
     private val snoozes: ReminderSnoozeScheduler,
     private val alarms: ReminderAlarmScheduler,
     private val state: ReminderStatePrefs,
@@ -76,6 +78,7 @@ class ReminderScanner @Inject constructor(
     private suspend fun runScan() {
         val now = System.currentTimeMillis()
         if (!hasReadCalendar()) return
+        syncChannels()
 
         if (!settingsPrefs.remindersEnabled.first()) {
             // Reminders off: drop the wake-up, but keep the watermark moving
@@ -115,6 +118,22 @@ class ReminderScanner @Inject constructor(
         // doesn't build a backlog.
         state.setLastScanMillis(now)
         alarms.scheduleScan(schedule.nextAlarmMillis)
+    }
+
+    /**
+     * Every trigger that can add, rename or drop a calendar reaches a scan, so
+     * the channels are kept in step here. A failure never costs the reminders.
+     */
+    private suspend fun syncChannels() {
+        try {
+            channels.sync()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: SecurityException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Reminder channel sync failed", e)
+        }
     }
 
     private fun hasReadCalendar(): Boolean = context.hasPermission(Manifest.permission.READ_CALENDAR)

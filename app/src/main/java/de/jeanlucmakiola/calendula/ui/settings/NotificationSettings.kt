@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -21,6 +22,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -31,6 +33,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.DurationPicker
 import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
@@ -39,6 +42,7 @@ import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.calendula.ui.common.durationLabel
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.android.hasPermission
+import de.jeanlucmakiola.floret.android.openNotificationSettings
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.ExpandIcon
 import de.jeanlucmakiola.floret.components.GroupedRow
@@ -50,6 +54,7 @@ import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.floret.reminders.minutesOrEmpty
 import de.jeanlucmakiola.floret.reminders.reminderOverrideFor
+import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalTime
 
 /**
@@ -86,6 +91,10 @@ internal fun NotificationsScreen(
     var overrideDialog by remember { mutableStateOf<OverrideTarget?>(null) }
     var calendarSectionExpanded by remember { mutableStateOf(false) }
     var expandedCalendars by remember { mutableStateOf(emptySet<Long>()) }
+    val scope = rememberCoroutineScope()
+    val openCalendarSound: (Long) -> Unit = { calendarId ->
+        scope.launch { context.openNotificationSettings(viewModel.reminderChannelFor(calendarId)) }
+    }
 
     CollapsingScaffold(
         title = stringResource(R.string.settings_section_notifications),
@@ -99,6 +108,13 @@ internal fun NotificationsScreen(
             onCheckedChange = toggleReminders,
             summary = stringResource(R.string.settings_reminders_hint),
             position = Position.Top,
+        )
+        GroupedRow(
+            title = stringResource(R.string.settings_notification_sound),
+            summary = stringResource(R.string.settings_notification_sound_hint),
+            position = Position.Middle,
+            trailing = { ExternalLinkIcon() },
+            onClick = { context.openNotificationSettings() },
         )
         GroupedRow(
             title = stringResource(R.string.settings_default_reminder),
@@ -149,10 +165,10 @@ internal fun NotificationsScreen(
             onClick = { showSnooze = true },
         )
 
-        // Per-calendar overrides, folded behind one header. Each writable
-        // calendar may keep, drop or replace the global default, separately for
-        // timed and all-day events.
-        if (state.writableCalendars.isNotEmpty()) {
+        // Per-calendar settings, folded behind one header: every switched-on
+        // calendar gets its notification switch and sound (#145, #272); the ones
+        // you can edit also keep, drop or replace the default reminders.
+        if (state.reminderCalendars.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
             GroupedRow(
                 title = stringResource(R.string.settings_calendar_reminders_title),
@@ -167,30 +183,13 @@ internal fun NotificationsScreen(
                 exit = collapseExit(),
             ) {
                 Column {
-                    state.writableCalendars.forEach { calendar ->
+                    state.reminderCalendars.forEach { calendar ->
                         Spacer(Modifier.height(16.dp))
-                        // Special-dates calendars own their reminders in their
-                        // own section — link there instead.
-                        if (calendar.id in state.managedCalendarIds) {
-                            GroupedRow(
-                                title = calendar.displayName.orUnnamed(),
-                                summary = stringResource(R.string.settings_calendar_reminders_managed_hint),
-                                position = Position.Alone,
-                                leading = { CalendarColorChip(calendar.color) },
-                                trailing = {
-                                    Icon(
-                                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                },
-                                onClick = onOpenSpecialDates,
-                            )
-                            return@forEach
-                        }
                         val expanded = calendar.id in expandedCalendars
+                        val notifying = calendar.id !in state.mutedReminderCalendarIds
                         GroupedRow(
                             title = calendar.displayName.orUnnamed(),
+                            summary = if (notifying) null else stringResource(R.string.settings_calendar_notifications_off),
                             position = if (expanded) Position.Top else Position.Alone,
                             leading = { CalendarColorChip(calendar.color) },
                             trailing = { ExpandIcon(expanded) },
@@ -207,22 +206,15 @@ internal fun NotificationsScreen(
                             enter = expandEnter(),
                             exit = collapseExit(),
                         ) {
-                            Column {
-                                val timed = state.perCalendarReminderOverride.reminderOverrideFor(calendar.id)
-                                GroupedRow(
-                                    title = stringResource(R.string.settings_default_reminder),
-                                    summary = calendarOverrideSummary(timed, state.defaultReminderMinutes),
-                                    position = Position.Middle,
-                                    onClick = { overrideDialog = OverrideTarget(calendar.id, isAllDay = false) },
-                                )
-                                val allDay = state.perCalendarAllDayReminderOverride.reminderOverrideFor(calendar.id)
-                                GroupedRow(
-                                    title = stringResource(R.string.settings_default_reminder_allday),
-                                    summary = calendarOverrideSummary(allDay, state.defaultAllDayReminderMinutes),
-                                    position = Position.Bottom,
-                                    onClick = { overrideDialog = OverrideTarget(calendar.id, isAllDay = true) },
-                                )
-                            }
+                            CalendarNotificationRows(
+                                calendar = calendar,
+                                state = state,
+                                notifying = notifying,
+                                onSetNotifying = { viewModel.setCalendarRemindersEnabled(calendar.id, it) },
+                                onOpenSound = { openCalendarSound(calendar.id) },
+                                onOpenSpecialDates = onOpenSpecialDates,
+                                onEditOverride = { overrideDialog = it },
+                            )
                         }
                     }
                 }
@@ -307,6 +299,80 @@ internal fun NotificationsScreen(
             },
         )
     }
+}
+
+/**
+ * One calendar's expanded rows: its notification switch and channel deep-link
+ * for every calendar, then the default-reminder overrides where it takes them —
+ * or, for a special-dates calendar, a link to the section that owns them.
+ */
+@Composable
+private fun CalendarNotificationRows(
+    calendar: CalendarSource,
+    state: SettingsUiState,
+    notifying: Boolean,
+    onSetNotifying: (Boolean) -> Unit,
+    onOpenSound: () -> Unit,
+    onOpenSpecialDates: () -> Unit,
+    onEditOverride: (OverrideTarget) -> Unit,
+) {
+    val managed = calendar.id in state.managedCalendarIds
+    val takesOverrides = calendar.canModifyContents && !managed
+    Column {
+        GroupedSwitchRow(
+            title = stringResource(R.string.settings_calendar_notifications),
+            checked = notifying,
+            onCheckedChange = onSetNotifying,
+            summary = stringResource(R.string.settings_calendar_notifications_hint),
+            position = Position.Middle,
+        )
+        GroupedRow(
+            title = stringResource(R.string.settings_notification_sound),
+            summary = stringResource(R.string.settings_calendar_notification_sound_hint),
+            position = if (managed || takesOverrides) Position.Middle else Position.Bottom,
+            trailing = { ExternalLinkIcon() },
+            onClick = onOpenSound,
+        )
+        if (managed) {
+            GroupedRow(
+                title = stringResource(R.string.settings_default_reminder_allday),
+                summary = stringResource(R.string.settings_calendar_reminders_managed_hint),
+                position = Position.Bottom,
+                trailing = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                onClick = onOpenSpecialDates,
+            )
+        } else if (takesOverrides) {
+            val timed = state.perCalendarReminderOverride.reminderOverrideFor(calendar.id)
+            GroupedRow(
+                title = stringResource(R.string.settings_default_reminder),
+                summary = calendarOverrideSummary(timed, state.defaultReminderMinutes),
+                position = Position.Middle,
+                onClick = { onEditOverride(OverrideTarget(calendar.id, isAllDay = false)) },
+            )
+            val allDay = state.perCalendarAllDayReminderOverride.reminderOverrideFor(calendar.id)
+            GroupedRow(
+                title = stringResource(R.string.settings_default_reminder_allday),
+                summary = calendarOverrideSummary(allDay, state.defaultAllDayReminderMinutes),
+                position = Position.Bottom,
+                onClick = { onEditOverride(OverrideTarget(calendar.id, isAllDay = true)) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ExternalLinkIcon() {
+    Icon(
+        imageVector = Icons.AutoMirrored.Filled.OpenInNew,
+        contentDescription = null,
+        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+    )
 }
 
 /** Which calendar + event kind a per-calendar reminder-override dialog targets. */

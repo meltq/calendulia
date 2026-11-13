@@ -33,6 +33,7 @@ import de.jeanlucmakiola.calendula.data.prefs.SpecialDatesStalledReason
 import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.data.prefs.TimeFormatPref
 import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
+import de.jeanlucmakiola.calendula.data.reminders.ReminderChannels
 import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
@@ -67,6 +68,7 @@ class SettingsViewModel @Inject constructor(
     specialDatesSpec: SpecialDatesCalendarSpec,
     private val launcherNameManager: LauncherNameManager,
     private val reminderScanner: ReminderScanner,
+    private val reminderChannels: ReminderChannels,
     @IoDispatcher private val io: CoroutineDispatcher,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
@@ -74,16 +76,15 @@ class SettingsViewModel @Inject constructor(
     private val dynamicColorAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     /**
-     * Writable calendars that are switched on — the only ones that take a
-     * per-calendar reminder override, since a switched-off one plans no
-     * reminders at all (#75).
+     * Calendars that are switched on — the only ones that plan reminders at
+     * all (#75), so the only ones with notification settings.
      */
-    private val writableCalendars: Flow<List<CalendarSource>> = repository.calendars()
-        .map { calendars -> calendars.filter { it.canModifyContents && it.isVisibleInSystem } }
+    private val visibleCalendars: Flow<List<CalendarSource>> = repository.calendars()
+        .map { calendars -> calendars.filter { it.isVisibleInSystem } }
         .catch { emit(emptyList()) }
 
     val state: StateFlow<SettingsUiState> =
-        combine(prefs.data, writableCalendars) { stored, calendars -> stored.toUiState(calendars) }
+        combine(prefs.data, visibleCalendars) { stored, calendars -> stored.toUiState(calendars) }
             .stateWhileSubscribed(
                 scope = viewModelScope,
                 initialValue = SettingsUiState(dynamicColorAvailable = dynamicColorAvailable),
@@ -125,7 +126,9 @@ class SettingsViewModel @Inject constructor(
         snoozeMinutes = this[SettingsKeys.snoozeMinutes],
         perCalendarReminderOverride = this[SettingsKeys.perCalendarReminderOverride],
         perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
-        writableCalendars = calendars,
+        writableCalendars = calendars.filter { it.canModifyContents },
+        reminderCalendars = calendars,
+        mutedReminderCalendarIds = this[SettingsKeys.mutedReminderCalendarIds],
         allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
         managedCalendarIds = specialDatesCalendars.values.toSet(),
     )
@@ -356,6 +359,13 @@ class SettingsViewModel @Inject constructor(
             reminderScanner.scan()
         }
     }
+
+    fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) =
+        save { setCalendarRemindersEnabled(calendarId, enabled) }
+
+    /** [calendarId]'s reminder channel, created if needed so its system settings can open (#340). */
+    suspend fun reminderChannelFor(calendarId: Long): String? =
+        withContext(io) { runCatching { reminderChannels.channelFor(calendarId) }.getOrNull() }
 
     fun setAutofocusEventTitle(enabled: Boolean) = save { setAutofocusEventTitle(enabled) }
 

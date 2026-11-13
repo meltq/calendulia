@@ -81,7 +81,7 @@ class CalendarPrefs @Inject constructor(
 }
 
 /** A comma-joined id set; non-numeric tokens are dropped, and an empty set removes the key. */
-private fun idSetPref(name: String): Pref<Set<Long>> = nullableStringPref(name).map(
+internal fun idSetPref(name: String): Pref<Set<Long>> = nullableStringPref(name).map(
     { stored -> stored.orEmpty().split(',').mapNotNull { it.trim().toLongOrNull() }.toSet() },
     { ids -> if (ids.isEmpty()) null else ids.sorted().joinToString(",") },
 )
