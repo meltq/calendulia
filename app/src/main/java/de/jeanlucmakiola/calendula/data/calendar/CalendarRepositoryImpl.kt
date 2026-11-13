@@ -110,8 +110,8 @@ class CalendarRepositoryImpl @Inject constructor(
     private suspend fun syncAccountsOf(calendarIds: suspend () -> Collection<Long?>): Set<SyncAccount> =
         try {
             calendarIds().filterNotNull().distinct()
-                .mapNotNull { dataSource.calendarAccount(it) }
-                .filterTo(linkedSetOf()) { it.isSyncable }
+                .mapNotNull { accountOf(it) }
+                .filterTo(linkedSetOf()) { canSync(it) }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -119,19 +119,39 @@ class CalendarRepositoryImpl @Inject constructor(
             emptySet()
         }
 
-    private fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean = try {
-        syncRequester.requestSync(account, userInitiated)
+    /** From the shared per-tick read; a calendar newer than it is read on its own. */
+    private suspend fun accountOf(calendarId: Long): SyncAccount? =
+        calendarsSnapshot().firstOrNull { it.id == calendarId }
+            ?.let { SyncAccount(it.accountName, it.accountType) }
+            ?: dataSource.calendarAccount(calendarId)
+
+    private fun canSync(account: SyncAccount): Boolean = account.isSyncable && try {
+        syncRequester.hasAdapter(account.type)
     } catch (e: Exception) {
-        Log.w(TAG, "Sync request failed", e)
+        Log.w(TAG, "Sync adapters unreadable", e)
         false
     }
 
-    private fun eventCalendar(eventId: Long): suspend () -> Collection<Long?> =
-        { listOf(dataSource.eventCalendarId(eventId)) }
+    private fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean = try {
+        syncRequester.requestSync(account, userInitiated)
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "Sync request refused", e)
+        false
+    }
+
+    private fun eventCalendar(eventId: Long, original: EventForm? = null): suspend () -> Collection<Long?> =
+        { listOf(original?.calendarId ?: dataSource.eventCalendarId(eventId)) }
+
+    private fun syncTargets(calendars: List<CalendarSource>): Set<SyncAccount> =
+        calendars.syncAccounts().filterTo(linkedSetOf(), ::canSync)
+
+    override val canRequestSync: Flow<Boolean>
+        get() = calendars().map { syncTargets(it).isNotEmpty() }.distinctUntilChanged().flowOn(io)
 
     override suspend fun requestSync(): SyncRequestResult = withContext(io) {
         val accounts = try {
-            dataSource.calendars().syncAccounts()
+            syncTargets(calendars().first())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
@@ -363,7 +383,7 @@ class CalendarRepositoryImpl @Inject constructor(
         eventId: Long,
         original: EventForm,
         updated: EventForm,
-    ) = write({ listOf(dataSource.eventCalendarId(eventId), updated.calendarId) }) {
+    ) = write({ listOf(original.calendarId ?: dataSource.eventCalendarId(eventId), updated.calendarId) }) {
         dataSource.updateEvent(eventId, original, updated, allDayReminderTimeMinutes())
     }
 
@@ -376,7 +396,7 @@ class CalendarRepositoryImpl @Inject constructor(
         targetCalendarId: Long,
         original: EventForm,
         updated: EventForm,
-    ): Long = write({ listOf(dataSource.eventCalendarId(eventId), targetCalendarId) }) {
+    ): Long = write({ listOf(original.calendarId ?: dataSource.eventCalendarId(eventId), targetCalendarId) }) {
         dataSource.moveEvent(
             eventId, targetCalendarId, original, updated, allDayReminderTimeMinutes(),
         )
@@ -387,7 +407,7 @@ class CalendarRepositoryImpl @Inject constructor(
         beginMillis: Long,
         original: EventForm,
         form: EventForm,
-    ): Long = write(eventCalendar(eventId)) {
+    ): Long = write(eventCalendar(eventId, original)) {
         dataSource.updateOccurrence(
             eventId, beginMillis, original, form, allDayReminderTimeMinutes(),
         )
@@ -398,7 +418,7 @@ class CalendarRepositoryImpl @Inject constructor(
         beginMillis: Long,
         original: EventForm,
         updated: EventForm,
-    ): Long = write(eventCalendar(eventId)) {
+    ): Long = write(eventCalendar(eventId, original)) {
         dataSource.updateEventFromOccurrence(
             eventId, beginMillis, original, updated, allDayReminderTimeMinutes(),
         )

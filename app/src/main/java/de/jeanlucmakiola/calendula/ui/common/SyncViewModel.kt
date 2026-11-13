@@ -7,7 +7,6 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.SyncRequestResult
-import de.jeanlucmakiola.calendula.data.calendar.syncAccounts
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.async
@@ -15,8 +14,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
@@ -33,8 +31,7 @@ class SyncViewModel @Inject constructor(
 ) : ViewModel() {
 
     /** Whether any visible calendar has a sync adapter behind it. */
-    val available: StateFlow<Boolean> = repository.calendars()
-        .map { it.syncAccounts().isNotEmpty() }
+    val available: StateFlow<Boolean> = repository.canRequestSync
         .catch { emit(false) }
         .stateWhileSubscribed(scope = viewModelScope, initialValue = false)
 
@@ -53,7 +50,7 @@ class SyncViewModel @Inject constructor(
             try {
                 // Listening before asking, so a sync that lands at once still counts.
                 val settled = async(start = CoroutineStart.UNDISPATCHED) {
-                    withTimeoutOrNull(SETTLE_MILLIS) { repository.providerChanges.first() }
+                    withTimeoutOrNull(SETTLE_MILLIS) { repository.providerChanges.firstOrNull() }
                 }
                 val outcome = repository.requestSync()
                 _result.value = outcome

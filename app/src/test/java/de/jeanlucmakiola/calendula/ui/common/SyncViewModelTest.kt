@@ -6,7 +6,10 @@ import de.jeanlucmakiola.calendula.RecordingSyncRequester
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
 import de.jeanlucmakiola.calendula.data.calendar.SyncRequestResult
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.testPrefs
 import de.jeanlucmakiola.calendula.testRepository
+import de.jeanlucmakiola.calendula.testSettings
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceTimeBy
@@ -29,7 +32,13 @@ class SyncViewModelTest {
     private fun viewModel(dir: Path, sync: RecordingSyncRequester = RecordingSyncRequester()):
         Pair<SyncViewModel, FakeCalendarDataSource> {
         val source = FakeCalendarDataSource().apply { calendarsResult = listOf(synced) }
-        return SyncViewModel(testRepository(source, dir, dispatcher, syncRequester = sync)) to source
+        val repo = testRepository(
+            source, dir, dispatcher,
+            prefs = testPrefs(dir, CoroutineScope(dispatcher)),
+            settings = testSettings(dir, CoroutineScope(dispatcher)),
+            syncRequester = sync,
+        )
+        return SyncViewModel(repo) to source
     }
 
     @Test

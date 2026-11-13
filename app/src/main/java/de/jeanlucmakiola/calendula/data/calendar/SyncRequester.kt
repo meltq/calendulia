@@ -4,7 +4,6 @@ import android.accounts.Account
 import android.content.ContentResolver
 import android.os.Bundle
 import android.provider.CalendarContract
-import android.util.Log
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,16 +20,24 @@ data class SyncAccount(val name: String, val type: String) {
  * itself stays the adapter's job; this only schedules it.
  */
 interface SyncRequester {
+    /** Whether a calendar sync adapter is installed for [accountType]; without one a request does nothing. */
+    fun hasAdapter(accountType: String): Boolean
+
     /**
-     * Returns whether the request reached the system. [userInitiated] marks it
-     * manual, which also overrides master-sync-off — only for a user's tap.
+     * Schedule a sync of [account]; may throw if the system refuses. [userInitiated]
+     * marks it manual, which also overrides master-sync-off — only for a user's tap.
      */
-    fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean
+    fun requestSync(account: SyncAccount, userInitiated: Boolean)
 }
 
 @Singleton
 class AndroidSyncRequester @Inject constructor() : SyncRequester {
-    override fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean = try {
+    override fun hasAdapter(accountType: String): Boolean =
+        ContentResolver.getSyncAdapterTypes().any {
+            it.authority == CalendarContract.AUTHORITY && it.accountType == accountType
+        }
+
+    override fun requestSync(account: SyncAccount, userInitiated: Boolean) {
         val extras = Bundle().apply {
             putBoolean(ContentResolver.SYNC_EXTRAS_EXPEDITED, true)
             if (userInitiated) putBoolean(ContentResolver.SYNC_EXTRAS_MANUAL, true)
@@ -40,16 +47,12 @@ class AndroidSyncRequester @Inject constructor() : SyncRequester {
             CalendarContract.AUTHORITY,
             extras,
         )
-        true
-    } catch (e: Exception) {
-        Log.w("SyncRequester", "Sync request refused", e)
-        false
     }
 }
 
-/** The distinct accounts behind the visible, synced calendars — what a manual refresh asks. */
+/** The distinct non-local accounts behind the visible calendars — what a manual refresh asks. */
 fun List<CalendarSource>.syncAccounts(): Set<SyncAccount> =
-    filter { !it.isLocal && it.isVisibleInSystem }
+    filter { it.isVisibleInSystem }
         .map { SyncAccount(it.accountName, it.accountType) }
         .filterTo(linkedSetOf()) { it.isSyncable }
 

@@ -9,6 +9,7 @@ import de.jeanlucmakiola.calendula.domain.FormTime
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import de.jeanlucmakiola.calendula.testRepository
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import kotlinx.datetime.LocalDate
 import kotlinx.datetime.LocalDateTime
@@ -135,10 +136,7 @@ class SyncNudgeTest {
 
     @Test
     fun `a throwing requester never fails the save`(@TempDir dir: Path) = runTest {
-        val throwing = object : SyncRequester {
-            override fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean =
-                throw SecurityException("no")
-        }
+        val throwing = RecordingSyncRequester(accepts = false)
         val source = fake().apply { nextInsertId = 77L }
         val repo = testRepository(source, dir, Dispatchers.Unconfined, syncRequester = throwing)
 
@@ -186,5 +184,31 @@ class SyncNudgeTest {
         )
 
         assertThat(calendars.syncAccounts()).containsExactly(dav)
+    }
+
+    @Test
+    fun `accounts without a calendar sync adapter are never asked`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(adapterTypes = setOf(dav.type))
+        val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        repo.createEvent(form(3L))
+        assertThat(sync.requests).isEmpty()
+
+        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
+        assertThat(sync.requests).containsExactly(Request(dav, true))
+    }
+
+    @Test
+    fun `canRequestSync needs a visible calendar with an adapter`(@TempDir dir: Path) = runTest {
+        val sync = RecordingSyncRequester(adapterTypes = setOf(google.type))
+        val source = fake().apply {
+            calendarsResult = listOf(cal(1L, dav), cal(3L, google, visible = false), cal(4L, local))
+        }
+        val repo = testRepository(source, dir, Dispatchers.Unconfined, syncRequester = sync)
+
+        assertThat(repo.canRequestSync.first()).isFalse()
+
+        sync.adapterTypes = setOf(dav.type)
+        assertThat(repo.canRequestSync.first()).isTrue()
     }
 }

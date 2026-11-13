@@ -599,13 +599,15 @@ fun CalendarHost(
                         onOpenSettings()
                         switchScope.launch { drawerState.close() }
                     },
-                    sync = DrawerSync(
-                        inFlight = syncInFlight,
-                        onSync = {
-                            sync.requestSync()
-                            switchScope.launch { drawerState.close() }
-                        },
-                    ).takeIf { syncAvailable },
+                    sync = remember(syncAvailable, syncInFlight) {
+                        DrawerSync(
+                            inFlight = syncInFlight,
+                            onSync = {
+                                sync.requestSync()
+                                switchScope.launch { drawerState.close() }
+                            },
+                        ).takeIf { syncAvailable }
+                    },
                 )
             },
         ) {
@@ -635,7 +637,8 @@ fun CalendarHost(
                     onDismissChip = {
                         reschedule.consumeOutcome()
                         eventActions.consumeFailure()
-                        sync.consumeResult()
+                        // Only the chip on show: a receipt queued behind it still gets its turn.
+                        if (moveOutcome == null && selectionFailure == null) sync.consumeResult()
                     },
                 )
                 CalendarFab(chromeHost, todayInToolbar, fabSelection)

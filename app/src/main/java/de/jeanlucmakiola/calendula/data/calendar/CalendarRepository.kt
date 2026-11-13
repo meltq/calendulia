@@ -11,6 +11,7 @@ import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlin.time.Instant
 
 interface CalendarRepository {
@@ -140,6 +141,9 @@ interface CalendarRepository {
      * Only a request: the adapter may still run it late, or fail.
      */
     suspend fun requestSync(): SyncRequestResult = SyncRequestResult.NothingToSync
+
+    /** Whether [requestSync] has anyone to ask: a visible calendar with a sync adapter behind it. */
+    val canRequestSync: Flow<Boolean> get() = flowOf(false)
 
     /** Every provider notification and [refresh], including the app's own writes. */
     val providerChanges: Flow<Unit> get() = emptyFlow()
