@@ -39,6 +39,7 @@ import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.calendula.ui.common.durationLabel
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
+import de.jeanlucmakiola.calendula.ui.common.reminderPresets
 import de.jeanlucmakiola.floret.android.hasPermission
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.ExpandIcon
@@ -290,7 +291,7 @@ internal fun NotificationsScreen(
                     R.string.settings_default_reminder
                 },
             ),
-            presets = if (target.isAllDay) ALLDAY_REMINDER_PRESETS else REMINDER_PRESETS,
+            presets = reminderPresets(target.isAllDay),
             selected = map.reminderOverrideFor(target.calendarId),
             allowInherit = true,
             onSelect = {

@@ -8,8 +8,8 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.MINUTES_DEFAULT
 import de.jeanlucmakiola.floret.reminders.ReminderUnit
 
-private const val DAY = 1_440
-private const val WEEK = 10_080
+private val DAY = ReminderUnit.Days.minutesFactor
+private val WEEK = ReminderUnit.Weeks.minutesFactor
 
 private val DAY_SCALE_PRESETS =
     listOf(DAY, 2 * DAY, 3 * DAY, 4 * DAY, 5 * DAY, WEEK, 2 * WEEK, 3 * WEEK)
@@ -20,16 +20,19 @@ val REMINDER_PRESETS = listOf(0, 10, 30, 60) + DAY_SCALE_PRESETS
 /** Day-scale lead times for all-day events, all-day defaults and contact special dates. */
 val ALLDAY_REMINDER_PRESETS = listOf(0) + DAY_SCALE_PRESETS
 
+fun reminderPresets(isAllDay: Boolean): List<Int> =
+    if (isAllDay) ALLDAY_REMINDER_PRESETS else REMINDER_PRESETS
+
 /**
- * Sorts lead times and splits them into a sub-day group and a day-scale group,
- * so a long picker list reads as two connected sections. A list with no real
- * sub-day lead time (only "at time of event", as for all-day) stays one group.
+ * Sorts lead times and, when [splitSubDay], splits them into a sub-day group and
+ * a day-scale group so a long picker list reads as two connected sections.
+ * Empty groups are dropped.
  */
-fun groupReminderLeadTimes(minutes: Collection<Int>): List<List<Int>> {
-    val sorted = minutes.distinct().sorted()
-    if (sorted.isEmpty()) return emptyList()
-    if (sorted.none { it in 1 until DAY }) return listOf(sorted)
-    return sorted.partition { it < DAY }.toList().filter { it.isNotEmpty() }
+fun groupReminderLeadTimes(minutes: Collection<Int>, splitSubDay: Boolean): List<List<Int>> {
+    val sorted = minutes.sorted()
+    if (!splitSubDay) return listOfNotNull(sorted.takeIf { it.isNotEmpty() })
+    val (subDay, dayScale) = sorted.partition { it < DAY }
+    return listOf(subDay, dayScale).filter { it.isNotEmpty() }
 }
 
 @StringRes
@@ -56,10 +59,10 @@ fun reminderLeadTimeLabel(minutes: Int): String = when {
     minutes == MINUTES_DEFAULT -> stringResource(R.string.reminder_default)
     minutes == 0 -> stringResource(R.string.reminder_at_time)
     minutes < 0 -> stringResource(R.string.reminder_after, durationLabel(-minutes))
-    minutes % 10_080 == 0 ->
-        pluralStringResource(R.plurals.reminder_weeks, minutes / 10_080, minutes / 10_080)
-    minutes % 1_440 == 0 ->
-        pluralStringResource(R.plurals.reminder_days, minutes / 1_440, minutes / 1_440)
+    minutes % WEEK == 0 ->
+        pluralStringResource(R.plurals.reminder_weeks, minutes / WEEK, minutes / WEEK)
+    minutes % DAY == 0 ->
+        pluralStringResource(R.plurals.reminder_days, minutes / DAY, minutes / DAY)
     minutes % 60 == 0 ->
         pluralStringResource(R.plurals.reminder_hours, minutes / 60, minutes / 60)
     else -> pluralStringResource(R.plurals.reminder_minutes, minutes, minutes)

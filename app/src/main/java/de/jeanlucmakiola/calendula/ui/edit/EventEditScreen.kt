@@ -143,7 +143,6 @@ import de.jeanlucmakiola.floret.identity.collapseExit
 import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.identity.predictiveBack
 import de.jeanlucmakiola.calendula.data.calendar.CalendarColorPalette
-import de.jeanlucmakiola.calendula.ui.common.ALLDAY_REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.RecurringScopeDialog
 import de.jeanlucmakiola.calendula.ui.common.CalendarPickerGroups
 import de.jeanlucmakiola.calendula.ui.common.CalendarDatePickerDialog
@@ -166,7 +165,7 @@ import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.groupedShape as floretGroupedShape
 import de.jeanlucmakiola.floret.components.positionOf
-import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
+import de.jeanlucmakiola.calendula.ui.common.reminderPresets
 import de.jeanlucmakiola.calendula.ui.common.GroupedLeadTimeRows
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.floret.reminders.ReminderUnit
@@ -1490,7 +1489,7 @@ private fun EditSheetHost(
             )
         }
         EditSheet.Reminder -> ReminderPickerDialog(
-            presets = if (form.isAllDay) ALLDAY_REMINDER_PRESETS else REMINDER_PRESETS,
+            isAllDay = form.isAllDay,
             alreadyChosen = form.reminders,
             onSelect = { minutes ->
                 viewModel.addReminder(minutes)
@@ -1583,7 +1582,7 @@ private fun FieldPickerDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReminderPickerDialog(
-    presets: List<Int>,
+    isAllDay: Boolean,
     alreadyChosen: List<Int>,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
@@ -1610,7 +1609,8 @@ private fun ReminderPickerDialog(
     ) {
         if (!customMode) {
             GroupedLeadTimeRows(
-                minutes = presets.filterNot { it in alreadyChosen },
+                minutes = reminderPresets(isAllDay).filterNot { it in alreadyChosen },
+                splitSubDay = !isAllDay,
                 row = { minutes, position ->
                     GroupedRow(
                         title = reminderLeadTimeLabel(minutes),

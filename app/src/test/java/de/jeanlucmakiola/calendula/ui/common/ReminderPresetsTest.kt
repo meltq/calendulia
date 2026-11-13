@@ -26,20 +26,22 @@ class ReminderPresetsTest {
 
     @Test
     fun `groups split sub-day from day-scale lead times, sorted`() {
-        assertThat(groupReminderLeadTimes(listOf(2_880, 10, 0, 1_440, 45, 10)))
+        assertThat(groupReminderLeadTimes(listOf(2_880, 10, 0, 1_440, 45), splitSubDay = true))
             .containsExactly(listOf(0, 10, 45), listOf(1_440, 2_880)).inOrder()
     }
 
     @Test
-    fun `at time of event alone joins the day-scale group`() {
-        assertThat(groupReminderLeadTimes(ALLDAY_REMINDER_PRESETS))
-            .containsExactly(ALLDAY_REMINDER_PRESETS)
+    fun `unsplit list is one sorted group`() {
+        assertThat(groupReminderLeadTimes(listOf(2_880, 0, 30), splitSubDay = false))
+            .containsExactly(listOf(0, 30, 2_880))
     }
 
     @Test
     fun `empty groups are dropped`() {
-        assertThat(groupReminderLeadTimes(listOf(10))).containsExactly(listOf(10))
-        assertThat(groupReminderLeadTimes(listOf(2_880))).containsExactly(listOf(2_880))
-        assertThat(groupReminderLeadTimes(emptyList())).isEmpty()
+        assertThat(groupReminderLeadTimes(listOf(0, 1_440), splitSubDay = true))
+            .containsExactly(listOf(0), listOf(1_440)).inOrder()
+        assertThat(groupReminderLeadTimes(listOf(2_880), splitSubDay = true)).containsExactly(listOf(2_880))
+        assertThat(groupReminderLeadTimes(emptyList(), splitSubDay = true)).isEmpty()
+        assertThat(groupReminderLeadTimes(emptyList(), splitSubDay = false)).isEmpty()
     }
 }

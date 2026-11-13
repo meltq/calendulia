@@ -6,6 +6,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -127,6 +128,7 @@ fun ReminderDefaultPicker(
         Spacer(Modifier.height(24.dp))
         GroupedLeadTimeRows(
             minutes = rows,
+            splitSubDay = presets.any { it in 1 until ReminderUnit.Days.minutesFactor },
             row = { minute, position ->
                 val checked = minute in selectedMinutes
                 GroupedRow(
@@ -169,14 +171,17 @@ fun ReminderDefaultPicker(
 @Composable
 internal fun GroupedLeadTimeRows(
     minutes: Collection<Int>,
+    splitSubDay: Boolean,
     row: @Composable (minute: Int, position: Position) -> Unit,
     trailing: @Composable (position: Position) -> Unit,
 ) {
-    val groups = groupReminderLeadTimes(minutes)
+    val groups = groupReminderLeadTimes(minutes, splitSubDay)
     groups.forEachIndexed { groupIndex, group ->
         val isLast = groupIndex == groups.lastIndex
         val rowCount = group.size + if (isLast) 1 else 0
-        group.forEachIndexed { index, minute -> row(minute, positionOf(index, rowCount)) }
+        group.forEachIndexed { index, minute ->
+            key(minute) { row(minute, positionOf(index, rowCount)) }
+        }
         if (!isLast) Spacer(Modifier.height(12.dp))
     }
     trailing(if (groups.isEmpty()) Position.Alone else Position.Bottom)
