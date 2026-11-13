@@ -274,8 +274,14 @@ class SettingsPrefs @Inject constructor(
 
     /** Hide [calendarId] in [views] only (#270); an empty set shows it everywhere again. */
     suspend fun setCalendarHiddenViews(calendarId: Long, views: Set<CalendarView>) {
+        prefs.update(SettingsKeys.perCalendarHiddenViews) { current -> current.withHiddenViews(calendarId, views) }
+    }
+
+    /** Hide or show [calendarId] in one [view], against the stored set rather than a snapshot of it. */
+    suspend fun setCalendarHiddenIn(calendarId: Long, view: CalendarView, hidden: Boolean) {
         prefs.update(SettingsKeys.perCalendarHiddenViews) { current ->
-            if (views.isEmpty()) current - calendarId else current + (calendarId to views)
+            val views = current[calendarId].orEmpty()
+            current.withHiddenViews(calendarId, if (hidden) views + view else views - view)
         }
     }
 
@@ -834,8 +840,10 @@ private fun parseFormFields(stored: String?): Set<EventFormField> = when (stored
 private fun parseViewOrder(stored: String?): List<CalendarView> =
     completeViewOrder(
         stored?.split(',').orEmpty()
-            .mapNotNull { name -> CalendarView.entries.firstOrNull { it.name == name.trim() } },
+            .mapNotNull { it.trim().toCalendarViewOrNull() },
     )
+
+private fun String.toCalendarViewOrNull(): CalendarView? = CalendarView.entries.firstOrNull { it.name == this }
 
 /** Parse the quick-switch config; "!"-prefixed names are disabled. */
 private fun parseQuickSwitch(stored: String?): QuickSwitchConfig {
@@ -844,7 +852,7 @@ private fun parseQuickSwitch(stored: String?): QuickSwitchConfig {
         val token = raw.trim()
         val disabled = token.startsWith("!")
         val name = if (disabled) token.drop(1) else token
-        CalendarView.entries.firstOrNull { it.name == name }?.let { it to disabled }
+        name.toCalendarViewOrNull()?.let { it to disabled }
     }
     val order = completeViewOrder(parsed.map { it.first })
     // Only views explicitly stored disabled are excluded; anything appended
@@ -1005,9 +1013,14 @@ internal fun parseHiddenViews(stored: String?): Map<Long, Set<CalendarView>> =
         if (parts.size != 2) return@mapNotNull null
         val calendarId = parts[0].trim().toLongOrNull() ?: return@mapNotNull null
         val views = parts[1].split(LIST_SEP)
-            .mapNotNullTo(mutableSetOf()) { name -> CalendarView.entries.firstOrNull { it.name == name.trim() } }
+            .mapNotNullTo(mutableSetOf()) { it.trim().toCalendarViewOrNull() }
         if (views.isEmpty()) null else calendarId to views
     }.toMap()
+
+private fun Map<Long, Set<CalendarView>>.withHiddenViews(
+    calendarId: Long,
+    views: Set<CalendarView>,
+): Map<Long, Set<CalendarView>> = if (views.isEmpty()) this - calendarId else this + (calendarId to views)
 
 internal fun Map<Long, Set<CalendarView>>.toStoredHiddenViews(): String? =
     entries.filter { it.value.isNotEmpty() }.sortedBy { it.key }

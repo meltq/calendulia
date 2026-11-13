@@ -114,8 +114,8 @@ class CalendarsViewModel @Inject constructor(
                 initialValue = emptyMap(),
             )
 
-    fun setHiddenViews(id: Long, views: Set<CalendarView>) {
-        viewModelScope.launch { settingsPrefs.setCalendarHiddenViews(id, views) }
+    fun setHiddenIn(id: Long, view: CalendarView, hidden: Boolean) = write {
+        settingsPrefs.setCalendarHiddenIn(id, view, hidden)
     }
 
     private val _error = MutableStateFlow(false)
@@ -157,10 +157,10 @@ class CalendarsViewModel @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-        hiddenViews: Set<CalendarView> = emptySet(),
+        hiddenViews: Set<CalendarView>?,
     ) = write {
         val id = repository.createLocalCalendar(displayName, color, description)
-        if (hiddenViews.isNotEmpty()) settingsPrefs.setCalendarHiddenViews(id, hiddenViews)
+        if (!hiddenViews.isNullOrEmpty()) settingsPrefs.setCalendarHiddenViews(id, hiddenViews)
     }
 
     fun updateCalendar(
@@ -168,10 +168,10 @@ class CalendarsViewModel @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-        hiddenViews: Set<CalendarView>,
+        hiddenViews: Set<CalendarView>?,
     ) = write {
         repository.updateCalendar(id, displayName, color, description)
-        settingsPrefs.setCalendarHiddenViews(id, hiddenViews)
+        if (hiddenViews != null) settingsPrefs.setCalendarHiddenViews(id, hiddenViews)
     }
 
     fun deleteCalendar(id: Long) = write {

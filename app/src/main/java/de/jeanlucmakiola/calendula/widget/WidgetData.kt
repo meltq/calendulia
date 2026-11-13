@@ -1,6 +1,5 @@
 package de.jeanlucmakiola.calendula.widget
 
-import de.jeanlucmakiola.calendula.ui.common.withoutCalendars
 import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
@@ -20,6 +19,7 @@ import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.agendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.dayCount
 import de.jeanlucmakiola.calendula.ui.agenda.groupAgendaDays
+import de.jeanlucmakiola.calendula.ui.common.withoutCalendars
 import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.floret.prefs.get
 import kotlinx.coroutines.flow.Flow

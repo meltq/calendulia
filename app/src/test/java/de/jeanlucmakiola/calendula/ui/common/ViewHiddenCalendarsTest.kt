@@ -55,9 +55,9 @@ class ViewHiddenCalendarsTest {
         settings.setCalendarHiddenViews(2L, setOf(CalendarView.Month))
         val hidden = settings.perCalendarHiddenViews
 
-        assertThat(repo.instancesIn(CalendarView.Month, range, hidden).first().map { it.eventId })
+        assertThat(repo.instancesWithout(range, hidden.calendarsHiddenIn(CalendarView.Month, backgroundScope)).first().map { it.eventId })
             .containsExactly(10L)
-        assertThat(repo.instancesIn(CalendarView.Week, range, hidden).first().map { it.eventId })
+        assertThat(repo.instancesWithout(range, hidden.calendarsHiddenIn(CalendarView.Week, backgroundScope)).first().map { it.eventId })
             .containsExactly(10L, 20L)
         // The repository itself, which reminders and search build on, is untouched.
         assertThat(repo.instances(range).first().map { it.eventId }).containsExactly(10L, 20L)
@@ -72,11 +72,12 @@ class ViewHiddenCalendarsTest {
         val settings = testSettings(tempDir)
         val repo = testRepository(fake, tempDir, UnconfinedTestDispatcher(testScheduler), settings = settings)
 
-        repo.instancesIn(CalendarView.Agenda, range, settings.perCalendarHiddenViews).test {
+        val hidden = settings.perCalendarHiddenViews.calendarsHiddenIn(CalendarView.Agenda, backgroundScope)
+        repo.instancesWithout(range, hidden).test {
             assertThat(awaitItem().map { it.eventId }).containsExactly(10L, 20L)
-            settings.setCalendarHiddenViews(1L, setOf(CalendarView.Agenda))
+            settings.setCalendarHiddenIn(1L, CalendarView.Agenda, hidden = true)
             assertThat(awaitItem().map { it.eventId }).containsExactly(20L)
-            settings.setCalendarHiddenViews(1L, emptySet())
+            settings.setCalendarHiddenIn(1L, CalendarView.Agenda, hidden = false)
             assertThat(awaitItem().map { it.eventId }).containsExactly(10L, 20L)
             cancelAndIgnoreRemainingEvents()
         }

@@ -633,6 +633,20 @@ class SettingsPrefsTest {
     }
 
     @Test
+    fun `toggling one hidden view keeps the others and clears the entry when empty`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val prefs = testSettings(tempDir)
+        prefs.setCalendarHiddenIn(7L, CalendarView.Month, hidden = true)
+        prefs.setCalendarHiddenIn(7L, CalendarView.Week, hidden = true)
+        assertThat(prefs.perCalendarHiddenViews.first())
+            .containsExactly(7L, setOf(CalendarView.Month, CalendarView.Week))
+        prefs.setCalendarHiddenIn(7L, CalendarView.Month, hidden = false)
+        prefs.setCalendarHiddenIn(7L, CalendarView.Week, hidden = false)
+        assertThat(prefs.perCalendarHiddenViews.first()).isEmpty()
+    }
+
+    @Test
     fun `garbage hidden-views entries are dropped, the rest survive`(
         @TempDir tempDir: Path,
     ) = runTest {

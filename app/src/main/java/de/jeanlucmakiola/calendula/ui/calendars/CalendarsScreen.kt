@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.ui.calendars
 import android.accounts.AccountManager
 import android.content.Context
 import android.content.Intent
+import android.icu.text.ListFormatter
 import android.provider.Settings
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
@@ -54,6 +55,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
@@ -189,17 +191,14 @@ fun CalendarsScreen(
         )
         hidingId?.let { id ->
             val calendar = calendars.firstOrNull { it.id == id }
-            if (calendar == null) {
-                // Gone (deleted or account removed) while the picker was up.
+            // Gone while the picker was up; an empty list is one still loading, not a deletion.
+            if (calendar == null && calendars.isNotEmpty()) {
                 LaunchedEffect(id) { hidingId = null }
-            } else {
-                val hidden = hiddenViews[id].orEmpty()
+            } else if (calendar != null) {
                 HiddenViewsPicker(
                     calendarName = calendar.displayName.orUnnamed(),
-                    hidden = hidden,
-                    onToggle = { view, hide ->
-                        viewModel.setHiddenViews(id, if (hide) hidden + view else hidden - view)
-                    },
+                    hidden = hiddenViews[id].orEmpty(),
+                    onToggle = { view, hide -> viewModel.setHiddenIn(id, view, hide) },
                     onDismiss = { hidingId = null },
                 )
             }
@@ -373,7 +372,7 @@ internal fun CalendarEditor(
     initialName: String,
     initialColor: Int,
     initialDescription: String,
-    onSave: (name: String, color: Int, description: String?, hiddenViews: Set<CalendarView>) -> Unit,
+    onSave: (name: String, color: Int, description: String?, hiddenViews: Set<CalendarView>?) -> Unit,
     onDelete: () -> Unit,
     onClose: () -> Unit,
     deleteLocked: Boolean = false,
@@ -381,7 +380,9 @@ internal fun CalendarEditor(
     initialHiddenViews: Set<CalendarView> = emptySet(),
 ) {
     var name by rememberSaveable(sessionKey) { mutableStateOf(initialName) }
-    var hiddenViews by rememberSaveable(sessionKey) { mutableStateOf(initialHiddenViews.toList()) }
+    var hiddenViews by rememberSaveable(sessionKey) { mutableStateOf(initialHiddenViews) }
+    // Only a set the user touched is written back, so a save never resets one read before it loaded.
+    var hiddenViewsEdited by rememberSaveable(sessionKey) { mutableStateOf(false) }
     var pickHiddenViews by rememberSaveable(sessionKey) { mutableStateOf(false) }
     var color by rememberSaveable(sessionKey) { mutableStateOf(initialColor) }
     var description by rememberSaveable(sessionKey) { mutableStateOf(initialDescription) }
@@ -390,7 +391,9 @@ internal fun CalendarEditor(
 
     val valid = name.isNotBlank()
     val commit = {
-        if (valid) onSave(name.trim(), color, description.trim().ifEmpty { null }, hiddenViews.toSet())
+        if (valid) {
+            onSave(name.trim(), color, description.trim().ifEmpty { null }, hiddenViews.takeIf { hiddenViewsEdited })
+        }
     }
 
     FullScreenPicker(
@@ -447,7 +450,7 @@ internal fun CalendarEditor(
             Spacer(Modifier.height(20.dp))
             GroupedRow(
                 title = stringResource(R.string.calendars_hide_in_views),
-                summary = hiddenViewsSummary(hiddenViews.toSet()),
+                summary = hiddenViewsSummary(hiddenViews),
                 position = Position.Alone,
                 onClick = { pickHiddenViews = true },
             )
@@ -463,9 +466,10 @@ internal fun CalendarEditor(
     if (pickHiddenViews) {
         HiddenViewsPicker(
             calendarName = name.trim().orUnnamed(),
-            hidden = hiddenViews.toSet(),
+            hidden = hiddenViews,
             onToggle = { view, hide ->
-                hiddenViews = if (hide) (hiddenViews + view).distinct() else hiddenViews - view
+                hiddenViews = if (hide) hiddenViews + view else hiddenViews - view
+                hiddenViewsEdited = true
             },
             onDismiss = { pickHiddenViews = false },
         )
@@ -786,7 +790,8 @@ private fun HiddenViewsPicker(
 private fun hiddenViewsSummary(hidden: Set<CalendarView>): String {
     if (hidden.isEmpty()) return stringResource(R.string.calendars_hide_in_views_none)
     val names = IMPLEMENTED_VIEWS.filter { it in hidden }.map { it.label() }
-    return stringResource(R.string.calendars_hidden_in, names.joinToString(", "))
+    val locale = LocalConfiguration.current.locales[0]
+    return stringResource(R.string.calendars_hidden_in, ListFormatter.getInstance(locale).format(names))
 }
 
 /** Fade a leading element to the M3 disabled emphasis when [disabled]. */

@@ -21,7 +21,8 @@ import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.calendarListFailure
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.PageStateCache
-import de.jeanlucmakiola.calendula.ui.common.instancesIn
+import de.jeanlucmakiola.calendula.ui.common.calendarsHiddenIn
+import de.jeanlucmakiola.calendula.ui.common.instancesWithout
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
@@ -91,10 +92,10 @@ abstract class PagedTimelineViewModel(
     private val io: CoroutineDispatcher,
     gridRule: Flow<(LocalDate) -> DaysGrid>,
     initialRule: (LocalDate) -> DaysGrid,
-    private val view: CalendarView,
+    view: CalendarView,
 ) : ViewModel() {
 
-    private val hiddenViews = settingsPrefs.perCalendarHiddenViews
+    private val hiddenHere = settingsPrefs.perCalendarHiddenViews.calendarsHiddenIn(view, viewModelScope)
 
     /**
      * The zone every page is laid out in; drags and drops resolve in it too, and
@@ -172,7 +173,7 @@ abstract class PagedTimelineViewModel(
         zone.flatMapLatest { zone ->
             combine(
                 repository.calendars(),
-                repository.instancesIn(view, spanRange(span.start, span.count, zone), hiddenViews),
+                repository.instancesWithout(spanRange(span.start, span.count, zone), hiddenHere),
                 today,
             ) { calendars, instances, today ->
                 buildState(span, calendars, instances, today, zone)
