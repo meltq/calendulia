@@ -88,10 +88,10 @@ class CalendarRepositoryImpl @Inject constructor(
     override val providerChanges: Flow<Unit> get() = ticks
 
     /**
-     * Run a provider write on [io], then re-query whether or not it threw. The
-     * accounts behind [syncCalendars] (read before the write, which may delete
-     * the row) get one sync nudge each afterwards (#303) — once per write, so a
-     * multi-row save or a whole import asks once per account.
+     * Run a provider write on [io], then re-query whether or not it threw. Once
+     * it succeeded, the accounts behind [syncCalendars] (read before the write,
+     * which may delete the row) get one sync nudge each (#303) — once per write,
+     * so a multi-row save or a whole import asks once per account.
      */
     private suspend fun <T> write(
         syncCalendars: suspend () -> Collection<Long?>,
@@ -99,11 +99,10 @@ class CalendarRepositoryImpl @Inject constructor(
     ): T = withContext(io) {
         val accounts = syncAccountsOf(syncCalendars)
         try {
-            block()
+            block().also { requestSyncs(accounts, userInitiated = false) }
         } finally {
             refresh()
             writes.tryEmit(Unit)
-            requestSyncs(accounts, userInitiated = false)
         }
     }
 
@@ -141,22 +140,25 @@ class CalendarRepositoryImpl @Inject constructor(
     }
 
     /**
-     * Ask each of [accounts] once; those the app can't name (see
-     * [SyncRequester.isAddressable]) share one request for every calendar
-     * account. Returns how many of [accounts] were asked.
+     * Ask each of [accounts] once. If the app can't name one of them (see
+     * [SyncRequester.addressableAccounts]), a single account-less request for
+     * every calendar account goes out instead. Returns how many were asked.
      */
     private fun requestSyncs(accounts: Set<SyncAccount>, userInitiated: Boolean): Int {
-        val (direct, hidden) = accounts.partition { isAddressable(it) }
-        var sent = direct.count { requestSync(it, userInitiated) }
-        if (hidden.isNotEmpty() && requestSync(null, userInitiated)) sent += hidden.size
-        return sent
-    }
-
-    private fun isAddressable(account: SyncAccount): Boolean = try {
-        syncRequester.isAddressable(account)
-    } catch (e: Exception) {
-        Log.w(TAG, "Account visibility unreadable", e)
-        false
+        if (accounts.isEmpty()) return 0
+        val addressable = try {
+            syncRequester.addressableAccounts()
+        } catch (e: Exception) {
+            Log.w(TAG, "Account visibility unreadable", e)
+            emptySet()
+        }
+        return if (addressable == null || addressable.containsAll(accounts)) {
+            accounts.count { requestSync(it, userInitiated) }
+        } else if (requestSync(null, userInitiated)) {
+            accounts.size
+        } else {
+            0
+        }
     }
 
     private fun requestSync(account: SyncAccount?, userInitiated: Boolean): Boolean = try {

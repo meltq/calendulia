@@ -68,7 +68,11 @@ class RecordingSyncRequester(
     override fun adapterAccountTypes(): Set<String> =
         adapterTypes ?: setOf("bitfire.at.davdroid", "com.google", "LOCAL")
 
-    override fun isAddressable(account: SyncAccount): Boolean = account.type !in hiddenTypes
+    override fun addressableAccounts(): Set<SyncAccount>? =
+        if (hiddenTypes.isEmpty()) null else knownAccounts.filterTo(mutableSetOf()) { it.type !in hiddenTypes }
+
+    /** The accounts on the "device", for [addressableAccounts]. */
+    var knownAccounts: Set<SyncAccount> = emptySet()
 
     override fun requestSync(account: SyncAccount?, userInitiated: Boolean) {
         if (!accepts || account?.type in refusedTypes) throw SecurityException("refused")

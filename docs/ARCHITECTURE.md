@@ -11,16 +11,16 @@ the package list (recurring writes, save conflicts, reminder delivery).
    no caching layer, no sync code. Reads query the provider; writes go
    straight back to it. Sync is DAVx5's / Google's / the system's job.
    The app only *asks* for one through `ContentResolver.requestSync`: an
-   expedited nudge for the account after each of its own writes to a synced
-   calendar (#303, once per write, so a multi-row save or an import asks once
+   expedited nudge for the account after each of its own successful writes to
+   a synced calendar (#303, once per write, so a multi-row save or an import asks once
    per account, and never `MANUAL`, which would override master-sync-off), and
    a manual request from the drawer's "Sync now" (#240), which like the
    system's own "Sync now" also runs for accounts whose auto-sync is off. Both
    go through `SyncRequester` and only ask account types with a calendar sync
    adapter (visible to the app via a `<queries>` entry). From Android 13 a
-   request naming an account the app can't see is silently dropped, so those
-   accounts share one account-less request, which covers every calendar
-   account. Whether and when the adapter syncs stays its call.
+   request naming an account the app can't see is silently dropped, so when
+   any of them is hidden a single account-less request, which covers every
+   calendar account, goes out instead. Whether and when the adapter syncs stays its call.
 2. **Observer-driven UI.** A `ContentObserver` on the provider triggers
    re-queries; every screen recomposes from fresh provider state. After a
    write, nothing is patched by hand — the views refresh from the provider.

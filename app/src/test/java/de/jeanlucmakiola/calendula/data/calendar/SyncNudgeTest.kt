@@ -124,14 +124,14 @@ class SyncNudgeTest {
     }
 
     @Test
-    fun `a failed write still nudges, since part of it may have landed`(@TempDir dir: Path) = runTest {
+    fun `a failed write asks for no sync`(@TempDir dir: Path) = runTest {
         val sync = RecordingSyncRequester()
         val source = fake().apply { writeError = IllegalStateException("boom") }
         val repo = testRepository(source, dir, Dispatchers.Unconfined, syncRequester = sync)
 
         assertThrows<IllegalStateException> { repo.deleteEvent(10L) }
 
-        assertThat(sync.requests).containsExactly(auto(dav))
+        assertThat(sync.requests).isEmpty()
     }
 
     @Test
@@ -224,6 +224,7 @@ class SyncNudgeTest {
     @Test
     fun `accounts the app can't see share one request for every calendar account`(@TempDir dir: Path) = runTest {
         val sync = RecordingSyncRequester(hiddenTypes = setOf(dav.type, google.type))
+        sync.knownAccounts = setOf(dav, google)
         val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
 
         repo.moveEvent(10L, 3L, form(1L), form(3L))
@@ -232,6 +233,11 @@ class SyncNudgeTest {
         sync.requests.clear()
         sync.hiddenTypes = setOf(google.type)
         assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
-        assertThat(sync.requests).containsExactly(Request(dav, true), Request(null, true)).inOrder()
+        assertThat(sync.requests).containsExactly(Request(null, true))
+
+        sync.requests.clear()
+        sync.hiddenTypes = setOf("other")
+        repo.createEvent(form(1L))
+        assertThat(sync.requests).containsExactly(auto(dav))
     }
 }

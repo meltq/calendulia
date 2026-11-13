@@ -28,10 +28,10 @@ interface SyncRequester {
     fun adapterAccountTypes(): Set<String>
 
     /**
-     * Whether a request naming [account] reaches the system. From Android 13 one
-     * for an account the app can't see is dropped without a word.
+     * The accounts a request may name, or null when any may. From Android 13 a
+     * request for an account the app can't see is dropped without a word.
      */
-    fun isAddressable(account: SyncAccount): Boolean
+    fun addressableAccounts(): Set<SyncAccount>?
 
     /**
      * Schedule a sync of [account], or of every calendar account when null; may
@@ -51,9 +51,12 @@ class AndroidSyncRequester @Inject constructor(
             .filter { it.authority == CalendarContract.AUTHORITY }
             .mapTo(mutableSetOf()) { it.accountType }
 
-    override fun isAddressable(account: SyncAccount): Boolean =
-        Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU ||
-            AccountManager.get(context).getAccountsByType(account.type).any { it.name == account.name }
+    override fun addressableAccounts(): Set<SyncAccount>? =
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.TIRAMISU) {
+            null
+        } else {
+            AccountManager.get(context).accounts.mapTo(mutableSetOf()) { SyncAccount(it.name, it.type) }
+        }
 
     override fun requestSync(account: SyncAccount?, userInitiated: Boolean) {
         val extras = Bundle().apply {
