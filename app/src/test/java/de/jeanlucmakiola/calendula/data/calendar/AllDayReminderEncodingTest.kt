@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.ui.common.ALLDAY_REMINDER_PRESETS
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import java.time.LocalTime
@@ -49,10 +50,18 @@ class AllDayReminderEncodingTest {
     }
 
     @Test
+    fun `three weeks before fires at 9am local across a DST change`() {
+        val afterDst = LocalDate.of(2026, 4, 10) // CEST; three weeks earlier is CET
+        val raw = toProviderAllDayMinutes(3 * 10_080, afterDst, berlin, nineAm)
+        assertThat(actualFire(raw, afterDst)).isEqualTo(intendedFire(afterDst, 21, nineAm))
+        assertThat(fromProviderAllDayMinutes(raw, afterDst, berlin, nineAm)).isEqualTo(3 * 10_080)
+    }
+
+    @Test
     fun `round-trips for whole-day lead times across both seasons`() {
         for (date in listOf(summer, winter)) {
             for (time in listOf(0, nineAm, 20 * 60)) {
-                for (semantic in listOf(0, 1_440, 2_880, 10_080)) {
+                for (semantic in ALLDAY_REMINDER_PRESETS) {
                     val raw = toProviderAllDayMinutes(semantic, date, berlin, time)
                     assertThat(fromProviderAllDayMinutes(raw, date, berlin, time))
                         .isEqualTo(semantic)

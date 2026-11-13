@@ -89,8 +89,9 @@ fun ReminderDefaultPicker(
     // which would strand a hand-entered value with no way to re-check it.
     val seenCustom = remember { mutableSetOf<Int>() }
     seenCustom += selectedMinutes.filter { it !in presets }
-    // Presets plus every custom value seen this session, each as its own row.
-    val rows = presets + seenCustom.sorted()
+    // Presets plus every custom value seen this session, each as its own row,
+    // split into a sub-day and a day-scale group.
+    val groups = groupReminderLeadTimes(presets + seenCustom)
 
     var customExpanded by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("") }
@@ -125,21 +126,25 @@ fun ReminderDefaultPicker(
             onClick = { apply(ReminderOverride.None) },
         )
         Spacer(Modifier.height(24.dp))
-        val rowCount = rows.size + 1 // + the custom row
-        rows.forEachIndexed { index, minute ->
-            val checked = minute in selectedMinutes
-            GroupedRow(
-                title = reminderLeadTimeLabel(minute),
-                summary = leadTimeSummary?.invoke(minute),
-                position = positionOf(index, rowCount),
-                selected = checked,
-                trailing = { Checkbox(checked = checked, onCheckedChange = { toggle(minute) }) },
-                onClick = { toggle(minute) },
-            )
+        groups.forEachIndexed { groupIndex, group ->
+            val isLast = groupIndex == groups.lastIndex
+            val rowCount = group.size + if (isLast) 1 else 0 // + the custom row
+            group.forEachIndexed { index, minute ->
+                val checked = minute in selectedMinutes
+                GroupedRow(
+                    title = reminderLeadTimeLabel(minute),
+                    summary = leadTimeSummary?.invoke(minute),
+                    position = positionOf(index, rowCount),
+                    selected = checked,
+                    trailing = { Checkbox(checked = checked, onCheckedChange = { toggle(minute) }) },
+                    onClick = { toggle(minute) },
+                )
+            }
+            if (!isLast) Spacer(Modifier.height(12.dp))
         }
         CustomExpandRow(
             title = stringResource(R.string.event_edit_reminder_custom),
-            position = positionOf(rows.size, rowCount),
+            position = if (groups.isEmpty()) Position.Alone else Position.Bottom,
             expanded = customExpanded,
             onExpandedChange = { customExpanded = it },
         ) {

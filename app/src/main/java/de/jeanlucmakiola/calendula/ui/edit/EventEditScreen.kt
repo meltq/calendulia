@@ -143,6 +143,7 @@ import de.jeanlucmakiola.floret.identity.collapseExit
 import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.identity.predictiveBack
 import de.jeanlucmakiola.calendula.data.calendar.CalendarColorPalette
+import de.jeanlucmakiola.calendula.ui.common.ALLDAY_REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.RecurringScopeDialog
 import de.jeanlucmakiola.calendula.ui.common.CalendarPickerGroups
 import de.jeanlucmakiola.calendula.ui.common.CalendarDatePickerDialog
@@ -166,6 +167,7 @@ import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.groupedShape as floretGroupedShape
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
+import de.jeanlucmakiola.calendula.ui.common.groupReminderLeadTimes
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.floret.reminders.ReminderUnit
 import de.jeanlucmakiola.floret.locale.currentLocale
@@ -1488,6 +1490,7 @@ private fun EditSheetHost(
             )
         }
         EditSheet.Reminder -> ReminderPickerDialog(
+            presets = if (form.isAllDay) ALLDAY_REMINDER_PRESETS else REMINDER_PRESETS,
             alreadyChosen = form.reminders,
             onSelect = { minutes ->
                 viewModel.addReminder(minutes)
@@ -1580,6 +1583,7 @@ private fun FieldPickerDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReminderPickerDialog(
+    presets: List<Int>,
     alreadyChosen: List<Int>,
     onSelect: (Int) -> Unit,
     onDismiss: () -> Unit,
@@ -1605,18 +1609,22 @@ private fun ReminderPickerDialog(
         },
     ) {
         if (!customMode) {
-            val presets = REMINDER_PRESETS.filterNot { it in alreadyChosen }
-            val rowCount = presets.size + 1
-            presets.forEachIndexed { index, minutes ->
-                GroupedRow(
-                    title = reminderLeadTimeLabel(minutes),
-                    position = positionOf(index, rowCount),
-                    onClick = { onSelect(minutes) },
-                )
+            val groups = groupReminderLeadTimes(presets.filterNot { it in alreadyChosen })
+            groups.forEachIndexed { groupIndex, group ->
+                val isLast = groupIndex == groups.lastIndex
+                val rowCount = group.size + if (isLast) 1 else 0
+                group.forEachIndexed { index, minutes ->
+                    GroupedRow(
+                        title = reminderLeadTimeLabel(minutes),
+                        position = positionOf(index, rowCount),
+                        onClick = { onSelect(minutes) },
+                    )
+                }
+                if (!isLast) Spacer(Modifier.height(12.dp))
             }
             GroupedRow(
                 title = stringResource(R.string.event_edit_reminder_custom),
-                position = positionOf(rowCount - 1, rowCount),
+                position = if (groups.isEmpty()) Position.Alone else Position.Bottom,
                 onClick = { customMode = true },
             )
         } else {

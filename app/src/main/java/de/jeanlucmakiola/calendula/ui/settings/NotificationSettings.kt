@@ -31,6 +31,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.ui.common.ALLDAY_REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.DurationPicker
 import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS

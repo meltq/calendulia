@@ -8,8 +8,24 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.MINUTES_DEFAULT
 import de.jeanlucmakiola.floret.reminders.ReminderUnit
 
+private const val DAY = 1_440
+private const val WEEK = 10_080
+
+private val DAY_SCALE_PRESETS =
+    listOf(DAY, 2 * DAY, 3 * DAY, 4 * DAY, 5 * DAY, WEEK, 2 * WEEK, 3 * WEEK)
+
 /** Common reminder lead times offered as quick picks in the form and settings. */
-val REMINDER_PRESETS = listOf(0, 10, 30, 60, 1_440)
+val REMINDER_PRESETS = listOf(0, 10, 30, 60) + DAY_SCALE_PRESETS
+
+/** Day-scale lead times for all-day events, all-day defaults and contact special dates. */
+val ALLDAY_REMINDER_PRESETS = listOf(0) + DAY_SCALE_PRESETS
+
+/**
+ * Sorts lead times and splits them into a sub-day group and a day-scale group,
+ * so a long picker list reads as two connected sections. Empty groups are dropped.
+ */
+fun groupReminderLeadTimes(minutes: Collection<Int>): List<List<Int>> =
+    minutes.distinct().sorted().partition { it < DAY }.toList().filter { it.isNotEmpty() }
 
 @StringRes
 fun reminderUnitLabel(unit: ReminderUnit): Int = when (unit) {
