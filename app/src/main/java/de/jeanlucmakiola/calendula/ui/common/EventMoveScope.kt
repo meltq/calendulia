@@ -63,8 +63,8 @@ private val moveTokens = AtomicLong()
 /** A fresh identity for one drop or undo, unique for the process. */
 fun nextMoveToken(): Long = moveTokens.incrementAndGet()
 
-/** How many ended drops [DropStates] remembers — far more than can be on screen at once. */
-private const val ENDED_KEPT = 32
+/** How many abandoned drops [DropStates] remembers — far more than can be on screen at once. */
+private const val ABANDONED_KEPT = 32
 
 /** Per-drop progress, by token — see `RescheduleViewModel.drops`. */
 @Immutable
@@ -76,7 +76,10 @@ data class DropStates(
 
     fun ended(token: Long, landed: Boolean): DropStates = copy(
         pending = pending - token,
-        abandoned = if (landed) abandoned else (abandoned + token).toList().takeLast(ENDED_KEPT).toSet(),
+        // Insertion-ordered, so the oldest go first.
+        abandoned = if (landed) abandoned else (abandoned + token).let { kept ->
+            if (kept.size > ABANDONED_KEPT) kept.drop(kept.size - ABANDONED_KEPT).toSet() else kept
+        },
     )
 }
 

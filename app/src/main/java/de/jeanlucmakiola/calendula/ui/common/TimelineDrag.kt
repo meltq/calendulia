@@ -138,9 +138,17 @@ data class StripDrag(val event: EventInstance, val dayShift: Int = 0, val overGr
 sealed interface StripDrop {
     val event: EventInstance
 
-    data class Days(override val event: EventInstance, val days: Int) : StripDrop
+    /** The drop's identity, which its held copy waits on. */
+    val token: Long
 
-    data class Timed(override val event: EventInstance, val start: Instant, val end: Instant) : StripDrop
+    data class Days(override val event: EventInstance, val days: Int, override val token: Long) : StripDrop
+
+    data class Timed(
+        override val event: EventInstance,
+        val start: Instant,
+        val end: Instant,
+        override val token: Long,
+    ) : StripDrop
 }
 
 /** The event a long press left selected (#141). */
@@ -297,6 +305,8 @@ data class TimelineDrop(
     val startMin: Int,
     /** Minutes from the event's start to the dragged block's top edge. */
     val clipOffsetMin: Int = 0,
+    /** The drop's identity, which its held copy waits on; set by the controller's finish. */
+    val token: Long = 0L,
 )
 
 /** The id a drafted block's stand-in event carries, which no provider row has (#153). */
@@ -340,7 +350,13 @@ internal fun draftBlock(draft: EventInstance, date: LocalDate, zone: TimeZone): 
 enum class ResizeEdge { Top, Bottom }
 
 /** Where a finished resize asks its event to begin and end. */
-data class TimelineResizeDrop(val event: EventInstance, val start: Instant, val end: Instant)
+data class TimelineResizeDrop(
+    val event: EventInstance,
+    val start: Instant,
+    val end: Instant,
+    /** The drop's identity, which its held copy waits on; set by the controller's finishResize. */
+    val token: Long = 0L,
+)
 
 /**
  * [event] resized by its [edge] to the span [startMin]..+[spanMin] from [date]'s
@@ -610,7 +626,7 @@ class TimelineDragController {
     var settlingSelected: Boolean = false
         private set
 
-    /** The token of the drop [settling] waits on; a drop's caller hands it to its `MoveRequest`. */
+    /** The token of the drop [settling] waits on. */
     var settledToken: Long = 0L
         private set
 
@@ -742,16 +758,16 @@ class TimelineDragController {
         val zone = dragZone
         cancel()
         if (held.overGrid && landed != null && zone != null && !landed.edgeOnly) {
-            settle(landed)
+            val token = settle(landed)
             val start = TimelineDrop(landed.event, landed.date, landed.startMin).startInstant(zone)
-            return StripDrop.Timed(held.event, start, start + draftMinutes.minutes)
+            return StripDrop.Timed(held.event, start, start + draftMinutes.minutes, token)
         }
         if (held.overGrid || held.dayShift == 0) return null
         stripSettling = held
         stripSeated = false
         stripToken = nextMoveToken()
         drops++
-        return StripDrop.Days(held.event, held.dayShift)
+        return StripDrop.Days(held.event, held.dayShift, stripToken)
     }
 
     /** Let the held strip drop go, once the strip shows the event at its new days or the move failed. */
@@ -848,12 +864,15 @@ class TimelineDragController {
         if (landed == null || landed.slot == origin) return null
         // A draft dropped on a day off screen would vanish, so it stays where it was (#153).
         if (landed.edgeOnly && landed.event.isDraft) return null
-        settle(landed)
-        return TimelineDrop(landed.event, landed.date, landed.startMin, clipOffset)
+        val token = settle(landed)
+        return TimelineDrop(landed.event, landed.date, landed.startMin, clipOffset, token)
     }
 
-    /** Keep [landed]'s copy on the target as [settling] until [release]; [end] is a resize's. */
-    private fun settle(landed: TimelineDrag, end: Instant? = null) {
+    /**
+     * Keep [landed]'s copy on the target as [settling] until [release]; [end] is a
+     * resize's. Returns the drop's fresh token.
+     */
+    private fun settle(landed: TimelineDrag, end: Instant? = null): Long {
         // Landed on midnight to midnight, the event moves to the all-day strip (#296).
         val leavesGrid = !landed.event.isDraft && landed.eventSpanMin > 0 &&
             landed.eventStartMin.mod(MINUTES_PER_DAY) == 0 &&
@@ -869,6 +888,7 @@ class TimelineDragController {
         settledToken = nextMoveToken()
         settledEnd = end
         drops++
+        return settledToken
     }
 
     /**
@@ -937,8 +957,7 @@ class TimelineDragController {
         cancel()
         if (landed == null || landed.slot == origin) return null
         val drop = resizedDrop(landed.event, edge, landed.date, landed.eventStartMin, landed.eventSpanMin, zone)
-        settle(landed, end = drop.end)
-        return drop
+        return drop.copy(token = settle(landed, end = drop.end))
     }
 
     /**

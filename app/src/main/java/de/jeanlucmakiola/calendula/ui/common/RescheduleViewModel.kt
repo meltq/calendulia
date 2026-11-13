@@ -79,7 +79,7 @@ data class MoveRequest(
     val endMillis: Long,
     val target: MoveTarget,
     /** The drop's own identity, from [nextMoveToken], which the view holding its copy waits on. */
-    val token: Long = nextMoveToken(),
+    val token: Long,
 )
 
 /**
@@ -122,8 +122,9 @@ sealed interface MoveOutcome {
     data object Gone : MoveOutcome
 
     /**
-     * A drop that waited for an earlier one found its occurrence no longer where
-     * it was picked up — the earlier write moved it — so it is not written (#494).
+     * The drop's occurrence is no longer where it was picked up — an earlier
+     * write moved it — and a recurring one can't be followed there, so it is not
+     * written (#494).
      */
     data object Stale : MoveOutcome
 
@@ -164,7 +165,7 @@ class RescheduleViewModel @Inject constructor(
 
     private val _inFlight = MutableStateFlow(false)
 
-    /** True while any write runs or waits, a queued drop included — what the confirmation chip holds for. */
+    /** True while any drop or undo runs or waits — what the confirmation chip holds for. */
     val inFlight: StateFlow<Boolean> = _inFlight.asStateFlow()
 
     private val _drops = MutableStateFlow(DropStates())
@@ -192,6 +193,13 @@ class RescheduleViewModel @Inject constructor(
      * written. Drops arriving in that window wait in [queue] and run in order.
      */
     private var busy = false
+        set(value) {
+            field = value
+            _inFlight.value = value
+        }
+
+    /** Whether a drop since the pipeline was last idle failed — see [report]. */
+    private var failedThisRun = false
 
     /** Drops that arrived while another was in flight, oldest first (#494). */
     private val queue = ArrayDeque<MoveRequest>()
@@ -240,19 +248,14 @@ class RescheduleViewModel @Inject constructor(
             return false
         }
         _drops.update { it.started(request.token) }
-        if (busy) {
-            queue.addLast(request)
-        } else {
-            run(request, waited = false)
-        }
-        syncInFlight()
+        if (busy) queue.addLast(request) else run(request)
         return true
     }
 
-    private fun run(request: MoveRequest, waited: Boolean) {
+    private fun run(request: MoveRequest) {
         busy = true
         viewModelScope.launch {
-            val prepared = prepare(request, waited)
+            val prepared = prepare(request)
             if (prepared == null) {
                 settle(request.token, landed = false)
                 return@launch
@@ -262,7 +265,7 @@ class RescheduleViewModel @Inject constructor(
             if (!prepared.isRecurring || (seriesOnly && prepared.canRealign)) {
                 settle(request.token, write(prepared, RecurringWriteScope.AllEvents))
             } else if (seriesOnly) {
-                _outcome.value = MoveOutcome.BlockedCancelledSeries
+                report(MoveOutcome.BlockedCancelledSeries)
                 settle(request.token, landed = false)
             } else {
                 // Still busy: the scope dialog is now the thing in flight.
@@ -298,13 +301,26 @@ class RescheduleViewModel @Inject constructor(
     /** End the drop [token], then run the next queued one, if any. */
     private fun settle(token: Long, landed: Boolean) {
         _drops.update { it.ended(token, landed) }
-        busy = false
-        queue.removeFirstOrNull()?.let { run(it, waited = true) }
-        syncInFlight()
+        // Straight on to the next, so busy never reads false between two drops.
+        val next = queue.removeFirstOrNull()
+        if (next != null) {
+            run(next)
+        } else {
+            busy = false
+            failedThisRun = false
+        }
     }
 
-    private fun syncInFlight() {
-        _inFlight.value = busy || queue.isNotEmpty()
+    /**
+     * Show [outcome] on the chip. While drops run back to back, a failure stays
+     * up rather than being replaced by a later drop's success: the grid shows
+     * what moved, but only the chip says what didn't.
+     */
+    private fun report(outcome: MoveOutcome) {
+        val failure = outcome !is MoveOutcome.Moved && outcome !is MoveOutcome.Undone
+        if (!failure && failedThisRun) return
+        if (failure) failedThisRun = true
+        _outcome.value = outcome
     }
 
     /**
@@ -316,11 +332,10 @@ class RescheduleViewModel @Inject constructor(
      * reports whether it landed.
      */
     fun undo(undo: MoveUndo): Boolean {
-        if (busy || queue.isNotEmpty()) return false
+        if (busy) return false
         val token = nextMoveToken()
         _drops.update { it.started(token) }
         busy = true
-        syncInFlight()
         _undoStarted.value = token
         viewModelScope.launch {
             _outcome.value = try {
@@ -345,25 +360,27 @@ class RescheduleViewModel @Inject constructor(
         _outcome.value = null
     }
 
-    private suspend fun prepare(request: MoveRequest, waited: Boolean): PreparedMove? {
-        val detail = try {
-            // A drop that waited carries times from before the writes ahead of it.
-            if (waited && !occurrenceStillAt(request)) {
-                _outcome.value = MoveOutcome.Stale
-                return null
-            }
-            repository.eventDetail(request.eventId)
+    private suspend fun prepare(dropped: MoveRequest): PreparedMove? {
+        val zone = zoneSource.current()
+        val (detail, request) = try {
+            val detail = repository.eventDetail(dropped.eventId)
+            // The drop carries the times the grid drew, which an earlier write
+            // may have moved on since (#494).
+            detail to if (occurrenceStillAt(dropped)) dropped else followed(dropped, detail, zone)
         } catch (e: CancellationException) {
             throw e
         } catch (e: NoSuchEventException) {
-            _outcome.value = MoveOutcome.Gone
+            report(MoveOutcome.Gone)
             return null
         } catch (e: Exception) {
-            _outcome.value = MoveOutcome.Failed
+            report(MoveOutcome.Failed)
+            return null
+        }
+        if (request == null) {
+            report(MoveOutcome.Stale)
             return null
         }
 
-        val zone = zoneSource.current()
         val original = detail.toEditForm(request.beginMillis, request.endMillis, zone)
         val shifted = when (val target = request.target) {
             is MoveTarget.Start -> original.shiftedTo(target.instant, zone)
@@ -376,7 +393,7 @@ class RescheduleViewModel @Inject constructor(
         // The UNTIL check is deferred to the write, which knows how far the move
         // reaches and so which date has to clear it.
         if ((shifted.problems(zone) - EventFormProblem.RecurrenceEndsBeforeStart).isNotEmpty()) {
-            _outcome.value = MoveOutcome.Failed
+            report(MoveOutcome.Failed)
             return null
         }
 
@@ -425,10 +442,10 @@ class RescheduleViewModel @Inject constructor(
     private suspend fun write(prepared: PreparedMove, scope: RecurringWriteScope): Boolean {
         val request = prepared.request
         if (endsBeforeItStarts(prepared, scope)) {
-            _outcome.value = MoveOutcome.BlockedSeriesEnd
+            report(MoveOutcome.BlockedSeriesEnd)
             return false
         }
-        _outcome.value = try {
+        val outcome = try {
             when {
                 !prepared.isRecurring || scope == RecurringWriteScope.AllEvents ->
                     repository.updateEvent(request.eventId, prepared.original, prepared.updated)
@@ -463,16 +480,44 @@ class RescheduleViewModel @Inject constructor(
         } catch (e: Exception) {
             MoveOutcome.Failed
         }
-        return _outcome.value is MoveOutcome.Moved
+        report(outcome)
+        return outcome is MoveOutcome.Moved
     }
 
-    /** Whether [request]'s occurrence still begins where it was picked up. */
+    /** Whether [request]'s occurrence is still exactly where it was picked up. */
     private suspend fun occurrenceStillAt(request: MoveRequest): Boolean {
         val begin = Instant.fromEpochMilliseconds(request.beginMillis)
-        val end = Instant.fromEpochMilliseconds(maxOf(request.endMillis, request.beginMillis + 1))
-        return repository.eventOccurrences(request.eventId, begin..end).any {
-            it.eventId == request.eventId && it.start == begin
+        val end = Instant.fromEpochMilliseconds(request.endMillis)
+        val range = begin..maxOf(end, Instant.fromEpochMilliseconds(request.beginMillis + 1))
+        return repository.eventOccurrences(request.eventId, range).any {
+            it.eventId == request.eventId && it.start == begin && it.end == end
         }
+    }
+
+    /**
+     * [dropped] rebased onto where its event now is, so the last drop wins:
+     * absolute targets stand as they are, and a whole-day shift is re-aimed at
+     * the day it was dropped on. Null for a recurring event, whose moved
+     * occurrence can't be told apart from the rest of its series.
+     */
+    private fun followed(dropped: MoveRequest, detail: EventDetail, zone: TimeZone): MoveRequest? {
+        if (detail.rrule != null && !detail.isException) return null
+        val now = detail.instance
+        val target = when (val target = dropped.target) {
+            is MoveTarget.ByDays -> {
+                val dayZone = if (now.isAllDay) TimeZone.UTC else zone
+                val aimed = Instant.fromEpochMilliseconds(dropped.beginMillis).toLocalDateTime(dayZone).date
+                    .plus(target.days, DateTimeUnit.DAY)
+                val from = now.start.toLocalDateTime(dayZone).date
+                MoveTarget.ByDays((aimed.toEpochDays() - from.toEpochDays()).toInt())
+            }
+            else -> target
+        }
+        return dropped.copy(
+            beginMillis = now.start.toEpochMilliseconds(),
+            endMillis = now.end.toEpochMilliseconds(),
+            target = target,
+        )
     }
 
     /**
