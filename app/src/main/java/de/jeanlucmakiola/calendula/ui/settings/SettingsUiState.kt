@@ -140,3 +140,6 @@ data class SpecialDatesUiState(
 
 /** A reminder channel's sound: null [uri] is silent; [title] is null when it can't be resolved. */
 data class ReminderSound(val uri: Uri?, val title: String?)
+
+/** Why a picked reminder sound wasn't applied. */
+enum class SoundFailure { NotApplied, Unreadable }

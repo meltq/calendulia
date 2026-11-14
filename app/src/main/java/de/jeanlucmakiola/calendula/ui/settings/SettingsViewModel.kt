@@ -399,10 +399,10 @@ class SettingsViewModel @Inject constructor(
     /** Each calendar's reminder sound (#518), null until first read; a calendar without a channel yet is absent. */
     val channelSounds: StateFlow<Map<Long, ReminderSound>?> = _channelSounds.asStateFlow()
 
-    private val _soundFailed = Channel<Unit>(Channel.CONFLATED)
+    private val _soundFailed = Channel<SoundFailure>(Channel.CONFLATED)
 
-    /** Emits when a picked sound couldn't be applied to every calendar; kept until the screen collects it. */
-    val soundFailed: Flow<Unit> = _soundFailed.receiveAsFlow()
+    /** Emits when a picked sound couldn't be applied; kept until the screen collects it. */
+    val soundFailed: Flow<SoundFailure> = _soundFailed.receiveAsFlow()
 
     private val soundTitles = mutableMapOf<Uri, String?>()
 
@@ -413,10 +413,16 @@ class SettingsViewModel @Inject constructor(
             val sounds = onChannels { sounds(calendarIds) } ?: return@launch
             _channelSounds.value = withContext(io) {
                 sounds.mapValues { (_, uri) ->
-                    ReminderSound(uri, uri?.let { synchronized(soundTitles) { soundTitles.getOrPut(it) { appContext.ringtoneTitle(it) } } })
+                    ReminderSound(uri, uri?.let(::soundTitle))
                 }
             }
         }
+    }
+
+    /** A sound's title, cached unless it is a "default" alias whose target can change. */
+    private fun soundTitle(uri: Uri): String? {
+        if (uri.authority == Settings.AUTHORITY) return appContext.ringtoneTitle(uri)
+        return synchronized(soundTitles) { soundTitles.getOrPut(uri) { appContext.ringtoneTitle(uri) } }
     }
 
     /** Give [calendarId]'s reminders [sound] (null = silent), on a fresh channel (#518). */
@@ -445,17 +451,20 @@ class SettingsViewModel @Inject constructor(
     /** Runs to completion even if the screen closes meanwhile, so a pick is never half-applied. */
     private fun applySound(sound: Uri?, block: suspend ReminderChannels.() -> Boolean) {
         viewModelScope.launch {
-            val applied = withContext(io + NonCancellable) {
+            val failure = withContext(io + NonCancellable) {
                 try {
                     // The system plays the sound but checks that Calendula could read it.
-                    if (sound != null && !canRead(sound)) return@withContext false
-                    reminderChannels.block()
+                    when {
+                        sound != null && !canRead(sound) -> SoundFailure.Unreadable
+                        reminderChannels.block() -> null
+                        else -> SoundFailure.NotApplied
+                    }
                 } catch (e: Exception) {
                     Log.w("SettingsViewModel", "Could not set the reminder sound", e)
-                    false
+                    SoundFailure.NotApplied
                 }
             }
-            if (!applied) _soundFailed.trySend(Unit)
+            failure?.let(_soundFailed::trySend)
             refreshChannelStatus(visibleCalendars.first().map { it.id })
         }
     }

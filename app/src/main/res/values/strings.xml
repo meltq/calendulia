@@ -741,7 +741,8 @@
     <!-- %1$s is the name of the device's default notification sound. -->
     <string name="settings_notification_sound_default_named">Default (%1$s)</string>
     <string name="settings_notification_sound_custom">Custom sound</string>
-    <string name="settings_notification_sound_failed">Couldn\'t change the sound for every calendar</string>
+    <string name="settings_notification_sound_failed">Couldn\'t change the notification sound</string>
+    <string name="settings_notification_sound_unreadable">Calendula can\'t play this sound. Pick another one.</string>
     <string name="settings_notification_sound_mixed">Differs per calendar</string>
     <string name="settings_notification_more">More notification settings</string>
     <string name="settings_notification_sound_hint">Vibration, pop-ups and more for each calendar, in system settings</string>

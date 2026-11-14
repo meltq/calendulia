@@ -157,10 +157,20 @@ class ReminderChannels @Inject constructor(
 
     /**
      * Run [block] with [calendarId]'s channel held: no sound pick or sync can
-     * move or retire it until [block] returns. Null when the calendar is gone.
+     * move or retire it until [block] returns. Null, without running [block],
+     * when the calendar is gone or its channel can't be made; [block]'s own
+     * failures propagate.
      */
     @Synchronized
-    fun <T> withChannel(calendarId: Long, block: (String) -> T): T? = channelFor(calendarId)?.let(block)
+    fun <T> withChannel(calendarId: Long, block: (String) -> T): T? {
+        val channelId = try {
+            channelFor(calendarId)
+        } catch (e: Exception) {
+            Log.w(TAG, "No channel for calendar $calendarId", e)
+            null
+        }
+        return channelId?.let(block)
+    }
 
     /** What the system currently lets through for [calendarIds]' reminders (#145). */
     fun status(calendarIds: Collection<Long>): ReminderChannelStatus {
@@ -174,6 +184,10 @@ class ReminderChannels @Inject constructor(
         return reminderChannelStatus(calendarIds, appEnabled, channels, blockedGroups, currentVersions(channels.keys))
     }
 
+    /** A "Silent" (low) channel keeps its sound but never plays it. */
+    private fun NotificationChannel.audibleSound(): Uri? =
+        sound.takeUnless { importance in IMPORTANCE_MIN..IMPORTANCE_LOW }
+
     /**
      * The sound each of [calendarIds]' channels plays; null is silent. A
      * calendar whose channel doesn't exist yet is left out.
@@ -182,7 +196,7 @@ class ReminderChannels @Inject constructor(
         val byId = manager.notificationChannels.associateBy { it.id }
         val versions = currentVersions(byId.keys)
         return calendarIds.mapNotNull { id ->
-            byId[reminderChannelId(id, versions[id] ?: 0)]?.let { id to it.sound }
+            byId[reminderChannelId(id, versions[id] ?: 0)]?.let { id to it.audibleSound() }
         }.toMap()
     }
 
@@ -200,7 +214,7 @@ class ReminderChannels @Inject constructor(
         val floors = calendarIds
             .filter { reminderChannelId(it, current[it] ?: 0) in existingIds }
             .associateWith { (current[it] ?: 0) + 1 }
-        if (floors.isEmpty()) return true
+        if (floors.isEmpty()) return false
         return recreate(settingsPrefs.reserveReminderChannelVersions(floors), sound)
     }
 
@@ -215,8 +229,12 @@ class ReminderChannels @Inject constructor(
         val current = currentReminderChannelVersions(byId.keys, emptyMap())
         var allApplied = true
         versions.forEach { (calendarId, version) ->
-            val from = current[calendarId]?.takeIf { it < version } ?: return@forEach
-            val old = byId[reminderChannelId(calendarId, from)] ?: return@forEach
+            val from = current[calendarId]?.takeIf { it < version }
+            val old = from?.let { byId[reminderChannelId(calendarId, it)] }
+            if (old == null) {
+                allApplied = false
+                return@forEach
+            }
             try {
                 // Picking a sound asks for one, which a "Silent" (low) channel would never play.
                 val importance = if (sound != null && old.importance in IMPORTANCE_MIN..IMPORTANCE_LOW) {

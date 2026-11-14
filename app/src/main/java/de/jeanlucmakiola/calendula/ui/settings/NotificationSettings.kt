@@ -1,7 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.settings
 
 import android.Manifest
-import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.os.Build
@@ -127,9 +126,11 @@ internal fun NotificationsScreen(
     val loadedSounds by viewModel.channelSounds.collectAsStateWithLifecycle()
     val sounds = loadedSounds.orEmpty()
     val soundFailedMessage = stringResource(R.string.settings_notification_sound_failed)
+    val soundUnreadableMessage = stringResource(R.string.settings_notification_sound_unreadable)
     LaunchedEffect(Unit) {
-        viewModel.soundFailed.collect {
-            Toast.makeText(context, soundFailedMessage, Toast.LENGTH_LONG).show()
+        viewModel.soundFailed.collect { failure ->
+            val message = if (failure == SoundFailure.Unreadable) soundUnreadableMessage else soundFailedMessage
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
         }
     }
     // ALL_CALENDARS, a calendar id, or null when no pick is pending.
@@ -157,7 +158,8 @@ internal fun NotificationsScreen(
             // A missing or mixed sound preselects Default; a silent one, Silent.
             val preselect = if (current == null) DEFAULT_NOTIFICATION_URI else current.uri
             soundPicker.launch(notificationSoundPickerIntent(preselect, pickSoundTitle))
-        } catch (e: ActivityNotFoundException) {
+        } catch (e: RuntimeException) {
+            // No picker, or one that refuses to start: the system screen still has the sound.
             soundTarget = null
             if (target == ALL_CALENDARS) openAppSettings() else openCalendarSettings(target)
         }
