@@ -143,7 +143,7 @@ class CalendarsViewModel @Inject constructor(
                         uri = uri,
                         content = IcsWriter().writeCalendar(events, Clock.System.now(), name),
                     )
-                    events.size
+                    events.count { it.overrideOf == null }
                 }
                 BackupResult.Success(count)
             } catch (e: CancellationException) {

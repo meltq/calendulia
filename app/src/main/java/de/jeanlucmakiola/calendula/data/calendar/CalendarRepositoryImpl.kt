@@ -252,10 +252,11 @@ class CalendarRepositoryImpl @Inject constructor(
         }
 
     override suspend fun exportEvents(calendarIds: Set<Long>) = withContext(io) {
+        // A file can't carry RDATE: such a series is written as the one-off it reads as.
+        val rows = dataSource.calendarRows(calendarIds, allDayReminderTimeMinutes())
         flattenOverrides(
-            rows = dataSource.calendarRows(calendarIds, allDayReminderTimeMinutes()),
-            exdateStamp = ::formatExdateStamp,
-            keepsRecurrenceDates = false,
+            rows.copy(series = rows.series.map { it.copy(event = it.event.copy(recurrenceDates = null)) }),
+            ::formatExdateStamp,
         )
     }
 
@@ -271,11 +272,9 @@ class CalendarRepositoryImpl @Inject constructor(
             )
         }
         onProgress(0, events.size)
-        // Checked between events, so cancelling stops the copy; a plain import
-        // keeps running to the end of its file.
         val context = currentCoroutineContext()
         return importEvents(targetCalendarId, events) { done ->
-            context.ensureActive()
+            if (done < events.size) context.ensureActive()
             onProgress(done, events.size)
         }
     }
@@ -296,12 +295,19 @@ class CalendarRepositoryImpl @Inject constructor(
         var skipped = 0
         var failed = 0
         var notAttempted = 0
+        // Series whose standalone occurrence didn't land: inserted, they would
+        // exclude it for good, since a re-run skips it next to its series.
+        val held = mutableSetOf<String>()
         for ((index, event) in events.withIndex()) {
             if (index > 0) onProgress(index)
             // A known UID means the event is already in this calendar — skip,
             // keeping a restore idempotent (no overwrite this pass).
             if (event.isAlreadyIn(existing)) {
                 skipped++
+                continue
+            }
+            if (event.uid != null && event.uid in held) {
+                failed++
                 continue
             }
             try {
@@ -325,6 +331,7 @@ class CalendarRepositoryImpl @Inject constructor(
                 // rest of the file — foreign exports do carry rows it rejects
                 // outright (a malformed RRULE throws straight out of insert).
                 failed++
+                event.overrideOf?.let(held::add)
                 Log.w(TAG, "Skipped an unimportable event", e)
             }
         }

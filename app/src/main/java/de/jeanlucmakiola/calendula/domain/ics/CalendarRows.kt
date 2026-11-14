@@ -12,6 +12,8 @@ data class MasterRow(
     val calendarId: Long,
     val syncId: String?,
     val event: IcsEvent,
+    /** The user declined this invitation. */
+    val declined: Boolean = false,
 )
 
 /**
@@ -52,16 +54,12 @@ data class CalendarRows(
  * occurrence missing its series, never a series missing an occurrence.
  *
  * [exdateStamp] formats an occurrence as an `EXDATE` entry in the provider's
- * shape, the same one Calendula's own exclusions use. [keepsRecurrenceDates] is
- * false where the output can't carry `RDATE` (an `.ics` file): a series that
- * repeats by listed dates alone then reads as the one-off it will be written as,
- * and its overrides are left alone rather than excluded from nothing. A
- * cancelled series' modified occurrences aren't brought back to life either.
+ * shape, the same one Calendula's own exclusions use. A cancelled series'
+ * modified occurrences stay cancelled.
  */
 fun flattenOverrides(
     rows: CalendarRows,
     exdateStamp: (occurrenceMillis: Long, isAllDay: Boolean) -> String,
-    keepsRecurrenceDates: Boolean = true,
 ): List<IcsEvent> {
     val byId = rows.series.associateBy { it.eventId }
     // Sync ids are only unique within an account, so the link is per calendar.
@@ -73,8 +71,7 @@ fun flattenOverrides(
             ?: override.originalSyncId?.let { bySyncId[override.calendarId to it] }
             ?: continue
         // An exception to a one-off overrides nothing a plain event could carry.
-        val recurs = if (keepsRecurrenceDates) parent.event.recurs else !parent.event.recurrenceRule.isNullOrBlank()
-        if (!recurs) continue
+        if (!parent.event.recurs) continue
         val occurrence = override.originalInstance.toEpochMilliseconds()
         excluded.getOrPut(parent.eventId) { mutableListOf() } += exdateStamp(occurrence, parent.event.isAllDay)
         if (override.isCancelled || parent.event.status == EventStatus.Cancelled) continue

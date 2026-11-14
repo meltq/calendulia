@@ -187,18 +187,6 @@ class CalendarRowsTest {
     }
 
     @Test
-    fun `a file can't carry RDATE, so an RDATE-only series keeps its overrides out of it`() {
-        val rows = CalendarRows(
-            listOf(MasterRow(1, 1, null, event("s").copy(recurrenceDates = "20260112T090000Z"))),
-            listOf(OverrideRow(1, 1, null, occurrence(1), event("x"))),
-        )
-
-        val flat = flattenOverrides(rows, ::formatExdateStamp, keepsRecurrenceDates = false)
-        assertThat(flat.map { it.uid }).containsExactly("s")
-        assertThat(flat.single().exDates).isEmpty()
-    }
-
-    @Test
     fun `a cancelled series' moved occurrence isn't brought back`() {
         val flat = flatten(
             listOf(series("s", status = EventStatus.Cancelled)),
@@ -219,5 +207,12 @@ class CalendarRowsTest {
         )
 
         assertThat(flat.count { it.overrideOf == "s" }).isEqualTo(2)
+    }
+
+    @Test
+    fun `a copy leaves declined invitations out`() {
+        val rows = CalendarRows(listOf(series("d").copy(declined = true), series("k", id = 2)), emptyList())
+
+        assertThat(planCalendarCopy(rows, ::formatExdateStamp).map { it.uid }).containsExactly("k")
     }
 }

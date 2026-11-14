@@ -507,7 +507,10 @@ times. Its UID is derived from the series UID and the occurrence, so it is the
 same in every backup, and it carries the series UID as `X-CALENDULA-OVERRIDE-OF`.
 `importEvents` skips such an occurrence wherever its series already is — that
 series there has the override itself — so restoring into the calendar a backup
-came from adds nothing twice, while a restore into an empty one gets both.
+came from adds nothing twice, while a restore into an empty one gets both. If
+the standalone occurrence fails to insert, its series is held back too (counted
+as not added), since inserted with the occurrence excluded it would make every
+re-run skip the occurrence for good.
 Exceptions whose series isn't among the rows are left out, a cancelled
 series' moved occurrences stay cancelled, and sync ids link only within their
 own calendar. A file can't carry `RDATE`, so a backup treats a series that
@@ -518,8 +521,8 @@ and restore exactly as before.
 flattened rows straight into `importEvents`, so the UID dedup makes a re-run skip
 what landed before. It skips the `.ics` text: the writer pins a timed one-off to
 UTC and carries no colour, visibility or `RDATE`; the direct mapping keeps them.
-Attendees and organizer are never read, and cancelled events are left out (an
-insert can't be cancelled; it would arrive live). A re-run is idempotent per
+Attendees and organizer are never read, and cancelled events and declined
+invitations are left out (an insert can't be cancelled; it would arrive live). A re-run is idempotent per
 snapshot: a series already in the target keeps its overrides, so an occurrence
 changed since keeps its earlier copy rather than gaining a second one.
 

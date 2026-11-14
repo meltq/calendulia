@@ -793,31 +793,30 @@ class AndroidCalendarDataSource @Inject constructor(
         forEachExportRow(selection, allDayReminderTimeMinutes) { event ->
             val calendarId = getLong(EventExportProjection.IDX_CALENDAR_ID)
             val calendar = calendars[calendarId]
-            // Some adapters stamp the calendar's colour onto every row; that is no
-            // colour of the event's own and would pin it in a copy. A palette key
-            // means it was chosen.
+            // An adapter may stamp the calendar colour on every row; a palette key means it was chosen.
             val color = getIntOrNull(EventExportProjection.IDX_EVENT_COLOR)?.takeIf {
                 it != calendar?.color || !getString(EventExportProjection.IDX_EVENT_COLOR_KEY).isNullOrEmpty()
             }
             val mapped = event(calendar?.displayName).copy(color = color)
             val originalId = getLongOrNull(EventExportProjection.IDX_ORIGINAL_ID)
-            val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)
-            // An empty ORIGINAL_SYNC_ID still marks an exception, one that can't be linked.
-            if (originalId == null && originalSyncId == null) {
+            val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)?.takeIf { it.isNotEmpty() }
+            val originalInstance = getLongOrNull(EventExportProjection.IDX_ORIGINAL_INSTANCE_TIME)
+            if (originalId == null && originalSyncId == null && originalInstance == null) {
                 series += MasterRow(
                     eventId = getLong(EventExportProjection.IDX_ID),
                     calendarId = calendarId,
                     syncId = getString(EventExportProjection.IDX_SYNC_ID)?.takeIf { it.isNotEmpty() },
                     event = mapped,
+                    declined = getIntOrNull(EventExportProjection.IDX_SELF_ATTENDEE_STATUS) ==
+                        CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED,
                 )
             } else {
                 // An exception without its occurrence time can't name what it replaces.
-                val originalInstance = getLongOrNull(EventExportProjection.IDX_ORIGINAL_INSTANCE_TIME)
-                    ?: return@forEachExportRow
+                if (originalInstance == null) return@forEachExportRow
                 overrides += OverrideRow(
                     calendarId = calendarId,
                     originalId = originalId,
-                    originalSyncId = originalSyncId.takeIf { !it.isNullOrEmpty() },
+                    originalSyncId = originalSyncId,
                     originalInstance = originalInstance.toKotlinInstantFromEpochMillis(),
                     event = mapped,
                 )

@@ -7,7 +7,7 @@ import kotlin.time.Duration.Companion.days
  * The events a calendar copy (#325) inserts into its target, in the shape
  * `importEvents` takes: the source's rows flattened as [flattenOverrides] does
  * for a backup, minus cancelled series and one-offs, which would arrive live
- * (an insert can't be cancelled). Attendees and organizer are never read.
+ * (an insert can't be cancelled), and declined invitations. Attendees and organizer are never read.
  *
  * Idempotent per snapshot: `importEvents` skips a UID the target already holds,
  * and an [IcsEvent.overrideOf] occurrence whose series it holds, so a re-run
@@ -18,7 +18,7 @@ fun planCalendarCopy(
     rows: CalendarRows,
     exdateStamp: (occurrenceMillis: Long, isAllDay: Boolean) -> String,
 ): List<ParsedIcsEvent> {
-    val live = rows.copy(series = rows.series.filterNot { it.event.status == EventStatus.Cancelled })
+    val live = rows.copy(series = rows.series.filterNot { it.event.status == EventStatus.Cancelled || it.declined })
     return flattenOverrides(live, exdateStamp).map { it.toParsedIcsEvent() }
 }
 

@@ -6,13 +6,13 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -63,6 +63,13 @@ fun CopyEventsSheet(
         title = stringResource(R.string.calendars_copy_action),
         onDismiss = onDismiss,
         predictiveBack = true,
+        actions = {
+            if (!running) {
+                TextButton(onClick = onStart, enabled = source != null && target != null) {
+                    Text(stringResource(R.string.calendars_copy_start))
+                }
+            }
+        },
     ) {
         GroupedHint(stringResource(R.string.calendars_copy_hint), style = MaterialTheme.typography.bodySmall)
         when (calendars) {
@@ -78,7 +85,7 @@ fun CopyEventsSheet(
             }
             is CopyCalendars.Ready -> Unit
         }
-        if (sources.isEmpty() && !running) {
+        if (sources.isEmpty() && run == CopyRunState.Idle) {
             GroupedHint(stringResource(R.string.calendars_copy_none))
             return@FullScreenPicker
         }
@@ -109,15 +116,6 @@ fun CopyEventsSheet(
                     error = true,
                 )
                 CopyRunState.Idle -> Unit
-            }
-            if (!running) {
-                Button(
-                    onClick = onStart,
-                    enabled = source != null && target != null,
-                    modifier = Modifier.fillMaxWidth(),
-                ) {
-                    Text(stringResource(R.string.calendars_copy_start))
-                }
             }
         }
     }

@@ -1046,6 +1046,41 @@ class CalendarRepositoryImplTest {
         assertThat(summary.skippedDuplicate).isEqualTo(2)
     }
 
+    @Test
+    fun `a series waits for a standalone occurrence that didn't land`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val fake = FakeCalendarDataSource().apply { failingImportSummaries += "moved" }
+        val repo = testRepository(fake, tempDir, Dispatchers.Unconfined)
+
+        val summary = repo.importEvents(
+            3L,
+            listOf(parsedEvent("1-s", summary = "moved").copy(overrideOf = "s"), parsedEvent("s"), parsedEvent("t")),
+        )
+
+        assertThat(fake.importedEvents.map { it.first.uid }).containsExactly("t")
+        assertThat(summary.failed).isEqualTo(2)
+    }
+
+    @Test
+    fun `a backup writes an RDATE-only series as the one-off a file can hold`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val start = Instant.parse("2026-01-05T09:00:00Z")
+        val event = IcsEvent("s", "S", start, Instant.parse("2026-01-05T10:00:00Z"), false, "UTC", recurrenceDates = "20260112T090000Z")
+        val fake = FakeCalendarDataSource().apply {
+            calendarRowsResult = CalendarRows(
+                listOf(MasterRow(1, 1, null, event)),
+                listOf(OverrideRow(1, 1, null, start, event.copy(recurrenceDates = null))),
+            )
+        }
+
+        val exported = testRepository(fake, tempDir, Dispatchers.Unconfined).exportEvents(setOf(1L))
+
+        assertThat(exported.map { it.uid }).containsExactly("s")
+        assertThat(exported.single().recurrenceDates).isNull()
+    }
+
     private fun parsedEvent(uid: String?, summary: String = "E") =
         de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent(
         uid = uid,
