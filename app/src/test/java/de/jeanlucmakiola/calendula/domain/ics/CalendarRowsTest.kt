@@ -277,4 +277,11 @@ class CalendarRowsTest {
         assertThat(IcsParser().parse(text).events.single().recurrenceDates)
             .containsExactly("20260110T140000Z", "20260111T090000Z")
     }
+
+    @Test
+    fun `a declined row takes no other row with its UID along`() {
+        val rows = CalendarRows(listOf(series("u").copy(declined = true), series("u", id = 2)), emptyList())
+
+        assertThat(planCalendarCopy(rows, ::formatExdateStamp)).hasSize(1)
+    }
 }

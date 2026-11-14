@@ -36,9 +36,10 @@ fun planCalendarCopy(
         },
     )
     // A declined series still hands its accepted occurrences on before it goes.
-    val declined = declinedSeries.map { it.event.uid }.toSet()
-    return flattenOverrides(live, exdateStamp)
-        .filterNot { it.overrideOf == null && it.uid in declined }
+    // The flattened series follow the standalone occurrences, one per row in order.
+    val flat = flattenOverrides(live, exdateStamp)
+    val standalone = flat.size - live.series.size
+    return flat.filterIndexed { i, _ -> i < standalone || live.series[i - standalone].eventId !in declinedIds }
         .map { it.toParsedIcsEvent() }
 }
 
