@@ -163,7 +163,8 @@ class ReminderScanner @Inject constructor(
             lastListedDay = listed,
         )
         val day = schedule.dueDay
-        if (day != null && notifier.canPost()) {
+        // A blocked channel would swallow it; the day stays owed until allowed.
+        if (day != null && notifier.canPost() && !digestNotifier.isChannelOff()) {
             // A failed summary must not cost the event reminders this pass owes.
             try {
                 // A day either side: all-day occurrences sit at UTC midnight, which

@@ -140,6 +140,8 @@ internal fun NotificationsScreen(
                     viewModel.dismissNotificationCategoryHint()
                     scope.launch {
                         viewModel.syncReminderChannels()
+                        // The summary's category too, so it is on the list to check.
+                        if (state.dailyDigest.enabled) viewModel.digestChannel()
                         context.openNotificationSettings()
                     }
                 },
@@ -201,12 +203,15 @@ internal fun NotificationsScreen(
         Spacer(Modifier.height(24.dp))
         DailyDigestRows(
             digest = state.dailyDigest,
-            blocked = digestBlocked,
+            blocked = channelStatus.appBlocked || digestBlocked,
             onEnable = toggleDigest,
             onPickDay = { showDigestDay = true },
             onPickTime = { showDigestTime = true },
             onOpenSound = {
-                scope.launch { viewModel.digestChannel()?.let { context.openNotificationSettings(it) } }
+                // The app's own page while the app is blocked: the channel's would be greyed out.
+                scope.launch {
+                    context.openNotificationSettings(viewModel.digestChannel().takeUnless { channelStatus.appBlocked })
+                }
             },
         )
 
@@ -261,6 +266,10 @@ internal fun NotificationsScreen(
                         GroupedRow(
                             title = calendar.displayName.orUnnamed(),
                             summary = when {
+                                // Still in the summary, so only its reminders are off.
+                                !notifying && state.dailyDigest.enabled &&
+                                    calendar.id !in state.dailyDigest.excludedCalendarIds ->
+                                    stringResource(R.string.settings_calendar_reminders_off)
                                 !notifying -> stringResource(R.string.settings_calendar_notifications_off)
                                 blocked -> stringResource(R.string.settings_notifications_blocked)
                                 else -> null

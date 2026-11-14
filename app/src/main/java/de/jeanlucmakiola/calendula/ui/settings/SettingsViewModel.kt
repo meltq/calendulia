@@ -398,13 +398,16 @@ class SettingsViewModel @Inject constructor(
         channelStatusJob?.cancel()
         channelStatusJob = viewModelScope.launch {
             onChannels { status(calendarIds) }?.let { _channelStatus.value = it }
-            _digestBlocked.value = withContext(io) { runCatching { digestNotifier.isBlocked() }.getOrDefault(false) }
+            _digestBlocked.value = withContext(io) { runCatching { digestNotifier.isChannelOff() }.getOrDefault(false) }
         }
     }
 
     private val _digestBlocked = MutableStateFlow(false)
 
-    /** Whether the system blocks the daily summary's channel (#459); refreshed with [refreshChannelStatus]. */
+    /**
+     * Whether the daily summary's own channel is switched off (#459); the app-wide
+     * block is [channelStatus]'s. Refreshed with [refreshChannelStatus].
+     */
     val digestBlocked: StateFlow<Boolean> = _digestBlocked.asStateFlow()
 
     fun dismissNotificationCategoryHint() = save { dismissNotificationCategoryHint() }
@@ -467,6 +470,12 @@ class SettingsViewModel @Inject constructor(
     fun setDailyDigestEnabled(enabled: Boolean) {
         viewModelScope.launch {
             prefs.setDailyDigestEnabled(enabled)
+            // Created now, so a phone that starts new categories switched off
+            // shows it blocked here rather than dropping the first summary.
+            if (enabled) {
+                digestChannel()
+                _digestBlocked.value = withContext(io) { runCatching { digestNotifier.isChannelOff() }.getOrDefault(false) }
+            }
             // After the scan, so one already under way can't post past the cancel;
             // a summary left showing would go stale with nothing to replace it.
             reminderScanner.scan()

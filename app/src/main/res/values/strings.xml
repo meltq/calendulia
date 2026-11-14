@@ -735,6 +735,7 @@
     <string name="settings_calendar_notifications">Notifications</string>
     <string name="settings_calendar_notifications_hint">Notify at this calendar\'s reminder times</string>
     <string name="settings_calendar_notifications_off">Notifications off</string>
+    <string name="settings_calendar_reminders_off">Reminders off</string>
     <string name="settings_notification_sound">Notification sound</string>
     <string name="settings_notification_sound_hint">Sound, vibration and pop-ups for each calendar, in system settings</string>
     <string name="settings_notifications_blocked">Blocked in system settings</string>

@@ -447,6 +447,11 @@ event reminders of the same pass, and a failing reminder pass still arms a retry
 and the summary's next moment. Switching between "today's" and "tomorrow's"
 events clears the day last listed, so the first summary of the new mode comes.
 The notification names its date and times out when that day ends.
+Its channel's blocked state is read separately (`DailyDigestNotifier.isChannelOff`,
+with the app-wide block from `ReminderChannels.status`); while it is off the
+scan neither posts nor records the day, so allowing it brings the summary back.
+The channel is created when the summary is switched on, so a phone that starts
+new categories off shows it blocked in settings before the first summary.
 The per-calendar reminder mute does not apply: a calendar too noisy to ping per
 event can still belong in the overview, and the summary has its own
 per-calendar switch next to it.
