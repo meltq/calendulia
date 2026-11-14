@@ -39,7 +39,7 @@ fun customReminderPlaceholder(units: List<ReminderUnit>): String =
  * a sub-day value carried over from a timed event blocks the day it lands on.
  */
 fun reminderDaysTaken(alreadyChosen: List<Int>, isAllDay: Boolean): List<Int> =
-    if (isAllDay) alreadyChosen.map { it / DAY * DAY } else alreadyChosen
+    if (isAllDay) alreadyChosen.map { if (it == MINUTES_DEFAULT) it else it / DAY * DAY } else alreadyChosen
 
 /** Whether a picker over [presets] splits its rows into sub-day and day-scale groups. */
 fun splitsSubDay(presets: Collection<Int>): Boolean = presets.any { it in 1 until DAY }
