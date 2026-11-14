@@ -45,6 +45,7 @@ import de.jeanlucmakiola.calendula.domain.backup.withFingerprint
 import de.jeanlucmakiola.calendula.domain.backup.withLedgerEntry
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.floret.android.hasPermission
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
@@ -70,6 +71,9 @@ object BackupScheduler {
 
     private val reconcileLock = Mutex()
 
+    /** A watch that fired while the option was off: still pending until it finishes, but not re-armed. */
+    private var watchDropped = false
+
     /**
      * Reconcile the scheduled work with the saved settings: enqueue a unique
      * periodic request when backup is on and a folder is set, otherwise cancel
@@ -81,7 +85,7 @@ object BackupScheduler {
      * waits; it doesn't survive a reboot, and this runs on every process start.
      * Serialised and not cancellable, so quick toggles settle on the last one.
      */
-    suspend fun reconcile(context: Context, prefs: SettingsPrefs) = withContext(NonCancellable) {
+    suspend fun reconcile(context: Context, prefs: SettingsPrefs) = withContext(NonCancellable + Dispatchers.IO) {
         reconcileLock.withLock {
             try {
                 apply(context, prefs)
@@ -115,7 +119,13 @@ object BackupScheduler {
             ExistingPeriodicWorkPolicy.UPDATE,
             request,
         )
-        if (prefs.autoBackupOnChange.first()) BackupChangeJob.scheduleIfIdle(context) else stopWatching()
+        if (!prefs.autoBackupOnChange.first()) {
+            stopWatching()
+        } else if (watchDropped || !BackupChangeJob.isPending(context)) {
+            // Replacing a waiting watch would drop the changes it has seen.
+            BackupChangeJob.schedule(context)
+            watchDropped = false
+        }
     }
 
     /**
@@ -125,20 +135,28 @@ object BackupScheduler {
      */
     internal suspend fun changed(context: Context, prefs: SettingsPrefs) = withContext(NonCancellable) {
         reconcileLock.withLock {
-            val wanted = prefs.autoBackupEnabled.first() && prefs.autoBackupFolderUri.first() != null &&
-                prefs.autoBackupOnChange.first()
-            if (!wanted) return@withLock
-            val workManager = WorkManager.getInstance(context)
-            val states = workManager.getWorkInfosForUniqueWorkFlow(WORK_NAME_CHANGE).first().map { it.state }
-            changeRunPolicy(states)?.let { policy ->
-                val run = OneTimeWorkRequestBuilder<BackupWorker>()
-                    .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
-                    .setInputData(workDataOf(KEY_CHANGE_RUN to true))
-                    .build()
-                workManager.enqueueUniqueWork(WORK_NAME_CHANGE, policy, run).await()
+            // Re-armed even when queueing the run fails: a trigger fires only once.
+            var wanted = true
+            try {
+                wanted = prefs.autoBackupEnabled.first() && prefs.autoBackupFolderUri.first() != null &&
+                    prefs.autoBackupOnChange.first()
+                if (wanted) queueChangeRun(context)
+            } finally {
+                if (wanted) BackupChangeJob.schedule(context)
+                watchDropped = !wanted
             }
-            BackupChangeJob.schedule(context)
         }
+    }
+
+    private suspend fun queueChangeRun(context: Context) {
+        val workManager = WorkManager.getInstance(context)
+        val states = workManager.getWorkInfosForUniqueWorkFlow(WORK_NAME_CHANGE).first().map { it.state }
+        val policy = changeRunPolicy(states) ?: return
+        val run = OneTimeWorkRequestBuilder<BackupWorker>()
+            .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
+            .setInputData(workDataOf(KEY_CHANGE_RUN to true))
+            .build()
+        workManager.enqueueUniqueWork(WORK_NAME_CHANGE, policy, run).await()
     }
 
     /**
@@ -192,9 +210,16 @@ class BackupWorker(
     override suspend fun doWork(): Result {
         val deps = EntryPointAccessors.fromApplication(applicationContext, Deps::class.java)
         val changeRun = inputData.getBoolean(BackupScheduler.KEY_CHANGE_RUN, false)
-        val result = backUp(deps, deps.settingsPrefs(), changeRun)
+        if (!changeRun) return backUp(deps, deps.settingsPrefs(), changeRun = false)
         // A failed change run would fail the one queued behind it too.
-        return if (changeRun) Result.success() else result
+        try {
+            backUp(deps, deps.settingsPrefs(), changeRun = true)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Backup after a change failed", e)
+        }
+        return Result.success()
     }
 
     /**

@@ -43,7 +43,8 @@ class BackupChangeJob : JobService() {
         return true
     }
 
-    override fun onStopJob(params: JobParameters): Boolean = false
+    /** Stopped before it could re-arm: run again rather than leave the provider unwatched. */
+    override fun onStopJob(params: JobParameters): Boolean = true
 
     override fun onDestroy() {
         scope.cancel()
@@ -68,13 +69,13 @@ class BackupChangeJob : JobService() {
                 .setTriggerContentUpdateDelay(TimeUnit.MINUTES.toMillis(SETTLE_MINUTES))
                 .setTriggerContentMaxDelay(TimeUnit.MINUTES.toMillis(MAX_WAIT_MINUTES))
                 .build()
-            context.getSystemService(JobScheduler::class.java).schedule(job)
+            if (context.getSystemService(JobScheduler::class.java).schedule(job) != JobScheduler.RESULT_SUCCESS) {
+                Log.w(TAG, "The change watch could not be scheduled")
+            }
         }
 
-        /** Arm the watch unless it already waits; replacing it would drop the changes it has seen. */
-        fun scheduleIfIdle(context: Context) {
-            if (context.getSystemService(JobScheduler::class.java).getPendingJob(JOB_ID) == null) schedule(context)
-        }
+        fun isPending(context: Context): Boolean =
+            context.getSystemService(JobScheduler::class.java).getPendingJob(JOB_ID) != null
 
         fun cancel(context: Context) = context.getSystemService(JobScheduler::class.java).cancel(JOB_ID)
     }

@@ -296,6 +296,12 @@
             </intent-filter>
         </service>
 
+        <!-- The change watch behind "Also back up after changes" (#516). -->
+        <service
+            android:name=".data.backup.BackupChangeJob"
+            android:exported="false"
+            android:permission="android.permission.BIND_JOB_SERVICE" />
+
         <!-- Reminder delivery is the app's own (#75): it plans the alarms from
              Instances + Reminders instead of waiting for the provider's
              EVENT_REMINDER broadcast, which OEM-modified providers demonstrably
@@ -304,11 +310,6 @@
              wipe pending alarms, and a clock or timezone change moves every
              reminder relative to the one that is armed.
              Exported: the system broadcasts arrive from outside the app. -->
-        <service
-            android:name=".data.backup.BackupChangeJob"
-            android:exported="false"
-            android:permission="android.permission.BIND_JOB_SERVICE" />
-
         <receiver
             android:name=".data.reminders.ReminderScheduleReceiver"
             android:exported="true">
