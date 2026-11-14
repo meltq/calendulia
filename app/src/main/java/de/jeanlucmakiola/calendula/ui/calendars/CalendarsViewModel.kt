@@ -9,6 +9,10 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.data.backup.BackupScheduler
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.BackupStatus
@@ -57,15 +61,26 @@ class CalendarsViewModel @Inject constructor(
                 initialValue = emptyList(),
             )
 
+    private val accessChecks = MutableStateFlow(0)
+
     /**
      * Accounts the drawer was told not to ask sync-request access for (#240),
      * limited to those still behind a visible calendar and still unreachable.
      */
+    @OptIn(ExperimentalCoroutinesApi::class)
     val syncAccessDismissed: StateFlow<List<SyncAccount>> =
-        repository.syncTargets
-            .map { targets -> targets.dismissed.sortedWith(compareBy({ it.name.lowercase() }, { it.type })) }
+        combine(repository.syncAccessDismissed, accessChecks) { stored, _ -> stored }
+            .flatMapLatest { stored ->
+                if (stored.isEmpty()) flowOf(emptyList())
+                else repository.syncTargets.map { it.dismissed.toList() }
+            }
             .catch { emit(emptyList()) }
             .stateWhileSubscribed(scope = viewModelScope, initialValue = emptyList())
+
+    /** Re-read account access, which can change outside the app; called on resume. */
+    fun refreshAccess() {
+        accessChecks.update { it + 1 }
+    }
 
     fun askSyncAccessAgain(account: SyncAccount) {
         viewModelScope.launch { repository.setSyncAccessDismissed(account, dismissed = false) }

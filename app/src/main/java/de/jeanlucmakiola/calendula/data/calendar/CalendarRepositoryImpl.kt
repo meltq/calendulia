@@ -183,7 +183,11 @@ class CalendarRepositoryImpl @Inject constructor(
         { listOf(original?.calendarId ?: dataSource.eventCalendarId(eventId), *others) }
 
     private fun targetsOf(calendars: List<CalendarSource>, dismissed: Set<SyncAccount>): SyncTargets =
-        reach(calendars.syncAccounts().withAdapter()).let {
+        reach(
+            calendars.syncAccounts().withAdapter()
+                .sortedWith(compareBy({ it.name.lowercase() }, { it.type }))
+                .toSet(),
+        ).let {
             if (dismissed.isEmpty()) {
                 it
             } else {
@@ -196,8 +200,15 @@ class CalendarRepositoryImpl @Inject constructor(
 
     override val syncAccessDismissed: Flow<Set<SyncAccount>> = prefs.syncAccessDismissed
 
-    override suspend fun setSyncAccessDismissed(account: SyncAccount, dismissed: Boolean) =
-        prefs.setSyncAccessDismissed(account, dismissed)
+    override suspend fun setSyncAccessDismissed(account: SyncAccount, dismissed: Boolean) {
+        try {
+            prefs.setSyncAccessDismissed(account, dismissed)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Sync access dismissal not saved", e)
+        }
+    }
 
     override suspend fun requestSync(): SyncRequestResult = withContext(io) {
         val targets = try {

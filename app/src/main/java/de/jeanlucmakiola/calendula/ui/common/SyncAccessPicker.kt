@@ -13,7 +13,6 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -25,6 +24,7 @@ import de.jeanlucmakiola.calendula.data.calendar.accountAccessIntent
 import de.jeanlucmakiola.floret.components.FullScreenPicker
 import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.positionOf
 
 /**
@@ -69,32 +69,42 @@ fun RefreshSyncAccessOnOpen(drawerState: DrawerState, sync: SyncViewModel) {
  */
 @Composable
 fun SyncAccessSheet(
-    accounts: List<SyncAccount>,
+    accounts: List<SyncAccount>?,
     onGrant: (SyncAccount) -> Unit,
     onDismissAccount: (SyncAccount) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    // Closes once the last account is granted or dismissed, not while the first read is pending.
-    var hadAccounts by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(accounts.isEmpty()) {
-        if (accounts.isNotEmpty()) hadAccounts = true else if (hadAccounts) onDismiss()
-    }
+    LaunchedEffect(accounts?.isEmpty()) { if (accounts?.isEmpty() == true) onDismiss() }
     FullScreenPicker(title = stringResource(R.string.drawer_sync_access), onDismiss = onDismiss, predictiveBack = true) {
         GroupedHint(stringResource(R.string.sync_access_hint), verticalPadding = 8.dp)
-        accounts.forEachIndexed { index, account ->
-            GroupedRow(
-                title = account.name,
-                summary = sourceAppName(account.type),
-                position = positionOf(index, accounts.size),
-                minHeight = 64.dp,
-                leading = { SourceLogo(account.type) },
-                trailing = {
-                    TextButton(onClick = { onDismissAccount(account) }) {
-                        Text(stringResource(R.string.sync_access_dont_ask))
-                    }
-                },
+        accounts.orEmpty().forEachIndexed { index, account ->
+            SyncAccountRow(
+                account = account,
+                position = positionOf(index, accounts.orEmpty().size),
+                actionLabel = stringResource(R.string.sync_access_dont_ask),
+                onAction = { onDismissAccount(account) },
                 onClick = { onGrant(account) },
             )
         }
     }
+}
+
+/** One synced account with a text action, as the access sheet and the calendar manager list them. */
+@Composable
+fun SyncAccountRow(
+    account: SyncAccount,
+    position: Position,
+    actionLabel: String,
+    onAction: () -> Unit,
+    onClick: (() -> Unit)? = null,
+) {
+    GroupedRow(
+        title = account.name,
+        summary = sourceAppName(account.type),
+        position = position,
+        minHeight = 64.dp,
+        leading = { SourceLogo(account.type) },
+        trailing = { TextButton(onClick = onAction) { Text(actionLabel) } },
+        onClick = onClick,
+    )
 }

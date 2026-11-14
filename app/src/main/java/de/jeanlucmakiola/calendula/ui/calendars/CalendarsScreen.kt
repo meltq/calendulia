@@ -86,7 +86,9 @@ import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
-import de.jeanlucmakiola.calendula.ui.common.sourceAppName
+import de.jeanlucmakiola.calendula.ui.common.SyncAccountRow
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.identity.LocalFloretDarkTheme
@@ -134,6 +136,7 @@ fun CalendarsScreen(
     val deleteLockedIds by viewModel.deleteLockedCalendarIds.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
     val syncAccessDismissed by viewModel.syncAccessDismissed.collectAsStateWithLifecycle()
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { viewModel.refreshAccess() }
 
     // null = list; NEW_CALENDAR_ID = create; any other id = edit that calendar.
     // [editorSession] bumps on every open so the editor's field state resets for
@@ -335,16 +338,11 @@ private fun CalendarsList(
             GroupedSectionHeader(stringResource(R.string.calendars_sync_access_header))
             GroupedHint(stringResource(R.string.calendars_sync_access_hint), style = MaterialTheme.typography.bodySmall)
             syncAccessDismissed.forEachIndexed { index, account ->
-                GroupedRow(
-                    title = account.name,
-                    summary = sourceAppName(account.type),
+                SyncAccountRow(
+                    account = account,
                     position = positionOf(index, syncAccessDismissed.size),
-                    leading = { SourceLogo(account.type) },
-                    trailing = {
-                        TextButton(onClick = { onAskSyncAccessAgain(account) }) {
-                            Text(stringResource(R.string.calendars_sync_access_ask_again))
-                        }
-                    },
+                    actionLabel = stringResource(R.string.calendars_sync_access_ask_again),
+                    onAction = { onAskSyncAccessAgain(account) },
                 )
             }
         }

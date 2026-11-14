@@ -38,13 +38,14 @@ class SyncViewModel @Inject constructor(
     private val accessChecks = MutableStateFlow(0)
 
     /**
-     * Who "Sync now" can reach, and who first needs the user's grant. Account
-     * access isn't observable, so it is re-read on every [refreshAccess].
+     * Who "Sync now" can reach, and who first needs the user's grant; null until
+     * first read. Account access isn't observable, so it is re-read on every
+     * [refreshAccess].
      */
     @OptIn(ExperimentalCoroutinesApi::class)
-    val targets: StateFlow<SyncTargets> = accessChecks
+    val targets: StateFlow<SyncTargets?> = accessChecks
         .flatMapLatest { repository.syncTargets.catch { emit(SyncTargets.None) } }
-        .stateWhileSubscribed(scope = viewModelScope, initialValue = SyncTargets.None)
+        .stateWhileSubscribed(scope = viewModelScope, initialValue = null)
 
     /** Re-read account access: whenever the app resumes, which includes the picker returning. */
     fun refreshAccess() {

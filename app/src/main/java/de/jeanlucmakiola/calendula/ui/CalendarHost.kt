@@ -57,6 +57,7 @@ import de.jeanlucmakiola.calendula.ui.common.DrawerSync
 import de.jeanlucmakiola.calendula.ui.common.SyncViewModel
 import de.jeanlucmakiola.calendula.ui.common.RefreshSyncAccessOnOpen
 import de.jeanlucmakiola.calendula.ui.common.SyncAccessSheet
+import de.jeanlucmakiola.calendula.data.calendar.SyncTargets
 import de.jeanlucmakiola.calendula.ui.common.rememberSyncAccessPicker
 import de.jeanlucmakiola.calendula.ui.common.messageRes
 import de.jeanlucmakiola.calendula.ui.common.CalendarFab
@@ -450,7 +451,8 @@ fun CalendarHost(
     val selectionFailure by eventActions.failure.collectAsStateWithLifecycle()
     // "Sync now" in the drawer (#240); its receipt shares the move chip.
     val sync: SyncViewModel = hiltViewModel()
-    val syncTargets by sync.targets.collectAsStateWithLifecycle()
+    val loadedSyncTargets by sync.targets.collectAsStateWithLifecycle()
+    val syncTargets = loadedSyncTargets ?: SyncTargets.None
     val syncInFlight by sync.inFlight.collectAsStateWithLifecycle()
     val syncResult by sync.result.collectAsStateWithLifecycle()
     val selectionFailureMessage = eventActionFailureMessage(selectionFailure)
@@ -718,7 +720,7 @@ fun CalendarHost(
 
         if (showSyncAccess) {
             SyncAccessSheet(
-                accounts = syncTargets.needsAccess.toList(),
+                accounts = loadedSyncTargets?.needsAccess?.toList(),
                 onGrant = launchAccessPicker,
                 onDismissAccount = sync::dismissAccess,
                 onDismiss = { showSyncAccess = false },
