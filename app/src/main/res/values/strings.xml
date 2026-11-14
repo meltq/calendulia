@@ -737,6 +737,10 @@
     <string name="settings_calendar_notifications_off">Notifications off</string>
     <string name="settings_notification_sound">Notification sound</string>
     <string name="settings_notification_sound_hint">Sound, vibration and pop-ups for each calendar, in system settings</string>
+    <string name="settings_notifications_blocked">Blocked in system settings</string>
+    <string name="settings_notifications_blocked_hint">Blocked in system settings — tap to allow</string>
+    <string name="settings_notification_category_hint">On Samsung phones, new notification categories can start switched off. If a calendar\'s reminders don\'t arrive, check that its category is on.</string>
+    <string name="settings_notification_category_hint_open">Open settings</string>
     <string name="settings_calendar_notification_sound_hint">Sound, vibration and pop-ups for this calendar, in system settings</string>
     <string name="settings_calendar_reminder_inherits">Default (%1$s)</string>
     <string name="settings_reliable_delivery">Reliable delivery</string>

@@ -167,6 +167,7 @@ class SettingsPrefs @Inject constructor(
     val perCalendarEventDuration: Flow<Map<Long, Int>> = prefs.flow(SettingsKeys.perCalendarEventDuration)
     val remindersEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.remindersEnabled)
     val mutedReminderCalendarIds: Flow<Set<Long>> = prefs.flow(SettingsKeys.mutedReminderCalendarIds)
+    val notificationCategoryHintDismissed: Flow<Boolean> = prefs.flow(SettingsKeys.notificationCategoryHintDismissed)
     val allowColorOnUnsupportedCalendars: Flow<Boolean> =
         prefs.flow(SettingsKeys.allowColorOnUnsupportedCalendars)
     val defaultReminderMinutes: Flow<List<Int>> = prefs.flow(SettingsKeys.defaultReminderMinutes)
@@ -273,6 +274,8 @@ class SettingsPrefs @Inject constructor(
     }
 
     suspend fun setRemindersEnabled(enabled: Boolean) = prefs.set(SettingsKeys.remindersEnabled, enabled)
+
+    suspend fun dismissNotificationCategoryHint() = prefs.set(SettingsKeys.notificationCategoryHintDismissed, true)
 
     suspend fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) {
         prefs.update(SettingsKeys.mutedReminderCalendarIds) { if (enabled) it - calendarId else it + calendarId }
@@ -604,6 +607,12 @@ object SettingsKeys {
      * `Calendars.VISIBLE`: the events still show, only the notifications stop.
      */
     val mutedReminderCalendarIds: Pref<Set<Long>> = idSetPref("muted_reminder_calendar_ids")
+
+    /**
+     * Whether the one-time hint that some skins (Samsung) start new notification
+     * categories switched off has been dismissed (#145).
+     */
+    val notificationCategoryHintDismissed: Pref<Boolean> = booleanPref("notification_category_hint_dismissed", false)
 
     /**
      * Whether to offer a custom event colour on calendars that publish no colour

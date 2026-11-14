@@ -128,3 +128,25 @@ fun planReminderChannels(
 }
 
 private fun accountGroupId(type: String, name: String): String = "$GROUP_PREFIX$type/$name"
+
+/** A channel as far as its blocked state goes: switched off itself, and the group it sits in. */
+data class ReminderChannelState(val blocked: Boolean, val groupId: String?)
+
+/**
+ * The calendars among [calendarIds] whose reminders the system blocks: all of
+ * them while the app's notifications are off, otherwise those whose channel,
+ * or the group it sits in, is switched off. A calendar without a channel yet
+ * isn't blocked.
+ */
+fun blockedReminderCalendars(
+    calendarIds: Collection<Long>,
+    appEnabled: Boolean,
+    channels: Map<String, ReminderChannelState>,
+    blockedGroupIds: Set<String>,
+): Set<Long> {
+    if (!appEnabled) return calendarIds.toSet()
+    return calendarIds.filterTo(HashSet()) { id ->
+        val channel = channels[reminderChannelId(id)] ?: return@filterTo false
+        channel.blocked || channel.groupId in blockedGroupIds
+    }
+}

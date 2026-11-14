@@ -102,6 +102,21 @@ class ReminderChannels @Inject constructor(
         return id
     }
 
+    /** What the system currently lets through for [calendarIds]' reminders (#145). */
+    fun status(calendarIds: Collection<Long>): ReminderChannelStatus {
+        val manager = manager
+        val appEnabled = manager.areNotificationsEnabled()
+        val blocked = blockedReminderCalendars(
+            calendarIds = calendarIds,
+            appEnabled = appEnabled,
+            channels = manager.notificationChannels.associate {
+                it.id to ReminderChannelState(it.importance == NotificationManager.IMPORTANCE_NONE, it.group)
+            },
+            blockedGroupIds = manager.notificationChannelGroups.filter { it.isBlocked }.mapTo(HashSet()) { it.id },
+        )
+        return ReminderChannelStatus(appBlocked = !appEnabled, blockedCalendarIds = blocked)
+    }
+
     private fun plan(
         calendars: List<CalendarSource>,
         existing: List<NotificationChannel>,
@@ -190,3 +205,9 @@ class ReminderChannels @Inject constructor(
         const val TAG = "ReminderChannels"
     }
 }
+
+/** Reminder notifications the system blocks, while Calendula would post them. */
+data class ReminderChannelStatus(
+    val appBlocked: Boolean = false,
+    val blockedCalendarIds: Set<Long> = emptySet(),
+)

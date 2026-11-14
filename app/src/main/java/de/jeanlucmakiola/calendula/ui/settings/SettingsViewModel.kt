@@ -34,6 +34,7 @@ import de.jeanlucmakiola.calendula.data.prefs.SpecialDatesStalledReason
 import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.data.prefs.TimeFormatPref
 import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
+import de.jeanlucmakiola.calendula.data.reminders.ReminderChannelStatus
 import de.jeanlucmakiola.calendula.data.reminders.ReminderChannels
 import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
@@ -131,6 +132,7 @@ class SettingsViewModel @Inject constructor(
         writableCalendars = calendars.filter { it.canModifyContents },
         reminderCalendars = calendars,
         mutedReminderCalendarIds = this[SettingsKeys.mutedReminderCalendarIds],
+        notificationCategoryHintDismissed = this[SettingsKeys.notificationCategoryHintDismissed],
         allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
         managedCalendarIds = specialDatesCalendars.values.toSet(),
     )
@@ -369,6 +371,19 @@ class SettingsViewModel @Inject constructor(
             reminderScanner.scan()
         }
     }
+
+    private val _channelStatus = MutableStateFlow(ReminderChannelStatus())
+
+    /** What the system blocks of the reminders; re-read with [refreshChannelStatus] (#145). */
+    val channelStatus: StateFlow<ReminderChannelStatus> = _channelStatus.asStateFlow()
+
+    fun refreshChannelStatus(calendarIds: Collection<Long>) {
+        viewModelScope.launch {
+            onChannels { status(calendarIds) }?.let { _channelStatus.value = it }
+        }
+    }
+
+    fun dismissNotificationCategoryHint() = save { dismissNotificationCategoryHint() }
 
     /** [calendarId]'s reminder channel, created if needed so its system settings can open (#340). */
     suspend fun reminderChannelFor(calendarId: Long): String? = onChannels { channelFor(calendarId) }

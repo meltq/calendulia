@@ -102,6 +102,8 @@ data class SettingsUiState(
     val reminderCalendars: List<CalendarSource> = emptyList(),
     /** Calendars whose reminders Calendula doesn't post (#272). */
     val mutedReminderCalendarIds: Set<Long> = emptySet(),
+    /** Whether the Samsung notification-category hint has been dismissed (#145). */
+    val notificationCategoryHintDismissed: Boolean = false,
     /**
      * Whether the event-colour picker is offered on calendars that publish no
      * colour palette (the colour may then not survive their next sync).

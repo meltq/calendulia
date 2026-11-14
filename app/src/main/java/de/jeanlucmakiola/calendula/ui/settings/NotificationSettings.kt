@@ -9,6 +9,16 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.material.icons.outlined.Info
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
+import androidx.compose.ui.Alignment
+import androidx.lifecycle.compose.LifecycleResumeEffect
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import de.jeanlucmakiola.floret.components.IconInfoCard
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
@@ -92,8 +102,19 @@ internal fun NotificationsScreen(
     var calendarSectionExpanded by remember { mutableStateOf(false) }
     var expandedCalendars by remember { mutableStateOf(emptySet<Long>()) }
     val scope = rememberCoroutineScope()
+    val channelStatus by viewModel.channelStatus.collectAsStateWithLifecycle()
+    val calendarIds = state.reminderCalendars.map { it.id }
+    // Re-read whenever the screen returns from the system settings it links to.
+    LifecycleResumeEffect(calendarIds) {
+        viewModel.refreshChannelStatus(calendarIds)
+        onPauseOrDispose { }
+    }
     val openCalendarSound: (Long) -> Unit = { calendarId ->
-        scope.launch { context.openNotificationSettings(viewModel.reminderChannelFor(calendarId)) }
+        scope.launch {
+            val channelId = viewModel.reminderChannelFor(calendarId)
+            // With the whole app blocked, only the app's own screen can allow it.
+            context.openNotificationSettings(channelId.takeUnless { channelStatus.appBlocked })
+        }
     }
 
     CollapsingScaffold(
@@ -102,6 +123,18 @@ internal fun NotificationsScreen(
         predictiveBack = true,
         visible = visible,
     ) {
+        if (IS_SAMSUNG && !state.notificationCategoryHintDismissed) {
+            NotificationCategoryHint(
+                onOpen = {
+                    scope.launch {
+                        viewModel.syncReminderChannels()
+                        context.openNotificationSettings()
+                    }
+                },
+                onDismiss = viewModel::dismissNotificationCategoryHint,
+            )
+            Spacer(Modifier.height(16.dp))
+        }
         GroupedSwitchRow(
             title = stringResource(R.string.settings_reminders),
             checked = state.remindersEnabled,
@@ -111,7 +144,11 @@ internal fun NotificationsScreen(
         )
         GroupedRow(
             title = stringResource(R.string.settings_notification_sound),
-            summary = stringResource(R.string.settings_notification_sound_hint),
+            summary = if (channelStatus.appBlocked) {
+                stringResource(R.string.settings_notifications_blocked_hint)
+            } else {
+                stringResource(R.string.settings_notification_sound_hint)
+            },
             position = Position.Middle,
             trailing = { ExternalLinkIcon() },
             onClick = {
@@ -192,9 +229,14 @@ internal fun NotificationsScreen(
                         Spacer(Modifier.height(16.dp))
                         val expanded = calendar.id in expandedCalendars
                         val notifying = calendar.id !in state.mutedReminderCalendarIds
+                        val blocked = notifying && calendar.id in channelStatus.blockedCalendarIds
                         GroupedRow(
                             title = calendar.displayName.orUnnamed(),
-                            summary = if (notifying) null else stringResource(R.string.settings_calendar_notifications_off),
+                            summary = when {
+                                !notifying -> stringResource(R.string.settings_calendar_notifications_off)
+                                blocked -> stringResource(R.string.settings_notifications_blocked)
+                                else -> null
+                            },
                             position = if (expanded) Position.Top else Position.Alone,
                             leading = { CalendarColorChip(calendar.color) },
                             trailing = { ExpandIcon(expanded) },
@@ -215,6 +257,7 @@ internal fun NotificationsScreen(
                                 calendar = calendar,
                                 state = state,
                                 notifying = notifying,
+                                blocked = blocked,
                                 onSetNotifying = { viewModel.setCalendarRemindersEnabled(calendar.id, it) },
                                 onOpenSound = { openCalendarSound(calendar.id) },
                                 onOpenSpecialDates = onOpenSpecialDates,
@@ -316,6 +359,7 @@ private fun CalendarNotificationRows(
     calendar: CalendarSource,
     state: SettingsUiState,
     notifying: Boolean,
+    blocked: Boolean,
     onSetNotifying: (Boolean) -> Unit,
     onOpenSound: () -> Unit,
     onOpenSpecialDates: () -> Unit,
@@ -333,7 +377,11 @@ private fun CalendarNotificationRows(
         )
         GroupedRow(
             title = stringResource(R.string.settings_notification_sound),
-            summary = stringResource(R.string.settings_calendar_notification_sound_hint),
+            summary = if (blocked) {
+                stringResource(R.string.settings_notifications_blocked_hint)
+            } else {
+                stringResource(R.string.settings_calendar_notification_sound_hint)
+            },
             position = if (managed || takesOverrides) Position.Middle else Position.Bottom,
             trailing = { ExternalLinkIcon() },
             onClick = onOpenSound,
@@ -367,6 +415,28 @@ private fun CalendarNotificationRows(
                 position = Position.Bottom,
                 onClick = { onEditOverride(OverrideTarget(calendar.id, isAllDay = true)) },
             )
+        }
+    }
+}
+
+/** Samsung's One UI can start a new notification category switched off (#145). */
+private val IS_SAMSUNG = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
+
+/** The one-time Samsung note, with a way into the app's notification settings. */
+@Composable
+private fun NotificationCategoryHint(onOpen: () -> Unit, onDismiss: () -> Unit) {
+    IconInfoCard(
+        icon = Icons.Outlined.Info,
+        iconContentDescription = null,
+        iconAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = stringResource(R.string.settings_notification_category_hint),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.reminder_action_dismiss)) }
+            TextButton(onClick = onOpen) { Text(stringResource(R.string.settings_notification_category_hint_open)) }
         }
     }
 }

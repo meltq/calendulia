@@ -127,6 +127,22 @@ class ReminderChannelPlanTest {
         assertThat(posted.groupsInUse).hasSize(1)
     }
 
+    @Test
+    fun `blocked calendars follow app, channel and group`() {
+        val channels = mapOf(
+            reminderChannelId(1) to ReminderChannelState(blocked = true, groupId = "g1"),
+            reminderChannelId(2) to ReminderChannelState(blocked = false, groupId = "g2"),
+            reminderChannelId(3) to ReminderChannelState(blocked = false, groupId = "g1"),
+        )
+        val ids = listOf(1L, 2L, 3L, 4L)
+        assertThat(blockedReminderCalendars(ids, appEnabled = true, channels, blockedGroupIds = setOf("g2")))
+            .containsExactly(1L, 2L)
+        assertThat(blockedReminderCalendars(ids, appEnabled = true, channels, blockedGroupIds = emptySet()))
+            .containsExactly(1L)
+        assertThat(blockedReminderCalendars(ids, appEnabled = false, channels, blockedGroupIds = emptySet()))
+            .containsExactly(1L, 2L, 3L, 4L)
+    }
+
     private companion object {
         const val DESC = "Reminders"
     }

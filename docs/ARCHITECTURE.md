@@ -407,7 +407,9 @@ the system's channel screens (#340); the app never sets a sound itself. Separate
 from both, `SettingsPrefs.mutedReminderCalendarIds` is the in-app per-calendar
 off switch (#272): the scan plans nothing for those calendars (so they arm no
 wake-ups; toggling it re-scans), and `ReminderNotifier.post` checks it again
-for snoozes.
+for snoozes. The settings screen re-reads `ReminderChannels.status` on every
+resume and marks a calendar "Blocked in system settings" when the app, its
+channel or its account group is switched off there.
 
 Deliberately absent: a fallback to the provider's `EVENT_REMINDER` broadcast.
 Keeping both would double-post wherever the provider works, and Etar's way out —
