@@ -41,6 +41,13 @@ data class IcsEvent(
     val recurrenceDates: String? = null,
     /** Carried by a calendar copy, not written to a file. */
     val accessLevel: AccessLevel = AccessLevel.Default,
+    /** The event's own colour, null when it shows its calendar's; carried by a calendar copy, not written to a file. */
+    val color: Int? = null,
+    /**
+     * For a modified occurrence written out on its own ([flattenOverrides]): the
+     * UID of the series it replaces an occurrence of, as `X-CALENDULA-OVERRIDE-OF`.
+     */
+    val overrideOf: String? = null,
 )
 
 /** Whether this is a series: by rule, or by listed dates alone. */

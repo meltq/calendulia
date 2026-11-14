@@ -485,33 +485,41 @@ of the backup keeps its last one. The pre-#411 fixed `calendula-backup.ics` is
 the combined series' stable copy for the install that wrote it, and an
 install that already had a folder stays on the combined layout.
 
-**A backup carries the series' deleted occurrences.** `EXDATE` lives on the
-master row, so the export query's `ORIGINAL_ID IS NULL` filter — which does drop
-`RECURRENCE-ID` overrides — never hid it; it simply wasn't read. It is now part
-of `EventExportProjection`, and `IcsWriter` marks an all-day series' exclusions
-`VALUE=DATE`, because RFC 5545 ties `EXDATE`'s value type to `DTSTART`'s and a
-bare day code without it reads as a malformed DATE-TIME. Sync adapters disagree
-on whether an all-day exclusion is `yyyyMMdd` or a padded midnight stamp, so
-`exportExDates` drops the time part on the way out. Without this, an in-app
-backup→restore resurrected every occurrence the user had deleted.
+**A backup carries the series' deleted and moved occurrences.** `EXDATE` lives on
+the master row and is part of `EventExportProjection`; `IcsWriter` marks an
+all-day series' exclusions `VALUE=DATE`, because RFC 5545 ties `EXDATE`'s value
+type to `DTSTART`'s and a bare day code without it reads as a malformed
+DATE-TIME. Sync adapters disagree on whether an all-day exclusion is `yyyyMMdd`
+or a padded midnight stamp, so `exportExDates` drops the time part on the way
+out.
 
-**Copying a calendar reads its exceptions too.** Backup & restore → Copy events
-(#325) reads every row of the source through `calendarCopyRows` — masters,
-one-offs *and* the exception rows the backup query leaves out — and
-`planCalendarCopy` turns them into the `ParsedIcsEvent`s that the normal
-`importEvents` inserts, so the UID dedup makes a re-run skip what landed before.
-The copy has no `_sync_id`, and an exception row only attaches through one, so
-overrides are written the way Calendula writes "only this event" on such a
-series: each exception adds its occurrence to the series' `EXDATE`, and a
-modified one becomes a standalone event with a UID derived from the series UID
-and the occurrence. The rows skip the `.ics` text: the writer pins a timed
-one-off to UTC and carries no colour, visibility or `RDATE`; the direct mapping
-keeps them. Attendees and organizer are never read. A re-run is idempotent per
-snapshot: a series already in the target is skipped with its overrides, so a
-re-run keeps the earlier copy of an occurrence changed since rather than adding
-a second one beside it. Cancelled events and exceptions whose series is gone are
-left out, as the source doesn't show them either. The backup keeps excluding exceptions; a restore
-could not place a `RECURRENCE-ID` either.
+A synced calendar records a deleted or moved occurrence as an *exception row*
+(`ORIGINAL_ID` / `ORIGINAL_SYNC_ID` = the series, `ORIGINAL_INSTANCE_TIME` = the
+occurrence) instead, and neither a backup file nor a copied calendar can hold
+one: an `.ics` restore skips `RECURRENCE-ID` overrides, and an inserted row has
+no `_sync_id` for an exception to attach through. `CalendarDataSource.calendarRows`
+therefore reads every row, exceptions included, and `flattenOverrides` — the one
+place this mapping lives, shared by the backup (`exportEvents`) and Copy events
+(#325, `planCalendarCopy`) — writes them the way Calendula writes "only this
+event" on an unsynced series: every exception adds its occurrence to the
+series' `EXDATE`, and a modified one becomes a standalone event at its own
+times. Its UID is derived from the series UID and the occurrence, so it is the
+same in every backup, and it carries the series UID as `X-CALENDULA-OVERRIDE-OF`.
+`importEvents` skips such an occurrence wherever its series already is — that
+series there has the override itself — so restoring into the calendar a backup
+came from adds nothing twice, while a restore into an empty one gets both.
+Exceptions whose series isn't among the rows are left out, and sync ids link
+only within their own calendar. Backups made before this carry no exceptions
+and restore exactly as before.
+
+**Copying a calendar.** Backup & restore → Copy events (#325) runs the source's
+flattened rows straight into `importEvents`, so the UID dedup makes a re-run skip
+what landed before. It skips the `.ics` text: the writer pins a timed one-off to
+UTC and carries no colour, visibility or `RDATE`; the direct mapping keeps them.
+Attendees and organizer are never read, and cancelled events are left out (an
+insert can't be cancelled; it would arrive live). A re-run is idempotent per
+snapshot: a series already in the target keeps its overrides, so an occurrence
+changed since keeps its earlier copy rather than gaining a second one.
 
 That re-encode is sampled where the reminder will actually *fire*, not at
 `DTSTART` (`importedAllDayReminderDate`). An imported series' `DTSTART` is only an

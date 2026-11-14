@@ -14,6 +14,7 @@ import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
+import de.jeanlucmakiola.calendula.domain.ics.flattenOverrides
 import de.jeanlucmakiola.calendula.domain.ics.planCalendarCopy
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.BufferOverflow
@@ -250,8 +251,9 @@ class CalendarRepositoryImpl @Inject constructor(
             }
         }
 
-    override suspend fun exportEvents(calendarIds: Set<Long>) =
-        withContext(io) { dataSource.calendarEvents(calendarIds, allDayReminderTimeMinutes()) }
+    override suspend fun exportEvents(calendarIds: Set<Long>) = withContext(io) {
+        flattenOverrides(dataSource.calendarRows(calendarIds, allDayReminderTimeMinutes()), ::formatExdateStamp)
+    }
 
     override suspend fun copyEvents(
         sourceCalendarId: Long,
@@ -260,9 +262,8 @@ class CalendarRepositoryImpl @Inject constructor(
     ): IcsImportSummary {
         val events = withContext(io) {
             planCalendarCopy(
-                rows = dataSource.calendarCopyRows(sourceCalendarId, allDayReminderTimeMinutes()),
-                targetUids = dataSource.existingUids(targetCalendarId),
-                exdateStamp = ::formatExdateStamp,
+                dataSource.calendarRows(setOf(sourceCalendarId), allDayReminderTimeMinutes()),
+                ::formatExdateStamp,
             )
         }
         onProgress(0, events.size)
@@ -295,7 +296,7 @@ class CalendarRepositoryImpl @Inject constructor(
             if (index > 0) onProgress(index)
             // A known UID means the event is already in this calendar — skip,
             // keeping a restore idempotent (no overwrite this pass).
-            if (event.uid != null && event.uid in existing) {
+            if (event.isAlreadyIn(existing)) {
                 skipped++
                 continue
             }
@@ -311,7 +312,7 @@ class CalendarRepositoryImpl @Inject constructor(
                 // A known UID would have been skipped whatever happened, so it is
                 // no part of what a retry still has to import.
                 val remaining = events.drop(index)
-                val duplicates = remaining.count { it.uid?.let { uid -> uid in existing } == true }
+                val duplicates = remaining.count { it.isAlreadyIn(existing) }
                 skipped += duplicates
                 notAttempted = remaining.size - duplicates
                 break
@@ -404,3 +405,11 @@ class CalendarRepositoryImpl @Inject constructor(
 private fun <T> Flow<Unit>.reQuery(block: suspend () -> T): Flow<T> = flow {
     collect { emit(block()) }
 }
+
+/**
+ * Whether [existing] UIDs already hold this event: its own UID, or — for a
+ * standalone occurrence of a backed-up or copied series — the series, which
+ * there carries the override itself.
+ */
+private fun ParsedIcsEvent.isAlreadyIn(existing: Set<String>): Boolean =
+    (uid != null && uid in existing) || (overrideOf != null && overrideOf in existing)

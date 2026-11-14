@@ -62,15 +62,18 @@ interface CalendarRepository {
 
     /**
      * Every event of [calendarIds], ready to serialise into an `.ics` backup
-     * (see [CalendarDataSource.calendarEvents]). Any calendar can be read,
-     * synced and read-only ones included (#147).
+     * (see [CalendarDataSource.calendarRows]). Any calendar can be read,
+     * synced and read-only ones included (#147). Exception rows come out
+     * flattened ([de.jeanlucmakiola.calendula.domain.ics.flattenOverrides]),
+     * so a restore keeps moved and deleted occurrences of a series.
      */
     suspend fun exportEvents(calendarIds: Set<Long>): List<IcsEvent>
 
     /**
      * Bulk-import parsed `.ics` [events] into [targetCalendarId]. Events whose
      * UID already exists in the target are skipped (idempotent restore); the
-     * rest are inserted. See [CalendarDataSource.insertImportedEvent].
+     * rest are inserted, as is a standalone occurrence whose series is already
+     * there ([ParsedIcsEvent.overrideOf]). See [CalendarDataSource.insertImportedEvent].
      * [onProgress] gets the count of events handled so far before each event
      * after the first and once more when all were handled; it may throw to stop
      * the import between events.

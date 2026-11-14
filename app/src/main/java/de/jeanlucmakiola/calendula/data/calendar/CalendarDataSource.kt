@@ -30,9 +30,9 @@ import de.jeanlucmakiola.calendula.domain.Reminder
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import de.jeanlucmakiola.calendula.domain.contacts.MANAGED_UID_PREFIX
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
-import de.jeanlucmakiola.calendula.domain.ics.CalendarCopyRows
-import de.jeanlucmakiola.calendula.domain.ics.CopyException
-import de.jeanlucmakiola.calendula.domain.ics.CopySeries
+import de.jeanlucmakiola.calendula.domain.ics.CalendarRows
+import de.jeanlucmakiola.calendula.domain.ics.OverrideRow
+import de.jeanlucmakiola.calendula.domain.ics.MasterRow
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.semanticReminderMinutes
@@ -93,22 +93,15 @@ interface CalendarDataSource {
     fun publishedEventColors(calendarId: Long): List<EventColorOption>
 
     /**
-     * Every master/one-off event of [calendarIds], whatever kind of calendar
-     * they are (local, synced, read-only), mapped to [IcsEvent]s. A plain read:
-     * which calendars may be read for what is the caller's call. Modified-
-     * occurrence and cancelled-exception rows are excluded (see
-     * [EventExportProjection]). [allDayReminderTimeMinutes]: needed to write
-     * all-day reminders as whole-day lead times rather than raw provider
+     * Every event row of [calendarIds], whatever kind of calendar they are
+     * (local, synced, read-only): the masters/one-offs and the modified and
+     * cancelled exception rows, each with the keys that link it to its series
+     * and tagged with its calendar's name. A plain read: which calendars may be
+     * read for what is the caller's call. [allDayReminderTimeMinutes]: needed to
+     * write all-day reminders as whole-day lead times rather than raw provider
      * offsets (see [toIcsEvent]).
      */
-    fun calendarEvents(calendarIds: Set<Long>, allDayReminderTimeMinutes: Int): List<IcsEvent>
-
-    /**
-     * Every event row of [calendarId] for a calendar copy (#325): the
-     * masters/one-offs [calendarEvents] reads, plus the modified and cancelled
-     * exception rows it leaves out, each with the keys that link it to its series.
-     */
-    fun calendarCopyRows(calendarId: Long, allDayReminderTimeMinutes: Int): CalendarCopyRows
+    fun calendarRows(calendarIds: Set<Long>, allDayReminderTimeMinutes: Int): CalendarRows
 
     /**
      * The non-empty `Events.UID_2445` values present in [calendarId] — used to
@@ -786,71 +779,48 @@ class AndroidCalendarDataSource @Inject constructor(
             ?: emptyList()
     }
 
-    override fun calendarEvents(
-        calendarIds: Set<Long>,
-        allDayReminderTimeMinutes: Int,
-    ): List<IcsEvent> {
-        if (calendarIds.isEmpty()) return emptyList()
-        // Id → display name for the X-CALENDULA-CALENDAR tag a restore uses to
-        // fan back out; an id that no longer exists drops out here.
-        val names = calendars()
-            .filter { it.id in calendarIds }
-            .associate { it.id to it.displayName }
-        if (names.isEmpty()) return emptyList()
+    override fun calendarRows(calendarIds: Set<Long>, allDayReminderTimeMinutes: Int): CalendarRows {
+        if (calendarIds.isEmpty()) return CalendarRows(emptyList(), emptyList())
+        // The name tags each event for a combined backup's restore to fan back
+        // out; an id that no longer exists drops out here.
+        val calendars = calendars().filter { it.id in calendarIds }.associateBy { it.id }
+        if (calendars.isEmpty()) return CalendarRows(emptyList(), emptyList())
 
-        // Masters + one-offs only: no soft-deleted or exception rows.
-        val selection = "${CalendarContract.Events.CALENDAR_ID} IN (${names.keys.joinToString(",")}) AND " +
-            "${CalendarContract.Events.DELETED} = 0 AND " +
-            "${CalendarContract.Events.ORIGINAL_ID} IS NULL AND " +
-            "${CalendarContract.Events.ORIGINAL_SYNC_ID} IS NULL"
-        val events = mutableListOf<IcsEvent>()
-        forEachExportRow(selection, allDayReminderTimeMinutes) { event ->
-            events += event(names[getLong(EventExportProjection.IDX_CALENDAR_ID)])
-        }
-        return events
-    }
-
-    override fun calendarCopyRows(calendarId: Long, allDayReminderTimeMinutes: Int): CalendarCopyRows {
-        val selection = "${CalendarContract.Events.CALENDAR_ID} = $calendarId AND " +
+        val selection = "${CalendarContract.Events.CALENDAR_ID} IN (${calendars.keys.joinToString(",")}) AND " +
             "${CalendarContract.Events.DELETED} = 0"
-        val series = mutableListOf<CopySeries>()
-        val exceptions = mutableListOf<CopyException>()
-        // Some adapters stamp the calendar's colour onto every row; that is no
-        // colour of the event's own and would pin it in the target.
-        val calendarColor = resolver.query(
-            ContentUris.withAppendedId(CalendarContract.Calendars.CONTENT_URI, calendarId),
-            arrayOf(CalendarContract.Calendars.CALENDAR_COLOR),
-            null,
-            null,
-            null,
-        )?.use { c -> if (c.moveToFirst() && !c.isNull(0)) c.getInt(0) else null }
+        val series = mutableListOf<MasterRow>()
+        val overrides = mutableListOf<OverrideRow>()
         forEachExportRow(selection, allDayReminderTimeMinutes) { event ->
-            val color = getIntOrNull(EventExportProjection.IDX_EVENT_COLOR)?.takeIf { it != calendarColor }
+            val calendarId = getLong(EventExportProjection.IDX_CALENDAR_ID)
+            val calendar = calendars[calendarId]
+            // Some adapters stamp the calendar's colour onto every row; that is no
+            // colour of the event's own and would pin it in a copy.
+            val color = getIntOrNull(EventExportProjection.IDX_EVENT_COLOR)?.takeIf { it != calendar?.color }
+            val mapped = event(calendar?.displayName).copy(color = color)
             val originalId = getLongOrNull(EventExportProjection.IDX_ORIGINAL_ID)
             val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)
-            // The same test the backup query makes: an empty ORIGINAL_SYNC_ID
-            // still marks an exception, one that can't be linked.
+            // An empty ORIGINAL_SYNC_ID still marks an exception, one that can't be linked.
             if (originalId == null && originalSyncId == null) {
-                series += CopySeries(
+                series += MasterRow(
                     eventId = getLong(EventExportProjection.IDX_ID),
+                    calendarId = calendarId,
                     syncId = getString(EventExportProjection.IDX_SYNC_ID)?.takeIf { it.isNotEmpty() },
-                    event = event(null),
-                    color = color,
+                    event = mapped,
                 )
             } else {
                 // An exception without its occurrence time can't name what it replaces.
                 val originalInstance = getLongOrNull(EventExportProjection.IDX_ORIGINAL_INSTANCE_TIME)
                     ?: return@forEachExportRow
-                exceptions += CopyException(
+                overrides += OverrideRow(
+                    calendarId = calendarId,
                     originalId = originalId,
                     originalSyncId = originalSyncId.takeIf { !it.isNullOrEmpty() },
                     originalInstance = originalInstance.toKotlinInstantFromEpochMillis(),
-                    event = event(null),
-                    color = color,
+                    event = mapped,
                 )
             }
         }
-        return CalendarCopyRows(series, exceptions)
+        return CalendarRows(series, overrides)
     }
 
     /**

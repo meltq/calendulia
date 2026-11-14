@@ -152,16 +152,13 @@ internal object EventDetailProjection {
 }
 
 /**
- * Master/one-off Events rows for a whole-calendar backup. Unlike
+ * Every Events row of a whole-calendar backup or copy. Unlike
  * [EventDetailProjection] this reads `UID_2445` (to keep a row's identity across
  * backups) and `DURATION` (recurring rows carry it instead of DTEND), plus
- * `EXDATE` so a series exports the occurrences deleted from it. Modified-
- * occurrence and cancelled-exception rows are filtered out by the backup query
- * (`ORIGINAL_ID IS NULL`), so RECURRENCE-ID overrides aren't exported — a
- * documented v1 limit (import skips them too). EXDATE is unaffected by that
- * filter: it lives on the master row, not on an exception of its own. A
- * calendar copy (#325) reads the exception rows too, through the trailing
- * colour, series-link, RDATE and access-level columns.
+ * `EXDATE` so a series exports the occurrences deleted from it. Exception rows
+ * are read too and told apart by their series-link columns; see
+ * [de.jeanlucmakiola.calendula.domain.ics.flattenOverrides] for how they are
+ * written out.
  */
 internal object EventExportProjection {
     val COLUMNS: Array<String> = arrayOf(

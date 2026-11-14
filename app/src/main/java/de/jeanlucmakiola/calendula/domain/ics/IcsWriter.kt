@@ -56,6 +56,8 @@ class IcsWriter(private val prodId: String = ICS_PROD_ID) {
         add("TRANSP:${transpValue(event.availability)}")
         event.calendarName?.takeIf { it.isNotBlank() }
             ?.let { add("X-CALENDULA-CALENDAR:${escapeText(it)}") }
+        event.overrideOf?.takeIf { it.isNotBlank() }
+            ?.let { add("X-CALENDULA-OVERRIDE-OF:${escapeText(it)}") }
         event.reminderMinutes.filter { it >= 0 }.distinct().forEach { minutes ->
             appendAlarm(minutes, event.summary)
         }
