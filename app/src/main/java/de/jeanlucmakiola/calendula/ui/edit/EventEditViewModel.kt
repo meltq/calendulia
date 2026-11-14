@@ -443,7 +443,7 @@ class EventEditViewModel @Inject constructor(
             ImportSource.File -> {
                 // Respect the file's own reminders; never silently overwrite them.
                 _remindersTouched.value = true
-                maybePromptImportedReminderDefault(form)
+                maybePromptImportedReminderDefault()
             }
         }
     }
@@ -529,15 +529,17 @@ class EventEditViewModel @Inject constructor(
      * settings default — but only when there's a real choice: a default is
      * configured and it isn't already exactly what the file carried.
      */
-    private fun maybePromptImportedReminderDefault(form: EventForm) {
+    private fun maybePromptImportedReminderDefault() {
         val opened = session
         viewModelScope.launch {
             val targetId = resolvedCalendarId.first()
-            val default = reminderDefaults().resolveFor(targetId, form.isAllDay)
+            val defaults = reminderDefaults()
             // Bail if the form closed or became an edit while we resolved.
             if (opened != session) return@launch
             val current = _form.value ?: return@launch
             if (_editTarget.value != null) return@launch
+            // The form may have switched all-day meanwhile; offer that kind's default.
+            val default = defaults.resolveFor(targetId, current.isAllDay)
             val firing = current.firingReminders()
             if (default.isEmpty() || default == firing) return@launch
             _importReminderPrompt.value = ImportReminderPrompt(
