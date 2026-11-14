@@ -213,7 +213,7 @@ private fun CustomReminderEditor(
         amountText = amountText,
         onAmountChange = onAmountChange,
         unitLabels = units.map { stringResource(reminderUnitLabel(it)) },
-        placeholder = customReminderPlaceholder(units),
+        placeholder = customReminderPlaceholder(unit),
         selectedUnit = units.indexOf(unit),
         onUnitChange = { onUnitChange(units[it]) },
         preview = amount?.let { reminderLeadTimeLabel(it * unit.minutesFactor) }

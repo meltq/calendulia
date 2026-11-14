@@ -1,7 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.common
 
 import com.google.common.truth.Truth.assertThat
-import de.jeanlucmakiola.calendula.data.calendar.MINUTES_DEFAULT
 import de.jeanlucmakiola.floret.reminders.ReminderUnit
 import org.junit.jupiter.api.Test
 
@@ -40,10 +39,9 @@ class ReminderPresetsTest {
     }
 
     @Test
-    fun `sub-day reminders on an all-day event block the day they save as`() {
-        assertThat(reminderDaysTaken(listOf(10, 1_500), isAllDay = true)).containsExactly(0, 1_440)
-        assertThat(reminderDaysTaken(listOf(MINUTES_DEFAULT), isAllDay = true)).containsExactly(MINUTES_DEFAULT)
-        assertThat(reminderDaysTaken(listOf(10), isAllDay = false)).containsExactly(10)
+    fun `custom placeholder fits the selected unit`() {
+        assertThat(customReminderPlaceholder(ReminderUnit.Minutes)).isEqualTo("10")
+        assertThat(customReminderPlaceholder(ReminderUnit.Days)).isEqualTo("1")
     }
 
     @Test

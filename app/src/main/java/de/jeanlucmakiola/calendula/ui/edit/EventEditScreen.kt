@@ -168,7 +168,6 @@ import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.calendula.ui.common.reminderPresets
 import de.jeanlucmakiola.calendula.ui.common.customReminderUnits
 import de.jeanlucmakiola.calendula.ui.common.customReminderPlaceholder
-import de.jeanlucmakiola.calendula.ui.common.reminderDaysTaken
 import de.jeanlucmakiola.calendula.ui.common.splitsSubDay
 import de.jeanlucmakiola.calendula.ui.common.GroupedLeadTimeRows
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
@@ -1595,7 +1594,6 @@ private fun ReminderPickerDialog(
     val units = customReminderUnits(isAllDay)
     var pickedUnit by rememberSaveable { mutableStateOf(units.first()) }
     val unit = pickedUnit.takeIf { it in units } ?: units.first()
-    val taken = reminderDaysTaken(alreadyChosen, isAllDay)
     val customMinutes = amountText.toIntOrNull()
         ?.takeIf { it in 1..999 }
         ?.let { it * unit.minutesFactor }
@@ -1607,7 +1605,7 @@ private fun ReminderPickerDialog(
             // The quick-pick list adds on tap; only the custom step needs Add.
             if (customMode) {
                 TextButton(
-                    enabled = customMinutes != null && customMinutes !in taken,
+                    enabled = customMinutes != null && customMinutes !in alreadyChosen,
                     onClick = { customMinutes?.let(onSelect) },
                 ) { Text(stringResource(R.string.event_edit_add)) }
             }
@@ -1616,7 +1614,7 @@ private fun ReminderPickerDialog(
         if (!customMode) {
             val presets = reminderPresets(isAllDay)
             GroupedLeadTimeRows(
-                minutes = presets.filterNot { it in taken },
+                minutes = presets.filterNot { it in alreadyChosen },
                 splitSubDay = splitsSubDay(presets),
                 row = { minutes, position ->
                     GroupedRow(
@@ -1641,7 +1639,7 @@ private fun ReminderPickerDialog(
                 DialogAmountField(
                     value = amountText,
                     onValueChange = { amountText = it },
-                    placeholder = customReminderPlaceholder(units),
+                    placeholder = customReminderPlaceholder(unit),
                 )
                 Spacer(Modifier.width(12.dp))
                 DialogUnitDropdown(
