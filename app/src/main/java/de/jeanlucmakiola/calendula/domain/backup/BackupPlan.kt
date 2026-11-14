@@ -285,11 +285,16 @@ fun normalizeBackupKeep(stored: Int): Int =
  */
 typealias BackupFingerprints = Map<String, String>
 
-/** Hash of [text], a series' file written with a fixed stamp so equal events give an equal hash. */
-fun backupFingerprint(text: String): String =
-    MessageDigest.getInstance("SHA-256").digest(text.toByteArray(Charsets.UTF_8))
-        .take(FINGERPRINT_BYTES)
-        .joinToString("") { "%02x".format(it) }
+/** Hash of a series' file, leaving out the run's `DTSTAMP`s so equal events give an equal hash. */
+fun backupFingerprint(ics: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    ics.lineSequence().filterNot { it.startsWith(DTSTAMP_PREFIX) }
+        .forEach {
+            digest.update(it.toByteArray(Charsets.UTF_8))
+            digest.update(LINE_BREAK)
+        }
+    return digest.digest().take(FINGERPRINT_BYTES).joinToString("") { "%02x".format(it) }
+}
 
 /** [previous] with [key] set to [fingerprint]; entries of deleted calendars go, as in [withLedgerEntry]. */
 fun withFingerprint(
@@ -301,6 +306,8 @@ fun withFingerprint(
     previous.filterKeys { it in liveKeys || it == COMBINED_SERIES } + (key to fingerprint)
 
 private const val FINGERPRINT_BYTES = 16
+private const val DTSTAMP_PREFIX = "DTSTAMP:"
+private val LINE_BREAK = byteArrayOf('\n'.code.toByte())
 private const val FINGERPRINT_SEP = "="
 
 fun persistBackupFingerprints(fingerprints: BackupFingerprints): String? =

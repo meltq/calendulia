@@ -297,9 +297,11 @@ class BackupPlanTest {
 
     @Test
     fun `a fingerprint follows the content`() {
-        assertThat(backupFingerprint("a")).isEqualTo(backupFingerprint("a"))
-        assertThat(backupFingerprint("a")).isNotEqualTo(backupFingerprint("b"))
-        assertThat(backupFingerprint("a")).hasLength(32)
+        val first = "BEGIN:VEVENT\r\nDTSTAMP:20261113T143005Z\r\nSUMMARY:A\r\nEND:VEVENT\r\n"
+        val later = first.replace("20261113T143005Z", "20261114T090000Z")
+        assertThat(backupFingerprint(later)).isEqualTo(backupFingerprint(first))
+        assertThat(backupFingerprint(first.replace("SUMMARY:A", "SUMMARY:B"))).isNotEqualTo(backupFingerprint(first))
+        assertThat(backupFingerprint(first)).hasLength(32)
     }
 
     @Test

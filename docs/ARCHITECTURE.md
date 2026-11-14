@@ -489,14 +489,17 @@ install that already had a folder stays on the combined layout.
 arms a one-off `BackupWorker` with a WorkManager content-URI trigger on the
 provider's root URI (the provider notifies every change there, whoever made it:
 this app, a sync adapter or another app), a 2-minute settle delay capped at 15
-minutes, and battery-not-low. A trigger fires once, so each change run arms the
-next one behind itself (`APPEND_OR_REPLACE`); it shares the run lock with the
-scheduled run. A change run only rewrites the stable copies: the dated files
-and their retention stay on the interval, so a day of edits can't rotate the
-history out. Since the trigger fires for any provider change (reminders, other
-calendars, sync bookkeeping), each series' file is hashed with a fixed stamp
-(`auto_backup_fingerprints`, reset with the folder) and a change run skips the
-series whose hash, stable copy and name are unchanged.
+minutes, and battery-not-low. A trigger fires once and observes only while its
+job waits, so there are two slots: a change run arms the other one as it starts
+(catching changes made during the run) and again as it ends. Runs share the
+scheduled backup's lock. A change run only rewrites the stable copies and stays
+off the status line: the dated files and their retention stay on the interval,
+so a day of edits can't rotate the history out. Since the trigger fires for any
+provider change (reminders, other calendars, sync bookkeeping), each series'
+file is hashed without its `DTSTAMP`s (`auto_backup_fingerprints`, reset with
+the folder) and a change run skips the series whose hash and stable copy are
+unchanged. A copy edited in place outside the app is put right by the next
+scheduled run.
 
 **A backup carries the series' deleted and moved occurrences.** `EXDATE` lives on
 the master row and is part of `EventExportProjection`; `IcsWriter` marks an
