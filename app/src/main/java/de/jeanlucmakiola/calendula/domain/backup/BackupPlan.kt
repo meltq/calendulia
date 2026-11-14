@@ -357,7 +357,7 @@ fun List<IcsEvent>.inBackupOrder(): List<IcsEvent> =
     sortedWith(
         compareBy<IcsEvent>(
             { it.overrideOf == null }, { it.start }, { it.uid }, { it.overrideAt }, { it.calendarName },
-            { it.end }, { it.summary }, { it.description }, { it.location },
+            { it.toString() },
         ),
     )
         .map {

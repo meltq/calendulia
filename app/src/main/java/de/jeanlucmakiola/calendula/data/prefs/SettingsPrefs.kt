@@ -387,13 +387,15 @@ class SettingsPrefs @Inject constructor(
      */
     suspend fun updateAutoBackupLedger(
         folder: String,
-        fingerprints: (BackupFingerprints) -> BackupFingerprints = { it },
+        fingerprints: ((BackupFingerprints) -> BackupFingerprints)? = null,
         transform: (BackupLedger) -> BackupLedger,
     ) {
         prefs.edit {
             if (it[SettingsKeys.autoBackupFolderUri] == folder) {
                 it[SettingsKeys.autoBackupLedger] = transform(it[SettingsKeys.autoBackupLedger])
-                it[SettingsKeys.autoBackupFingerprints] = fingerprints(it[SettingsKeys.autoBackupFingerprints])
+                if (fingerprints != null) {
+                    it[SettingsKeys.autoBackupFingerprints] = fingerprints(it[SettingsKeys.autoBackupFingerprints])
+                }
             }
         }
     }

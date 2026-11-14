@@ -18,6 +18,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
+import androidx.work.WorkInfo
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import androidx.work.await
@@ -146,11 +147,12 @@ object BackupScheduler {
      * whoever made it (this app, a sync adapter or another app), so that is the
      * URI watched. A content trigger fires once and observes only while its
      * job waits, so a change run arms the other slot as it starts, catching
-     * changes made during the run, and again as it ends in case that slot was
-     * still busy. A slot already waiting or running is kept, so while two
-     * change runs overlap nothing watches until the second one ends.
+     * changes made during the run, and again as it ends. A slot already
+     * waiting is kept; one still running gets the new watch queued behind it,
+     * so the watch can't be lost to a run that is just finishing. While two
+     * change runs overlap, nothing watches until the first one ends.
      */
-    internal fun watchChanges(context: Context, slot: Int) {
+    internal suspend fun watchChanges(context: Context, slot: Int) {
         val constraints = Constraints.Builder()
             .addContentUriTrigger(CalendarContract.CONTENT_URI, true)
             .setTriggerContentUpdateDelay(CHANGE_SETTLE_MINUTES, TimeUnit.MINUTES)
@@ -161,7 +163,15 @@ object BackupScheduler {
             .setConstraints(constraints)
             .setInputData(workDataOf(KEY_CHANGE_SLOT to slot))
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork(CHANGE_SLOTS[slot], ExistingWorkPolicy.KEEP, request)
+        val workManager = WorkManager.getInstance(context)
+        val pending = workManager.getWorkInfosForUniqueWorkFlow(CHANGE_SLOTS[slot]).first()
+            .filterNot { it.state.isFinished }
+        val policy = if (pending.isNotEmpty() && pending.all { it.state == WorkInfo.State.RUNNING }) {
+            ExistingWorkPolicy.APPEND_OR_REPLACE
+        } else {
+            ExistingWorkPolicy.KEEP
+        }
+        workManager.enqueueUniqueWork(CHANGE_SLOTS[slot], policy, request)
     }
 }
 
@@ -277,21 +287,17 @@ class BackupWorker(
         }
         fun fingerprintOf(target: BackupTarget, text: String) =
             backupFingerprint(text, latestFileName(target.baseName))
-        // A change run reads first and leaves the folder alone when nothing moved.
-        // It keeps the text of a changed (or unreadable, null) series only.
-        val unchangedHashes = HashMap<String, String>()
-        val changedTexts = HashMap<String, String?>()
-        if (latestOnly) {
-            for (target in targets) {
-                val text = export(target)
-                val hash = text?.let { fingerprintOf(target, it) }
-                if (hash != null && hash == fingerprints[target.key]) {
-                    unchangedHashes[target.key] = hash
-                } else {
-                    changedTexts[target.key] = text
-                }
-            }
-            if (changedTexts.isEmpty()) return RunOutcome.NothingToDo
+        // Hashes only serve change runs; without them a stale one could pass later.
+        val trackHashes = latestOnly || prefs.autoBackupOnChange.first()
+        if (!trackHashes && fingerprints.isNotEmpty()) prefs.updateAutoBackupFingerprints(folder.toString()) { emptyMap() }
+        // A change run hashes first (null: unreadable) and leaves the folder alone when nothing moved.
+        val preHashes: Map<String, String?> = if (latestOnly) {
+            targets.associate { target -> target.key to export(target)?.let { fingerprintOf(target, it) } }
+        } else {
+            emptyMap()
+        }
+        if (latestOnly && targets.all { preHashes[it.key].let { hash -> hash != null && hash == fingerprints[it.key] } }) {
+            return RunOutcome.NothingToDo
         }
         prefs.adoptLegacyBackupFile()
         val listing = exporter.listFolder(folder)
@@ -327,7 +333,9 @@ class BackupWorker(
             var landed: String? = null
             return try {
                 val latestKey = latestLedgerKey(target.key)
-                if (target.key in fingerprints) prefs.updateAutoBackupFingerprints(folder.toString()) { it - target.key }
+                if (trackHashes && target.key in fingerprints) {
+                    prefs.updateAutoBackupFingerprints(folder.toString()) { it - target.key }
+                }
                 landed = exporter.writeToFolder(folder, listing, latest, bytes)
                 // A provider that renamed it leaves a copy to clean up next
                 // run; the intended name stays ours only if it already was.
@@ -337,14 +345,14 @@ class BackupWorker(
                 suspend fun recordLatest(stale: List<String>, landedFingerprint: String? = null) =
                     prefs.updateAutoBackupLedger(
                         folder.toString(),
-                        fingerprints = { old ->
-                            landedFingerprint?.let { withFingerprint(old, target.key, it, liveKeys) } ?: old
+                        fingerprints = landedFingerprint?.let { hash ->
+                            { old -> withFingerprint(old, target.key, hash, liveKeys) }
                         },
                     ) {
                         val pending = plan.handOff - it.latestHeldElsewhere(target.key)
                         withLedgerEntry(it, latestKey, stale + pending + current, liveKeys)
                     }
-                recordLatest(plan.staleLatest, fingerprint)
+                recordLatest(plan.staleLatest, fingerprint.takeIf { trackHashes })
                 val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
                 recordLatest(plan.staleLatest.filter { it in staleLeft })
                 if (landed == latest) LatestWrite.Landed else LatestWrite.Renamed
@@ -363,31 +371,31 @@ class BackupWorker(
         val landedLatest = mutableSetOf<String>()
         for (plan in plans) {
             val target = plan.target
-            var text: String? = null
-            val fingerprint = unchangedHashes[target.key] ?: run {
-                text = (if (target.key in changedTexts) changedTexts.remove(target.key) else export(target))
-                text?.let { fingerprintOf(target, it) }
-            } ?: run {
-                failed++
-                continue
-            }
-            if (plan.latestName == null) {
-                // Nothing to refresh until the content moves, so a later change run can stop early.
-                if (fingerprints[target.key] != fingerprint) {
-                    prefs.updateAutoBackupFingerprints(folder.toString()) {
-                        withFingerprint(it, target.key, fingerprint, liveKeys)
-                    }
+            // A copy blocked by a file of the user's keeps its hash, so a later change run can stop early.
+            suspend fun rememberBlocked(hash: String) {
+                if (plan.latestName == null && trackHashes && fingerprints[target.key] != hash) {
+                    prefs.updateAutoBackupFingerprints(folder.toString()) { withFingerprint(it, target.key, hash, liveKeys) }
                 }
-                if (latestOnly) continue
             }
-            if (latestOnly && !plan.needsRefresh(fingerprint, fingerprints, listing.files.keys, listing.complete)) {
-                if (plan.latestName in listing.files) landedLatest += target.key
-                continue
+            if (latestOnly) {
+                val hash = preHashes[target.key] ?: run {
+                    failed++
+                    continue
+                }
+                rememberBlocked(hash)
+                if (!plan.needsRefresh(hash, fingerprints, listing.files.keys, listing.complete)) {
+                    if (plan.latestName in listing.files) landedLatest += target.key
+                    continue
+                }
             }
-            val bytes = (text ?: export(target) ?: run {
+            // Read again rather than held since the pre-pass: one series' text in memory at a time.
+            val text = export(target) ?: run {
                 failed++
                 continue
-            }).toByteArray(Charsets.UTF_8)
+            }
+            val fingerprint = fingerprintOf(target, text)
+            rememberBlocked(fingerprint)
+            val bytes = text.toByteArray(Charsets.UTF_8)
             // Not cancellable once a file exists: it must reach the ledger.
             withContext(NonCancellable) {
                 val dated = if (latestOnly) null else writeDated(plan, bytes)
