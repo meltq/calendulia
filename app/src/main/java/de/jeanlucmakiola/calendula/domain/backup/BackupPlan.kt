@@ -354,16 +354,15 @@ fun BackupFilePlan.needsRefresh(
  * Standalone occurrences stay first, as [flattenOverrides] puts them.
  */
 fun List<IcsEvent>.inBackupOrder(): List<IcsEvent> =
-    sortedWith(
+    map {
+        it.copy(
+            reminderMinutes = it.reminderMinutes.sorted(),
+            exDates = it.exDates.sorted(),
+            recurrenceDates = it.recurrenceDates.sorted(),
+        )
+    }.sortedWith(
         compareBy<IcsEvent>(
             { it.overrideOf == null }, { it.start }, { it.uid }, { it.overrideAt }, { it.calendarName },
             { it.toString() },
         ),
     )
-        .map {
-            it.copy(
-                reminderMinutes = it.reminderMinutes.sorted(),
-                exDates = it.exDates.sorted(),
-                recurrenceDates = it.recurrenceDates.sorted(),
-            )
-        }

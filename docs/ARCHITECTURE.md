@@ -491,8 +491,9 @@ provider's root URI (the provider notifies every change there, whoever made it:
 this app, a sync adapter or another app), a 2-minute settle delay capped at 15
 minutes, and battery-not-low. A trigger fires once and observes only while its
 job waits, so there are two slots: a change run arms the other one as it starts
-(catching changes made during the run) and again as it ends, queued behind
-that slot's run if it is still running. Runs share the
+(catching changes made during the run) or as it ends, queued behind that
+slot's run if it is still running; `changeArm` decides, so exactly one watch
+stays armed even after two runs fired together. Runs share the
 scheduled backup's lock. A change run only rewrites the stable copies and never
 retries: the dated files and their retention stay on the interval, so a day of
 edits can't rotate the history out. Every run that writes something is recorded

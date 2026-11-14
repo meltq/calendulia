@@ -109,21 +109,33 @@ object BackupScheduler {
                 ExistingPeriodicWorkPolicy.UPDATE,
                 request,
             )
-            if (!watchWanted(prefs)) {
+            if (!prefs.autoBackupOnChange.first()) {
                 cancelWatch()
                 return@withLock
             }
-            val watching = CHANGE_SLOTS.any { name ->
-                workManager.getWorkInfosForUniqueWorkFlow(name).first().any { !it.state.isFinished }
-            }
-            if (!watching) watchChanges(context, slot = 0)
+            val watching = CHANGE_SLOTS.indices.any { slot -> slotStates(workManager, slot).any { !it.isFinished } }
+            if (!watching) watchChanges(context, slot = 0, ChangeArm.Enqueue)
         }
     }
 
-    /** Arm [slot] for a running change run, under the same lock as [reconcile] so it can't outlast a switch-off. */
-    internal suspend fun watchNext(context: Context, prefs: SettingsPrefs, slot: Int) = withContext(NonCancellable) {
-        reconcileLock.withLock { if (watchWanted(prefs)) watchChanges(context, slot) }
-    }
+    /**
+     * Arm the slot after the change run in [self] as it starts or ends (see
+     * [changeArm]), under the same lock as [reconcile] so it can't outlast a
+     * switch-off.
+     */
+    internal suspend fun watchNext(context: Context, prefs: SettingsPrefs, self: Int, atStart: Boolean) =
+        withContext(NonCancellable) {
+            reconcileLock.withLock {
+                if (!watchWanted(prefs)) return@withLock
+                val workManager = WorkManager.getInstance(context)
+                val other = 1 - self
+                changeArm(self, slotStates(workManager, self), slotStates(workManager, other), atStart)
+                    ?.let { watchChanges(context, other, it) }
+            }
+        }
+
+    private suspend fun slotStates(workManager: WorkManager, slot: Int): List<WorkInfo.State> =
+        workManager.getWorkInfosForUniqueWorkFlow(CHANGE_SLOTS[slot]).first().map { it.state }
 
     private suspend fun watchWanted(prefs: SettingsPrefs): Boolean =
         prefs.autoBackupEnabled.first() && prefs.autoBackupFolderUri.first() != null && prefs.autoBackupOnChange.first()
@@ -146,13 +158,10 @@ object BackupScheduler {
      * one of two [slot]s. The provider reports every change on its root URI,
      * whoever made it (this app, a sync adapter or another app), so that is the
      * URI watched. A content trigger fires once and observes only while its
-     * job waits, so a change run arms the other slot as it starts, catching
-     * changes made during the run, and again as it ends. A slot already
-     * waiting is kept; one still running gets the new watch queued behind it,
-     * so the watch can't be lost to a run that is just finishing. While two
-     * change runs overlap, nothing watches until the first one ends.
+     * job waits, so each change run arms the other slot ([watchNext]); [arm]
+     * says whether the request is queued behind that slot's running run.
      */
-    internal suspend fun watchChanges(context: Context, slot: Int) {
+    private fun watchChanges(context: Context, slot: Int, arm: ChangeArm) {
         val constraints = Constraints.Builder()
             .addContentUriTrigger(CalendarContract.CONTENT_URI, true)
             .setTriggerContentUpdateDelay(CHANGE_SETTLE_MINUTES, TimeUnit.MINUTES)
@@ -163,15 +172,37 @@ object BackupScheduler {
             .setConstraints(constraints)
             .setInputData(workDataOf(KEY_CHANGE_SLOT to slot))
             .build()
-        val workManager = WorkManager.getInstance(context)
-        val pending = workManager.getWorkInfosForUniqueWorkFlow(CHANGE_SLOTS[slot]).first()
-            .filterNot { it.state.isFinished }
-        val policy = if (pending.isNotEmpty() && pending.all { it.state == WorkInfo.State.RUNNING }) {
-            ExistingWorkPolicy.APPEND_OR_REPLACE
-        } else {
-            ExistingWorkPolicy.KEEP
+        val policy = when (arm) {
+            ChangeArm.Enqueue -> ExistingWorkPolicy.KEEP
+            ChangeArm.Append -> ExistingWorkPolicy.APPEND_OR_REPLACE
         }
-        workManager.enqueueUniqueWork(CHANGE_SLOTS[slot], policy, request)
+        WorkManager.getInstance(context).enqueueUniqueWork(CHANGE_SLOTS[slot], policy, request)
+    }
+}
+
+internal enum class ChangeArm { Enqueue, Append }
+
+/**
+ * How the change run in slot [self] arms the other slot (#516), given both
+ * slots' work states, so exactly one watch stays armed. At the start it arms
+ * only an idle slot, catching changes made during the run. At the end nothing
+ * is armed when a watch is already queued behind this run or waits in the
+ * other slot; a run still going in the other slot gets the watch queued behind
+ * it, by slot 0 only, so two runs that fired together leave one watch.
+ */
+internal fun changeArm(
+    self: Int,
+    own: List<WorkInfo.State>,
+    other: List<WorkInfo.State>,
+    atStart: Boolean,
+): ChangeArm? {
+    val otherBusy = other.filterNot { it.isFinished }
+    return when {
+        otherBusy.isEmpty() -> if (atStart || WorkInfo.State.BLOCKED !in own) ChangeArm.Enqueue else null
+        atStart || WorkInfo.State.BLOCKED in own -> null
+        otherBusy.any { it != WorkInfo.State.RUNNING } -> null
+        self == 0 -> ChangeArm.Append
+        else -> null
     }
 }
 
@@ -201,8 +232,10 @@ class BackupWorker(
         val prefs = deps.settingsPrefs()
         val slot = inputData.getInt(BackupScheduler.KEY_CHANGE_SLOT, -1)
         if (slot < 0) return backUp(deps, prefs, changeRun = false)
-        suspend fun watchNext() = BackupScheduler.watchNext(applicationContext, prefs, slot = 1 - slot)
-        runCatching { watchNext() }.onFailure { Log.w(TAG, "Arming the next change run failed", it) }
+        suspend fun watchNext(atStart: Boolean) = runCatching {
+            BackupScheduler.watchNext(applicationContext, prefs, slot, atStart)
+        }.onFailure { Log.w(TAG, "Arming the next change run failed", it) }
+        watchNext(atStart = true)
         // Never fails or retries: a retry would only wait for another change.
         try {
             backUp(deps, prefs, changeRun = true)
@@ -211,7 +244,7 @@ class BackupWorker(
         } catch (e: Exception) {
             Log.w(TAG, "Backup after a change failed", e)
         } finally {
-            runCatching { watchNext() }
+            watchNext(atStart = false)
         }
         return Result.success()
     }
@@ -224,7 +257,6 @@ class BackupWorker(
      */
     private suspend fun backUp(deps: Deps, prefs: SettingsPrefs, changeRun: Boolean): Result {
         // One run at a time, or each would overwrite the other's ledger.
-        var failures = 0
         val outcome = runLock.withLock {
             val now = System.currentTimeMillis()
             // Respect the toggles even for already-queued work, so a lingering
@@ -243,14 +275,14 @@ class BackupWorker(
             if (outcome != RunOutcome.NothingToDo) {
                 withContext(NonCancellable) {
                     prefs.recordAutoBackupRun(success = outcome == RunOutcome.Written, atMillis = now)
-                    failures = prefs.autoBackupStatus.first().consecutiveFailures
+                    when {
+                        outcome == RunOutcome.Written -> clearFailureNotification(applicationContext)
+                        prefs.autoBackupStatus.first().consecutiveFailures == FAILURE_NOTIFY_THRESHOLD ->
+                            notifyFailure(applicationContext)
+                    }
                 }
             }
             outcome
-        }
-        when {
-            outcome == RunOutcome.Written -> clearFailureNotification(applicationContext)
-            failures == FAILURE_NOTIFY_THRESHOLD -> notifyFailure(applicationContext)
         }
         // Only a run that wrote nothing retries: a retry rewrites every series.
         return if (outcome == RunOutcome.Failed && !changeRun) Result.retry() else Result.success()
@@ -366,23 +398,25 @@ class BackupWorker(
             }
         }
 
+        // A copy blocked by a file of the user's keeps its hash, so a later change run can stop early.
+        suspend fun rememberBlocked(plan: BackupFilePlan, hash: String) {
+            val key = plan.target.key
+            if (plan.latestName == null && trackHashes && fingerprints[key] != hash) {
+                prefs.updateAutoBackupFingerprints(folder.toString()) { withFingerprint(it, key, hash, liveKeys) }
+            }
+        }
+
         var written = 0
         var failed = 0
         val landedLatest = mutableSetOf<String>()
         for (plan in plans) {
             val target = plan.target
-            // A copy blocked by a file of the user's keeps its hash, so a later change run can stop early.
-            suspend fun rememberBlocked(hash: String) {
-                if (plan.latestName == null && trackHashes && fingerprints[target.key] != hash) {
-                    prefs.updateAutoBackupFingerprints(folder.toString()) { withFingerprint(it, target.key, hash, liveKeys) }
-                }
-            }
             if (latestOnly) {
                 val hash = preHashes[target.key] ?: run {
                     failed++
                     continue
                 }
-                rememberBlocked(hash)
+                rememberBlocked(plan, hash)
                 if (!plan.needsRefresh(hash, fingerprints, listing.files.keys, listing.complete)) {
                     if (plan.latestName in listing.files) landedLatest += target.key
                     continue
@@ -394,7 +428,7 @@ class BackupWorker(
                 continue
             }
             val fingerprint = fingerprintOf(target, text)
-            rememberBlocked(fingerprint)
+            if (!latestOnly) rememberBlocked(plan, fingerprint)
             val bytes = text.toByteArray(Charsets.UTF_8)
             // Not cancellable once a file exists: it must reach the ledger.
             withContext(NonCancellable) {
