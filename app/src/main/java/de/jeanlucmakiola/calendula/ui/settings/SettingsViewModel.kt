@@ -391,6 +391,11 @@ class SettingsViewModel @Inject constructor(
     fun setCalendarAlertStyle(calendarId: Long, style: ReminderAlertStyle) {
         viewModelScope.launch {
             prefs.setCalendarAlertStyle(calendarId, style)
+            // Up front, so it can be checked in system settings before the first ring.
+            if (style == ReminderAlertStyle.FullScreenRing) {
+                onChannels { ensureRingChannel() }
+                refreshChannelStatus(state.value.reminderCalendars.map { it.id })
+            }
             // A ring for it goes quiet but stays in the shade.
             if (style != ReminderAlertStyle.FullScreenRing) {
                 reminderNotifier.stopRing(RingMatch.Calendar(calendarId), handBack = true)
@@ -427,7 +432,11 @@ class SettingsViewModel @Inject constructor(
 
     /** Create the per-calendar channels before showing the app's channel list, even with reminders off. */
     suspend fun syncReminderChannels() {
-        onChannels { sync() }
+        val ringing = state.value.reminderAlertStyles.containsValue(ReminderAlertStyle.FullScreenRing)
+        onChannels {
+            sync()
+            if (ringing) ensureRingChannel()
+        }
     }
 
     private suspend fun <T> onChannels(block: ReminderChannels.() -> T): T? = withContext(io) {

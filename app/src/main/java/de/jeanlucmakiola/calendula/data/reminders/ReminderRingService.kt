@@ -172,7 +172,7 @@ class ReminderRingService : Service() {
         var sounding = false
         var tick = 0
         while (true) {
-            if (tick++ % VISIBILITY_CHECK_TICKS == 0 && !notifier.canStillRing(alert)) {
+            if (tick++ % VISIBILITY_CHECK_TICKS == 0 && !stillRings(alert)) {
                 handBack(alert)
                 end()
                 return
@@ -189,6 +189,15 @@ class ReminderRingService : Service() {
             }
             delay(CALL_CHECK_MILLIS)
         }
+    }
+
+    private suspend fun stillRings(alert: ReminderAlert): Boolean = try {
+        withContext(Dispatchers.IO) { notifier.canStillRing(alert) }
+    } catch (e: CancellationException) {
+        throw e
+    } catch (e: Exception) {
+        Log.w(TAG, "Could not re-check the ring for event ${alert.eventId}", e)
+        true
     }
 
     private fun stop(intent: Intent) {

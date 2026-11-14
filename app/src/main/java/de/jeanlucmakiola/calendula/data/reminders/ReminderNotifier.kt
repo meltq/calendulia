@@ -77,7 +77,7 @@ class ReminderNotifier @Inject constructor(
      */
     suspend fun post(alert: ReminderAlert, quiet: Boolean = false, ring: Boolean = true) {
         if (isSilenced(alert.calendarId)) return
-        val style = when {
+        var style = when {
             quiet -> ReminderAlertStyle.Notification
             else -> effectiveStyle(alert).let {
                 if (it == ReminderAlertStyle.FullScreenRing && !ring) ReminderAlertStyle.FullScreen else it
@@ -85,7 +85,14 @@ class ReminderNotifier @Inject constructor(
         }
         // Rung already and handed back to the shade: a catch-up post leaves it there.
         if (style == ReminderAlertStyle.FullScreenRing && (isShowing(alert) || alerts.isPending(alert))) return
-        val channelId = channelFor(alert, style) ?: return
+        val channelId = channelFor(alert, style)
+            // The ring channel could not be made: still full-screen, sounding once.
+            ?: if (style == ReminderAlertStyle.FullScreenRing) {
+                style = ReminderAlertStyle.FullScreen
+                channelFor(alert, style) ?: return
+            } else {
+                return
+            }
         val title = displayTitle(alert)
         val text = contentText(alert)
         if (style == ReminderAlertStyle.FullScreenRing) {
@@ -108,13 +115,15 @@ class ReminderNotifier @Inject constructor(
 
     /** Whether a ring for [alert] should go on, now that settings may have changed since it started. */
     suspend fun ringVerdict(alert: ReminderAlert): RingVerdict = when {
-        !settingsPrefs.remindersEnabled.first() || !canPost() || isSilenced(alert.calendarId) -> RingVerdict.Drop
+        !settingsPrefs.remindersEnabled.first() || !canPost() || isSilenced(alert.calendarId) ||
+            calendarDataSource.isCalendarVisible(alert.calendarId) == null -> RingVerdict.Drop
         effectiveStyle(alert) != ReminderAlertStyle.FullScreenRing -> RingVerdict.HandBack
         else -> RingVerdict.Ring
     }
 
-    /** Whether a live ring for [alert] may go on: its notification can still be seen. */
-    fun canStillRing(alert: ReminderAlert): Boolean = canPost() && channels.canRing(alert.calendarId)
+    /** Whether a live ring for [alert] may go on: its notification can still be seen, and its calendar still notifies. */
+    suspend fun canStillRing(alert: ReminderAlert): Boolean =
+        canPost() && channels.canRing(alert.calendarId) && !isSilenced(alert.calendarId)
 
     /** The calendar's style, short of ringing where the user blocked its calendar, group or the ring channel. */
     private suspend fun effectiveStyle(alert: ReminderAlert): ReminderAlertStyle {

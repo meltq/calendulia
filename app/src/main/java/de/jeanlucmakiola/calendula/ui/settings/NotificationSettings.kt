@@ -229,11 +229,19 @@ internal fun NotificationsScreen(
                         val expanded = calendar.id in expandedCalendars
                         val notifying = calendar.id !in state.mutedReminderCalendarIds
                         val blocked = notifying && calendar.id in channelStatus.blockedCalendarIds
+                        val heldBack = fullScreenHeldBack(
+                            style = state.reminderAlertStyles.alertStyleFor(calendar.id),
+                            notifying = notifying,
+                            blocked = blocked,
+                            ringBlocked = channelStatus.ringBlocked,
+                            canFullScreen = canFullScreen,
+                        )
                         GroupedRow(
                             title = calendar.displayName.orUnnamed(),
                             summary = when {
                                 !notifying -> stringResource(R.string.settings_calendar_notifications_off)
                                 blocked -> stringResource(R.string.settings_notifications_blocked)
+                                heldBack.any -> stringResource(R.string.settings_full_screen_held_back)
                                 else -> null
                             },
                             position = if (expanded) Position.Top else Position.Alone,
@@ -257,11 +265,10 @@ internal fun NotificationsScreen(
                                 state = state,
                                 notifying = notifying,
                                 blocked = blocked,
-                                ringBlocked = channelStatus.ringBlocked,
+                                heldBack = heldBack,
                                 onOpenRingSettings = { context.openNotificationSettings(RING_CHANNEL_ID) },
                                 onSetNotifying = { viewModel.setCalendarRemindersEnabled(calendar.id, it) },
                                 onOpenSound = { openCalendarSound(calendar.id) },
-                                canFullScreen = canFullScreen,
                                 onEditAlertStyle = { alertStylePicker = calendar.id },
                                 onEditAlertSound = { alertSoundPicker = calendar.id },
                                 onAllowFullScreen = { context.openFullScreenIntentSettings() },
@@ -410,11 +417,10 @@ private fun CalendarNotificationRows(
     state: SettingsUiState,
     notifying: Boolean,
     blocked: Boolean,
-    ringBlocked: Boolean,
+    heldBack: FullScreenHeldBack,
     onOpenRingSettings: () -> Unit,
     onSetNotifying: (Boolean) -> Unit,
     onOpenSound: () -> Unit,
-    canFullScreen: Boolean,
     onEditAlertStyle: () -> Unit,
     onEditAlertSound: () -> Unit,
     onAllowFullScreen: () -> Unit,
@@ -424,8 +430,8 @@ private fun CalendarNotificationRows(
     val managed = calendar.id in state.managedCalendarIds
     val takesOverrides = calendar.canModifyContents && !managed
     val alertStyle = state.reminderAlertStyles.alertStyleFor(calendar.id)
-    val needsPermission = alertStyle.isFullScreen && !canFullScreen
-    val ringHeldBack = alertStyle == ReminderAlertStyle.FullScreenRing && ringBlocked && !blocked
+    val needsPermission = heldBack.permission
+    val ringHeldBack = heldBack.ring
     Column {
         GroupedSwitchRow(
             title = stringResource(R.string.settings_calendar_notifications),
@@ -560,6 +566,25 @@ private fun calendarOverrideSummary(
         stringResource(R.string.settings_calendar_reminder_inherits, reminderChoiceLabel(globalDefault))
     ReminderOverride.None -> stringResource(R.string.reminder_none)
     is ReminderOverride.Minutes -> reminderChoiceLabel(choice.minutes)
+}
+
+/** What keeps a full-screen calendar from alerting as chosen: the missing permission, or the blocked ring channel. */
+private data class FullScreenHeldBack(val permission: Boolean, val ring: Boolean) {
+    val any: Boolean get() = permission || ring
+}
+
+private fun fullScreenHeldBack(
+    style: ReminderAlertStyle,
+    notifying: Boolean,
+    blocked: Boolean,
+    ringBlocked: Boolean,
+    canFullScreen: Boolean,
+): FullScreenHeldBack {
+    val live = notifying && !blocked
+    return FullScreenHeldBack(
+        permission = live && style.isFullScreen && !canFullScreen,
+        ring = live && style == ReminderAlertStyle.FullScreenRing && ringBlocked,
+    )
 }
 
 @Composable
