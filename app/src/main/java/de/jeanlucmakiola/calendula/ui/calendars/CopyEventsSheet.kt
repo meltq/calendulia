@@ -213,7 +213,9 @@ private fun CopySummary(run: CopyRunState.Done) {
     )
     Row(horizontalArrangement = Arrangement.spacedBy(24.dp)) {
         CopyCount(stringResource(R.string.import_done_added_label), summary.imported)
-        CopyCount(stringResource(R.string.import_done_skipped_label), summary.skippedDuplicate)
+        if (summary.skippedDuplicate > 0) {
+            CopyCount(stringResource(R.string.import_done_skipped_label), summary.skippedDuplicate)
+        }
         if (summary.failed > 0) CopyCount(stringResource(R.string.import_done_failed_label), summary.failed)
     }
     if (summary.skippedDuplicate > 0) CopyNote(stringResource(R.string.import_done_dedup_note))

@@ -323,7 +323,8 @@ private fun BackupContent(
         leading = { LeadingAvatar(Icons.Default.FileUpload) },
         onClick = onRestoreClick,
     )
-    if (canCopy) {
+    // A running or finished copy keeps its row, the way back to its sheet.
+    if (canCopy || copyRun != CopyRunState.Idle) {
         GroupedRow(
             title = stringResource(R.string.calendars_copy_action),
             summary = when (copyRun) {

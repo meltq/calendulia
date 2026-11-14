@@ -80,7 +80,10 @@ class CopyEventsViewModel @Inject constructor(
         job = viewModelScope.launch {
             try {
                 val summary = repository.copyEvents(source, target) { done, total ->
-                    _run.value = CopyRunState.Running(done, total)
+                    // About every half percent: thousands of inserts needn't mean thousands of frames.
+                    if (done == 0 || done == total || done % (total / 200).coerceAtLeast(1) == 0) {
+                        _run.value = CopyRunState.Running(done, total)
+                    }
                 }
                 _run.value = CopyRunState.Done(summary)
             } catch (e: CancellationException) {

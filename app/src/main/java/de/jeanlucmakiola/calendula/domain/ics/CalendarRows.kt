@@ -52,27 +52,33 @@ data class CalendarRows(
  * occurrence missing its series, never a series missing an occurrence.
  *
  * [exdateStamp] formats an occurrence as an `EXDATE` entry in the provider's
- * shape, the same one Calendula's own exclusions use.
+ * shape, the same one Calendula's own exclusions use. [keepsRecurrenceDates] is
+ * false where the output can't carry `RDATE` (an `.ics` file): a series that
+ * repeats by listed dates alone then reads as the one-off it will be written as,
+ * and its overrides are left alone rather than excluded from nothing. A
+ * cancelled series' modified occurrences aren't brought back to life either.
  */
 fun flattenOverrides(
     rows: CalendarRows,
     exdateStamp: (occurrenceMillis: Long, isAllDay: Boolean) -> String,
+    keepsRecurrenceDates: Boolean = true,
 ): List<IcsEvent> {
     val byId = rows.series.associateBy { it.eventId }
     // Sync ids are only unique within an account, so the link is per calendar.
     val bySyncId = rows.series.filter { it.syncId != null }.associateBy { it.calendarId to it.syncId }
     val excluded = mutableMapOf<Long, MutableList<String>>()
-    val detached = mutableListOf<IcsEvent>()
+    val detached = mutableListOf<Pair<Long, IcsEvent>>()
     for (override in rows.overrides) {
         val parent = override.originalId?.let(byId::get)?.takeIf { it.calendarId == override.calendarId }
             ?: override.originalSyncId?.let { bySyncId[override.calendarId to it] }
             ?: continue
         // An exception to a one-off overrides nothing a plain event could carry.
-        if (!parent.event.recurs) continue
+        val recurs = if (keepsRecurrenceDates) parent.event.recurs else !parent.event.recurrenceRule.isNullOrBlank()
+        if (!recurs) continue
         val occurrence = override.originalInstance.toEpochMilliseconds()
         excluded.getOrPut(parent.eventId) { mutableListOf() } += exdateStamp(occurrence, parent.event.isAllDay)
-        if (override.isCancelled) continue
-        detached += override.event.copy(
+        if (override.isCancelled || parent.event.status == EventStatus.Cancelled) continue
+        detached += override.calendarId to override.event.copy(
             uid = "$occurrence-${parent.event.uid}",
             recurrenceRule = null,
             recurrenceDates = null,
@@ -80,9 +86,11 @@ fun flattenOverrides(
             overrideOf = parent.event.uid,
         )
     }
-    // Two exception rows for one occurrence would derive the same UID.
-    return detached.distinctBy { it.uid } + rows.series.map { s ->
-        val extra = excluded[s.eventId].orEmpty()
-        if (extra.isEmpty()) s.event else s.event.copy(exDates = (s.event.exDates + extra).distinct())
-    }
+    // Two exception rows for one occurrence would derive the same UID; the same
+    // series in two calendars legitimately does.
+    return detached.distinctBy { (calendarId, event) -> calendarId to event.uid }.map { it.second } +
+        rows.series.map { s ->
+            val extra = excluded[s.eventId].orEmpty()
+            if (extra.isEmpty()) s.event else s.event.copy(exDates = (s.event.exDates + extra).distinct())
+        }
 }

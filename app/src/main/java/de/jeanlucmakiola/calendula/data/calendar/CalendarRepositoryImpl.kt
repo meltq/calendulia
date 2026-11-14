@@ -252,7 +252,11 @@ class CalendarRepositoryImpl @Inject constructor(
         }
 
     override suspend fun exportEvents(calendarIds: Set<Long>) = withContext(io) {
-        flattenOverrides(dataSource.calendarRows(calendarIds, allDayReminderTimeMinutes()), ::formatExdateStamp)
+        flattenOverrides(
+            rows = dataSource.calendarRows(calendarIds, allDayReminderTimeMinutes()),
+            exdateStamp = ::formatExdateStamp,
+            keepsRecurrenceDates = false,
+        )
     }
 
     override suspend fun copyEvents(

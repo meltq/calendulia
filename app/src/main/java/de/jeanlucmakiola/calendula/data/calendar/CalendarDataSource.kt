@@ -794,8 +794,11 @@ class AndroidCalendarDataSource @Inject constructor(
             val calendarId = getLong(EventExportProjection.IDX_CALENDAR_ID)
             val calendar = calendars[calendarId]
             // Some adapters stamp the calendar's colour onto every row; that is no
-            // colour of the event's own and would pin it in a copy.
-            val color = getIntOrNull(EventExportProjection.IDX_EVENT_COLOR)?.takeIf { it != calendar?.color }
+            // colour of the event's own and would pin it in a copy. A palette key
+            // means it was chosen.
+            val color = getIntOrNull(EventExportProjection.IDX_EVENT_COLOR)?.takeIf {
+                it != calendar?.color || !getString(EventExportProjection.IDX_EVENT_COLOR_KEY).isNullOrEmpty()
+            }
             val mapped = event(calendar?.displayName).copy(color = color)
             val originalId = getLongOrNull(EventExportProjection.IDX_ORIGINAL_ID)
             val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)

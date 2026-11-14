@@ -508,8 +508,10 @@ same in every backup, and it carries the series UID as `X-CALENDULA-OVERRIDE-OF`
 `importEvents` skips such an occurrence wherever its series already is — that
 series there has the override itself — so restoring into the calendar a backup
 came from adds nothing twice, while a restore into an empty one gets both.
-Exceptions whose series isn't among the rows are left out, and sync ids link
-only within their own calendar. Backups made before this carry no exceptions
+Exceptions whose series isn't among the rows are left out, a cancelled
+series' moved occurrences stay cancelled, and sync ids link only within their
+own calendar. A file can't carry `RDATE`, so a backup treats a series that
+repeats by listed dates alone as the one-off it writes it as. Backups made before this carry no exceptions
 and restore exactly as before.
 
 **Copying a calendar.** Backup & restore → Copy events (#325) runs the source's

@@ -185,4 +185,39 @@ class CalendarRowsTest {
 
         assertThat(IcsParser().parse(text).events.single().overrideOf).isEqualTo("s;1")
     }
+
+    @Test
+    fun `a file can't carry RDATE, so an RDATE-only series keeps its overrides out of it`() {
+        val rows = CalendarRows(
+            listOf(MasterRow(1, 1, null, event("s").copy(recurrenceDates = "20260112T090000Z"))),
+            listOf(OverrideRow(1, 1, null, occurrence(1), event("x"))),
+        )
+
+        val flat = flattenOverrides(rows, ::formatExdateStamp, keepsRecurrenceDates = false)
+        assertThat(flat.map { it.uid }).containsExactly("s")
+        assertThat(flat.single().exDates).isEmpty()
+    }
+
+    @Test
+    fun `a cancelled series' moved occurrence isn't brought back`() {
+        val flat = flatten(
+            listOf(series("s", status = EventStatus.Cancelled)),
+            listOf(OverrideRow(1, 1, null, occurrence(1), event("x"))),
+        )
+
+        assertThat(flat.map { it.uid }).containsExactly("s")
+    }
+
+    @Test
+    fun `the same series in two calendars keeps each calendar's moved occurrence`() {
+        val flat = flatten(
+            listOf(series("s", id = 1, calendar = 1), series("s", id = 2, calendar = 2)),
+            listOf(
+                OverrideRow(1, 1, null, occurrence(1), event("x")),
+                OverrideRow(2, 2, null, occurrence(1), event("x")),
+            ),
+        )
+
+        assertThat(flat.count { it.overrideOf == "s" }).isEqualTo(2)
+    }
 }

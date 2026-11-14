@@ -184,6 +184,7 @@ internal object EventExportProjection {
         CalendarContract.Events.ORIGINAL_INSTANCE_TIME,
         CalendarContract.Events.RDATE,
         CalendarContract.Events.ACCESS_LEVEL,
+        CalendarContract.Events.EVENT_COLOR_KEY,
     )
 
     const val IDX_ID = 0
@@ -208,6 +209,7 @@ internal object EventExportProjection {
     const val IDX_ORIGINAL_INSTANCE_TIME = 19
     const val IDX_RDATE = 20
     const val IDX_ACCESS_LEVEL = 21
+    const val IDX_EVENT_COLOR_KEY = 22
 }
 
 /**
