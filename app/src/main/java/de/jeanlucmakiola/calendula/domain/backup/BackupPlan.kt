@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.domain.backup
 
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
+import de.jeanlucmakiola.calendula.domain.ics.flattenOverrides
 import de.jeanlucmakiola.calendula.domain.isNotSynced
 import de.jeanlucmakiola.floret.android.safeFileName
 import java.security.MessageDigest
@@ -344,7 +345,12 @@ fun BackupFilePlan.needsRefresh(
 /**
  * The events in a fixed order, reminders sorted, so the same content always
  * writes the same file and hashes the same, however the provider returned it.
+ * Standalone occurrences stay first, as [flattenOverrides] puts them.
  */
 fun List<IcsEvent>.inBackupOrder(): List<IcsEvent> =
-    sortedWith(compareBy<IcsEvent>({ it.start }, { it.uid }, { it.overrideAt }))
+    sortedWith(
+        compareBy<IcsEvent>(
+            { it.overrideOf == null }, { it.start }, { it.uid }, { it.overrideAt }, { it.calendarName },
+        ),
+    )
         .map { it.copy(reminderMinutes = it.reminderMinutes.sorted()) }

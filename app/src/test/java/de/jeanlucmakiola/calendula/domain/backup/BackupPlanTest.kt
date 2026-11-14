@@ -320,7 +320,7 @@ class BackupPlanTest {
     }
 
     @Test
-    fun `a change run refreshes only a changed, missing or moving stable copy`() {
+    fun `a change run refreshes only a changed or missing stable copy`() {
         val target = backupTargets(listOf(cal(1L, "Work")), combined = false).single()
         val ledger = mapOf(latestLedgerKey("1") to listOf("Work.ics"))
         val plan = planBackupFiles(listOf(target), ledger, setOf("Work.ics"), at, keep = 3).single()

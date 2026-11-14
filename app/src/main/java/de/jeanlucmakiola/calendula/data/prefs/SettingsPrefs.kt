@@ -379,7 +379,6 @@ class SettingsPrefs @Inject constructor(
 
     suspend fun setAutoBackupOnChange(enabled: Boolean) = prefs.set(SettingsKeys.autoBackupOnChange, enabled)
 
-
     /**
      * Atomic, so a run's ledger writes never undo one made meanwhile (pinning
      * the layout). Dropped when the folder is no longer [folder]: a run still

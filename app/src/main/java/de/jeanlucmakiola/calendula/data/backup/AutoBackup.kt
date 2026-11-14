@@ -20,6 +20,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
+import androidx.work.await
 import androidx.work.workDataOf
 import dagger.hilt.EntryPoint
 import dagger.hilt.InstallIn
@@ -33,17 +34,16 @@ import de.jeanlucmakiola.calendula.domain.backup.BackupFilePlan
 import de.jeanlucmakiola.calendula.domain.backup.backupFingerprint
 import de.jeanlucmakiola.calendula.domain.backup.backupTargets
 import de.jeanlucmakiola.calendula.domain.backup.inBackupOrder
-import de.jeanlucmakiola.calendula.domain.backup.needsRefresh
-import de.jeanlucmakiola.calendula.domain.backup.withFingerprint
-import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
 import de.jeanlucmakiola.calendula.domain.backup.latestHeldElsewhere
 import de.jeanlucmakiola.calendula.domain.backup.latestLedgerKey
+import de.jeanlucmakiola.calendula.domain.backup.needsRefresh
+import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
 import de.jeanlucmakiola.calendula.domain.backup.replacedLatestCopies
+import de.jeanlucmakiola.calendula.domain.backup.withFingerprint
 import de.jeanlucmakiola.calendula.domain.backup.withLedgerEntry
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.floret.android.hasPermission
 import kotlinx.coroutines.NonCancellable
-import androidx.work.await
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -281,35 +281,38 @@ class BackupWorker(
 
         // Whether the stable copy landed under its own name. An old copy goes
         // only once the new one has landed, so a series is never left without one.
-        suspend fun writeLatest(plan: BackupFilePlan, bytes: ByteArray, fingerprint: String): Boolean = try {
+        suspend fun writeLatest(plan: BackupFilePlan, bytes: ByteArray, fingerprint: String): Boolean {
             val target = plan.target
             val latest = checkNotNull(plan.latestName)
-            val latestKey = latestLedgerKey(target.key)
-            val landed = exporter.writeToFolder(folder, listing, latest, bytes)
-            // A provider that renamed it leaves a copy to clean up next
-            // run; the intended name stays ours only if it already was.
-            val ownsLatest = landed == latest || latest in ledger[latestKey].orEmpty()
-            val current = listOfNotNull(landed, latest.takeIf { ownsLatest })
-            // A hand-off stays on record only until its new owner claimed it.
-            suspend fun recordLatest(stale: List<String>, landedFingerprint: String? = null) =
-                prefs.updateAutoBackupLedger(
-                    folder.toString(),
-                    fingerprints = { old ->
-                        landedFingerprint?.let { withFingerprint(old, target.key, it, liveKeys) } ?: old
-                    },
-                ) {
-                    val pending = plan.handOff - it.latestHeldElsewhere(target.key)
-                    withLedgerEntry(it, latestKey, stale + pending + current, liveKeys)
-                }
-            recordLatest(plan.staleLatest, fingerprint.takeIf { landed == latest })
-            val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
-            recordLatest(plan.staleLatest.filter { it in staleLeft })
-            landed == latest
-        } catch (e: Exception) {
-            Log.w(TAG, "Stable copy of one series failed", e)
-            // The copy may be half-written now: the next change run must not take it as current.
-            runCatching { prefs.dropAutoBackupFingerprint(folder.toString(), plan.target.key) }
-            false
+            var landed: String? = null
+            return try {
+                val latestKey = latestLedgerKey(target.key)
+                // A write cut short leaves a partial copy that must not pass as current.
+                if (target.key in fingerprints) prefs.dropAutoBackupFingerprint(folder.toString(), target.key)
+                landed = exporter.writeToFolder(folder, listing, latest, bytes)
+                // A provider that renamed it leaves a copy to clean up next
+                // run; the intended name stays ours only if it already was.
+                val ownsLatest = landed == latest || latest in ledger[latestKey].orEmpty()
+                val current = listOfNotNull(landed, latest.takeIf { ownsLatest })
+                // A hand-off stays on record only until its new owner claimed it.
+                suspend fun recordLatest(stale: List<String>, landedFingerprint: String? = null) =
+                    prefs.updateAutoBackupLedger(
+                        folder.toString(),
+                        fingerprints = { old ->
+                            landedFingerprint?.let { withFingerprint(old, target.key, it, liveKeys) } ?: old
+                        },
+                    ) {
+                        val pending = plan.handOff - it.latestHeldElsewhere(target.key)
+                        withLedgerEntry(it, latestKey, stale + pending + current, liveKeys)
+                    }
+                recordLatest(plan.staleLatest, fingerprint.takeIf { landed == latest })
+                val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
+                recordLatest(plan.staleLatest.filter { it in staleLeft })
+                landed == latest
+            } catch (e: Exception) {
+                Log.w(TAG, "Stable copy of one series failed", e)
+                landed == latest
+            }
         }
 
         var written = 0
