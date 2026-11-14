@@ -298,7 +298,9 @@ class CalendarRepositoryImpl @Inject constructor(
         // Occurrences whose standalone copy didn't land, by series UID: the series
         // keeps them instead of excluding them for good.
         val unexcluded = mutableMapOf<String, MutableList<Instant>>()
-        for ((index, event) in events.withIndex()) {
+        // Standalone occurrences ahead of the series they were cut from, however the file is ordered.
+        val ordered = events.sortedBy { it.overrideOf == null }
+        for ((index, event) in ordered.withIndex()) {
             if (index > 0) onProgress(index)
             // A known UID means the event is already in this calendar — skip,
             // keeping a restore idempotent (no overwrite this pass).
@@ -317,7 +319,7 @@ class CalendarRepositoryImpl @Inject constructor(
                 Log.w(TAG, "Import stopped: the calendar is no longer writable", e)
                 // A known UID would have been skipped whatever happened, so it is
                 // no part of what a retry still has to import.
-                val remaining = events.drop(index)
+                val remaining = ordered.drop(index)
                 val duplicates = remaining.count { it.isAlreadyIn(existing) }
                 skipped += duplicates
                 notAttempted = remaining.size - duplicates

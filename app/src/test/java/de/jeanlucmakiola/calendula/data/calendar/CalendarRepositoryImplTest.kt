@@ -1067,6 +1067,18 @@ class CalendarRepositoryImplTest {
     }
 
     @Test
+    fun `a standalone occurrence listed after its series still goes first`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val fake = FakeCalendarDataSource()
+        val repo = testRepository(fake, tempDir, Dispatchers.Unconfined)
+
+        repo.importEvents(3L, listOf(parsedEvent("s"), parsedEvent("1-s").copy(overrideOf = "s")))
+
+        assertThat(fake.importedEvents.map { it.first.uid }).containsExactly("1-s", "s").inOrder()
+    }
+
+    @Test
     fun `a backup writes an RDATE-only series as the one-off a file can hold`(
         @TempDir tempDir: Path,
     ) = runTest {

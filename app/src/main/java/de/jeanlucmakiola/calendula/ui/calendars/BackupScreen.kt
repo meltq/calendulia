@@ -184,6 +184,24 @@ fun BackupScreen(
         }
     }
 
+    // Not gated on Ready: a running copy keeps its progress and Cancel whatever the list does.
+    if (showCopy) {
+        val calendars by copyViewModel.calendars.collectAsStateWithLifecycle()
+        val selection by copyViewModel.selection.collectAsStateWithLifecycle()
+        CopyEventsSheet(
+            calendars = calendars,
+            selection = selection,
+            run = copyRun,
+            onSelectSource = copyViewModel::setSource,
+            onSelectTarget = copyViewModel::setTarget,
+            onStart = copyViewModel::start,
+            onCancel = copyViewModel::cancel,
+            onDismiss = {
+                showCopy = false
+                copyViewModel.clearFinished()
+            },
+        )
+    }
     // Gated on Ready rather than resetting the flag when the state leaves it:
     // flipping it here would be a write during composition.
     (state as? BackupUiState.Ready)?.let { ready ->
@@ -192,23 +210,6 @@ fun BackupScreen(
                 calendars = ready.exportable,
                 onExport = viewModel::exportBackup,
                 onDismiss = { showExportPicker = false },
-            )
-        }
-        if (showCopy) {
-            val calendars by copyViewModel.calendars.collectAsStateWithLifecycle()
-            val selection by copyViewModel.selection.collectAsStateWithLifecycle()
-            CopyEventsSheet(
-                calendars = calendars,
-                selection = selection,
-                run = copyRun,
-                onSelectSource = copyViewModel::setSource,
-                onSelectTarget = copyViewModel::setTarget,
-                onStart = copyViewModel::start,
-                onCancel = copyViewModel::cancel,
-                onDismiss = {
-                    showCopy = false
-                    copyViewModel.clearFinished()
-                },
             )
         }
         if (showBackupCalendars) {
@@ -301,11 +302,11 @@ private fun BackupContent(
         GroupedHint(restoreSummary, style = MaterialTheme.typography.bodySmall)
         GroupedRow(
             title = stringResource(R.string.calendars_restore_action),
-            position = Position.Alone,
+            position = if (copyRun != CopyRunState.Idle) Position.Top else Position.Alone,
             leading = { LeadingAvatar(Icons.Default.FileUpload) },
             onClick = onRestoreClick,
         )
-        if (copyRun != CopyRunState.Idle) CopyEventsRow(copyRun, Position.Alone, onCopy)
+        if (copyRun != CopyRunState.Idle) CopyEventsRow(copyRun, Position.Bottom, onCopy)
         return
     }
 

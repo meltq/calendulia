@@ -510,7 +510,9 @@ series there has the override itself — so restoring into the calendar a backup
 came from adds nothing twice, while a restore into an empty one gets both. The
 standalone event also names its occurrence (`X-CALENDULA-OVERRIDE-AT`); if it
 fails to insert, the series is inserted without that exclusion, so the
-occurrence stays at its original time rather than vanishing for good.
+occurrence stays at its original time rather than vanishing for good. The
+import inserts every such event ahead of the series, whatever order the file
+lists them in.
 Exceptions whose series isn't among the rows are left out, a cancelled
 series' moved occurrences stay cancelled, and sync ids link only within their
 own calendar. A file can't carry `RDATE`, so a backup treats a series that
