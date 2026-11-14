@@ -42,7 +42,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
-import de.jeanlucmakiola.calendula.ui.filter.FilterUiState
 import de.jeanlucmakiola.calendula.ui.filter.FilterViewModel
 import de.jeanlucmakiola.calendula.ui.filter.ViewCalendarsPicker
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -195,7 +194,7 @@ fun CalendarHost(
     var detailKey by rememberSaveable { mutableStateOf<LongArray?>(null) }
     val onOpenDetail: (EventInstance) -> Unit = { event -> detailKey = event.occurrenceKey() }
 
-    // The top bar's view-calendars picker (#517). It is its own window over
+    // The drawer's "Hide in this view" picker (#517). It is its own window over
     // everything here, so each external request below closes it first.
     var showViewCalendars by rememberSaveable { mutableStateOf(false) }
 
@@ -220,7 +219,6 @@ fun CalendarHost(
     // the detail on top and backing out returns to the results.
     var showSearch by rememberSaveable { mutableStateOf(false) }
     val filterViewModel: FilterViewModel = hiltViewModel()
-    val filterState by filterViewModel.state.collectAsStateWithLifecycle()
     val onOpenSearch = { showSearch = true }
 
     // Calendar manager (reached from Settings) — its own overlay so it slides
@@ -572,6 +570,7 @@ fun CalendarHost(
             LocalManageCalendars provides remember { { showCalendars = true } },
         ) {
         if (showViewCalendars) {
+            val filterState by filterViewModel.state.collectAsStateWithLifecycle()
             ViewCalendarsPicker(
                 view = view,
                 state = filterState,
@@ -609,6 +608,10 @@ fun CalendarHost(
                         onOpenSettings()
                         switchScope.launch { drawerState.close() }
                     },
+                    onHideInView = {
+                        showViewCalendars = true
+                        switchScope.launch { drawerState.close() }
+                    },
                 )
             },
         ) {
@@ -622,10 +625,6 @@ fun CalendarHost(
                     onOpenDrawer = { switchScope.launch { drawerState.open() } },
                     onOpenSearch = onOpenSearch,
                     showTodayButton = todayInToolbar,
-                    hiddenInView = remember(filterState, view) {
-                        (filterState as? FilterUiState.Success)?.hiddenOnlyIn(view) ?: 0
-                    },
-                    onOpenViewCalendars = { showViewCalendars = true },
                 )
             },
             floatingActionButton = {

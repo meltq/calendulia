@@ -393,8 +393,8 @@ separate in-app declutter that never touches reminders. Narrower still is the pe
 (`SettingsPrefs.perCalendarHiddenViews`, #270): each view model asks for its
 events through `instancesWithout(range, calendarsHiddenIn(view, …))`, which drops
 the calendars hidden in that one view on top of the repository's filters; reminders, search and widgets read
-the repository and never see it. The top bar's filter action (#517) edits the same set for
-the view on show, and its dot and the drawer's "Hidden in this view" read it too.
+the repository and never see it. The drawer's "Hide in this view" entry (#517) edits the same
+set for the view on show, and the drawer's per-row "Hidden in this view" notes read it.
 
 Deliberately absent: a fallback to the provider's `EVENT_REMINDER` broadcast.
 Keeping both would double-post wherever the provider works, and Etar's way out —

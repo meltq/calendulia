@@ -868,12 +868,12 @@
     <string name="calendars_hide_in_views_none">Shown in every view</string>
     <string name="calendars_hidden_in">Hidden in %1$s</string>
     <string name="filter_hidden_in_view">Hidden in this view</string>
-    <string name="view_calendars_action">Hide calendars in this view</string>
     <string name="view_calendars_title">Hide in this view</string>
-    <plurals name="view_calendars_action_hidden">
-        <item quantity="one">Hide calendars in this view, %d hidden</item>
-        <item quantity="other">Hide calendars in this view, %d hidden</item>
+    <plurals name="drawer_hidden_in_view_count">
+        <item quantity="one">%d calendar hidden in this view</item>
+        <item quantity="other">%d calendars hidden in this view</item>
     </plurals>
+    <string name="drawer_hidden_in_view_none">Leave calendars out of this view only</string>
     <string name="view_calendars_hint">Checked calendars stay out of this view only. Reminders, search and widgets still include them.</string>
     <string name="view_calendars_hidden_everywhere">Hidden in every view from the menu</string>
     <string name="color_name_mauve">Mauve</string>

@@ -4,15 +4,22 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -28,6 +35,7 @@ import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.positionOf
 
 /**
@@ -40,6 +48,7 @@ import de.jeanlucmakiola.floret.components.positionOf
 @Composable
 fun CalendarFilterList(
     currentView: CalendarView,
+    onHideInView: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: FilterViewModel = hiltViewModel(),
 ) {
@@ -51,6 +60,8 @@ fun CalendarFilterList(
             groups = s.groups,
             hidden = s.hidden,
             hiddenInView = s.hiddenViews.calendarsHiddenIn(currentView),
+            hiddenOnlyHere = s.hiddenOnlyIn(currentView),
+            onHideInView = onHideInView,
             onSetVisible = viewModel::setVisible,
             modifier = modifier,
         )
@@ -67,6 +78,8 @@ private fun FilterList(
     groups: List<CalendarAccountGroup>,
     hidden: Set<Long>,
     hiddenInView: Set<Long>,
+    hiddenOnlyHere: Int,
+    onHideInView: () -> Unit,
     onSetVisible: (Long, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -101,6 +114,25 @@ private fun FilterList(
                 )
             }
         }
+        // The per-view hide (#517): the drawer filter above hides everywhere, this only here.
+        Spacer(Modifier.height(8.dp))
+        GroupedRow(
+            title = stringResource(R.string.view_calendars_title),
+            summary = if (hiddenOnlyHere > 0) {
+                pluralStringResource(R.plurals.drawer_hidden_in_view_count, hiddenOnlyHere, hiddenOnlyHere)
+            } else {
+                stringResource(R.string.drawer_hidden_in_view_none)
+            },
+            position = Position.Alone,
+            minHeight = 56.dp,
+            selected = hiddenOnlyHere > 0,
+            leading = {
+                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.FilterList, contentDescription = null)
+                }
+            },
+            onClick = onHideInView,
+        )
     }
 }
 
