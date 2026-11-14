@@ -11,7 +11,7 @@ class FilterUiStateTest {
     private fun calendar(id: Long) = CalendarSource(id, "Cal $id", "x@y", "LOCAL", 0, true)
 
     @Test
-    fun `hiddenOnlyIn counts listed calendars the view hides on its own`() {
+    fun `hiddenOnlyIn lists the calendars the view hides on its own`() {
         val state = FilterUiState.Success(
             groups = listOf(calendar(1L), calendar(2L), calendar(3L)).groupByAccount(),
             // 3 is hidden everywhere from the drawer already.
@@ -24,8 +24,8 @@ class FilterUiStateTest {
                 9L to setOf(CalendarView.Month),
             ),
         )
-        assertThat(state.hiddenOnlyIn(CalendarView.Month)).isEqualTo(2)
-        assertThat(state.hiddenOnlyIn(CalendarView.Week)).isEqualTo(1)
-        assertThat(state.hiddenOnlyIn(CalendarView.Agenda)).isEqualTo(0)
+        assertThat(state.hiddenOnlyIn(CalendarView.Month)).containsExactly(1L, 2L)
+        assertThat(state.hiddenOnlyIn(CalendarView.Week)).containsExactly(2L)
+        assertThat(state.hiddenOnlyIn(CalendarView.Agenda)).isEmpty()
     }
 }

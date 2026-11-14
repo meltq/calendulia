@@ -23,12 +23,12 @@ sealed interface FilterUiState {
         val hiddenViews: Map<Long, Set<CalendarView>> = emptyMap(),
     ) : FilterUiState {
         /**
-         * How many listed calendars [view] hides on its own (#517); ones already
-         * hidden everywhere from the drawer, or not listed, don't count.
+         * The listed calendars [view] hides on its own (#517); ones already
+         * hidden everywhere from the drawer, or not listed, aren't included.
          */
-        fun hiddenOnlyIn(view: CalendarView): Int {
+        fun hiddenOnlyIn(view: CalendarView): Set<Long> {
             val listed = groups.flatMapTo(mutableSetOf()) { group -> group.calendars.map { it.id } }
-            return hiddenViews.calendarsHiddenIn(view).count { it in listed && it !in hidden }
+            return hiddenViews.calendarsHiddenIn(view).filterTo(mutableSetOf()) { it in listed && it !in hidden }
         }
     }
 }

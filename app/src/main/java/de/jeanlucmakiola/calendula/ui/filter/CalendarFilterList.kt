@@ -31,7 +31,6 @@ import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.ui.common.CalendarAccountGroup
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
-import de.jeanlucmakiola.calendula.ui.common.calendarsHiddenIn
 import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.GroupedListInset
@@ -59,12 +58,12 @@ fun CalendarFilterList(
         FilterUiState.Loading -> FilterLoading(modifier)
         is FilterUiState.Failure -> FilterMessage(s.reason, modifier)
         is FilterUiState.Success -> {
-            val hiddenInView = remember(s, currentView) { s.hiddenViews.calendarsHiddenIn(currentView) - s.hidden }
+            val hiddenInView = remember(s, currentView) { s.hiddenOnlyIn(currentView) }
             FilterList(
                 groups = s.groups,
                 hidden = s.hidden,
                 hiddenInView = hiddenInView,
-                hiddenOnlyHere = remember(s, currentView) { s.hiddenOnlyIn(currentView) },
+                hiddenOnlyHere = hiddenInView.size,
                 onHideInView = onHideInView,
                 onSetVisible = viewModel::setVisible,
                 modifier = modifier,

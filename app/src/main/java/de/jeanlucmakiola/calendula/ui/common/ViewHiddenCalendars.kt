@@ -40,14 +40,16 @@ fun Flow<Map<Long, Set<CalendarView>>>.calendarsHiddenIn(
  * shows it, and keeps reading, so the next change still lands.
  */
 fun Flow<Map<Long, Set<CalendarView>>>.hidingNothingOnError(): Flow<Map<Long, Set<CalendarView>>> =
-    retryWhen { cause, _ ->
+    retryWhen { cause, attempt ->
         if (cause !is IOException) return@retryWhen false
         emit(emptyMap())
-        delay(RETRY_DELAY_MS)
+        // Backs off, so a file that keeps failing (corrupt) isn't re-read every second.
+        delay((RETRY_BASE_DELAY_MS shl attempt.coerceAtMost(6).toInt()).coerceAtMost(RETRY_MAX_DELAY_MS))
         true
     }
 
-private const val RETRY_DELAY_MS = 1_000L
+private const val RETRY_BASE_DELAY_MS = 1_000L
+private const val RETRY_MAX_DELAY_MS = 60_000L
 
 /**
  * [CalendarRepository.instances] as one view shows them: also without the
