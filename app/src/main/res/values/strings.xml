@@ -905,6 +905,7 @@
     </plurals>
     <string name="calendars_copy_done">Copy complete</string>
     <string name="calendars_copy_stopped_title">Copy stopped</string>
+    <string name="calendars_copy_partial">Copy finished, some events couldn\'t be added</string>
     <string name="calendars_copy_none">No calendar can be copied into another one right now.</string>
     <string name="calendars_copy_cancelled">Copy cancelled. Run it again to finish: events that were already copied are skipped.</string>
     <string name="calendars_copy_failed">Couldn\'t copy the events.</string>

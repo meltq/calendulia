@@ -41,8 +41,7 @@ internal fun ColumnReader.toIcsEvent(
         start = dtStart.toKotlinInstantFromEpochMillis(),
         end = end.toKotlinInstantFromEpochMillis(),
         isAllDay = isAllDay,
-        zoneId = getString(EventExportProjection.IDX_EVENT_TIMEZONE)?.takeIf { it.isNotBlank() }
-            ?: "UTC",
+        zoneId = timezone?.takeIf { it.isNotBlank() } ?: "UTC",
         recurrenceRule = rrule,
         exDates = if (rrule == null && rdates.isEmpty()) {
             emptyList()
@@ -121,11 +120,13 @@ internal fun exportRecurrenceDates(
     eventTimezone: String? = null,
 ): List<String> {
     if (rdate.isNullOrBlank()) return emptyList()
-    // The zone prefix may hold a '/' of its own (Europe/Berlin), so only the stamps lose their period end.
-    val stamps = rdate.withoutExdateParameters()
-    val prefix = rdate.dropLast(stamps.length)
-    val starts = prefix + stamps.split(',').joinToString(",") { it.substringBefore('/') }
-    return exportExDates(starts, isAllDay, eventTimezone).filter { RECURRENCE_DATE.matches(it) }
+    // Several RDATE properties are stored one per line, each with its own zone prefix.
+    return rdate.lines().filter { it.isNotBlank() }.flatMap { line ->
+        // The zone prefix may hold a '/' of its own (Europe/Berlin), so only the stamps lose their period end.
+        val stamps = line.withoutExdateParameters()
+        val starts = line.dropLast(stamps.length) + stamps.split(',').joinToString(",") { it.substringBefore('/') }
+        exportExDates(starts, isAllDay, eventTimezone)
+    }.filter { RECURRENCE_DATE.matches(it) }.distinct()
 }
 
 private val RECURRENCE_DATE = Regex("""\d{8}(T\d{6}Z)?""")

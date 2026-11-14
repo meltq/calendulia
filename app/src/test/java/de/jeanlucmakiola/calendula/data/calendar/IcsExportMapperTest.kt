@@ -306,4 +306,10 @@ class IcsExportMapperTest {
         assertThat(exportRecurrenceDates("20260110T000000Z,20260111,garbage", isAllDay = true))
             .containsExactly("20260110", "20260111").inOrder()
     }
+
+    @Test
+    fun `an RDATE stored over several lines keeps every line's dates`() {
+        assertThat(exportRecurrenceDates("Europe/Berlin;20260110T100000\nAmerica/New_York;20260112T090000", isAllDay = false))
+            .containsExactly("20260110T090000Z", "20260112T140000Z").inOrder()
+    }
 }

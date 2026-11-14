@@ -19,13 +19,17 @@ fun planCalendarCopy(
     exdateStamp: (occurrenceMillis: Long, isAllDay: Boolean) -> String,
 ): List<ParsedIcsEvent> {
     val live = CalendarRows(
-        series = rows.series.filterNot { it.event.status == EventStatus.Cancelled || it.declined },
+        series = rows.series.filterNot { it.event.status == EventStatus.Cancelled },
         // A declined occurrence is as good as deleted here.
         overrides = rows.overrides.map {
             if (it.declined) it.copy(event = it.event.copy(status = EventStatus.Cancelled)) else it
         },
     )
-    return flattenOverrides(live, exdateStamp).map { it.toParsedIcsEvent() }
+    // A declined series still hands its accepted occurrences on before it goes.
+    val declined = rows.series.filter { it.declined }.map { it.event.uid }.toSet()
+    return flattenOverrides(live, exdateStamp)
+        .filterNot { it.overrideOf == null && it.uid in declined }
+        .map { it.toParsedIcsEvent() }
 }
 
 /**

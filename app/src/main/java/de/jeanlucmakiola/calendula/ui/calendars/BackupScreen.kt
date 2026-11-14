@@ -399,7 +399,11 @@ private fun CopyEventsRow(copyRun: CopyRunState, position: Position, onClick: ()
         summary = when (copyRun) {
             is CopyRunState.Running -> copyProgressText(copyRun)
             is CopyRunState.Done -> stringResource(
-                if (copyRun.stopped) R.string.calendars_copy_stopped_title else R.string.calendars_copy_done,
+                when {
+                    copyRun.stopped -> R.string.calendars_copy_stopped_title
+                    copyRun.summary.failed > 0 -> R.string.calendars_copy_partial
+                    else -> R.string.calendars_copy_done
+                },
             )
             CopyRunState.Cancelled -> stringResource(R.string.calendars_copy_cancelled)
             CopyRunState.Failed -> stringResource(R.string.calendars_copy_failed)

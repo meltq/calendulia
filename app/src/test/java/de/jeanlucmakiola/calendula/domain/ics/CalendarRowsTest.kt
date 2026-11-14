@@ -212,10 +212,14 @@ class CalendarRowsTest {
     }
 
     @Test
-    fun `a copy leaves declined invitations out`() {
-        val rows = CalendarRows(listOf(series("d").copy(declined = true), series("k", id = 2)), emptyList())
+    fun `a copy leaves declined invitations out but keeps an occurrence accepted on its own`() {
+        val rows = CalendarRows(
+            listOf(series("d").copy(declined = true), series("k", id = 2)),
+            listOf(OverrideRow(1, 1, null, occurrence(1), event("accepted"))),
+        )
 
-        assertThat(planCalendarCopy(rows, ::formatExdateStamp).map { it.uid }).containsExactly("k")
+        val plan = planCalendarCopy(rows, ::formatExdateStamp)
+        assertThat(plan.map { it.summary }).containsExactly("accepted", "k")
     }
 
     @Test

@@ -89,12 +89,6 @@ class IcsWriter(private val prodId: String = ICS_PROD_ID) {
         }
     }
 
-    /**
-     * The series' deleted occurrences. RFC 5545 ties `EXDATE`'s value type to
-     * `DTSTART`'s, so an all-day series needs the explicit `VALUE=DATE` — without
-     * it the bare day codes read as an invalid DATE-TIME. Only written for a
-     * recurring event: an exclusion names an occurrence, and a one-off has none.
-     */
     /** Extra occurrences: the same UTC stamps / `VALUE=DATE` days as [appendExDates]. */
     private fun MutableList<String>.appendRecurrenceDates(event: IcsEvent) {
         val stamps = event.recurrenceDates.filter { it.isNotBlank() }.distinct()
@@ -103,6 +97,12 @@ class IcsWriter(private val prodId: String = ICS_PROD_ID) {
         add(prefix + stamps.joinToString(","))
     }
 
+    /**
+     * The series' deleted occurrences. RFC 5545 ties `EXDATE`'s value type to
+     * `DTSTART`'s, so an all-day series needs the explicit `VALUE=DATE` — without
+     * it the bare day codes read as an invalid DATE-TIME. Only written for a
+     * recurring event: an exclusion names an occurrence, and a one-off has none.
+     */
     private fun MutableList<String>.appendExDates(event: IcsEvent) {
         if (!event.recurs) return
         val stamps = event.exDates.filter { it.isNotBlank() }.distinct()

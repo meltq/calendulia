@@ -53,11 +53,12 @@ fun CopyEventsSheet(
     onDismiss: () -> Unit,
 ) {
     val list = (calendars as? CopyCalendars.Ready)?.calendars.orEmpty()
+    val running = run is CopyRunState.Running
     val sources = remember(list) { copySources(list) }
-    val source = sources.firstOrNull { it.id == selection.sourceId }
+    // A running copy keeps showing its source even if it stopped qualifying meanwhile.
+    val source = (if (running) list else sources).firstOrNull { it.id == selection.sourceId }
     val targets = remember(list, source?.id) { copyTargets(list, source?.id) }
     val target = targets.firstOrNull { it.id == selection.targetId }
-    val running = run is CopyRunState.Running
     var picking by rememberSaveable { mutableStateOf<CopyEnd?>(null) }
 
     FullScreenPicker(

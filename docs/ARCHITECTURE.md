@@ -521,7 +521,8 @@ as before.
 **`RDATE` travels like `EXDATE` (#515).** A series can repeat by listed dates
 alone. The provider stores `RDATE` in the same `<zone>;<stamps>` form as
 `EXDATE`, so `exportRecurrenceDates` resolves it the same way to UTC stamps (or
-bare days for an all-day series); a `PERIOD` entry keeps its start. `IcsWriter`
+bare days for an all-day series), line by line where several `RDATE`s were
+stored; a `PERIOD` entry keeps its start. `IcsWriter`
 writes it as `RDATE:` / `RDATE;VALUE=DATE:`, anchors such a series to its zone
 like an RRULE series, and writes its `EXDATE` too; `IcsParser` reads `RDATE`
 through the same normalisation as `EXDATE`, so a foreign `TZID` or floating
