@@ -330,7 +330,6 @@ class BackupPlanTest {
         assertThat(plan.needsRefresh("h2", stored, listed, complete = true)).isTrue()
         assertThat(plan.needsRefresh("h1", emptyMap(), listed, complete = true)).isTrue()
         assertThat(plan.needsRefresh("h1", stored, emptySet(), complete = true)).isTrue()
-        assertThat(plan.copy(staleLatest = listOf("Job.ics")).needsRefresh("h1", stored, listed, complete = true)).isTrue()
     }
 
     @Test
@@ -348,5 +347,17 @@ class BackupPlanTest {
         val plan = planBackupFiles(listOf(target), emptyMap(), setOf("Work.ics"), at, keep = 3).single()
         assertThat(plan.latestName).isNull()
         assertThat(plan.needsRefresh("h1", emptyMap(), setOf("Work.ics"), complete = true)).isFalse()
+    }
+
+    @Test
+    fun `backup order doesn't depend on the provider's`() {
+        fun event(uid: String, reminders: List<Int>) = IcsEvent(
+            uid = uid, summary = uid, start = Instant.fromEpochSeconds(0), end = Instant.fromEpochSeconds(3600),
+            isAllDay = false, zoneId = "UTC", reminderMinutes = reminders,
+        )
+        val one = listOf(event("b", listOf(15, 10)), event("a", listOf(5)))
+        val other = listOf(event("a", listOf(5)), event("b", listOf(10, 15)))
+        assertThat(one.inBackupOrder()).isEqualTo(other.inBackupOrder())
+        assertThat(one.inBackupOrder().map { it.uid }).containsExactly("a", "b").inOrder()
     }
 }

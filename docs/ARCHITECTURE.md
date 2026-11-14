@@ -492,8 +492,8 @@ this app, a sync adapter or another app), a 2-minute settle delay capped at 15
 minutes, and battery-not-low. A trigger fires once and observes only while its
 job waits, so there are two slots: a change run arms the other one as it starts
 (catching changes made during the run) and again as it ends. Runs share the
-scheduled backup's lock. A change run only rewrites the stable copies and shows
-on the status line only when it fails: the dated files and their retention stay on the interval,
+scheduled backup's lock. A change run only rewrites the stable copies and stays
+off the status line: the dated files and their retention stay on the interval,
 so a day of edits can't rotate the history out. Since the trigger fires for any
 provider change (reminders, other calendars, sync bookkeeping), each series'
 file is hashed without its `DTSTAMP`s (`auto_backup_fingerprints`, reset with

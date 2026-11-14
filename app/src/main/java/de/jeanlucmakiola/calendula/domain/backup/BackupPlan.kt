@@ -1,6 +1,7 @@
 package de.jeanlucmakiola.calendula.domain.backup
 
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.isNotSynced
 import de.jeanlucmakiola.floret.android.safeFileName
 import java.security.MessageDigest
@@ -324,8 +325,8 @@ fun parseBackupFingerprints(stored: String?): BackupFingerprints =
 
 /**
  * Whether a run started by a change (#516) rewrites this series' stable copy:
- * only when its content moved on from what the copy holds, or the copy is
- * missing or mid-rename. Never when the name belongs to a file of the user's,
+ * only when its content moved on from what the copy holds (a rename changes
+ * the name written into it), or the copy is missing. Never when the name belongs to a file of the user's,
  * nor when a [complete]-less listing doesn't show the copy: writing then would
  * add a duplicate beside it, so that is left to the scheduled run.
  */
@@ -337,5 +338,13 @@ fun BackupFilePlan.needsRefresh(
 ): Boolean {
     val latest = latestName ?: return false
     if (latest !in listed) return complete
-    return stored[target.key] != fingerprint || staleLatest.isNotEmpty() || handOff.isNotEmpty()
+    return stored[target.key] != fingerprint
 }
+
+/**
+ * The events in a fixed order, reminders sorted, so the same content always
+ * writes the same file and hashes the same, however the provider returned it.
+ */
+fun List<IcsEvent>.inBackupOrder(): List<IcsEvent> =
+    sortedWith(compareBy<IcsEvent>({ it.start }, { it.uid }, { it.overrideAt }))
+        .map { it.copy(reminderMinutes = it.reminderMinutes.sorted()) }

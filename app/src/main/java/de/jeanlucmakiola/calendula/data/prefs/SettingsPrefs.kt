@@ -399,6 +399,15 @@ class SettingsPrefs @Inject constructor(
         }
     }
 
+    /** Forget [key]'s hash (#516), so the next change run rewrites its stable copy. */
+    suspend fun dropAutoBackupFingerprint(folder: String, key: String) {
+        prefs.edit {
+            if (it[SettingsKeys.autoBackupFolderUri] == folder) {
+                it[SettingsKeys.autoBackupFingerprints] = it[SettingsKeys.autoBackupFingerprints] - key
+            }
+        }
+    }
+
     /** Record a pre-#411 install's old file as its combined series' stable copy (see [pinBackupLayout]). */
     suspend fun adoptLegacyBackupFile() {
         prefs.edit { if (it.autoBackupLegacyInstall) it.adoptLegacyBackupFile() }

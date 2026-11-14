@@ -32,6 +32,7 @@ import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.backup.BackupFilePlan
 import de.jeanlucmakiola.calendula.domain.backup.backupFingerprint
 import de.jeanlucmakiola.calendula.domain.backup.backupTargets
+import de.jeanlucmakiola.calendula.domain.backup.inBackupOrder
 import de.jeanlucmakiola.calendula.domain.backup.needsRefresh
 import de.jeanlucmakiola.calendula.domain.backup.withFingerprint
 import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
@@ -185,9 +186,9 @@ class BackupWorker(
                 prefs.autoBackupFolderUri.first() != null
             if (wanted) BackupScheduler.watchChanges(applicationContext, slot = 1 - slot)
         }
+        runCatching { watchNext() }.onFailure { Log.w(TAG, "Arming the next change run failed", it) }
         // Never fails or retries: a retry would only wait for another change.
         try {
-            watchNext()
             backUp(deps, prefs, changeRun = true)
         } catch (e: CancellationException) {
             throw e
@@ -201,8 +202,8 @@ class BackupWorker(
 
     /**
      * One run under the shared lock. A change run (#516) refreshes only the
-     * stable copies; it reports a failure, but a success stays off the status
-     * line, which dates the last dated backup.
+     * stable copies and stays off the status line and the failure count, which
+     * report on the scheduled backup; a broken folder fails that one too.
      */
     private suspend fun backUp(deps: Deps, prefs: SettingsPrefs, changeRun: Boolean): Result {
         val now = System.currentTimeMillis()
@@ -223,9 +224,8 @@ class BackupWorker(
                 RunOutcome.Failed
             }
         }
-        if (outcome == RunOutcome.NothingToDo) return Result.success()
+        if (changeRun || outcome == RunOutcome.NothingToDo) return Result.success()
         val success = outcome == RunOutcome.Written
-        if (changeRun && success) return Result.success()
         prefs.recordAutoBackupRun(success = success, atMillis = now)
         if (!success && prefs.autoBackupStatus.first().consecutiveFailures >= FAILURE_NOTIFY_THRESHOLD) {
             notifyFailure(applicationContext)
@@ -239,7 +239,8 @@ class BackupWorker(
     /**
      * Writes each series and prunes it only once its new file has landed. A
      * [latestOnly] run (#516) leaves the dated files and their retention to the
-     * schedule and rewrites only the stable copies whose calendars changed.
+     * schedule and rewrites only the stable copies whose calendars changed;
+     * its outcome isn't reported.
      */
     private suspend fun runBackup(deps: Deps, prefs: SettingsPrefs, folder: Uri, latestOnly: Boolean): RunOutcome {
         val repository = deps.repository()
@@ -307,9 +308,7 @@ class BackupWorker(
         } catch (e: Exception) {
             Log.w(TAG, "Stable copy of one series failed", e)
             // The copy may be half-written now: the next change run must not take it as current.
-            runCatching {
-                prefs.updateAutoBackupLedger(folder.toString(), fingerprints = { it - plan.target.key }) { it }
-            }
+            runCatching { prefs.dropAutoBackupFingerprint(folder.toString(), plan.target.key) }
             false
         }
 
@@ -320,7 +319,8 @@ class BackupWorker(
             val target = plan.target
             if (latestOnly && plan.latestName == null) continue
             val text = try {
-                IcsWriter().writeCalendar(repository.exportEvents(target.calendarIds), stamp, target.calendarName)
+                val events = repository.exportEvents(target.calendarIds).inBackupOrder()
+                IcsWriter().writeCalendar(events, stamp, target.calendarName)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {
@@ -330,18 +330,18 @@ class BackupWorker(
             }
             val fingerprint = backupFingerprint(text)
             if (latestOnly && !plan.needsRefresh(fingerprint, fingerprints, listing.files.keys, listing.complete)) {
-                landedLatest += target.key
+                if (plan.latestName in listing.files) landedLatest += target.key
                 continue
             }
             val bytes = text.toByteArray(Charsets.UTF_8)
             // Not cancellable once a file exists: it must reach the ledger, or
             // nothing would ever prune it.
             withContext(NonCancellable) {
-                val dated = latestOnly || writeDated(plan, bytes)
-                // A full run's stable copy is best-effort and never holds up its status.
-                val latest = plan.latestName != null && writeLatest(plan, bytes, fingerprint)
-                if (latest) landedLatest += target.key
-                if (if (latestOnly) latest else dated) written++ else failed++
+                if (!latestOnly) {
+                    if (writeDated(plan, bytes)) written++ else failed++
+                }
+                // Best-effort in a full run: it never holds up the run's status.
+                if (plan.latestName != null && writeLatest(plan, bytes, fingerprint)) landedLatest += target.key
             }
         }
         // A layout switch retires the other layout's copies once every new one is there.
