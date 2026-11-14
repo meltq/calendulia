@@ -1,10 +1,12 @@
 package de.jeanlucmakiola.calendula.ui.calendars
 
 import android.util.Log
+import androidx.annotation.StringRes
 import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
+import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
@@ -134,6 +136,14 @@ sealed interface CopyRunState {
     data class Done(val summary: IcsImportSummary) : CopyRunState {
         /** The target stopped taking events part way, so some were never tried. */
         val stopped: Boolean get() = summary.notAttempted > 0
+
+        /** How the run ended, the same words on the row and in the sheet. */
+        @get:StringRes
+        val titleRes: Int get() = when {
+            stopped -> R.string.calendars_copy_stopped_title
+            summary.failed > 0 -> R.string.calendars_copy_partial
+            else -> R.string.calendars_copy_done
+        }
     }
     data object Cancelled : CopyRunState
     data object Failed : CopyRunState

@@ -312,4 +312,10 @@ class IcsExportMapperTest {
         assertThat(exportRecurrenceDates("Europe/Berlin;20260110T100000\nAmerica/New_York;20260112T090000", isAllDay = false))
             .containsExactly("20260110T090000Z", "20260112T140000Z").inOrder()
     }
+
+    @Test
+    fun `an EXDATE stored over several lines keeps every line, unreadable stamps go`() {
+        assertThat(exportExDates("Europe/Berlin;20260110T100000\nEurope/Berlin;20260117T100000,junk", isAllDay = false))
+            .containsExactly("20260110T090000Z", "20260117T090000Z").inOrder()
+    }
 }

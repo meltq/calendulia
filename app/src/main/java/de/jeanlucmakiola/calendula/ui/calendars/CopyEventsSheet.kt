@@ -74,7 +74,8 @@ fun CopyEventsSheet(
         },
     ) {
         GroupedHint(stringResource(R.string.calendars_copy_hint), style = MaterialTheme.typography.bodySmall)
-        when (calendars) {
+        // A copy under way keeps its progress and Cancel whatever the list does.
+        if (run == CopyRunState.Idle) when (calendars) {
             CopyCalendars.Loading -> {
                 Box(Modifier.fillMaxWidth().padding(32.dp), contentAlignment = Alignment.Center) {
                     CircularProgressIndicator()
@@ -207,7 +208,7 @@ fun copyProgressText(run: CopyRunState.Running): String {
 private fun CopySummary(run: CopyRunState.Done) {
     val summary = run.summary
     Text(
-        stringResource(if (run.stopped) R.string.calendars_copy_stopped_title else R.string.calendars_copy_done),
+        stringResource(run.titleRes),
         style = MaterialTheme.typography.titleMedium,
         color = MaterialTheme.colorScheme.onSurface,
     )

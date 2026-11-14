@@ -96,15 +96,19 @@ internal fun exportExDates(
     eventTimezone: String? = null,
 ): List<String> {
     if (exdate.isNullOrBlank()) return emptyList()
-    val zone = exdateListZone(exdate, eventTimezone)
-    return exdateStamps(exdate)
-        .map { stamp ->
+    // Several properties are stored one per line, each with its own zone prefix.
+    return exdate.lines().filter { it.isNotBlank() }.flatMap { line ->
+        val zone = exdateListZone(line, eventTimezone)
+        exdateStamps(line).map { stamp ->
             if (isAllDay) {
                 stamp.substringBefore('T')
             } else {
                 canonicalExdateStamp(stamp, isAllDay = false, listZone = zone) ?: stamp
             }
         }
+    }
+        // A bare day on a timed series stays: a restore reads it at the series' time of day.
+        .filter { EXPORTED_STAMP.matches(it) }
         .distinct()
 }
 
@@ -120,14 +124,14 @@ internal fun exportRecurrenceDates(
     eventTimezone: String? = null,
 ): List<String> {
     if (rdate.isNullOrBlank()) return emptyList()
-    // Several RDATE properties are stored one per line, each with its own zone prefix.
-    return rdate.lines().filter { it.isNotBlank() }.flatMap { line ->
-        // The zone prefix may hold a '/' of its own (Europe/Berlin), so only the stamps lose their period end.
+    // The zone prefix may hold a '/' of its own (Europe/Berlin), so only the stamps lose their period end.
+    val starts = rdate.lines().joinToString("\n") { line ->
         val stamps = line.withoutExdateParameters()
-        val starts = line.dropLast(stamps.length) + stamps.split(',').joinToString(",") { it.substringBefore('/') }
-        exportExDates(starts, isAllDay, eventTimezone)
-    }.filter { RECURRENCE_DATE.matches(it) }.distinct()
+        line.dropLast(stamps.length) + stamps.split(',').joinToString(",") { it.substringBefore('/') }
+    }
+    return exportExDates(starts, isAllDay, eventTimezone)
 }
 
-private val RECURRENCE_DATE = Regex("""\d{8}(T\d{6}Z)?""")
+/** What a file and a provider both read back: a day, or a UTC stamp. */
+private val EXPORTED_STAMP = Regex("""\d{8}(T\d{6}Z)?""")
 

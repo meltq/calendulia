@@ -913,18 +913,25 @@ class AndroidCalendarDataSource @Inject constructor(
         } else {
             null
         }
-        event.semanticReminderMinutes().forEach { minutes ->
-            val providerMinutes = if (reminderDate != null) {
-                toProviderAllDayMinutes(
-                    semanticMinutes = minutes,
-                    startDate = reminderDate,
-                    zone = zone,
-                    timeOfDayMinutes = allDayReminderTimeMinutes,
-                )
-            } else {
-                minutes
+        // All or nothing: a row whose reminders failed would count as not added
+        // and still be there.
+        try {
+            event.semanticReminderMinutes().forEach { minutes ->
+                val providerMinutes = if (reminderDate != null) {
+                    toProviderAllDayMinutes(
+                        semanticMinutes = minutes,
+                        startDate = reminderDate,
+                        zone = zone,
+                        timeOfDayMinutes = allDayReminderTimeMinutes,
+                    )
+                } else {
+                    minutes
+                }
+                insertReminderRow(eventId, providerMinutes)
             }
-            insertReminderRow(eventId, providerMinutes)
+        } catch (t: Throwable) {
+            runCatching { resolver.delete(eventUri(eventId), null, null) }
+            throw t
         }
         return eventId
     }

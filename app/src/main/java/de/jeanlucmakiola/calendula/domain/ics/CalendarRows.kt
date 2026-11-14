@@ -52,8 +52,9 @@ data class CalendarRows(
  * occurrence, so it is the same on every run. Overrides whose series isn't
  * among the rows are left out; the provider doesn't show them either.
  *
- * Standalone occurrences come first, so an import cut short leaves at worst an
- * occurrence missing its series, never a series missing an occurrence.
+ * Standalone occurrences come first; `importEvents` enforces that order for
+ * any file, so an import cut short leaves at worst an occurrence missing its
+ * series, never a series missing an occurrence.
  *
  * [exdateStamp] formats an occurrence as an `EXDATE` entry in the provider's
  * shape, the same one Calendula's own exclusions use. A cancelled series'
