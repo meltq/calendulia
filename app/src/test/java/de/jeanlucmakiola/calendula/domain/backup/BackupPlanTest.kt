@@ -284,4 +284,42 @@ class BackupPlanTest {
         assertThat(ledger.latestHeldElsewhere("1")).containsExactly("Work.ics")
         assertThat(ledger.latestHeldElsewhere("2")).containsExactly("Job.ics")
     }
+
+    @Test
+    fun `fingerprints survive storage and drop deleted calendars`() {
+        val stored = persistBackupFingerprints(mapOf("1" to "ab", COMBINED_SERIES to "cd"))
+        assertThat(parseBackupFingerprints(stored)).containsExactly("1", "ab", COMBINED_SERIES, "cd")
+        assertThat(persistBackupFingerprints(emptyMap())).isNull()
+        assertThat(parseBackupFingerprints(null)).isEmpty()
+        val next = withFingerprint(mapOf("1" to "ab", "9" to "ef", COMBINED_SERIES to "cd"), "2", "gh", setOf("1", "2"))
+        assertThat(next).containsExactly("1", "ab", COMBINED_SERIES, "cd", "2", "gh")
+    }
+
+    @Test
+    fun `a fingerprint follows the content`() {
+        assertThat(backupFingerprint("a")).isEqualTo(backupFingerprint("a"))
+        assertThat(backupFingerprint("a")).isNotEqualTo(backupFingerprint("b"))
+        assertThat(backupFingerprint("a")).hasLength(32)
+    }
+
+    @Test
+    fun `a change run refreshes only a changed, missing or moving stable copy`() {
+        val target = backupTargets(listOf(cal(1L, "Work")), combined = false).single()
+        val ledger = mapOf(latestLedgerKey("1") to listOf("Work.ics"))
+        val plan = planBackupFiles(listOf(target), ledger, setOf("Work.ics"), at, keep = 3).single()
+        val stored = mapOf("1" to "h1")
+        assertThat(plan.needsRefresh("h1", stored, setOf("Work.ics"))).isFalse()
+        assertThat(plan.needsRefresh("h2", stored, setOf("Work.ics"))).isTrue()
+        assertThat(plan.needsRefresh("h1", emptyMap(), setOf("Work.ics"))).isTrue()
+        assertThat(plan.needsRefresh("h1", stored, emptySet())).isTrue()
+        assertThat(plan.copy(staleLatest = listOf("Job.ics")).needsRefresh("h1", stored, setOf("Work.ics"))).isTrue()
+    }
+
+    @Test
+    fun `a change run never writes over a file of the user's`() {
+        val target = backupTargets(listOf(cal(1L, "Work")), combined = false).single()
+        val plan = planBackupFiles(listOf(target), emptyMap(), setOf("Work.ics"), at, keep = 3).single()
+        assertThat(plan.latestName).isNull()
+        assertThat(plan.needsRefresh("h1", emptyMap(), setOf("Work.ics"))).isFalse()
+    }
 }

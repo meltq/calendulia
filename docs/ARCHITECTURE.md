@@ -485,6 +485,19 @@ of the backup keeps its last one. The pre-#411 fixed `calendula-backup.ics` is
 the combined series' stable copy for the install that wrote it, and an
 install that already had a folder stays on the combined layout.
 
+**Backing up after a change (#516)** is opt-in. `BackupScheduler.watchChanges`
+arms a one-off `BackupWorker` with a WorkManager content-URI trigger on the
+provider's root URI (the provider notifies every change there, whoever made it:
+this app, a sync adapter or another app), a 2-minute settle delay capped at 15
+minutes, and battery-not-low. A trigger fires once, so each change run arms the
+next one behind itself (`APPEND_OR_REPLACE`); it shares the run lock with the
+scheduled run. A change run only rewrites the stable copies: the dated files
+and their retention stay on the interval, so a day of edits can't rotate the
+history out. Since the trigger fires for any provider change (reminders, other
+calendars, sync bookkeeping), each series' file is hashed with a fixed stamp
+(`auto_backup_fingerprints`, reset with the folder) and a change run skips the
+series whose hash, stable copy and name are unchanged.
+
 **A backup carries the series' deleted and moved occurrences.** `EXDATE` lives on
 the master row and is part of `EventExportProjection`; `IcsWriter` marks an
 all-day series' exclusions `VALUE=DATE`, because RFC 5545 ties `EXDATE`'s value

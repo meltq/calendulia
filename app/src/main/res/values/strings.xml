@@ -920,6 +920,8 @@
     <string name="calendars_auto_backup_interval">Interval</string>
     <string name="calendars_auto_backup_every">Every %1$s</string>
     <string name="calendars_auto_backup_interval_min">Minimum 30 minutes.</string>
+    <string name="calendars_auto_backup_on_change">Also back up after changes</string>
+    <string name="calendars_auto_backup_on_change_summary">Updates the undated copy a few minutes after events change. Dated backups stay on the interval.</string>
     <string name="calendars_auto_backup_calendars">Calendars</string>
     <plurals name="calendars_auto_backup_calendars_count">
         <item quantity="one">%d calendar</item>

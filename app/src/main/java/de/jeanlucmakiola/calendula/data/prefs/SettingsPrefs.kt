@@ -15,6 +15,9 @@ import de.jeanlucmakiola.calendula.domain.backup.normalizeBackupKeep
 import de.jeanlucmakiola.calendula.domain.backup.BackupLedger
 import de.jeanlucmakiola.calendula.domain.backup.parseBackupLedger
 import de.jeanlucmakiola.calendula.domain.backup.persistBackupLedger
+import de.jeanlucmakiola.calendula.domain.backup.BackupFingerprints
+import de.jeanlucmakiola.calendula.domain.backup.parseBackupFingerprints
+import de.jeanlucmakiola.calendula.domain.backup.persistBackupFingerprints
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.parseAgendaRange
@@ -196,6 +199,8 @@ class SettingsPrefs @Inject constructor(
     val autoBackupCombined: Flow<Boolean> = prefs.snapshot { it.autoBackupCombined }
     val autoBackupKeep: Flow<Int> = prefs.flow(SettingsKeys.autoBackupKeep)
     val autoBackupLedger: Flow<BackupLedger> = prefs.flow(SettingsKeys.autoBackupLedger)
+    val autoBackupOnChange: Flow<Boolean> = prefs.flow(SettingsKeys.autoBackupOnChange)
+    val autoBackupFingerprints: Flow<BackupFingerprints> = prefs.flow(SettingsKeys.autoBackupFingerprints)
     val specialDatesEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.specialDatesEnabled)
     val specialDatesTypes: Flow<Set<SpecialDateType>> = prefs.snapshot { it.specialDatesTypes }
     val specialDatesCalendars: Flow<Map<SpecialDateType, Long>> = prefs.snapshot { it.specialDatesCalendars }
@@ -355,7 +360,10 @@ class SettingsPrefs @Inject constructor(
             it.pinBackupLayout()
             // The ledger says which files in the old folder are ours; in a new
             // one a file of the same name may be the user's.
-            if (it[SettingsKeys.autoBackupFolderUri] != uri) it[SettingsKeys.autoBackupLedger] = emptyMap()
+            if (it[SettingsKeys.autoBackupFolderUri] != uri) {
+                it[SettingsKeys.autoBackupLedger] = emptyMap()
+                it[SettingsKeys.autoBackupFingerprints] = emptyMap()
+            }
             it[SettingsKeys.autoBackupFolderUri] = uri
         }
     }
@@ -368,6 +376,17 @@ class SettingsPrefs @Inject constructor(
     }
 
     suspend fun setAutoBackupKeep(keep: Int) = prefs.set(SettingsKeys.autoBackupKeep, keep)
+
+    suspend fun setAutoBackupOnChange(enabled: Boolean) = prefs.set(SettingsKeys.autoBackupOnChange, enabled)
+
+    /** Like [updateAutoBackupLedger]: dropped once the folder is no longer [folder]. */
+    suspend fun updateAutoBackupFingerprints(folder: String, transform: (BackupFingerprints) -> BackupFingerprints) {
+        prefs.edit {
+            if (it[SettingsKeys.autoBackupFolderUri] == folder) {
+                it[SettingsKeys.autoBackupFingerprints] = transform(it[SettingsKeys.autoBackupFingerprints])
+            }
+        }
+    }
 
     /**
      * Atomic, so a run's ledger writes never undo one made meanwhile (pinning
@@ -785,6 +804,13 @@ object SettingsKeys {
     /** The files the automatic backup wrote, per series; the only ones it ever prunes (#411). */
     val autoBackupLedger: Pref<BackupLedger> =
         nullableStringPref("auto_backup_files").map(::parseBackupLedger, ::persistBackupLedger)
+
+    /** Whether a change to a backed-up calendar also refreshes the stable copies (#516). Opt-in. */
+    val autoBackupOnChange: Pref<Boolean> = booleanPref("auto_backup_on_change", false)
+
+    /** Content hash of each series' stable copy, so a change run skips untouched ones (#516). */
+    val autoBackupFingerprints: Pref<BackupFingerprints> =
+        nullableStringPref("auto_backup_fingerprints").map(::parseBackupFingerprints, ::persistBackupFingerprints)
 
     /** Master switch for the contact special-dates mirror (issue #15). Opt-in. */
     val specialDatesEnabled: Pref<Boolean> = booleanPref("special_dates_enabled", false)

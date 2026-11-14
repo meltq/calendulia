@@ -115,6 +115,7 @@ class CalendulaApp : Application() {
                 enabled = prefs.autoBackupEnabled.first(),
                 intervalMinutes = prefs.autoBackupIntervalMinutes.first(),
                 hasFolder = prefs.autoBackupFolderUri.first() != null,
+                onChange = prefs.autoBackupOnChange.first(),
             )
         }
     }

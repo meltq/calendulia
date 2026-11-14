@@ -345,6 +345,7 @@ class OnboardingViewModel @Inject constructor(
                 enabled = true,
                 intervalMinutes = prefs.autoBackupIntervalMinutes.first(),
                 hasFolder = true,
+                onChange = prefs.autoBackupOnChange.first(),
             )
             // Immediate feedback: the first backup lands while onboarding runs.
             BackupScheduler.runNow(context)

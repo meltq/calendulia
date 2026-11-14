@@ -351,6 +351,13 @@ private fun BackupContent(
             position = Position.Middle,
             onClick = onEditInterval,
         )
+        GroupedSwitchRow(
+            title = stringResource(R.string.calendars_auto_backup_on_change),
+            summary = stringResource(R.string.calendars_auto_backup_on_change_summary),
+            checked = autoBackup.onChange,
+            onCheckedChange = viewModel::setAutoBackupOnChange,
+            position = Position.Middle,
+        )
         val selectedCount = exportable.count(autoBackup.selection::selects)
         GroupedRow(
             title = stringResource(R.string.calendars_auto_backup_calendars),
