@@ -407,7 +407,9 @@ the system's channel screens (#340); the app never sets a sound itself. Separate
 from both, `SettingsPrefs.mutedReminderCalendarIds` is the in-app per-calendar
 off switch (#272): the scan plans nothing for those calendars (so they arm no
 wake-ups; toggling it re-scans), and `ReminderNotifier.post` checks it again
-for snoozes.
+for snoozes. The settings screen re-reads `ReminderChannels.status` on every
+resume and marks a calendar "Blocked in system settings" when the app, its
+channel or its account group is switched off there.
 
 **Full-screen alerts (#171).** Settings → Notifications gives each calendar an
 alert style (`SettingsPrefs.reminderAlertStyles`): a plain notification, a
@@ -427,7 +429,8 @@ from the screen, the notification or a swipe, all go through
 the service as commands, so a dismiss sent while a newer ring is on its way
 applies in order rather than killing it, and the service re-reads the settings
 once a ring arrives, so a style change or mute that raced a scan still wins. A
-blocked calendar, account group or ring channel never rings, the tone pauses
+blocked calendar, account group or ring channel never rings (Settings flags a
+blocked ring channel next to each ringing calendar, beside #145's blocked status), the tone pauses
 for a phone call, and a ring restarted after a process death only rings out
 what was left of its ten minutes. When Android 14+
 withholds `USE_FULL_SCREEN_INTENT`, the intent is left off and the alert is a

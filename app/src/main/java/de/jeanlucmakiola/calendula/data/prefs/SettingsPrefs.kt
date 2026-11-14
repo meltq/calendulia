@@ -171,6 +171,7 @@ class SettingsPrefs @Inject constructor(
     val remindersEnabled: Flow<Boolean> = prefs.flow(SettingsKeys.remindersEnabled)
     val mutedReminderCalendarIds: Flow<Set<Long>> = prefs.flow(SettingsKeys.mutedReminderCalendarIds)
     val reminderAlertStyles: Flow<Map<Long, ReminderAlertStyle>> = prefs.flow(SettingsKeys.reminderAlertStyles)
+    val notificationCategoryHintDismissed: Flow<Boolean> = prefs.flow(SettingsKeys.notificationCategoryHintDismissed)
     val allowColorOnUnsupportedCalendars: Flow<Boolean> =
         prefs.flow(SettingsKeys.allowColorOnUnsupportedCalendars)
     val defaultReminderMinutes: Flow<List<Int>> = prefs.flow(SettingsKeys.defaultReminderMinutes)
@@ -277,6 +278,8 @@ class SettingsPrefs @Inject constructor(
     }
 
     suspend fun setRemindersEnabled(enabled: Boolean) = prefs.set(SettingsKeys.remindersEnabled, enabled)
+
+    suspend fun dismissNotificationCategoryHint() = prefs.set(SettingsKeys.notificationCategoryHintDismissed, true)
 
     suspend fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) {
         prefs.update(SettingsKeys.mutedReminderCalendarIds) { if (enabled) it - calendarId else it + calendarId }
@@ -616,6 +619,12 @@ object SettingsKeys {
     /** Per-calendar alert styles (#171); a calendar absent from the map uses plain notifications. */
     val reminderAlertStyles: Pref<Map<Long, ReminderAlertStyle>> =
         nullableStringPref("reminder_alert_styles").map(::parseAlertStyles) { it.toStoredAlertStyles() }
+
+    /**
+     * Whether the one-time hint that some skins (Samsung) start new notification
+     * categories switched off has been dismissed (#145).
+     */
+    val notificationCategoryHintDismissed: Pref<Boolean> = booleanPref("notification_category_hint_dismissed", false)
 
     /**
      * Whether to offer a custom event colour on calendars that publish no colour

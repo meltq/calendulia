@@ -127,7 +127,9 @@ class ReminderNotifier @Inject constructor(
     }
 
     private fun channelFor(alert: ReminderAlert, style: ReminderAlertStyle): String? = try {
-        channels.channelFor(alert.calendarId, style)
+        channels.channelFor(alert.calendarId, style).also {
+            if (it == null) Log.i(TAG, "Dropped the reminder of event ${alert.eventId}: calendar ${alert.calendarId} is gone")
+        }
     } catch (e: Exception) {
         Log.w(TAG, "No channel for the reminder of event ${alert.eventId}", e)
         null

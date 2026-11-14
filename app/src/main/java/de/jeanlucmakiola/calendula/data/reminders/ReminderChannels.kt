@@ -137,20 +137,36 @@ class ReminderChannels @Inject constructor(
             Log.w(TAG, "Could not look up calendar $calendarId for its channel", e)
             emptyList()
         }
+        val fallback = ReminderChannelSpec(id, calendarId, context.getString(R.string.reminder_channel_name), null)
         if (calendars.isEmpty()) {
-            val fallback = ReminderChannelSpec(id, calendarId, context.getString(R.string.reminder_channel_name), null)
             write(emptyList(), listOf(fallback), existing)
             return id
         }
         val plan = plan(calendars, existing, emptyList())
         val spec = plan.channels.firstOrNull { it.calendarId == calendarId } ?: return null
-        val knownGroups = manager.notificationChannelGroups.mapTo(HashSet()) { it.id }
-        write(
-            groups = plan.groups.filter { it.id == spec.groupId && it.id !in knownGroups },
-            channels = listOf(spec),
-            existing = existing,
-        )
+        try {
+            val knownGroups = manager.notificationChannelGroups.mapTo(HashSet()) { it.id }
+            write(
+                groups = plan.groups.filter { it.id == spec.groupId && it.id !in knownGroups },
+                channels = listOf(spec),
+                existing = existing,
+            )
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Could not file the channel of calendar $calendarId", e)
+            write(emptyList(), listOf(fallback), existing)
+        }
         return id
+    }
+
+    /** What the system currently lets through for [calendarIds]' reminders (#145). */
+    fun status(calendarIds: Collection<Long>): ReminderChannelStatus {
+        val manager = manager
+        val appEnabled = manager.areNotificationsEnabled()
+        val channels = manager.notificationChannels.associate {
+            it.id to ReminderChannelState(it.importance == NotificationManager.IMPORTANCE_NONE, it.group)
+        }
+        val blockedGroups = manager.notificationChannelGroups.filter { it.isBlocked }.mapTo(HashSet()) { it.id }
+        return reminderChannelStatus(calendarIds, appEnabled, channels, blockedGroups)
     }
 
     private fun plan(
@@ -176,9 +192,9 @@ class ReminderChannels @Inject constructor(
         }
         if (channels.isEmpty()) return
         val byId = existing.associateBy { it.id }
+        val description = context.getString(R.string.reminder_channel_description)
         val template = byId[LEGACY_REMINDER_CHANNEL_ID]
-        // Only a channel's first creation sets its behaviour; later calls just
-        // rename it, so an existing one passes its own importance back.
+        // Importance only applies on creation; an existing channel keeps its own.
         manager.createNotificationChannels(
             channels.map { spec ->
                 val current = byId[spec.id]
@@ -187,7 +203,7 @@ class ReminderChannels @Inject constructor(
                     spec.name,
                     current?.importance ?: template?.importance ?: NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
-                    description = context.getString(R.string.reminder_channel_description)
+                    this.description = description
                     spec.groupId?.let { group = it }
                     if (current == null && template != null) inheritFrom(template)
                 }
@@ -196,8 +212,8 @@ class ReminderChannels @Inject constructor(
     }
 
     /**
-     * Carry the old single channel's sound, vibration and lock-screen choices
-     * over to a new per-calendar one, so an upgrade keeps how reminders sounded.
+     * Carry the old single channel's sound, vibration, lights and badge over to
+     * a new per-calendar one (the system resets lock-screen visibility itself), so an upgrade keeps how reminders sounded.
      */
     private fun NotificationChannel.inheritFrom(template: NotificationChannel) {
         setSound(template.sound, template.audioAttributes)
@@ -206,7 +222,6 @@ class ReminderChannels @Inject constructor(
         enableVibration(template.shouldVibrate())
         enableLights(template.shouldShowLights())
         lightColor = template.lightColor
-        lockscreenVisibility = template.lockscreenVisibility
         setShowBadge(template.canShowBadge())
         // Only honoured with Do Not Disturb access, so usually left to the user.
         setBypassDnd(template.canBypassDnd())
@@ -241,3 +256,4 @@ class ReminderChannels @Inject constructor(
         const val TAG = "ReminderChannels"
     }
 }
+
