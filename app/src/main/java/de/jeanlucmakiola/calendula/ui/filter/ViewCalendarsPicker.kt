@@ -31,7 +31,7 @@ fun ViewCalendarsPicker(
     onDismiss: () -> Unit,
 ) {
     FullScreenPicker(
-        title = stringResource(R.string.view_calendars_action),
+        title = stringResource(R.string.view_calendars_title),
         onDismiss = onDismiss,
         predictiveBack = true,
     ) {

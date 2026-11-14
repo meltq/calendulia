@@ -161,8 +161,7 @@ class CalendarsViewModel @Inject constructor(
         hiddenChanges: Map<CalendarView, Boolean>,
     ) = write {
         val id = repository.createLocalCalendar(displayName, color, description)
-        // The calendar exists now; a failed pref write must not read as a failed create.
-        bestEffort { settingsPrefs.applyCalendarHiddenChanges(id, hiddenChanges) }
+        settingsPrefs.applyCalendarHiddenChanges(id, hiddenChanges)
     }
 
     fun updateCalendar(
@@ -172,15 +171,14 @@ class CalendarsViewModel @Inject constructor(
         description: String?,
         hiddenChanges: Map<CalendarView, Boolean>,
     ) = write {
-        // First: it doesn't depend on the provider, so a failed provider write shouldn't lose it.
-        settingsPrefs.applyCalendarHiddenChanges(id, hiddenChanges)
         repository.updateCalendar(id, displayName, color, description)
+        settingsPrefs.applyCalendarHiddenChanges(id, hiddenChanges)
     }
 
     fun deleteCalendar(id: Long) = write {
         repository.deleteCalendar(id)
         // Tidy-up only: the delete already landed, so a failure here isn't its failure.
-        bestEffort { settingsPrefs.setCalendarHiddenViews(id, emptySet()) }
+        bestEffort { settingsPrefs.clearCalendarHiddenViews(id) }
     }
 
     private suspend fun bestEffort(block: suspend () -> Unit) {

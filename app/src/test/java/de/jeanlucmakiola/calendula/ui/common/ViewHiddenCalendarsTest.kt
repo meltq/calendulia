@@ -52,7 +52,7 @@ class ViewHiddenCalendarsTest {
         }
         val settings = testSettings(tempDir)
         val repo = testRepository(fake, tempDir, UnconfinedTestDispatcher(testScheduler), settings = settings)
-        settings.setCalendarHiddenViews(2L, setOf(CalendarView.Month))
+        settings.applyCalendarHiddenChanges(2L, listOf(CalendarView.Month).associateWith { true })
         val hidden = settings.perCalendarHiddenViews
 
         assertThat(repo.instancesWithout(range, hidden.calendarsHiddenIn(CalendarView.Month, backgroundScope)).first().map { it.eventId })

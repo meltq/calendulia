@@ -622,14 +622,17 @@ class SettingsPrefsTest {
     ) = runTest {
         val prefs = testSettings(tempDir)
         assertThat(prefs.perCalendarHiddenViews.first()).isEmpty()
-        prefs.setCalendarHiddenViews(7L, setOf(CalendarView.Month, CalendarView.Agenda))
-        prefs.setCalendarHiddenViews(9L, setOf(CalendarView.MultiDay))
+        prefs.applyCalendarHiddenChanges(7L, listOf(CalendarView.Month, CalendarView.Agenda).associateWith { true })
+        prefs.applyCalendarHiddenChanges(9L, listOf(CalendarView.MultiDay).associateWith { true })
         assertThat(prefs.perCalendarHiddenViews.first()).containsExactly(
             7L, setOf(CalendarView.Month, CalendarView.Agenda),
             9L, setOf(CalendarView.MultiDay),
         )
-        prefs.setCalendarHiddenViews(7L, emptySet())
+        prefs.clearCalendarHiddenViews(7L)
         assertThat(prefs.perCalendarHiddenViews.first()).containsExactly(9L, setOf(CalendarView.MultiDay))
+        // One write can hide some views and show others, leaving the rest alone.
+        prefs.applyCalendarHiddenChanges(9L, mapOf(CalendarView.MultiDay to false, CalendarView.Day to true))
+        assertThat(prefs.perCalendarHiddenViews.first()).containsExactly(9L, setOf(CalendarView.Day))
     }
 
     @Test

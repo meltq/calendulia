@@ -348,6 +348,12 @@ fun CalendarHost(
         }
     }
 
+    // The view-calendars picker is its own window over everything here, so a
+    // reminder tap, an insert request or an .ics file opening under it closes it.
+    LaunchedEffect(detailKey != null || importUri != null || importForm != null) {
+        if (detailKey != null || importUri != null || importForm != null) showViewCalendars = false
+    }
+
     // Close every overlay that can sit over the calendar, so an externally
     // requested destination (a widget/shortcut/QS-tile launch) is revealed on
     // top instead of underneath whatever the user had open. The create form,

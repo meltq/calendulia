@@ -272,9 +272,9 @@ class SettingsPrefs @Inject constructor(
         }
     }
 
-    /** Hide [calendarId] in [views] only (#270); an empty set shows it everywhere again. */
-    suspend fun setCalendarHiddenViews(calendarId: Long, views: Set<CalendarView>) {
-        prefs.update(SettingsKeys.perCalendarHiddenViews) { current -> current.withHiddenViews(calendarId, views) }
+    /** Show [calendarId] in every view again (#270), e.g. once it is deleted. */
+    suspend fun clearCalendarHiddenViews(calendarId: Long) {
+        prefs.update(SettingsKeys.perCalendarHiddenViews) { current -> current - calendarId }
     }
 
     /** Hide or show [calendarId] in one [view], against the stored set rather than a snapshot of it. */
