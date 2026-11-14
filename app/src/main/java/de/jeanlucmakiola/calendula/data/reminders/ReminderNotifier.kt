@@ -65,15 +65,6 @@ class ReminderNotifier @Inject constructor(
     /** Post [alert], unless its calendar is silenced or gone. */
     suspend fun post(alert: ReminderAlert) {
         if (isSilenced(alert.calendarId)) return
-        val channelId = try {
-            channels.channelFor(alert.calendarId) ?: run {
-                Log.i(TAG, "Dropped the reminder of event ${alert.eventId}: calendar ${alert.calendarId} is gone")
-                return
-            }
-        } catch (e: Exception) {
-            Log.w(TAG, "No channel for the reminder of event ${alert.eventId}", e)
-            return
-        }
         val title = displayTitle(alert)
         val is24Hour = settingsPrefs.timeFormat.first()
             .is24Hour(android.text.format.DateFormat.is24HourFormat(context))
@@ -96,6 +87,16 @@ class ReminderNotifier @Inject constructor(
             yesterdayLabel = context.getString(R.string.reminder_day_yesterday),
         )
         val text = listOfNotNull(time, alert.location).joinToString(" · ")
+        // Resolved last, so a sound picked meanwhile (#518) can't retire it before notify.
+        val channelId = try {
+            channels.channelFor(alert.calendarId) ?: run {
+                Log.i(TAG, "Dropped the reminder of event ${alert.eventId}: calendar ${alert.calendarId} is gone")
+                return
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "No channel for the reminder of event ${alert.eventId}", e)
+            return
+        }
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)

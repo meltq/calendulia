@@ -53,6 +53,7 @@ import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -390,10 +391,15 @@ class SettingsViewModel @Inject constructor(
 
     private var channelStatusJob: Job? = null
 
-    private val _channelSounds = MutableStateFlow<Map<Long, ReminderSound>>(emptyMap())
+    private val _channelSounds = MutableStateFlow<Map<Long, ReminderSound>?>(null)
 
-    /** Each calendar's reminder sound (#518); a calendar without a channel yet is absent. */
-    val channelSounds: StateFlow<Map<Long, ReminderSound>> = _channelSounds.asStateFlow()
+    /** Each calendar's reminder sound (#518), null until first read; a calendar without a channel yet is absent. */
+    val channelSounds: StateFlow<Map<Long, ReminderSound>?> = _channelSounds.asStateFlow()
+
+    private val _soundFailed = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
+    /** Emits when a picked sound couldn't be applied to every calendar. */
+    val soundFailed: SharedFlow<Unit> = _soundFailed
 
     fun refreshChannelStatus(calendarIds: Collection<Long>) {
         channelStatusJob?.cancel()
@@ -416,21 +422,26 @@ class SettingsViewModel @Inject constructor(
      * that only get a channel when something posts are left alone.
      */
     fun setReminderSoundForAll(sound: Uri?) = applySound {
-        sync()
+        try {
+            sync()
+        } catch (e: Exception) {
+            Log.w("SettingsViewModel", "Channel sync before a sound pick failed", e)
+        }
         setSound(visibleCalendars.first().map { it.id }, sound, createMissing = false)
     }
 
-    private fun applySound(block: suspend ReminderChannels.() -> Unit) {
+    /** Runs to completion even if the screen closes meanwhile, so a pick is never half-applied. */
+    private fun applySound(block: suspend ReminderChannels.() -> Boolean) {
         viewModelScope.launch {
-            withContext(io) {
+            val applied = withContext(io + NonCancellable) {
                 try {
                     reminderChannels.block()
-                } catch (e: CancellationException) {
-                    throw e
                 } catch (e: Exception) {
                     Log.w("SettingsViewModel", "Could not set the reminder sound", e)
+                    false
                 }
             }
+            if (!applied) _soundFailed.tryEmit(Unit)
             refreshChannelStatus(visibleCalendars.first().map { it.id })
         }
     }
