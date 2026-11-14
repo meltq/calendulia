@@ -166,6 +166,7 @@ import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.groupedShape as floretGroupedShape
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.calendula.ui.common.reminderPresets
+import de.jeanlucmakiola.calendula.data.calendar.wholeDayLeadTimes
 import de.jeanlucmakiola.calendula.ui.common.customReminderUnits
 import de.jeanlucmakiola.calendula.ui.common.customReminderPlaceholder
 import de.jeanlucmakiola.calendula.ui.common.splitsSubDay
@@ -877,7 +878,7 @@ private fun EventEditContent(
         OptionalFormSection(visible = EventFormField.Reminders in state.visibleFields) {
             Spacer(Modifier.height(gap))
             RemindersSection(
-                reminders = form.reminders,
+                reminders = form.shownReminders(),
                 onRemove = viewModel::removeReminder,
                 onAdd = { sheet = EditSheet.Reminder },
             )
@@ -1283,6 +1284,14 @@ private fun LocationCard(
 }
 
 /**
+ * Reminders as they fire: an all-day event fires on whole days, so a sub-day lead
+ * time kept from the timed form shows as its day. The form keeps the raw values,
+ * so switching all-day off again restores them.
+ */
+private fun EventForm.shownReminders(): List<Int> =
+    if (isAllDay) wholeDayLeadTimes(reminders) else reminders
+
+/**
  * A grouped list like guests: each reminder is its own tonal card with
  * connected corners, the last row being "Add reminder".
  */
@@ -1492,7 +1501,7 @@ private fun EditSheetHost(
         }
         EditSheet.Reminder -> ReminderPickerDialog(
             isAllDay = form.isAllDay,
-            alreadyChosen = form.reminders,
+            alreadyChosen = form.shownReminders(),
             onSelect = { minutes ->
                 viewModel.addReminder(minutes)
                 onClose()

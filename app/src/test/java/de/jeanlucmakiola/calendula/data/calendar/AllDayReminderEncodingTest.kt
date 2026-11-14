@@ -49,6 +49,16 @@ class AllDayReminderEncodingTest {
     }
 
     @Test
+    fun `whole-day lead times match the encoder and keep the default sentinel`() {
+        assertThat(wholeDayLeadTimes(listOf(2_880, 10, 1_500, 0, MINUTES_DEFAULT)))
+            .containsExactly(MINUTES_DEFAULT, 0, 1_440, 2_880).inOrder()
+        for (minutes in listOf(10, 1_500, -30)) {
+            assertThat(toProviderAllDayMinutes(minutes, summer, berlin, nineAm))
+                .isEqualTo(toProviderAllDayMinutes(wholeDayLeadMinutes(minutes), summer, berlin, nineAm))
+        }
+    }
+
+    @Test
     fun `three weeks before fires at 9am local across a DST change`() {
         val afterDst = LocalDate.of(2026, 4, 10) // CEST; three weeks earlier is CET
         val raw = toProviderAllDayMinutes(3 * 10_080, afterDst, berlin, nineAm)

@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.data.prefs
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import de.jeanlucmakiola.calendula.data.calendar.wholeDayLeadTimes
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
@@ -648,7 +649,8 @@ object SettingsKeys {
      * before the start of the day — day-scale ("1 day before"), so separate from
      * the timed default.
      */
-    val defaultAllDayReminderMinutes: Pref<List<Int>> = reminderListPref("default_allday_reminder_minutes")
+    val defaultAllDayReminderMinutes: Pref<List<Int>> =
+        reminderListPref("default_allday_reminder_minutes", wholeDays = true)
 
     /**
      * Wall-clock time, as minutes from local midnight, at which **all-day**
@@ -681,7 +683,7 @@ object SettingsKeys {
 
     /** Per-calendar overrides of [defaultAllDayReminderMinutes], as [perCalendarReminderOverride]. */
     val perCalendarAllDayReminderOverride: Pref<Map<Long, List<Int>>> =
-        reminderOverridePref("per_calendar_allday_reminder_override")
+        reminderOverridePref("per_calendar_allday_reminder_override", wholeDays = true)
 
     /** Whether periodic automatic `.ics` export of local calendars is on (issue #8). */
     val autoBackupEnabled: Pref<Boolean> = booleanPref("auto_backup_enabled", false)
@@ -785,11 +787,24 @@ private fun <T> Pref<T>.coerced(clamp: (T) -> T): Pref<T> = map(clamp, clamp)
 private fun agendaRangePref(name: String): Pref<AgendaRange> =
     nullableStringPref(name).map({ parseAgendaRange(it, AgendaRange.Month) }, { it.storageValue() })
 
-private fun reminderListPref(name: String): Pref<List<Int>> =
-    nullableStringPref(name).map({ it.toReminderList() }, { it.toStoredReminders() })
+/**
+ * [wholeDays] reads an all-day list as the whole days it fires at, so a sub-day
+ * value stored before the all-day pickers were limited to days shows truthfully.
+ */
+private fun reminderListPref(name: String, wholeDays: Boolean = false): Pref<List<Int>> =
+    nullableStringPref(name).map(
+        { stored -> stored.toReminderList().let { if (wholeDays) wholeDayLeadTimes(it) else it } },
+        { it.toStoredReminders() },
+    )
 
-private fun reminderOverridePref(name: String): Pref<Map<Long, List<Int>>> =
-    nullableStringPref(name).map(reminderOverrideCodec::parse, reminderOverrideCodec::serialize)
+private fun reminderOverridePref(name: String, wholeDays: Boolean = false): Pref<Map<Long, List<Int>>> =
+    nullableStringPref(name).map(
+        { stored ->
+            reminderOverrideCodec.parse(stored)
+                .let { map -> if (wholeDays) map.mapValues { wholeDayLeadTimes(it.value) } else map }
+        },
+        reminderOverrideCodec::serialize,
+    )
 
 private suspend fun PrefStore.applyOverride(
     pref: Pref<Map<Long, List<Int>>>,

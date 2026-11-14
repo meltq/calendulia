@@ -502,6 +502,18 @@ class SettingsPrefsTest {
     }
 
     @Test
+    fun `sub-day all-day defaults read as the day they fire on`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        prefs.setDefaultAllDayReminderMinutes(listOf(120, 0, 1_500))
+        assertThat(prefs.defaultAllDayReminderMinutes.first()).containsExactly(0, 1_440).inOrder()
+        prefs.setCalendarAllDayReminderOverride(7L, ReminderOverride.Minutes(listOf(30, 2_880)))
+        assertThat(prefs.perCalendarAllDayReminderOverride.first()).containsExactly(7L, listOf(0, 2_880))
+        // The timed default keeps sub-day lead times.
+        prefs.setDefaultReminderMinutes(listOf(120))
+        assertThat(prefs.defaultReminderMinutes.first()).containsExactly(120)
+    }
+
+    @Test
     fun `per-calendar all-day override round-trips independently of the timed one`(@TempDir tempDir: Path) = runTest {
         val prefs = testSettings(tempDir)
         prefs.setCalendarReminderOverride(7L, ReminderOverride.Minutes(listOf(15)))

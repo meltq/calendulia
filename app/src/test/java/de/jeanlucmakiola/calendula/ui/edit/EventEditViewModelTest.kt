@@ -306,6 +306,31 @@ class EventEditViewModelTest {
     )
 
     @Test
+    fun `switching to all-day keeps sub-day reminders, removing one drops its whole day`(
+        @TempDir tempDir: Path,
+    ) = runTest(dispatcher) {
+        val fake = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(1L)) }
+        val vm = viewModel(tempDir, fake)
+        val job = activate(vm)
+
+        vm.openNew(LocalDate(2030, 1, 15), startMinutes = 9 * 60)
+        advanceUntilIdle()
+        vm.addReminder(10)
+        vm.addReminder(1_440)
+        vm.setAllDay(true)
+        vm.setAllDay(false)
+        advanceUntilIdle()
+        // Toggling all-day is lossless.
+        assertThat(vm.state.value?.form?.reminders).containsExactly(10, 1_440).inOrder()
+
+        vm.addReminder(0)
+        vm.setAllDay(true)
+        vm.removeReminder(0)
+        assertThat(vm.state.value?.form?.reminders).containsExactly(1_440)
+        job.cancel()
+    }
+
+    @Test
     fun `an all-day event ignores the default duration`(
         @TempDir tempDir: Path,
     ) = runTest(dispatcher) {

@@ -47,12 +47,24 @@ internal fun toProviderAllDayMinutes(
 ): Int {
     if (semanticMinutes == MINUTES_DEFAULT) return semanticMinutes
     val utcMidnight = startDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-    val fire = startDate.minusDays((semanticMinutes / MINUTES_PER_DAY).toLong())
+    val fire = startDate.minusDays((wholeDayLeadMinutes(semanticMinutes) / MINUTES_PER_DAY).toLong())
         .atTime(LocalTime.of(timeOfDayMinutes / 60, timeOfDayMinutes % 60))
         .atZone(zone).toInstant().toEpochMilli()
     val raw = ((utcMidnight - fire) / MILLIS_PER_MINUTE).toInt()
     return if (raw == MINUTES_DEFAULT) MINUTES_DEFAULT - 1 else raw
 }
+
+/**
+ * A lead time as the whole days an all-day reminder actually fires at: the
+ * sub-day part is dropped, the same truncation [toProviderAllDayMinutes] applies.
+ * [MINUTES_DEFAULT] passes through.
+ */
+internal fun wholeDayLeadMinutes(minutes: Int): Int =
+    if (minutes == MINUTES_DEFAULT) minutes else minutes / MINUTES_PER_DAY * MINUTES_PER_DAY
+
+/** [wholeDayLeadMinutes] for a reminder list, merging lead times that land on the same day. */
+internal fun wholeDayLeadTimes(minutes: List<Int>): List<Int> =
+    minutes.map(::wholeDayLeadMinutes).distinct().sorted()
 
 /**
  * The next date on or after [today] carrying [month]/[day] — the date to sample

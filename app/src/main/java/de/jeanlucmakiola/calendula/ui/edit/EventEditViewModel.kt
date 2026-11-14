@@ -7,6 +7,7 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
+import de.jeanlucmakiola.calendula.data.calendar.wholeDayLeadMinutes
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -694,9 +695,20 @@ class EventEditViewModel @Inject constructor(
         edit { it.copy(reminders = (it.reminders + minutes).distinct().sorted()) }
     }
 
+    /**
+     * On an all-day event a reminder is shown as the whole day it fires on, so
+     * removing it drops every stored lead time that lands on that day.
+     */
     fun removeReminder(minutes: Int) {
         _remindersTouched.value = true
-        edit { it.copy(reminders = it.reminders - minutes) }
+        edit { form ->
+            val removed = if (form.isAllDay) {
+                form.reminders.filter { wholeDayLeadMinutes(it) == wholeDayLeadMinutes(minutes) }
+            } else {
+                listOf(minutes)
+            }
+            form.copy(reminders = form.reminders - removed.toSet())
+        }
     }
 
     /**
