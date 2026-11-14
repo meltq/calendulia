@@ -114,4 +114,19 @@ class SyncViewModelTest {
 
         assertThat(vm.targets.value).isEqualTo(SyncTargets(setOf(davAccount), emptySet()))
     }
+
+    @Test
+    fun `dismissing a hidden account takes it out of the grant list`(@TempDir dir: Path) = runTest(dispatcher) {
+        val sync = RecordingSyncRequester(hiddenTypes = setOf(davAccount.type))
+        sync.knownAccounts = setOf(davAccount)
+        val (vm, _) = viewModel(dir, sync)
+        backgroundScope.launch { vm.targets.collect {} }
+        runCurrent()
+        assertThat(vm.targets.value?.needsAccess).containsExactly(davAccount)
+
+        vm.dismissAccess(davAccount)
+        runCurrent()
+
+        assertThat(vm.targets.value).isEqualTo(SyncTargets(emptySet(), emptySet(), dismissed = setOf(davAccount)))
+    }
 }

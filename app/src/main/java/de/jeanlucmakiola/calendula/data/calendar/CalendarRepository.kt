@@ -144,13 +144,13 @@ interface CalendarRepository {
 
     /**
      * The accounts behind visible calendars with a sync adapter, split by
-     * whether [requestSync] can reach them yet. Re-reads account access on
-     * every collection, so a grant or revoke shows on the next one.
+     * whether [requestSync] can reach them yet. Account access isn't observable:
+     * it is re-read on each collection and on every [refreshSyncAccess].
      */
     val syncTargets: Flow<SyncTargets> get() = flowOf(SyncTargets.None)
 
-    /** Accounts the user said not to be asked about granting access for. */
-    val syncAccessDismissed: Flow<Set<SyncAccount>> get() = flowOf(emptySet())
+    /** Re-read account access for every [syncTargets] collector; it can change outside the app. */
+    fun refreshSyncAccess() {}
 
     /** Stop or resume asking for [account]'s sync-request access. */
     suspend fun setSyncAccessDismissed(account: SyncAccount, dismissed: Boolean) {}

@@ -11,15 +11,12 @@ import de.jeanlucmakiola.calendula.data.calendar.SyncRequestResult
 import de.jeanlucmakiola.calendula.data.calendar.SyncTargets
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.async
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.firstOrNull
-import kotlinx.coroutines.flow.flatMapLatest
-import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
@@ -35,22 +32,13 @@ class SyncViewModel @Inject constructor(
     private val repository: CalendarRepository,
 ) : ViewModel() {
 
-    private val accessChecks = MutableStateFlow(0)
-
-    /**
-     * Who "Sync now" can reach, and who first needs the user's grant; null until
-     * first read. Account access isn't observable, so it is re-read on every
-     * [refreshAccess].
-     */
-    @OptIn(ExperimentalCoroutinesApi::class)
-    val targets: StateFlow<SyncTargets?> = accessChecks
-        .flatMapLatest { repository.syncTargets.catch { emit(SyncTargets.None) } }
+    /** Who "Sync now" can reach, and who first needs the user's grant; null until first read. */
+    val targets: StateFlow<SyncTargets?> = repository.syncTargets
+        .catch { emit(SyncTargets.None) }
         .stateWhileSubscribed(scope = viewModelScope, initialValue = null)
 
-    /** Re-read account access: whenever the app resumes, which includes the picker returning. */
-    fun refreshAccess() {
-        accessChecks.update { it + 1 }
-    }
+    /** Re-read account access: on resume (which includes the picker returning) and drawer open. */
+    fun refreshAccess() = repository.refreshSyncAccess()
 
     private val _inFlight = MutableStateFlow(false)
     val inFlight: StateFlow<Boolean> = _inFlight.asStateFlow()

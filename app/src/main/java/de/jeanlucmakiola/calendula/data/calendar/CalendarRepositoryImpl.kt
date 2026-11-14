@@ -18,6 +18,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -195,10 +197,16 @@ class CalendarRepositoryImpl @Inject constructor(
             }
         }
 
-    override val syncTargets: Flow<SyncTargets>
-        get() = calendars().combine(prefs.syncAccessDismissed, ::targetsOf).flowOn(io)
+    private val accessChecks = MutableStateFlow(0)
 
-    override val syncAccessDismissed: Flow<Set<SyncAccount>> = prefs.syncAccessDismissed
+    override val syncTargets: Flow<SyncTargets>
+        get() = combine(calendars(), prefs.syncAccessDismissed, accessChecks) { calendars, dismissed, _ ->
+            targetsOf(calendars, dismissed)
+        }.flowOn(io)
+
+    override fun refreshSyncAccess() {
+        accessChecks.update { it + 1 }
+    }
 
     override suspend fun setSyncAccessDismissed(account: SyncAccount, dismissed: Boolean) {
         try {

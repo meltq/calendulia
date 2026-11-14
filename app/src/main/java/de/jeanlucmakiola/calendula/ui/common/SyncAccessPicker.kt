@@ -4,7 +4,12 @@ import android.content.ActivityNotFoundException
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.DrawerState
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.DrawerValue
@@ -14,6 +19,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
@@ -67,6 +74,7 @@ fun RefreshSyncAccessOnOpen(drawerState: DrawerState, sync: SyncViewModel) {
  * opens the system picker for just that account, "Don't ask" stops offering it.
  * Closes itself once no account is left.
  */
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 fun SyncAccessSheet(
     accounts: List<SyncAccount>?,
@@ -77,6 +85,9 @@ fun SyncAccessSheet(
     LaunchedEffect(accounts?.isEmpty()) { if (accounts?.isEmpty() == true) onDismiss() }
     FullScreenPicker(title = stringResource(R.string.drawer_sync_access), onDismiss = onDismiss, predictiveBack = true) {
         GroupedHint(stringResource(R.string.sync_access_hint), verticalPadding = 8.dp)
+        if (accounts == null) {
+            Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) { LoadingIndicator() }
+        }
         accounts.orEmpty().forEachIndexed { index, account ->
             SyncAccountRow(
                 account = account,
