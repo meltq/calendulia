@@ -70,7 +70,10 @@ class ReminderNotifier @Inject constructor(
         } catch (e: Exception) {
             Log.w(TAG, "No channel for the reminder of event ${alert.eventId}", e)
             null
-        } ?: return
+        } ?: run {
+            Log.i(TAG, "Dropped the reminder of event ${alert.eventId}: calendar ${alert.calendarId} is gone")
+            return
+        }
         val title = displayTitle(alert)
         val is24Hour = settingsPrefs.timeFormat.first()
             .is24Hour(android.text.format.DateFormat.is24HourFormat(context))

@@ -135,12 +135,14 @@ class ReminderChannelPlanTest {
             reminderChannelId(3) to ReminderChannelState(blocked = false, groupId = "g1"),
         )
         val ids = listOf(1L, 2L, 3L, 4L)
-        assertThat(blockedReminderCalendars(ids, appEnabled = true, channels, blockedGroupIds = setOf("g2")))
-            .containsExactly(1L, 2L)
-        assertThat(blockedReminderCalendars(ids, appEnabled = true, channels, blockedGroupIds = emptySet()))
+        val groupOff = reminderChannelStatus(ids, appEnabled = true, channels, blockedGroupIds = setOf("g2"))
+        assertThat(groupOff.blockedCalendarIds).containsExactly(1L, 2L)
+        assertThat(groupOff.groupBlockedCalendarIds).containsExactly(2L)
+        assertThat(reminderChannelStatus(ids, appEnabled = true, channels, blockedGroupIds = emptySet()).blockedCalendarIds)
             .containsExactly(1L)
-        assertThat(blockedReminderCalendars(ids, appEnabled = false, channels, blockedGroupIds = emptySet()))
-            .containsExactly(1L, 2L, 3L, 4L)
+        val appOff = reminderChannelStatus(ids, appEnabled = false, channels, blockedGroupIds = emptySet())
+        assertThat(appOff.appBlocked).isTrue()
+        assertThat(appOff.blockedCalendarIds).containsExactly(1L, 2L, 3L, 4L)
     }
 
     private companion object {

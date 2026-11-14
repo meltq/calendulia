@@ -389,8 +389,16 @@ class SettingsViewModel @Inject constructor(
 
     fun dismissNotificationCategoryHint() = save { dismissNotificationCategoryHint() }
 
-    /** [calendarId]'s reminder channel, created if needed so its system settings can open (#340). */
-    suspend fun reminderChannelFor(calendarId: Long): String? = onChannels { channelFor(calendarId) }
+    /**
+     * The channel whose system screen to open for [calendarId] (#340), created
+     * if needed; null when only the app's own screen can help — the app or the
+     * calendar's account group is blocked there, or the channel couldn't be made.
+     */
+    suspend fun soundSettingsChannel(calendarId: Long): String? = onChannels {
+        val channelId = channelFor(calendarId) ?: return@onChannels null
+        val status = status(listOf(calendarId))
+        channelId.takeUnless { status.appBlocked || calendarId in status.groupBlockedCalendarIds }
+    }
 
     /** Create the per-calendar channels before showing the app's channel list, even with reminders off. */
     suspend fun syncReminderChannels() {

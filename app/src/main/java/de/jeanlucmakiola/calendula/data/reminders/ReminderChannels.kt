@@ -110,13 +110,7 @@ class ReminderChannels @Inject constructor(
             it.id to ReminderChannelState(it.importance == NotificationManager.IMPORTANCE_NONE, it.group)
         }
         val blockedGroups = manager.notificationChannelGroups.filter { it.isBlocked }.mapTo(HashSet()) { it.id }
-        return ReminderChannelStatus(
-            appBlocked = !appEnabled,
-            blockedCalendarIds = blockedReminderCalendars(calendarIds, appEnabled, channels, blockedGroups),
-            groupBlockedCalendarIds = calendarIds.filterTo(HashSet()) {
-                channels[reminderChannelId(it)]?.groupId in blockedGroups
-            },
-        )
+        return reminderChannelStatus(calendarIds, appEnabled, channels, blockedGroups)
     }
 
     private fun plan(
@@ -142,6 +136,7 @@ class ReminderChannels @Inject constructor(
         }
         if (channels.isEmpty()) return
         val byId = existing.associateBy { it.id }
+        val description = context.getString(R.string.reminder_channel_description)
         val template = byId[LEGACY_REMINDER_CHANNEL_ID]
         // Importance only applies on creation; an existing channel keeps its own.
         manager.createNotificationChannels(
@@ -152,7 +147,7 @@ class ReminderChannels @Inject constructor(
                     spec.name,
                     current?.importance ?: template?.importance ?: NotificationManager.IMPORTANCE_HIGH,
                 ).apply {
-                    description = context.getString(R.string.reminder_channel_description)
+                    this.description = description
                     spec.groupId?.let { group = it }
                     if (current == null && template != null) inheritFrom(template)
                 }
@@ -207,10 +202,3 @@ class ReminderChannels @Inject constructor(
     }
 }
 
-/** Reminder notifications the system blocks, while Calendula would post them. */
-data class ReminderChannelStatus(
-    val appBlocked: Boolean = false,
-    val blockedCalendarIds: Set<Long> = emptySet(),
-    /** The blocked ones whose whole account group is off, which only the app's own screen can undo. */
-    val groupBlockedCalendarIds: Set<Long> = emptySet(),
-)
