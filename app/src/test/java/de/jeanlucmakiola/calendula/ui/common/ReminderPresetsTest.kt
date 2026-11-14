@@ -39,6 +39,12 @@ class ReminderPresetsTest {
     }
 
     @Test
+    fun `sub-day reminders on an all-day event block the day they save as`() {
+        assertThat(reminderDaysTaken(listOf(10, 1_500), isAllDay = true)).containsExactly(0, 1_440)
+        assertThat(reminderDaysTaken(listOf(10), isAllDay = false)).containsExactly(10)
+    }
+
+    @Test
     fun `only the timed list splits`() {
         assertThat(splitsSubDay(REMINDER_PRESETS)).isTrue()
         assertThat(splitsSubDay(ALLDAY_REMINDER_PRESETS)).isFalse()

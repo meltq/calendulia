@@ -30,6 +30,17 @@ fun reminderPresets(isAllDay: Boolean): List<Int> =
 fun customReminderUnits(isAllDay: Boolean): List<ReminderUnit> =
     if (isAllDay) listOf(ReminderUnit.Days, ReminderUnit.Weeks) else ReminderUnit.entries
 
+/** Placeholder for the Custom amount field: a typical amount in the first unit offered. */
+fun customReminderPlaceholder(units: List<ReminderUnit>): String =
+    if (ReminderUnit.Minutes in units) "10" else "1"
+
+/**
+ * Lead times an all-day event already covers, as the whole days they save as, so
+ * a sub-day value carried over from a timed event blocks the day it lands on.
+ */
+fun reminderDaysTaken(alreadyChosen: List<Int>, isAllDay: Boolean): List<Int> =
+    if (isAllDay) alreadyChosen.map { it / DAY * DAY } else alreadyChosen
+
 /** Whether a picker over [presets] splits its rows into sub-day and day-scale groups. */
 fun splitsSubDay(presets: Collection<Int>): Boolean = presets.any { it in 1 until DAY }
 
