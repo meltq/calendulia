@@ -128,3 +128,34 @@ fun planReminderChannels(
 }
 
 private fun accountGroupId(type: String, name: String): String = "$GROUP_PREFIX$type/$name"
+
+/** A channel as far as its blocked state goes: switched off itself, and the group it sits in. */
+data class ReminderChannelState(val blocked: Boolean, val groupId: String?)
+
+/** Reminder notifications the system blocks, while Calendula would post them. */
+data class ReminderChannelStatus(
+    val appBlocked: Boolean = false,
+    val blockedCalendarIds: Set<Long> = emptySet(),
+    /** The blocked ones whose whole account group is off, which only the app's own screen can undo. */
+    val groupBlockedCalendarIds: Set<Long> = emptySet(),
+)
+
+/**
+ * What the system blocks of [calendarIds]' reminders: all of them while the
+ * app's notifications are off, otherwise those whose channel, or the group it
+ * sits in, is switched off. A calendar without a channel yet isn't blocked.
+ */
+fun reminderChannelStatus(
+    calendarIds: Collection<Long>,
+    appEnabled: Boolean,
+    channels: Map<String, ReminderChannelState>,
+    blockedGroupIds: Set<String>,
+): ReminderChannelStatus {
+    val groupBlocked = calendarIds.filterTo(HashSet()) { channels[reminderChannelId(it)]?.groupId in blockedGroupIds }
+    val blocked = if (!appEnabled) {
+        calendarIds.toSet()
+    } else {
+        calendarIds.filterTo(HashSet()) { channels[reminderChannelId(it)]?.blocked == true } + groupBlocked
+    }
+    return ReminderChannelStatus(appBlocked = !appEnabled, blockedCalendarIds = blocked, groupBlockedCalendarIds = groupBlocked)
+}

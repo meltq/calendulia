@@ -104,12 +104,14 @@ data class SettingsUiState(
     val perCalendarFixedTimeReminderOverride: Map<Long, FixedTimeReminder?> = emptyMap(),
     /** The daily summary notification (#459). */
     val dailyDigest: DailyDigestSettings = DailyDigestSettings(),
-    /** Switched-on calendars you can edit: the per-calendar duration and reminder-override rows. */
+    /** Switched-on calendars you can edit: the per-calendar event-duration rows. */
     val writableCalendars: List<CalendarSource> = emptyList(),
     /** Switched-on calendars, each with its own notification switch and channel (#145, #272). */
     val reminderCalendars: List<CalendarSource> = emptyList(),
     /** Calendars whose reminders Calendula doesn't post (#272). */
     val mutedReminderCalendarIds: Set<Long> = emptySet(),
+    /** Whether the Samsung notification-category hint has been dismissed (#145); hidden until prefs load. */
+    val notificationCategoryHintDismissed: Boolean = true,
     /**
      * Whether the event-colour picker is offered on calendars that publish no
      * colour palette (the colour may then not survive their next sync).

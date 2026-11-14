@@ -407,7 +407,9 @@ the system's channel screens (#340); the app never sets a sound itself. Separate
 from both, `SettingsPrefs.mutedReminderCalendarIds` is the in-app per-calendar
 off switch (#272): the scan plans nothing for those calendars (so they arm no
 wake-ups; toggling it re-scans), and `ReminderNotifier.post` checks it again
-for snoozes.
+for snoozes. The settings screen re-reads `ReminderChannels.status` on every
+resume and marks a calendar "Blocked in system settings" when the app, its
+channel or its account group is switched off there.
 
 **Reminders at a set time (#459).** "1 day before at 20:00" on a timed event
 is an ordinary `Reminders` row whose offset is the distance from that wall-clock

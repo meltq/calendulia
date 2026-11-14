@@ -111,6 +111,13 @@ class DailyDigestNotifier @Inject constructor(
         }
     }
 
+    /** Whether the app's notifications or the summary's channel are switched off in the system. */
+    fun isBlocked(): Boolean {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        if (!manager.areNotificationsEnabled()) return true
+        return manager.getNotificationChannel(CHANNEL_ID)?.importance == NotificationManager.IMPORTANCE_NONE
+    }
+
     /** Withdraw the summary showing, if any. */
     fun cancel() {
         NotificationManagerCompat.from(context).cancel(TAG_DIGEST, NOTIFICATION_ID)

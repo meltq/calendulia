@@ -9,14 +9,20 @@ import android.provider.Settings
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
+import androidx.compose.material.icons.outlined.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
@@ -24,6 +30,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -31,7 +38,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
 import de.jeanlucmakiola.calendula.data.prefs.fixedTimeOverrideFor
@@ -54,6 +63,7 @@ import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.ExpandIcon
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSwitchRow
+import de.jeanlucmakiola.floret.components.IconInfoCard
 import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.SelectedCheck
@@ -107,8 +117,15 @@ internal fun NotificationsScreen(
     var calendarSectionExpanded by remember { mutableStateOf(false) }
     var expandedCalendars by remember { mutableStateOf(emptySet<Long>()) }
     val scope = rememberCoroutineScope()
+    val channelStatus by viewModel.channelStatus.collectAsStateWithLifecycle()
+    val digestBlocked by viewModel.digestBlocked.collectAsStateWithLifecycle()
+    val calendarIds = state.reminderCalendars.map { it.id }
+    LifecycleResumeEffect(calendarIds) {
+        viewModel.refreshChannelStatus(calendarIds)
+        onPauseOrDispose { }
+    }
     val openCalendarSound: (Long) -> Unit = { calendarId ->
-        scope.launch { context.openNotificationSettings(viewModel.reminderChannelFor(calendarId)) }
+        scope.launch { context.openNotificationSettings(viewModel.soundSettingsChannel(calendarId)) }
     }
 
     CollapsingScaffold(
@@ -117,6 +134,19 @@ internal fun NotificationsScreen(
         predictiveBack = true,
         visible = visible,
     ) {
+        if (IS_SAMSUNG && !state.notificationCategoryHintDismissed) {
+            NotificationCategoryHint(
+                onOpen = {
+                    viewModel.dismissNotificationCategoryHint()
+                    scope.launch {
+                        viewModel.syncReminderChannels()
+                        context.openNotificationSettings()
+                    }
+                },
+                onDismiss = viewModel::dismissNotificationCategoryHint,
+            )
+            Spacer(Modifier.height(16.dp))
+        }
         GroupedSwitchRow(
             title = stringResource(R.string.settings_reminders),
             checked = state.remindersEnabled,
@@ -126,7 +156,11 @@ internal fun NotificationsScreen(
         )
         GroupedRow(
             title = stringResource(R.string.settings_notification_sound),
-            summary = stringResource(R.string.settings_notification_sound_hint),
+            summary = if (channelStatus.appBlocked) {
+                stringResource(R.string.settings_notifications_blocked_hint)
+            } else {
+                stringResource(R.string.settings_notification_sound_hint)
+            },
             position = Position.Middle,
             trailing = { ExternalLinkIcon() },
             onClick = {
@@ -167,6 +201,7 @@ internal fun NotificationsScreen(
         Spacer(Modifier.height(24.dp))
         DailyDigestRows(
             digest = state.dailyDigest,
+            blocked = digestBlocked,
             onEnable = toggleDigest,
             onPickDay = { showDigestDay = true },
             onPickTime = { showDigestTime = true },
@@ -202,9 +237,7 @@ internal fun NotificationsScreen(
             onClick = { showSnooze = true },
         )
 
-        // Per-calendar settings, folded behind one header: every switched-on
-        // calendar gets its notification switch and sound (#145, #272); the ones
-        // you can edit also keep, drop or replace the default reminders.
+        // Per-calendar notifications and reminder overrides (#145, #272).
         if (state.reminderCalendars.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
             GroupedRow(
@@ -224,9 +257,14 @@ internal fun NotificationsScreen(
                         Spacer(Modifier.height(16.dp))
                         val expanded = calendar.id in expandedCalendars
                         val notifying = calendar.id !in state.mutedReminderCalendarIds
+                        val blocked = notifying && calendar.id in channelStatus.blockedCalendarIds
                         GroupedRow(
                             title = calendar.displayName.orUnnamed(),
-                            summary = if (notifying) null else stringResource(R.string.settings_calendar_notifications_off),
+                            summary = when {
+                                !notifying -> stringResource(R.string.settings_calendar_notifications_off)
+                                blocked -> stringResource(R.string.settings_notifications_blocked)
+                                else -> null
+                            },
                             position = if (expanded) Position.Top else Position.Alone,
                             leading = { CalendarColorChip(calendar.color) },
                             trailing = { ExpandIcon(expanded) },
@@ -247,6 +285,7 @@ internal fun NotificationsScreen(
                                 calendar = calendar,
                                 state = state,
                                 notifying = notifying,
+                                blocked = blocked,
                                 onSetNotifying = { viewModel.setCalendarRemindersEnabled(calendar.id, it) },
                                 onOpenSound = { openCalendarSound(calendar.id) },
                                 onOpenSpecialDates = onOpenSpecialDates,
@@ -388,6 +427,7 @@ private fun CalendarNotificationRows(
     calendar: CalendarSource,
     state: SettingsUiState,
     notifying: Boolean,
+    blocked: Boolean,
     onSetNotifying: (Boolean) -> Unit,
     onOpenSound: () -> Unit,
     onOpenSpecialDates: () -> Unit,
@@ -408,7 +448,11 @@ private fun CalendarNotificationRows(
         )
         GroupedRow(
             title = stringResource(R.string.settings_notification_sound),
-            summary = stringResource(R.string.settings_calendar_notification_sound_hint),
+            summary = if (blocked) {
+                stringResource(R.string.settings_notifications_blocked_hint)
+            } else {
+                stringResource(R.string.settings_calendar_notification_sound_hint)
+            },
             position = if (managed || takesOverrides || digestOn) Position.Middle else Position.Bottom,
             trailing = { ExternalLinkIcon() },
             onClick = onOpenSound,
@@ -475,6 +519,7 @@ private fun CalendarNotificationRows(
 @Composable
 private fun DailyDigestRows(
     digest: DailyDigestSettings,
+    blocked: Boolean,
     onEnable: (Boolean) -> Unit,
     onPickDay: () -> Unit,
     onPickTime: () -> Unit,
@@ -511,11 +556,37 @@ private fun DailyDigestRows(
             )
             GroupedRow(
                 title = stringResource(R.string.settings_notification_sound),
-                summary = stringResource(R.string.settings_digest_sound_hint),
+                summary = if (blocked) {
+                    stringResource(R.string.settings_notifications_blocked_hint)
+                } else {
+                    stringResource(R.string.settings_digest_sound_hint)
+                },
                 position = Position.Bottom,
                 trailing = { ExternalLinkIcon() },
                 onClick = onOpenSound,
             )
+        }
+    }
+}
+
+/** Samsung's One UI can start a new notification category switched off (#145). */
+private val IS_SAMSUNG = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
+
+/** The one-time Samsung note, with a way into the app's notification settings. */
+@Composable
+private fun NotificationCategoryHint(onOpen: () -> Unit, onDismiss: () -> Unit) {
+    IconInfoCard(
+        icon = Icons.Outlined.Info,
+        iconContentDescription = null,
+        iconAlignment = Alignment.Top,
+    ) {
+        Text(
+            text = stringResource(R.string.settings_notification_category_hint),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            TextButton(onClick = onDismiss) { Text(stringResource(R.string.reminder_action_dismiss)) }
+            TextButton(onClick = onOpen) { Text(stringResource(R.string.settings_notification_category_hint_open)) }
         }
     }
 }
