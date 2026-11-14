@@ -485,29 +485,29 @@ of the backup keeps its last one. The pre-#411 fixed `calendula-backup.ics` is
 the combined series' stable copy for the install that wrote it, and an
 install that already had a folder stays on the combined layout.
 
-**Backing up after a change (#516)** is opt-in. `BackupScheduler.watchChanges`
-arms a one-off `BackupWorker` with a WorkManager content-URI trigger on the
-provider's root URI (the provider notifies every change there, whoever made it:
-this app, a sync adapter or another app), a 2-minute settle delay capped at 15
-minutes, and battery-not-low. A trigger fires once and observes only while its
-job waits, so there are two slots: a change run arms the other one as it starts
-(catching changes made during the run) and checks again as it ends;
-`watchStep` keeps exactly one watch waiting, queueing a new one behind a run
-that still shows as running and cancelling a second one. Runs share the
-scheduled backup's lock. A change run only rewrites the stable copies and never
-retries: the dated files and their retention stay on the interval, so a day of
-edits can't rotate the history out. Every run that writes something is recorded
-on the status line; the failure notification comes once per failure streak, as
-it reaches the threshold, and the next success of any run clears it. Since the
-trigger fires for any provider change (reminders, other calendars, sync
-bookkeeping), each series' file (events in a fixed order) is hashed without its
-`DTSTAMP`s (`auto_backup_fingerprints`, reset with the folder and kept only
-while the option is on) and a change run
-skips the series whose hash (bound to the copy's name) and stable copy are
-unchanged, without even listing the folder when no hash moved; the hash is
-dropped before a copy is rewritten. A copy that went missing is restored by the
-next run that lists the folder; one a still-loading listing doesn't show, or
-one edited in place outside the app, is left to the next scheduled run.
+**Backing up after a change (#516)** is opt-in. `BackupChangeJob` is a
+JobScheduler job with a content trigger on the provider's root URI (the provider
+notifies every change there, whoever made it: this app, a sync adapter or
+another app), a 2-minute settle delay capped at 15 minutes. A trigger fires
+once, so each firing queues a change run (a unique `BackupWorker`, battery not
+low, queued behind one already running) and schedules the next watch under the
+same id before it finishes, which carries over the changes seen meanwhile. Such
+a job can't be persisted; `BackupScheduler.reconcile` re-arms it on every
+process start (the boot receivers start one), without replacing a waiting watch.
+Runs share the scheduled backup's lock. A change run only rewrites the stable
+copies and never retries: the dated files and their retention stay on the
+interval, so a day of edits can't rotate the history out. Every run that writes
+something is recorded on the status line; the failure notification comes once
+per failure streak, as it reaches the threshold, and the next success of any run
+clears it. Since the trigger fires for any provider change (reminders, other
+calendars, sync bookkeeping), each series' file (events in a fixed order) is
+hashed without its `DTSTAMP`s (`auto_backup_fingerprints`, reset with the folder
+and kept only while the option is on) and a change run skips the series whose
+hash (bound to the copy's name) and stable copy are unchanged, without even
+listing the folder when no hash moved; the hash is dropped before a copy is
+rewritten. A copy that went missing is restored by the next run that lists the
+folder; one a still-loading listing doesn't show, or one edited in place outside
+the app, is left to the next scheduled run.
 
 **A backup carries the series' deleted and moved occurrences.** `EXDATE` lives on
 the master row and is part of `EventExportProjection`; `IcsWriter` marks an

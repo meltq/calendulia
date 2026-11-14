@@ -7,7 +7,6 @@ import android.app.PendingIntent
 import android.content.Context
 import android.net.Uri
 import android.os.Build
-import android.provider.CalendarContract
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
@@ -66,14 +65,8 @@ object BackupScheduler {
 
     private const val WORK_NAME = "auto-backup"
     private const val WORK_NAME_NOW = "auto-backup-now"
-    private val CHANGE_SLOTS = listOf("auto-backup-changes-a", "auto-backup-changes-b")
-    internal const val KEY_CHANGE_SLOT = "change_slot"
-
-    /** Quiet time after the last provider change before a change run starts, so a burst makes one run. */
-    private const val CHANGE_SETTLE_MINUTES = 2L
-
-    /** Longest a change run waits on a provider that never goes quiet (a long sync). */
-    private const val CHANGE_MAX_WAIT_MINUTES = 15L
+    private const val WORK_NAME_CHANGE = "auto-backup-change"
+    internal const val KEY_CHANGE_RUN = "change_run"
 
     private val reconcileLock = Mutex()
 
@@ -84,66 +77,69 @@ object BackupScheduler {
      *
      * The first run is delayed by one interval so it doesn't follow an immediate
      * [runNow] with a near-identical copy. With backing up after changes on
-     * (#516), the change trigger is armed unless a slot is already waiting.
+     * (#516), the change watch ([BackupChangeJob]) is armed unless it already
+     * waits; it doesn't survive a reboot, and this runs on every process start.
      * Serialised and not cancellable, so quick toggles settle on the last one.
      */
     suspend fun reconcile(context: Context, prefs: SettingsPrefs) = withContext(NonCancellable) {
         reconcileLock.withLock {
-            val workManager = WorkManager.getInstance(context)
-            suspend fun cancelWatch() = CHANGE_SLOTS.indices
-                .filter { slot -> slotStates(workManager, slot).any { !it.isFinished } }
-                .forEach { workManager.cancelUniqueWork(CHANGE_SLOTS[it]).await() }
-            if (!prefs.autoBackupEnabled.first() || prefs.autoBackupFolderUri.first() == null) {
-                workManager.cancelUniqueWork(WORK_NAME)
-                // Also cancel any pending immediate run — otherwise a failing run-now
-                // keeps retrying after the user has turned backup off.
-                workManager.cancelUniqueWork(WORK_NAME_NOW)
-                cancelWatch()
-                return@withLock
+            try {
+                apply(context, prefs)
+            } catch (e: Exception) {
+                Log.w(TAG, "Scheduling the automatic backup failed", e)
             }
-            // WorkManager's own floor is 15 min; the UI floors the user choice at 30.
-            val interval = prefs.autoBackupIntervalMinutes.first().coerceAtLeast(15L)
-            val request = PeriodicWorkRequestBuilder<BackupWorker>(interval, TimeUnit.MINUTES)
-                .setInitialDelay(interval, TimeUnit.MINUTES)
-                .build()
-            workManager.enqueueUniquePeriodicWork(
-                WORK_NAME,
-                ExistingPeriodicWorkPolicy.UPDATE,
-                request,
-            )
-            if (!prefs.autoBackupOnChange.first()) {
-                cancelWatch()
-                return@withLock
-            }
-            takeWatchStep(context, workManager, self = null)
         }
+    }
+
+    private suspend fun apply(context: Context, prefs: SettingsPrefs) {
+        val workManager = WorkManager.getInstance(context)
+        fun stopWatching() {
+            BackupChangeJob.cancel(context)
+            workManager.cancelUniqueWork(WORK_NAME_CHANGE)
+        }
+        if (!prefs.autoBackupEnabled.first() || prefs.autoBackupFolderUri.first() == null) {
+            workManager.cancelUniqueWork(WORK_NAME)
+            // Also cancel any pending immediate run — otherwise a failing run-now
+            // keeps retrying after the user has turned backup off.
+            workManager.cancelUniqueWork(WORK_NAME_NOW)
+            stopWatching()
+            return
+        }
+        // WorkManager's own floor is 15 min; the UI floors the user choice at 30.
+        val interval = prefs.autoBackupIntervalMinutes.first().coerceAtLeast(15L)
+        val request = PeriodicWorkRequestBuilder<BackupWorker>(interval, TimeUnit.MINUTES)
+            .setInitialDelay(interval, TimeUnit.MINUTES)
+            .build()
+        workManager.enqueueUniquePeriodicWork(
+            WORK_NAME,
+            ExistingPeriodicWorkPolicy.UPDATE,
+            request,
+        )
+        if (prefs.autoBackupOnChange.first()) BackupChangeJob.scheduleIfIdle(context) else stopWatching()
     }
 
     /**
-     * Keep one change watch armed around the change run in [self] (see
-     * [watchStep]), under the same lock as [reconcile] so it can't outlast a
-     * switch-off.
+     * The watch fired: queue a change run and arm the next watch, unless the
+     * option went off meanwhile. Under [reconcileLock], so it can't re-arm
+     * after a switch-off.
      */
-    internal suspend fun watchNext(context: Context, prefs: SettingsPrefs, self: Int) =
-        withContext(NonCancellable) {
-            reconcileLock.withLock {
-                if (watchWanted(prefs)) takeWatchStep(context, WorkManager.getInstance(context), self)
+    internal suspend fun changed(context: Context, prefs: SettingsPrefs) = withContext(NonCancellable) {
+        reconcileLock.withLock {
+            val wanted = prefs.autoBackupEnabled.first() && prefs.autoBackupFolderUri.first() != null &&
+                prefs.autoBackupOnChange.first()
+            if (!wanted) return@withLock
+            val workManager = WorkManager.getInstance(context)
+            val states = workManager.getWorkInfosForUniqueWorkFlow(WORK_NAME_CHANGE).first().map { it.state }
+            changeRunPolicy(states)?.let { policy ->
+                val run = OneTimeWorkRequestBuilder<BackupWorker>()
+                    .setConstraints(Constraints.Builder().setRequiresBatteryNotLow(true).build())
+                    .setInputData(workDataOf(KEY_CHANGE_RUN to true))
+                    .build()
+                workManager.enqueueUniqueWork(WORK_NAME_CHANGE, policy, run).await()
             }
-        }
-
-    private suspend fun takeWatchStep(context: Context, workManager: WorkManager, self: Int?) {
-        when (val step = watchStep(self, CHANGE_SLOTS.indices.map { slotStates(workManager, it) })) {
-            WatchStep.None -> Unit
-            is WatchStep.Cancel -> workManager.cancelUniqueWork(CHANGE_SLOTS[step.slot]).await()
-            is WatchStep.Arm -> watchChanges(context, step.slot, step.append)
+            BackupChangeJob.schedule(context)
         }
     }
-
-    private suspend fun slotStates(workManager: WorkManager, slot: Int): List<WorkInfo.State> =
-        workManager.getWorkInfosForUniqueWorkFlow(CHANGE_SLOTS[slot]).first().map { it.state }
-
-    private suspend fun watchWanted(prefs: SettingsPrefs): Boolean =
-        prefs.autoBackupEnabled.first() && prefs.autoBackupFolderUri.first() != null && prefs.autoBackupOnChange.first()
 
     /**
      * Run one export immediately (e.g. right after enabling or changing the
@@ -158,58 +154,18 @@ object BackupScheduler {
         )
     }
 
-    /**
-     * Arm a one-off run on the next change in the calendar provider (#516) in
-     * one of two [slot]s. The provider reports every change on its root URI,
-     * whoever made it (this app, a sync adapter or another app), so that is the
-     * URI watched. A content trigger fires once and observes only while its
-     * job waits, so each change run arms the other slot ([watchNext]); [append]
-     * queues the request behind that slot's running run.
-     */
-    private fun watchChanges(context: Context, slot: Int, append: Boolean) {
-        val constraints = Constraints.Builder()
-            .addContentUriTrigger(CalendarContract.CONTENT_URI, true)
-            .setTriggerContentUpdateDelay(CHANGE_SETTLE_MINUTES, TimeUnit.MINUTES)
-            .setTriggerContentMaxDelay(CHANGE_MAX_WAIT_MINUTES, TimeUnit.MINUTES)
-            .setRequiresBatteryNotLow(true)
-            .build()
-        val request = OneTimeWorkRequestBuilder<BackupWorker>()
-            .setConstraints(constraints)
-            .setInputData(workDataOf(KEY_CHANGE_SLOT to slot))
-            .build()
-        val policy = if (append) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP
-        WorkManager.getInstance(context).enqueueUniqueWork(CHANGE_SLOTS[slot], policy, request)
-    }
-}
-
-/** What keeps exactly one change watch armed (#516): nothing, a new watch in [slot], or cancelling the extra one there. */
-internal sealed interface WatchStep {
-    data object None : WatchStep
-
-    /** [append]: queued behind the run still going in [slot], so it starts watching once that ends. */
-    data class Arm(val slot: Int, val append: Boolean) : WatchStep
-
-    data class Cancel(val slot: Int) : WatchStep
+    private const val TAG = "BackupScheduler"
 }
 
 /**
- * The step that leaves exactly one watch waiting, from both slots' work
- * [states], taken by the change run in [self] as it starts and ends, or by
- * [BackupScheduler.reconcile] (null). A waiting watch is enough; two are one
- * too many. With none, the other slot is armed, queued behind its run if one
- * still shows as running, so a run whose end isn't recorded yet can't leave
- * the provider unwatched.
+ * How a fired change watch queues its run (#516), from the change runs' work
+ * [states]: a run that hasn't started yet will see the change anyway (null);
+ * one already going may have read too early, so the new one queues behind it.
  */
-internal fun watchStep(self: Int?, states: List<List<WorkInfo.State>>): WatchStep {
-    fun waiting(slot: Int) = states[slot].any { it == WorkInfo.State.ENQUEUED || it == WorkInfo.State.BLOCKED }
-    val keep = self ?: 0
-    val other = 1 - keep
-    val target = if (self == null) keep else other
-    return when {
-        waiting(keep) && waiting(other) -> WatchStep.Cancel(other)
-        waiting(keep) || waiting(other) -> WatchStep.None
-        else -> WatchStep.Arm(target, append = WorkInfo.State.RUNNING in states[target])
-    }
+internal fun changeRunPolicy(states: List<WorkInfo.State>): ExistingWorkPolicy? = when {
+    states.any { it == WorkInfo.State.ENQUEUED || it == WorkInfo.State.BLOCKED } -> null
+    WorkInfo.State.RUNNING in states -> ExistingWorkPolicy.APPEND_OR_REPLACE
+    else -> ExistingWorkPolicy.REPLACE
 }
 
 /**
@@ -235,24 +191,10 @@ class BackupWorker(
 
     override suspend fun doWork(): Result {
         val deps = EntryPointAccessors.fromApplication(applicationContext, Deps::class.java)
-        val prefs = deps.settingsPrefs()
-        val slot = inputData.getInt(BackupScheduler.KEY_CHANGE_SLOT, -1)
-        if (slot < 0) return backUp(deps, prefs, changeRun = false)
-        suspend fun watchNext() = runCatching {
-            BackupScheduler.watchNext(applicationContext, prefs, slot)
-        }.onFailure { Log.w(TAG, "Arming the next change run failed", it) }
-        watchNext()
-        // Never fails or retries: a retry would only wait for another change.
-        try {
-            backUp(deps, prefs, changeRun = true)
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            Log.w(TAG, "Backup after a change failed", e)
-        } finally {
-            watchNext()
-        }
-        return Result.success()
+        val changeRun = inputData.getBoolean(BackupScheduler.KEY_CHANGE_RUN, false)
+        val result = backUp(deps, deps.settingsPrefs(), changeRun)
+        // A failed change run would fail the one queued behind it too.
+        return if (changeRun) Result.success() else result
     }
 
     /**
