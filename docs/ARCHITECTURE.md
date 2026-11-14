@@ -502,9 +502,9 @@ bookkeeping), each series' file (events in a fixed order) is hashed without its
 `DTSTAMP`s (`auto_backup_fingerprints`, reset with the folder) and a change run
 skips the series whose hash (bound to the copy's name) and stable copy are
 unchanged, without even listing the folder when no hash moved; the hash is
-dropped before a copy is rewritten. A copy that went missing meanwhile, one a
-still-loading folder listing doesn't show, or one edited in place outside the
-app, is left to the next scheduled run.
+dropped before a copy is rewritten. A copy that went missing is restored by the
+next run that lists the folder; one a still-loading listing doesn't show, or
+one edited in place outside the app, is left to the next scheduled run.
 
 **A backup carries the series' deleted and moved occurrences.** `EXDATE` lives on
 the master row and is part of `EventExportProjection`; `IcsWriter` marks an

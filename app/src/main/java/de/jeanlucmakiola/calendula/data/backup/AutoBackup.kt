@@ -213,10 +213,10 @@ class BackupWorker(
      * [FAILURE_NOTIFY_THRESHOLD], and goes with the next success of any run.
      */
     private suspend fun backUp(deps: Deps, prefs: SettingsPrefs, changeRun: Boolean): Result {
-        val now = System.currentTimeMillis()
         // One run at a time, or each would overwrite the other's ledger.
         var failures = 0
         val outcome = runLock.withLock {
+            val now = System.currentTimeMillis()
             // Respect the toggles even for already-queued work, so a lingering
             // run can't revive itself.
             if (!prefs.autoBackupEnabled.first()) return Result.success()
@@ -278,13 +278,20 @@ class BackupWorker(
         fun fingerprintOf(target: BackupTarget, text: String) =
             backupFingerprint(text, latestFileName(target.baseName))
         // A change run reads first and leaves the folder alone when nothing moved.
-        val texts = HashMap<String, String?>()
+        // It keeps the text of a changed (or unreadable, null) series only.
+        val unchangedHashes = HashMap<String, String>()
+        val changedTexts = HashMap<String, String?>()
         if (latestOnly) {
-            targets.forEach { texts[it.key] = export(it) }
-            val unchanged = targets.all { target ->
-                texts[target.key]?.let { fingerprintOf(target, it) }.let { it != null && it == fingerprints[target.key] }
+            for (target in targets) {
+                val text = export(target)
+                val hash = text?.let { fingerprintOf(target, it) }
+                if (hash != null && hash == fingerprints[target.key]) {
+                    unchangedHashes[target.key] = hash
+                } else {
+                    changedTexts[target.key] = text
+                }
             }
-            if (unchanged) return RunOutcome.NothingToDo
+            if (changedTexts.isEmpty()) return RunOutcome.NothingToDo
         }
         prefs.adoptLegacyBackupFile()
         val listing = exporter.listFolder(folder)
@@ -320,7 +327,7 @@ class BackupWorker(
             var landed: String? = null
             return try {
                 val latestKey = latestLedgerKey(target.key)
-                if (target.key in fingerprints) prefs.dropAutoBackupFingerprint(folder.toString(), target.key)
+                if (target.key in fingerprints) prefs.updateAutoBackupFingerprints(folder.toString()) { it - target.key }
                 landed = exporter.writeToFolder(folder, listing, latest, bytes)
                 // A provider that renamed it leaves a copy to clean up next
                 // run; the intended name stays ours only if it already was.
@@ -337,7 +344,7 @@ class BackupWorker(
                         val pending = plan.handOff - it.latestHeldElsewhere(target.key)
                         withLedgerEntry(it, latestKey, stale + pending + current, liveKeys)
                     }
-                recordLatest(plan.staleLatest, fingerprint.takeIf { landed == latest })
+                recordLatest(plan.staleLatest, fingerprint)
                 val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
                 recordLatest(plan.staleLatest.filter { it in staleLeft })
                 if (landed == latest) LatestWrite.Landed else LatestWrite.Renamed
@@ -356,17 +363,31 @@ class BackupWorker(
         val landedLatest = mutableSetOf<String>()
         for (plan in plans) {
             val target = plan.target
-            if (latestOnly && plan.latestName == null) continue
-            val text = (if (target.key in texts) texts.remove(target.key) else export(target)) ?: run {
+            var text: String? = null
+            val fingerprint = unchangedHashes[target.key] ?: run {
+                text = (if (target.key in changedTexts) changedTexts.remove(target.key) else export(target))
+                text?.let { fingerprintOf(target, it) }
+            } ?: run {
                 failed++
                 continue
             }
-            val fingerprint = fingerprintOf(target, text)
+            if (plan.latestName == null) {
+                // Nothing to refresh until the content moves, so a later change run can stop early.
+                if (fingerprints[target.key] != fingerprint) {
+                    prefs.updateAutoBackupFingerprints(folder.toString()) {
+                        withFingerprint(it, target.key, fingerprint, liveKeys)
+                    }
+                }
+                if (latestOnly) continue
+            }
             if (latestOnly && !plan.needsRefresh(fingerprint, fingerprints, listing.files.keys, listing.complete)) {
                 if (plan.latestName in listing.files) landedLatest += target.key
                 continue
             }
-            val bytes = text.toByteArray(Charsets.UTF_8)
+            val bytes = (text ?: export(target) ?: run {
+                failed++
+                continue
+            }).toByteArray(Charsets.UTF_8)
             // Not cancellable once a file exists: it must reach the ledger.
             withContext(NonCancellable) {
                 val dated = if (latestOnly) null else writeDated(plan, bytes)

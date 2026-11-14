@@ -398,11 +398,11 @@ class SettingsPrefs @Inject constructor(
         }
     }
 
-    /** Forget [key]'s hash (#516), so the next change run rewrites its stable copy. */
-    suspend fun dropAutoBackupFingerprint(folder: String, key: String) {
+    /** Like [updateAutoBackupLedger], for the series' hashes (#516) alone. */
+    suspend fun updateAutoBackupFingerprints(folder: String, transform: (BackupFingerprints) -> BackupFingerprints) {
         prefs.edit {
             if (it[SettingsKeys.autoBackupFolderUri] == folder) {
-                it[SettingsKeys.autoBackupFingerprints] = it[SettingsKeys.autoBackupFingerprints] - key
+                it[SettingsKeys.autoBackupFingerprints] = transform(it[SettingsKeys.autoBackupFingerprints])
             }
         }
     }
