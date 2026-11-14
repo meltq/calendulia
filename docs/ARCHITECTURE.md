@@ -492,15 +492,17 @@ this app, a sync adapter or another app), a 2-minute settle delay capped at 15
 minutes, and battery-not-low. A trigger fires once and observes only while its
 job waits, so there are two slots: a change run arms the other one as it starts
 (catching changes made during the run) and again as it ends. Runs share the
-scheduled backup's lock. A change run only rewrites the stable copies and stays
-off the status line: the dated files and their retention stay on the interval,
-so a day of edits can't rotate the history out. Since the trigger fires for any
-provider change (reminders, other calendars, sync bookkeeping), each series'
-file is hashed without its `DTSTAMP`s (`auto_backup_fingerprints`, reset with
-the folder) and a change run skips the series whose hash and stable copy are
-unchanged; a failed write drops the hash. A copy a still-loading folder listing
-doesn't show, or one edited in place outside the app, is left to the next
-scheduled run.
+scheduled backup's lock. A change run only rewrites the stable copies and never
+retries: the dated files and their retention stay on the interval, so a day of
+edits can't rotate the history out. Every run that writes something is recorded
+on the status line; the failure notification comes once per failure streak, as
+it reaches the threshold, and the next success of any run clears it. Since the
+trigger fires for any provider change (reminders, other calendars, sync
+bookkeeping), each series' file (events in a fixed order) is hashed without its
+`DTSTAMP`s (`auto_backup_fingerprints`, reset with the folder) and a change run
+skips the series whose hash and stable copy are unchanged; the hash is dropped
+before a copy is rewritten. A copy a still-loading folder listing doesn't show,
+or one edited in place outside the app, is left to the next scheduled run.
 
 **A backup carries the series' deleted and moved occurrences.** `EXDATE` lives on
 the master row and is part of `EventExportProjection`; `IcsWriter` marks an

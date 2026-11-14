@@ -201,21 +201,25 @@ class BackupWorker(
     }
 
     /**
-     * One run under the shared lock. A change run (#516) refreshes only the
-     * stable copies and stays off the status line and the failure count, which
-     * report on the scheduled backup; a broken folder fails that one too.
+     * One run under the shared lock, recorded for the status line. A change
+     * run (#516) refreshes only the stable copies and never retries. The
+     * failure notification comes once per failure streak, when it reaches
+     * [FAILURE_NOTIFY_THRESHOLD], and goes with the next success of any run.
      */
     private suspend fun backUp(deps: Deps, prefs: SettingsPrefs, changeRun: Boolean): Result {
         val now = System.currentTimeMillis()
         // The periodic, the immediate and the change runs are separate unique
         // works; one at a time, or each would overwrite the other's ledger.
+        // The record is made under the lock too, so each streak reaches the
+        // threshold in exactly one run.
+        var failures = 0
         val outcome = runLock.withLock {
             // Respect the toggles even for already-queued work, so a lingering
             // run can't revive itself.
             if (!prefs.autoBackupEnabled.first()) return Result.success()
             if (changeRun && !prefs.autoBackupOnChange.first()) return Result.success()
             val folder = prefs.autoBackupFolderUri.first() ?: return Result.failure()
-            try {
+            val outcome = try {
                 runBackup(deps, prefs, folder.toUri(), latestOnly = changeRun)
             } catch (e: CancellationException) {
                 throw e
@@ -223,24 +227,29 @@ class BackupWorker(
                 Log.w(TAG, "Automatic backup failed", e)
                 RunOutcome.Failed
             }
+            if (outcome != RunOutcome.NothingToDo) {
+                prefs.recordAutoBackupRun(success = outcome == RunOutcome.Written, atMillis = now)
+                failures = prefs.autoBackupStatus.first().consecutiveFailures
+            }
+            outcome
         }
-        if (changeRun || outcome == RunOutcome.NothingToDo) return Result.success()
-        val success = outcome == RunOutcome.Written
-        prefs.recordAutoBackupRun(success = success, atMillis = now)
-        if (!success && prefs.autoBackupStatus.first().consecutiveFailures >= FAILURE_NOTIFY_THRESHOLD) {
-            notifyFailure(applicationContext)
+        when {
+            outcome == RunOutcome.Written -> clearFailureNotification(applicationContext)
+            failures == FAILURE_NOTIFY_THRESHOLD -> notifyFailure(applicationContext)
         }
         // Only a run that wrote nothing retries: a retry rewrites every series.
-        return if (outcome == RunOutcome.Failed) Result.retry() else Result.success()
+        return if (outcome == RunOutcome.Failed && !changeRun) Result.retry() else Result.success()
     }
 
     private enum class RunOutcome { Written, PartlyFailed, Failed, NothingToDo }
 
+    /** A stable copy's write: whether it [landed] under its own name, or [failed] before it was written. */
+    private data class LatestWrite(val landed: Boolean, val failed: Boolean)
+
     /**
      * Writes each series and prunes it only once its new file has landed. A
      * [latestOnly] run (#516) leaves the dated files and their retention to the
-     * schedule and rewrites only the stable copies whose calendars changed;
-     * its outcome isn't reported.
+     * schedule and rewrites only the stable copies whose calendars changed.
      */
     private suspend fun runBackup(deps: Deps, prefs: SettingsPrefs, folder: Uri, latestOnly: Boolean): RunOutcome {
         val repository = deps.repository()
@@ -279,9 +288,9 @@ class BackupWorker(
             false
         }
 
-        // Whether the stable copy landed under its own name. An old copy goes
-        // only once the new one has landed, so a series is never left without one.
-        suspend fun writeLatest(plan: BackupFilePlan, bytes: ByteArray, fingerprint: String): Boolean {
+        // An old copy goes only once the new one has landed, so a series is
+        // never left without one.
+        suspend fun writeLatest(plan: BackupFilePlan, bytes: ByteArray, fingerprint: String): LatestWrite {
             val target = plan.target
             val latest = checkNotNull(plan.latestName)
             var landed: String? = null
@@ -308,10 +317,10 @@ class BackupWorker(
                 recordLatest(plan.staleLatest, fingerprint.takeIf { landed == latest })
                 val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
                 recordLatest(plan.staleLatest.filter { it in staleLeft })
-                landed == latest
+                LatestWrite(landed = landed == latest, failed = false)
             } catch (e: Exception) {
                 Log.w(TAG, "Stable copy of one series failed", e)
-                landed == latest
+                LatestWrite(landed = landed == latest, failed = landed == null)
             }
         }
 
@@ -344,7 +353,11 @@ class BackupWorker(
                     if (writeDated(plan, bytes)) written++ else failed++
                 }
                 // Best-effort in a full run: it never holds up the run's status.
-                if (plan.latestName != null && writeLatest(plan, bytes, fingerprint)) landedLatest += target.key
+                val latest = plan.latestName?.let { writeLatest(plan, bytes, fingerprint) }
+                if (latest?.landed == true) landedLatest += target.key
+                if (latestOnly && latest != null) {
+                    if (latest.failed) failed++ else written++
+                }
             }
         }
         // A layout switch retires the other layout's copies once every new one is there.
@@ -362,6 +375,10 @@ class BackupWorker(
             written == 0 -> RunOutcome.Failed
             else -> RunOutcome.PartlyFailed
         }
+    }
+
+    private fun clearFailureNotification(context: Context) {
+        NotificationManagerCompat.from(context).cancel(NOTIFICATION_ID)
     }
 
     private fun notifyFailure(context: Context) {
