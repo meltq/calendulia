@@ -30,6 +30,18 @@ fun parseReminderChannelId(channelId: String): Pair<Long, Int>? {
     return calendar to version
 }
 
+/**
+ * Each calendar's current channel version: the highest one that exists, so a
+ * new version only takes over once it is written. A calendar with none falls
+ * back to its [highWater] mark — re-creating that id restores its own settings.
+ */
+fun currentReminderChannelVersions(existingChannelIds: Collection<String>, highWater: Map<Long, Int>): Map<Long, Int> {
+    val existing = existingChannelIds.mapNotNull(::parseReminderChannelId)
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, versions) -> versions.max() }
+    return highWater + existing
+}
+
 /** Whether [channelId] is one of the per-calendar reminder channels. */
 fun isReminderChannelId(channelId: String): Boolean = channelId.startsWith(CHANNEL_PREFIX)
 
@@ -60,12 +72,6 @@ data class ReminderChannelSpec(
      * fires, so its channel only appears once something posts on it.
      */
     val upFront: Boolean = true,
-    /**
-     * An older version of this calendar's channel to copy behaviour from when
-     * this one is missing, so a version bump that never got written loses no
-     * settings.
-     */
-    val templateId: String? = null,
 )
 
 /** What a channel already looks like in the system, as far as the plan compares it. */
@@ -121,21 +127,13 @@ fun planReminderChannels(
         }
     }
     val existingById = existing.associateBy { it.id }
-    val versionsByCalendar = existing.mapNotNull { parseReminderChannelId(it.id) }.groupBy({ it.first }, { it.second })
     val channels = calendars.map { calendar ->
-        val version = versions[calendar.id] ?: 0
-        val id = reminderChannelId(calendar.id, version)
         ReminderChannelSpec(
-            id = id,
+            id = reminderChannelId(calendar.id, versions[calendar.id] ?: 0),
             calendarId = calendar.id,
             name = calendar.displayName.ifBlank { unnamed },
             groupId = if (calendar.isLocal) LOCAL_GROUP_ID else accountGroupId(calendar.accountType, calendar.accountName),
             upFront = calendar.isLocal || calendar.syncsEvents,
-            templateId = versionsByCalendar[calendar.id]
-                ?.filter { it != version }
-                ?.maxOrNull()
-                ?.let { reminderChannelId(calendar.id, it) }
-                ?.takeIf { id !in existingById },
         )
     }
     val wantedChannels = channels.mapTo(HashSet()) { it.id }

@@ -61,6 +61,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -397,29 +398,40 @@ class SettingsViewModel @Inject constructor(
     fun refreshChannelStatus(calendarIds: Collection<Long>) {
         channelStatusJob?.cancel()
         channelStatusJob = viewModelScope.launch {
-            val (status, sounds) = onChannels { status(calendarIds) to sounds(calendarIds) } ?: return@launch
-            _channelStatus.value = status
+            onChannels { status(calendarIds) }?.let { _channelStatus.value = it }
+            val sounds = onChannels { sounds(calendarIds) } ?: return@launch
             _channelSounds.value = withContext(io) {
-                sounds.mapValues { (_, uri) -> ReminderSound(uri, uri?.let { appContext.ringtoneTitle(it) }) }
+                val titles = sounds.values.filterNotNull().distinct().associateWith { appContext.ringtoneTitle(it) }
+                sounds.mapValues { (_, uri) -> ReminderSound(uri, uri?.let(titles::get)) }
             }
         }
     }
 
-    /** Give [calendarIds]' reminders [sound] (null = silent), each on a fresh channel (#518). */
-    fun setReminderSound(calendarIds: Collection<Long>, sound: Uri?) {
+    /** Give [calendarId]'s reminders [sound] (null = silent), on a fresh channel (#518). */
+    fun setReminderSound(calendarId: Long, sound: Uri?) = applySound { setSound(listOf(calendarId), sound, createMissing = true) }
+
+    /**
+     * Give every switched-on calendar's reminders [sound]. Reads the calendars
+     * itself, so a pick returning after process death still finds them; those
+     * that only get a channel when something posts are left alone.
+     */
+    fun setReminderSoundForAll(sound: Uri?) = applySound {
+        sync()
+        setSound(visibleCalendars.first().map { it.id }, sound, createMissing = false)
+    }
+
+    private fun applySound(block: suspend ReminderChannels.() -> Unit) {
         viewModelScope.launch {
             withContext(io) {
-                calendarIds.forEach { id ->
-                    try {
-                        reminderChannels.setSound(id, sound)
-                    } catch (e: CancellationException) {
-                        throw e
-                    } catch (e: Exception) {
-                        Log.w("SettingsViewModel", "Could not set the reminder sound of calendar $id", e)
-                    }
+                try {
+                    reminderChannels.block()
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w("SettingsViewModel", "Could not set the reminder sound", e)
                 }
             }
-            refreshChannelStatus(state.value.reminderCalendars.map { it.id })
+            refreshChannelStatus(visibleCalendars.first().map { it.id })
         }
     }
 

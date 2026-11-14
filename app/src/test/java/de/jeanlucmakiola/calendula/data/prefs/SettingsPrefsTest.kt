@@ -620,9 +620,8 @@ class SettingsPrefsTest {
     ) = runTest {
         val prefs = testSettings(tempDir)
         assertThat(prefs.reminderChannelVersions.first()).isEmpty()
-        assertThat(prefs.bumpReminderChannelVersion(7L, atLeast = 1)).isEqualTo(1)
-        assertThat(prefs.bumpReminderChannelVersion(7L, atLeast = 1)).isEqualTo(2)
-        assertThat(prefs.bumpReminderChannelVersion(9L, atLeast = 5)).isEqualTo(5)
+        assertThat(prefs.reserveReminderChannelVersions(mapOf(7L to 1))).containsExactly(7L, 1)
+        assertThat(prefs.reserveReminderChannelVersions(mapOf(7L to 1, 9L to 5))).containsExactly(7L, 2, 9L, 5)
         assertThat(prefs.reminderChannelVersions.first()).containsExactly(7L, 2, 9L, 5)
     }
 

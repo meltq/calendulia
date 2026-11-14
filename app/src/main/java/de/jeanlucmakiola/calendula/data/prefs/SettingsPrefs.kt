@@ -277,17 +277,16 @@ class SettingsPrefs @Inject constructor(
     suspend fun setRemindersEnabled(enabled: Boolean) = prefs.set(SettingsKeys.remindersEnabled, enabled)
 
     /**
-     * Move [calendarId]'s reminder channel to a new version, at least [atLeast],
-     * and return it. Versions only grow: the system would restore a deleted
-     * channel's old settings if its id came back (#518).
+     * Reserve a new reminder channel version for each calendar in [floors], above
+     * both its stored high-water mark and its floor, and return them. Versions
+     * only grow: the system would restore a deleted channel's old settings if
+     * its id came back (#518).
      */
-    suspend fun bumpReminderChannelVersion(calendarId: Long, atLeast: Int): Int {
-        var next = 0
-        prefs.update(SettingsKeys.reminderChannelVersions) { current ->
-            next = maxOf((current[calendarId] ?: 0) + 1, atLeast)
-            current + (calendarId to next)
+    suspend fun reserveReminderChannelVersions(floors: Map<Long, Int>): Map<Long, Int> {
+        val stored = prefs.update(SettingsKeys.reminderChannelVersions) { current ->
+            current + floors.mapValues { (id, floor) -> maxOf((current[id] ?: 0) + 1, floor) }
         }
-        return next
+        return floors.keys.associateWith { stored.getValue(it) }
     }
 
     suspend fun dismissNotificationCategoryHint() = prefs.set(SettingsKeys.notificationCategoryHintDismissed, true)
@@ -630,9 +629,10 @@ object SettingsKeys {
     val notificationCategoryHintDismissed: Pref<Boolean> = booleanPref("notification_category_hint_dismissed", false)
 
     /**
-     * Each calendar's reminder channel version (#518): a sound picked in the app
-     * recreates the channel under the next one. Absent = 0, the unversioned id.
-     * Serialised as `id=version;id=version`.
+     * The highest reminder channel version handed out per calendar (#518): a
+     * sound picked in the app recreates the channel under a new one. The
+     * channels themselves say which version is current; this only keeps ids
+     * from being reused. Serialised as `id=version;id=version`.
      */
     val reminderChannelVersions: Pref<Map<Long, Int>> =
         nullableStringPref("reminder_channel_versions").map(::parseChannelVersions) { it.toStoredVersions() }

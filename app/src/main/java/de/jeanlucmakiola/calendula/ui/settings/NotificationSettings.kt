@@ -129,15 +129,24 @@ internal fun NotificationsScreen(
         val target = soundTarget
         soundTarget = null
         val picked = pickedSound(result.resultCode, result.data) ?: return@rememberLauncherForActivityResult
-        val ids = if (target == ALL_CALENDARS) calendarIds else listOfNotNull(target)
-        viewModel.setReminderSound(ids, picked.uri)
+        when (target) {
+            null -> Unit
+            ALL_CALENDARS -> viewModel.setReminderSoundForAll(picked.uri)
+            else -> viewModel.setReminderSound(target, picked.uri)
+        }
     }
     val pickSoundTitle = stringResource(R.string.settings_notification_sound)
     val pickSound: (Long) -> Unit = { target ->
-        val current = if (target == ALL_CALENDARS) sharedSound(sounds, calendarIds)?.uri else sounds[target]?.uri
+        val current = if (target == ALL_CALENDARS) {
+            (sharedSound(sounds, calendarIds) as? SharedSound.Same)?.sound
+        } else {
+            sounds[target]
+        }
         soundTarget = target
         try {
-            soundPicker.launch(notificationSoundPickerIntent(current ?: DEFAULT_NOTIFICATION_URI, pickSoundTitle))
+            // A missing or mixed sound preselects Default; a silent one, Silent.
+            val preselect = if (current == null) DEFAULT_NOTIFICATION_URI else current.uri
+            soundPicker.launch(notificationSoundPickerIntent(preselect, pickSoundTitle))
         } catch (e: ActivityNotFoundException) {
             soundTarget = null
             if (target == ALL_CALENDARS) openAppSettings() else openCalendarSettings(target)
@@ -458,22 +467,39 @@ private fun CalendarNotificationRows(
 /** [soundTarget] meaning every calendar at once. */
 private const val ALL_CALENDARS = Long.MIN_VALUE
 
-/** The sound every one of [calendarIds] shares, or null when they differ or one has no channel yet. */
-private fun sharedSound(sounds: Map<Long, ReminderSound>, calendarIds: List<Long>): ReminderSound? =
-    calendarIds.map { sounds[it] }.distinctBy { it?.uri }.singleOrNull()
+/** What the calendars that have a channel share, sound-wise. */
+private sealed interface SharedSound {
+    data object None : SharedSound
+    data object Mixed : SharedSound
+    data class Same(val sound: ReminderSound) : SharedSound
+}
+
+private fun sharedSound(sounds: Map<Long, ReminderSound>, calendarIds: List<Long>): SharedSound {
+    val distinct = calendarIds.mapNotNull { sounds[it] }.distinctBy { it.uri }
+    return when (distinct.size) {
+        0 -> SharedSound.None
+        1 -> SharedSound.Same(distinct.single())
+        else -> SharedSound.Mixed
+    }
+}
 
 @Composable
 private fun soundLabel(sound: ReminderSound?): String = when {
     sound == null -> stringResource(R.string.settings_notification_sound_default)
     sound.uri == null -> stringResource(R.string.settings_notification_sound_silent)
-    else -> sound.title ?: stringResource(R.string.settings_notification_sound_default)
+    sound.uri == DEFAULT_NOTIFICATION_URI -> sound.title
+        ?.let { stringResource(R.string.settings_notification_sound_default_named, it) }
+        ?: stringResource(R.string.settings_notification_sound_default)
+    else -> sound.title ?: stringResource(R.string.settings_notification_sound_custom)
 }
 
 @Composable
-private fun globalSoundLabel(sounds: Map<Long, ReminderSound>, calendarIds: List<Long>): String {
-    val shared = calendarIds.map { sounds[it] }.distinctBy { it?.uri }
-    return if (shared.size == 1) soundLabel(shared.single()) else stringResource(R.string.settings_notification_sound_mixed)
-}
+private fun globalSoundLabel(sounds: Map<Long, ReminderSound>, calendarIds: List<Long>): String =
+    when (val shared = sharedSound(sounds, calendarIds)) {
+        SharedSound.None -> soundLabel(null)
+        SharedSound.Mixed -> stringResource(R.string.settings_notification_sound_mixed)
+        is SharedSound.Same -> soundLabel(shared.sound)
+    }
 
 /** Samsung's One UI can start a new notification category switched off (#145). */
 private val IS_SAMSUNG = Build.MANUFACTURER.equals("samsung", ignoreCase = true)

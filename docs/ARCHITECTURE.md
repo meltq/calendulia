@@ -405,12 +405,13 @@ importance of the pre-#145 single `reminders` channel, which is deleted once
 nothing showing still sits on it. Settings → Notifications deep-links into the
 system's channel screens for everything but the sound (#340). A sound picked in
 the app (#518) can't be set on an existing channel, so
-`ReminderChannels.setSound` recreates it under the calendar's next version
-(`reminders.calendar.<id>.v<n>`, counter in `SettingsPrefs.reminderChannelVersions`
-— it only grows, because a re-used id would bring back the deleted channel's
-settings), copying everything else from the old one. The sync treats older
-versions as stale, keeps one while a notification still shows on it, and a
-version that was counted but never written inherits from the one before it.
+`ReminderChannels.setSound` recreates it under a new version
+(`reminders.calendar.<id>.v<n>`), copying everything else from the old one. The
+current version is simply the highest channel that exists, so the new one only
+takes over once written; `SettingsPrefs.reminderChannelVersions` is just a
+high-water mark that keeps ids from being reused (a re-used id would bring back
+the deleted channel's settings). The sync treats older versions as stale and
+keeps one while a notification still shows on it.
 Separate from the channels, `SettingsPrefs.mutedReminderCalendarIds` is the in-app per-calendar
 off switch (#272): the scan plans nothing for those calendars (so they arm no
 wake-ups; toggling it re-scans), and `ReminderNotifier.post` checks it again

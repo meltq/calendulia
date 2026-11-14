@@ -172,9 +172,16 @@ class ReminderChannelPlanTest {
         assertThat(plan.channels.map { it.id }).containsExactly(reminderChannelId(1, 2), reminderChannelId(2, 1))
         assertThat(plan.staleChannelIds).containsExactly(reminderChannelId(1))
         assertThat(plan.keptChannelIds).containsExactly(reminderChannelId(2))
-        // A bump the recreate never wrote still inherits from the version before it.
-        assertThat(plan.channelsToWrite.map { it.templateId })
-            .containsExactly(reminderChannelId(1), reminderChannelId(2))
+    }
+
+    @Test
+    fun `the current version is the highest that exists, else the high-water mark`() {
+        val versions = currentReminderChannelVersions(
+            existingChannelIds = listOf(reminderChannelId(1), reminderChannelId(1, 2), reminderChannelId(3), "backup"),
+            highWater = mapOf(1L to 5, 2L to 4),
+        )
+        // Calendar 1 reserved v5 but never wrote it, so v2 stays current.
+        assertThat(versions).containsExactly(1L, 2, 2L, 4, 3L, 0)
     }
 
     @Test
