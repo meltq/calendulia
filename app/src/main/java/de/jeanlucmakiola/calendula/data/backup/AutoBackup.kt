@@ -90,7 +90,9 @@ object BackupScheduler {
     suspend fun reconcile(context: Context, prefs: SettingsPrefs) = withContext(NonCancellable) {
         reconcileLock.withLock {
             val workManager = WorkManager.getInstance(context)
-            suspend fun cancelWatch() = CHANGE_SLOTS.forEach { workManager.cancelUniqueWork(it).await() }
+            suspend fun cancelWatch() = CHANGE_SLOTS.indices
+                .filter { slot -> slotStates(workManager, slot).any { !it.isFinished } }
+                .forEach { workManager.cancelUniqueWork(CHANGE_SLOTS[it]).await() }
             if (!prefs.autoBackupEnabled.first() || prefs.autoBackupFolderUri.first() == null) {
                 workManager.cancelUniqueWork(WORK_NAME)
                 // Also cancel any pending immediate run — otherwise a failing run-now
@@ -113,26 +115,29 @@ object BackupScheduler {
                 cancelWatch()
                 return@withLock
             }
-            val watching = CHANGE_SLOTS.indices.any { slot -> slotStates(workManager, slot).any { !it.isFinished } }
-            if (!watching) watchChanges(context, slot = 0, ChangeArm.Enqueue)
+            takeWatchStep(context, workManager, self = null)
         }
     }
 
     /**
-     * Arm the slot after the change run in [self] as it starts or ends (see
-     * [changeArm]), under the same lock as [reconcile] so it can't outlast a
+     * Keep one change watch armed around the change run in [self] (see
+     * [watchStep]), under the same lock as [reconcile] so it can't outlast a
      * switch-off.
      */
-    internal suspend fun watchNext(context: Context, prefs: SettingsPrefs, self: Int, atStart: Boolean) =
+    internal suspend fun watchNext(context: Context, prefs: SettingsPrefs, self: Int) =
         withContext(NonCancellable) {
             reconcileLock.withLock {
-                if (!watchWanted(prefs)) return@withLock
-                val workManager = WorkManager.getInstance(context)
-                val other = 1 - self
-                changeArm(self, slotStates(workManager, self), slotStates(workManager, other), atStart)
-                    ?.let { watchChanges(context, other, it) }
+                if (watchWanted(prefs)) takeWatchStep(context, WorkManager.getInstance(context), self)
             }
         }
+
+    private suspend fun takeWatchStep(context: Context, workManager: WorkManager, self: Int?) {
+        when (val step = watchStep(self, CHANGE_SLOTS.indices.map { slotStates(workManager, it) })) {
+            WatchStep.None -> Unit
+            is WatchStep.Cancel -> workManager.cancelUniqueWork(CHANGE_SLOTS[step.slot]).await()
+            is WatchStep.Arm -> watchChanges(context, step.slot, step.append)
+        }
+    }
 
     private suspend fun slotStates(workManager: WorkManager, slot: Int): List<WorkInfo.State> =
         workManager.getWorkInfosForUniqueWorkFlow(CHANGE_SLOTS[slot]).first().map { it.state }
@@ -158,10 +163,10 @@ object BackupScheduler {
      * one of two [slot]s. The provider reports every change on its root URI,
      * whoever made it (this app, a sync adapter or another app), so that is the
      * URI watched. A content trigger fires once and observes only while its
-     * job waits, so each change run arms the other slot ([watchNext]); [arm]
-     * says whether the request is queued behind that slot's running run.
+     * job waits, so each change run arms the other slot ([watchNext]); [append]
+     * queues the request behind that slot's running run.
      */
-    private fun watchChanges(context: Context, slot: Int, arm: ChangeArm) {
+    private fun watchChanges(context: Context, slot: Int, append: Boolean) {
         val constraints = Constraints.Builder()
             .addContentUriTrigger(CalendarContract.CONTENT_URI, true)
             .setTriggerContentUpdateDelay(CHANGE_SETTLE_MINUTES, TimeUnit.MINUTES)
@@ -172,37 +177,38 @@ object BackupScheduler {
             .setConstraints(constraints)
             .setInputData(workDataOf(KEY_CHANGE_SLOT to slot))
             .build()
-        val policy = when (arm) {
-            ChangeArm.Enqueue -> ExistingWorkPolicy.KEEP
-            ChangeArm.Append -> ExistingWorkPolicy.APPEND_OR_REPLACE
-        }
+        val policy = if (append) ExistingWorkPolicy.APPEND_OR_REPLACE else ExistingWorkPolicy.KEEP
         WorkManager.getInstance(context).enqueueUniqueWork(CHANGE_SLOTS[slot], policy, request)
     }
 }
 
-internal enum class ChangeArm { Enqueue, Append }
+/** What keeps exactly one change watch armed (#516): nothing, a new watch in [slot], or cancelling the extra one there. */
+internal sealed interface WatchStep {
+    data object None : WatchStep
+
+    /** [append]: queued behind the run still going in [slot], so it starts watching once that ends. */
+    data class Arm(val slot: Int, val append: Boolean) : WatchStep
+
+    data class Cancel(val slot: Int) : WatchStep
+}
 
 /**
- * How the change run in slot [self] arms the other slot (#516), given both
- * slots' work states, so exactly one watch stays armed. At the start it arms
- * only an idle slot, catching changes made during the run. At the end nothing
- * is armed when a watch is already queued behind this run or waits in the
- * other slot; a run still going in the other slot gets the watch queued behind
- * it, by slot 0 only, so two runs that fired together leave one watch.
+ * The step that leaves exactly one watch waiting, from both slots' work
+ * [states], taken by the change run in [self] as it starts and ends, or by
+ * [BackupScheduler.reconcile] (null). A waiting watch is enough; two are one
+ * too many. With none, the other slot is armed, queued behind its run if one
+ * still shows as running, so a run whose end isn't recorded yet can't leave
+ * the provider unwatched.
  */
-internal fun changeArm(
-    self: Int,
-    own: List<WorkInfo.State>,
-    other: List<WorkInfo.State>,
-    atStart: Boolean,
-): ChangeArm? {
-    val otherBusy = other.filterNot { it.isFinished }
+internal fun watchStep(self: Int?, states: List<List<WorkInfo.State>>): WatchStep {
+    fun waiting(slot: Int) = states[slot].any { it == WorkInfo.State.ENQUEUED || it == WorkInfo.State.BLOCKED }
+    val keep = self ?: 0
+    val other = 1 - keep
+    val target = if (self == null) keep else other
     return when {
-        otherBusy.isEmpty() -> if (atStart || WorkInfo.State.BLOCKED !in own) ChangeArm.Enqueue else null
-        atStart || WorkInfo.State.BLOCKED in own -> null
-        otherBusy.any { it != WorkInfo.State.RUNNING } -> null
-        self == 0 -> ChangeArm.Append
-        else -> null
+        waiting(keep) && waiting(other) -> WatchStep.Cancel(other)
+        waiting(keep) || waiting(other) -> WatchStep.None
+        else -> WatchStep.Arm(target, append = WorkInfo.State.RUNNING in states[target])
     }
 }
 
@@ -232,10 +238,10 @@ class BackupWorker(
         val prefs = deps.settingsPrefs()
         val slot = inputData.getInt(BackupScheduler.KEY_CHANGE_SLOT, -1)
         if (slot < 0) return backUp(deps, prefs, changeRun = false)
-        suspend fun watchNext(atStart: Boolean) = runCatching {
-            BackupScheduler.watchNext(applicationContext, prefs, slot, atStart)
+        suspend fun watchNext() = runCatching {
+            BackupScheduler.watchNext(applicationContext, prefs, slot)
         }.onFailure { Log.w(TAG, "Arming the next change run failed", it) }
-        watchNext(atStart = true)
+        watchNext()
         // Never fails or retries: a retry would only wait for another change.
         try {
             backUp(deps, prefs, changeRun = true)
@@ -244,7 +250,7 @@ class BackupWorker(
         } catch (e: Exception) {
             Log.w(TAG, "Backup after a change failed", e)
         } finally {
-            watchNext(atStart = false)
+            watchNext()
         }
         return Result.success()
     }
@@ -320,7 +326,7 @@ class BackupWorker(
         fun fingerprintOf(target: BackupTarget, text: String) =
             backupFingerprint(text, latestFileName(target.baseName))
         // Hashes only serve change runs; without them a stale one could pass later.
-        val trackHashes = latestOnly || prefs.autoBackupOnChange.first()
+        val trackHashes = prefs.autoBackupOnChange.first()
         if (!trackHashes && fingerprints.isNotEmpty()) prefs.updateAutoBackupFingerprints(folder.toString()) { emptyMap() }
         // A change run hashes first (null: unreadable) and leaves the folder alone when nothing moved.
         val preHashes: Map<String, String?> = if (latestOnly) {
@@ -363,7 +369,7 @@ class BackupWorker(
             val target = plan.target
             val latest = checkNotNull(plan.latestName)
             var landed: String? = null
-            return try {
+            try {
                 val latestKey = latestLedgerKey(target.key)
                 if (trackHashes && target.key in fingerprints) {
                     prefs.updateAutoBackupFingerprints(folder.toString()) { it - target.key }
@@ -387,14 +393,13 @@ class BackupWorker(
                 recordLatest(plan.staleLatest, fingerprint.takeIf { trackHashes })
                 val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
                 recordLatest(plan.staleLatest.filter { it in staleLeft })
-                if (landed == latest) LatestWrite.Landed else LatestWrite.Renamed
             } catch (e: Exception) {
                 Log.w(TAG, "Stable copy of one series failed", e)
-                when (landed) {
-                    null -> LatestWrite.Failed
-                    latest -> LatestWrite.Landed
-                    else -> LatestWrite.Renamed
-                }
+            }
+            return when (landed) {
+                null -> LatestWrite.Failed
+                latest -> LatestWrite.Landed
+                else -> LatestWrite.Renamed
             }
         }
 
@@ -446,6 +451,8 @@ class BackupWorker(
                 withContext(NonCancellable) {
                     val left = exporter.deleteFromFolder(listing, names)
                     record(latestLedgerKey(key), names.filter { it in left })
+                    // Its copy is gone, so its hash mustn't let a change run stop early.
+                    prefs.updateAutoBackupFingerprints(folder.toString()) { it - key }
                 }
             }
         }
