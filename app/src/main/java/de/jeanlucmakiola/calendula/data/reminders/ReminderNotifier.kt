@@ -87,16 +87,19 @@ class ReminderNotifier @Inject constructor(
             yesterdayLabel = context.getString(R.string.reminder_day_yesterday),
         )
         val text = listOfNotNull(time, alert.location).joinToString(" · ")
-        // Resolved last, so a sound picked meanwhile (#518) can't retire it before notify.
-        val channelId = try {
-            channels.channelFor(alert.calendarId) ?: run {
-                Log.i(TAG, "Dropped the reminder of event ${alert.eventId}: calendar ${alert.calendarId} is gone")
-                return
-            }
+        val posted = try {
+            // Under the channel lock, so a sound picked meanwhile (#518) can't move it mid-post.
+            channels.withChannel(alert.calendarId) { channelId -> notify(alert, channelId, title, text) }
         } catch (e: Exception) {
             Log.w(TAG, "No channel for the reminder of event ${alert.eventId}", e)
             return
         }
+        if (posted == null) {
+            Log.i(TAG, "Dropped the reminder of event ${alert.eventId}: calendar ${alert.calendarId} is gone")
+        }
+    }
+
+    private fun notify(alert: ReminderAlert, channelId: String, title: String, text: String) {
         val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)

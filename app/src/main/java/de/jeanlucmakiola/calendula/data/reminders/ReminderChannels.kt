@@ -1,8 +1,12 @@
 package de.jeanlucmakiola.calendula.data.reminders
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationChannelGroup
 import android.app.NotificationManager
+import android.app.NotificationManager.IMPORTANCE_DEFAULT
+import android.app.NotificationManager.IMPORTANCE_LOW
+import android.app.NotificationManager.IMPORTANCE_MIN
 import android.content.Context
 import android.media.AudioAttributes
 import android.net.Uri
@@ -57,7 +61,11 @@ class ReminderChannels @Inject constructor(
         val versions = currentVersions(existingIds).also { knownVersions = it }
         if (syncKey(calendars, existingIds, versions) == lastSync && LEGACY_REMINDER_CHANNEL_ID !in existingIds) return
         val groups = manager.notificationChannelGroups
-        val plan = plan(calendars, existing, groups.map { it.id }, versions, showingChannelIds())
+        val groupIds = groups.map { it.id }
+        // Active notifications are only read when there is something stale to protect.
+        val plan = plan(calendars, existing, groupIds, versions).let { draft ->
+            if (draft.staleChannelIds.isEmpty()) draft else plan(calendars, existing, groupIds, versions, showingChannelIds(draft.staleChannelIds))
+        }
         plan.staleChannelIds.forEach(manager::deleteNotificationChannel)
         plan.staleGroupIds.forEach(manager::deleteNotificationChannelGroup)
         val groupNames = groups.associate { it.id to it.name?.toString() }
@@ -94,12 +102,12 @@ class ReminderChannels @Inject constructor(
     private fun currentVersions(existingChannelIds: Collection<String>): Map<Long, Int> =
         currentReminderChannelVersions(existingChannelIds, runBlocking { settingsPrefs.reminderChannelVersions.first() })
 
-    /** Channels with a notification on screen; on failure every channel counts, so none is deleted. */
-    private fun showingChannelIds(): Set<String> = runCatching {
+    /** Channels with a notification on screen; on failure all of [candidates] count, so none is deleted. */
+    private fun showingChannelIds(candidates: Collection<String>): Set<String> = runCatching {
         manager.activeNotifications.mapNotNullTo(HashSet()) { it.notification.channelId }
     }.getOrElse { e ->
         Log.w(TAG, "Could not read active notifications", e)
-        manager.notificationChannels.mapTo(HashSet()) { it.id }
+        candidates.toSet()
     }
 
     /**
@@ -147,6 +155,13 @@ class ReminderChannels @Inject constructor(
         return id
     }
 
+    /**
+     * Run [block] with [calendarId]'s channel held: no sound pick or sync can
+     * move or retire it until [block] returns. Null when the calendar is gone.
+     */
+    @Synchronized
+    fun <T> withChannel(calendarId: Long, block: (String) -> T): T? = channelFor(calendarId)?.let(block)
+
     /** What the system currently lets through for [calendarIds]' reminders (#145). */
     fun status(calendarIds: Collection<Long>): ReminderChannelStatus {
         val manager = manager
@@ -174,7 +189,7 @@ class ReminderChannels @Inject constructor(
     /**
      * Give [calendarIds]' reminders [sound] (null = silent). A channel's sound is
      * fixed once created, so each moves to a new channel version carrying over
-     * everything else, and the old one retires (#518). Calendars without a
+     * everything else, and the old one retires on the next sync (#518). Calendars without a
      * channel are skipped unless [createMissing]. Returns whether every move
      * went through.
      */
@@ -189,20 +204,28 @@ class ReminderChannels @Inject constructor(
         return recreate(settingsPrefs.reserveReminderChannelVersions(floors), sound)
     }
 
-    /** Create each calendar's [versions] from its current channel, then retire the old one. */
+    /**
+     * Create each calendar's [versions] from its current channel. The old one is
+     * left to the next [sync], which retires it once nothing shows on it.
+     */
     @Synchronized
     private fun recreate(versions: Map<Long, Int>, sound: Uri?): Boolean {
         val manager = manager
         val byId = manager.notificationChannels.associateBy { it.id }
         val current = currentReminderChannelVersions(byId.keys, emptyMap())
-        val showing = showingChannelIds()
         var allApplied = true
         versions.forEach { (calendarId, version) ->
             val from = current[calendarId]?.takeIf { it < version } ?: return@forEach
             val old = byId[reminderChannelId(calendarId, from)] ?: return@forEach
             try {
+                // Picking a sound asks for one, which a "Silent" (low) channel would never play.
+                val importance = if (sound != null && old.importance in IMPORTANCE_MIN..IMPORTANCE_LOW) {
+                    IMPORTANCE_DEFAULT
+                } else {
+                    old.importance
+                }
                 manager.createNotificationChannel(
-                    NotificationChannel(reminderChannelId(calendarId, version), old.name, old.importance).apply {
+                    NotificationChannel(reminderChannelId(calendarId, version), old.name, importance).apply {
                         description = old.description
                         old.group?.let { group = it }
                         inheritFrom(old)
@@ -210,7 +233,6 @@ class ReminderChannels @Inject constructor(
                     },
                 )
                 knownVersions = knownVersions + (calendarId to version)
-                if (old.id !in showing) manager.deleteNotificationChannel(old.id)
             } catch (e: RuntimeException) {
                 Log.w(TAG, "Could not move calendar $calendarId to a new sound", e)
                 allApplied = false
@@ -292,7 +314,7 @@ class ReminderChannels @Inject constructor(
     private fun retireLegacyChannel(): Boolean {
         val manager = manager
         if (manager.getNotificationChannel(LEGACY_REMINDER_CHANNEL_ID) == null) return true
-        val showing = LEGACY_REMINDER_CHANNEL_ID in showingChannelIds()
+        val showing = LEGACY_REMINDER_CHANNEL_ID in showingChannelIds(listOf(LEGACY_REMINDER_CHANNEL_ID))
         if (!showing) manager.deleteNotificationChannel(LEGACY_REMINDER_CHANNEL_ID)
         return !showing
     }
@@ -307,10 +329,7 @@ class ReminderChannels @Inject constructor(
     private companion object {
         const val TAG = "ReminderChannels"
 
-        val DEFAULT_AUDIO_ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
-            .setUsage(AudioAttributes.USAGE_NOTIFICATION)
-            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
-            .build()
+        val DEFAULT_AUDIO_ATTRIBUTES: AudioAttributes = Notification.AUDIO_ATTRIBUTES_DEFAULT
     }
 }
 

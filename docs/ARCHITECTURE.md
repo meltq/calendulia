@@ -410,8 +410,10 @@ the app (#518) can't be set on an existing channel, so
 current version is simply the highest channel that exists, so the new one only
 takes over once written; `SettingsPrefs.reminderChannelVersions` is just a
 high-water mark that keeps ids from being reused (a re-used id would bring back
-the deleted channel's settings). The sync treats older versions as stale and
-keeps one while a notification still shows on it.
+the deleted channel's settings). `setSound` leaves the old version to the sync,
+which treats older versions as stale and keeps one while a notification still
+shows on it; `ReminderNotifier.post` resolves and posts under the channel lock
+(`withChannel`), so a pick never moves a channel mid-post.
 Separate from the channels, `SettingsPrefs.mutedReminderCalendarIds` is the in-app per-calendar
 off switch (#272): the scan plans nothing for those calendars (so they arm no
 wake-ups; toggling it re-scans), and `ReminderNotifier.post` checks it again
