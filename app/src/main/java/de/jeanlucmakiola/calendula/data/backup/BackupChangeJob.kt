@@ -51,8 +51,8 @@ class BackupChangeJob : JobService() {
     }
 
     companion object {
-        /** Clear of WorkManager's ids, which count up from 0. */
-        private const val JOB_ID = 0x0516_0001
+        /** Above the range WorkManager is given (see CalendulaApp). */
+        const val JOB_ID = 0x0516_0001
         private const val SETTLE_MINUTES = 2L
         private const val MAX_WAIT_MINUTES = 15L
         private const val TAG = "BackupChangeJob"

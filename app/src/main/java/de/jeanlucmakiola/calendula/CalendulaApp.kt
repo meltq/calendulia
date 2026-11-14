@@ -1,8 +1,10 @@
 package de.jeanlucmakiola.calendula
 
 import android.app.Application
+import androidx.work.Configuration
 import dagger.hilt.android.EntryPointAccessors
 import dagger.hilt.android.HiltAndroidApp
+import de.jeanlucmakiola.calendula.data.backup.BackupChangeJob
 import de.jeanlucmakiola.calendula.data.backup.BackupScheduler
 import de.jeanlucmakiola.calendula.data.calendar.CalendarVisibilityReconciler
 import de.jeanlucmakiola.calendula.data.backup.BackupWorker
@@ -27,7 +29,11 @@ import kotlinx.coroutines.launch
  * in AndroidManifest.xml. Hilt initializes its component graph here.
  */
 @HiltAndroidApp
-class CalendulaApp : Application() {
+class CalendulaApp : Application(), Configuration.Provider {
+
+    /** Keeps WorkManager's JobScheduler ids clear of [BackupChangeJob]'s. */
+    override val workManagerConfiguration: Configuration =
+        Configuration.Builder().setJobSchedulerJobIdRange(0, BackupChangeJob.JOB_ID - 1).build()
 
     override fun onCreate() {
         super.onCreate()

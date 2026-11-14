@@ -485,6 +485,18 @@
             </intent-filter>
         </receiver>
 
+        <!-- WorkManager initialises on demand from CalendulaApp's configuration. -->
+        <provider
+            android:name="androidx.startup.InitializationProvider"
+            android:authorities="${applicationId}.androidx-startup"
+            android:exported="false"
+            tools:node="merge">
+            <meta-data
+                android:name="androidx.work.WorkManagerInitializer"
+                android:value="androidx.startup"
+                tools:node="remove" />
+        </provider>
+
         <!-- Hands .ics files we stage in the cache to other apps via a content
              Uri (single-event share). Authority tracks applicationId so the
              debug suffix doesn't break getUriForFile. -->
