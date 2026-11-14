@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.ui.filter
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.ui.common.CalendarAccountGroup
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.calendarsHiddenIn
 
 /**
  * State for the calendar-filter sheet (M3). The user toggles per-calendar
@@ -20,5 +21,14 @@ sealed interface FilterUiState {
         val groups: List<CalendarAccountGroup>,
         val hidden: Set<Long>,
         val hiddenViews: Map<Long, Set<CalendarView>> = emptyMap(),
-    ) : FilterUiState
+    ) : FilterUiState {
+        /**
+         * How many listed calendars [view] hides on its own (#517); ones already
+         * hidden everywhere from the drawer, or not listed, don't count.
+         */
+        fun hiddenOnlyIn(view: CalendarView): Int {
+            val listed = groups.flatMap { group -> group.calendars.map { it.id } }
+            return hiddenViews.calendarsHiddenIn(view).count { it in listed && it !in hidden }
+        }
+    }
 }

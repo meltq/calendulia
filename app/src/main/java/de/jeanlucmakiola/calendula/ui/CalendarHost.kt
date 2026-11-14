@@ -42,6 +42,9 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
+import de.jeanlucmakiola.calendula.ui.filter.FilterUiState
+import de.jeanlucmakiola.calendula.ui.filter.FilterViewModel
+import de.jeanlucmakiola.calendula.ui.filter.ViewCalendarsPicker
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.domain.EventForm
@@ -211,6 +214,9 @@ fun CalendarHost(
     // top bar. Sits below the detail/edit overlays so tapping a result reveals
     // the detail on top and backing out returns to the results.
     var showSearch by rememberSaveable { mutableStateOf(false) }
+    var showViewCalendars by rememberSaveable { mutableStateOf(false) }
+    val filterViewModel: FilterViewModel = hiltViewModel()
+    val filterState by filterViewModel.state.collectAsStateWithLifecycle()
     val onOpenSearch = { showSearch = true }
 
     // Calendar manager (reached from Settings) — its own overlay so it slides
@@ -558,6 +564,14 @@ fun CalendarHost(
             // (#239); nothing else in the calendar surfaces navigates here.
             LocalManageCalendars provides remember { { showCalendars = true } },
         ) {
+        if (showViewCalendars) {
+            ViewCalendarsPicker(
+                view = view,
+                state = filterState,
+                onSetHidden = { id, hidden -> filterViewModel.setHiddenIn(id, view, hidden) },
+                onDismiss = { showViewCalendars = false },
+            )
+        }
         // One drawer, top bar and FAB for every screen (#184): a switch changes
         // what they say, from what the screen on show publishes, rather than
         // swapping them for another screen's.
@@ -601,6 +615,8 @@ fun CalendarHost(
                     onOpenDrawer = { switchScope.launch { drawerState.open() } },
                     onOpenSearch = onOpenSearch,
                     showTodayButton = todayInToolbar,
+                    hiddenInView = (filterState as? FilterUiState.Success)?.hiddenOnlyIn(view) ?: 0,
+                    onOpenViewCalendars = { showViewCalendars = true },
                 )
             },
             floatingActionButton = {

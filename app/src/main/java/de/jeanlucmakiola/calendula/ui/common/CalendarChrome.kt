@@ -14,8 +14,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.Badge
+import androidx.compose.material3.BadgedBox
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -34,6 +37,7 @@ import androidx.compose.runtime.Stable
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventInstance
@@ -177,6 +181,8 @@ fun CalendarTopBar(
     onOpenDrawer: () -> Unit,
     onOpenSearch: () -> Unit,
     showTodayButton: Boolean,
+    hiddenInView: Int,
+    onOpenViewCalendars: () -> Unit,
 ) {
     val effects = MaterialTheme.motionScheme.fastEffectsSpec<Float>()
     AnimatedContent(
@@ -199,6 +205,8 @@ fun CalendarTopBar(
                 onOpenDrawer = onOpenDrawer,
                 onOpenSearch = onOpenSearch,
                 showTodayButton = showTodayButton,
+                hiddenInView = hiddenInView,
+                onOpenViewCalendars = onOpenViewCalendars,
             )
         }
     }
@@ -214,6 +222,8 @@ private fun ViewTopBar(
     onOpenDrawer: () -> Unit,
     onOpenSearch: () -> Unit,
     showTodayButton: Boolean,
+    hiddenInView: Int,
+    onOpenViewCalendars: () -> Unit,
 ) {
     val chrome = host.chrome
     TopAppBar(
@@ -243,6 +253,7 @@ private fun ViewTopBar(
                     contentDescription = stringResource(R.string.search_action),
                 )
             }
+            ViewCalendarsAction(hiddenInView = hiddenInView, onClick = onOpenViewCalendars)
             ViewSwitcherPill(
                 current = selectedView,
                 cycle = quickSwitchViews,
@@ -257,6 +268,24 @@ private fun ViewTopBar(
             scrolledContainerColor = MaterialTheme.colorScheme.surface,
         ),
     )
+}
+
+/**
+ * Opens the calendars hidden in the view on show (#517). A dot marks a view
+ * that hides any, so missing events have a visible reason.
+ */
+@Composable
+private fun ViewCalendarsAction(hiddenInView: Int, onClick: () -> Unit) {
+    val description = if (hiddenInView > 0) {
+        pluralStringResource(R.plurals.view_calendars_action_hidden, hiddenInView, hiddenInView)
+    } else {
+        stringResource(R.string.view_calendars_action)
+    }
+    IconButton(onClick = onClick) {
+        BadgedBox(badge = { if (hiddenInView > 0) Badge() }) {
+            Icon(imageVector = Icons.Default.FilterList, contentDescription = description)
+        }
+    }
 }
 
 /**

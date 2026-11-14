@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.filter
 
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -8,9 +9,11 @@ import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.calendarListFailure
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.groupByAccount
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
@@ -24,7 +27,7 @@ import javax.inject.Inject
 class FilterViewModel @Inject constructor(
     private val repository: CalendarRepository,
     private val prefs: CalendarPrefs,
-    settingsPrefs: SettingsPrefs,
+    private val settingsPrefs: SettingsPrefs,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
 
@@ -51,6 +54,19 @@ class FilterViewModel @Inject constructor(
                 scope = viewModelScope,
                 initialValue = FilterUiState.Loading,
             )
+
+    /** Hide or show one calendar in [view] only (#517), the same setting as Settings → Calendars. */
+    fun setHiddenIn(calendarId: Long, view: CalendarView, hidden: Boolean) {
+        viewModelScope.launch {
+            try {
+                settingsPrefs.setCalendarHiddenIn(calendarId, view, hidden)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w("FilterViewModel", "Could not change hidden views of $calendarId", e)
+            }
+        }
+    }
 
     /** Show or hide a single calendar; persists the new hidden set. */
     fun setVisible(calendarId: Long, visible: Boolean) {
