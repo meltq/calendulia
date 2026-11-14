@@ -65,8 +65,9 @@ fun backupUiState(calendars: List<CalendarSource>): BackupUiState {
  */
 fun copySources(calendars: List<CalendarSource>): List<CalendarSource> {
     val targets = calendars.filter { it.isEventTarget }
+    val onlyTarget = targets.singleOrNull()?.id
     if (targets.isEmpty()) return emptyList()
-    return calendars.filter { source -> source.isBackupCandidate && targets.any { it.id != source.id } }
+    return calendars.filter { it.isBackupCandidate && it.id != onlyTarget }
 }
 
 /** Calendars a copy from [sourceId] can write into: the import targets, minus the source itself. */

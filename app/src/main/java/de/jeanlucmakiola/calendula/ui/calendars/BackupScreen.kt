@@ -305,6 +305,7 @@ private fun BackupContent(
             leading = { LeadingAvatar(Icons.Default.FileUpload) },
             onClick = onRestoreClick,
         )
+        if (copyRun != CopyRunState.Idle) CopyEventsRow(copyRun, Position.Alone, onCopy)
         return
     }
 
@@ -324,23 +325,7 @@ private fun BackupContent(
         onClick = onRestoreClick,
     )
     // A running or finished copy keeps its row, the way back to its sheet.
-    if (canCopy || copyRun != CopyRunState.Idle) {
-        GroupedRow(
-            title = stringResource(R.string.calendars_copy_action),
-            summary = when (copyRun) {
-                is CopyRunState.Running -> copyProgressText(copyRun)
-                is CopyRunState.Done -> stringResource(
-                    if (copyRun.stopped) R.string.calendars_copy_stopped_title else R.string.calendars_copy_done,
-                )
-                CopyRunState.Cancelled -> stringResource(R.string.calendars_copy_cancelled)
-                CopyRunState.Failed -> stringResource(R.string.calendars_copy_failed)
-                CopyRunState.Idle -> stringResource(R.string.calendars_copy_summary)
-            },
-            position = Position.Middle,
-            leading = { LeadingAvatar(Icons.Default.ContentCopy) },
-            onClick = onCopy,
-        )
-    }
+    if (canCopy || copyRun != CopyRunState.Idle) CopyEventsRow(copyRun, Position.Middle, onCopy)
     GroupedRow(
         title = stringResource(R.string.calendars_auto_backup),
         summary = stringResource(R.string.calendars_auto_backup_hint),
@@ -404,6 +389,25 @@ private fun BackupContent(
             style = MaterialTheme.typography.bodySmall,
         )
     }
+}
+
+@Composable
+private fun CopyEventsRow(copyRun: CopyRunState, position: Position, onClick: () -> Unit) {
+    GroupedRow(
+        title = stringResource(R.string.calendars_copy_action),
+        summary = when (copyRun) {
+            is CopyRunState.Running -> copyProgressText(copyRun)
+            is CopyRunState.Done -> stringResource(
+                if (copyRun.stopped) R.string.calendars_copy_stopped_title else R.string.calendars_copy_done,
+            )
+            CopyRunState.Cancelled -> stringResource(R.string.calendars_copy_cancelled)
+            CopyRunState.Failed -> stringResource(R.string.calendars_copy_failed)
+            CopyRunState.Idle -> stringResource(R.string.calendars_copy_summary)
+        },
+        position = position,
+        leading = { LeadingAvatar(Icons.Default.ContentCopy) },
+        onClick = onClick,
+    )
 }
 
 /**

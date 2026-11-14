@@ -52,6 +52,8 @@ data class ParsedIcsEvent(
      * already is, since the series there carries its own override.
      */
     val overrideOf: String? = null,
+    /** The occurrence of [overrideOf] this event replaces (`X-CALENDULA-OVERRIDE-AT`). */
+    val overrideAt: Instant? = null,
     /** The provider's raw `RDATE`, only set by a calendar copy. */
     val recurrenceDates: String? = null,
     val accessLevel: AccessLevel = AccessLevel.Default,
@@ -224,6 +226,7 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
         val exDateLines = mutableListOf<IcsContentLine>()
         var skipAsOverride = false
         var overrideOf: String? = null
+        var overrideAt: Instant? = null
 
         var i = 0
         while (i < body.size) {
@@ -253,6 +256,7 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
                 "RECURRENCE-ID" -> skipAsOverride = true
                 "ATTENDEE" -> warnings.add(IcsParseWarning.AttendeesIgnored)
                 "X-CALENDULA-OVERRIDE-OF" -> overrideOf = unescapeText(line.value).trim().ifEmpty { null }
+                "X-CALENDULA-OVERRIDE-AT" -> overrideAt = parseBasicDateTime(line.value.trim())?.toInstant(TimeZone.UTC)
                 "X-CALENDULA-CALENDAR" ->
                     calendarName = unescapeText(line.value).trim().ifEmpty { calendarName }
                 // Fossify names the source calendar per event; it never writes
@@ -313,6 +317,7 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
             },
             isTask = isTask,
             overrideOf = overrideOf,
+            overrideAt = overrideAt,
         )
     }
 

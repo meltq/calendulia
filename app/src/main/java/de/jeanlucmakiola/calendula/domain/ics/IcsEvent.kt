@@ -48,6 +48,8 @@ data class IcsEvent(
      * UID of the series it replaces an occurrence of, as `X-CALENDULA-OVERRIDE-OF`.
      */
     val overrideOf: String? = null,
+    /** The occurrence of [overrideOf] this event replaces, as `X-CALENDULA-OVERRIDE-AT`. */
+    val overrideAt: Instant? = null,
 )
 
 /** Whether this is a series: by rule, or by listed dates alone. */

@@ -7,7 +7,7 @@ import kotlin.time.Duration.Companion.days
  * The events a calendar copy (#325) inserts into its target, in the shape
  * `importEvents` takes: the source's rows flattened as [flattenOverrides] does
  * for a backup, minus cancelled series and one-offs, which would arrive live
- * (an insert can't be cancelled), and declined invitations. Attendees and organizer are never read.
+ * (an insert can't be cancelled), and declined invitations and occurrences. Attendees and organizer are never read.
  *
  * Idempotent per snapshot: `importEvents` skips a UID the target already holds,
  * and an [IcsEvent.overrideOf] occurrence whose series it holds, so a re-run
@@ -18,7 +18,13 @@ fun planCalendarCopy(
     rows: CalendarRows,
     exdateStamp: (occurrenceMillis: Long, isAllDay: Boolean) -> String,
 ): List<ParsedIcsEvent> {
-    val live = rows.copy(series = rows.series.filterNot { it.event.status == EventStatus.Cancelled || it.declined })
+    val live = CalendarRows(
+        series = rows.series.filterNot { it.event.status == EventStatus.Cancelled || it.declined },
+        // A declined occurrence is as good as deleted here.
+        overrides = rows.overrides.map {
+            if (it.declined) it.copy(event = it.event.copy(status = EventStatus.Cancelled)) else it
+        },
+    )
     return flattenOverrides(live, exdateStamp).map { it.toParsedIcsEvent() }
 }
 
@@ -48,5 +54,6 @@ fun IcsEvent.toParsedIcsEvent(): ParsedIcsEvent = ParsedIcsEvent(
     accessLevel = accessLevel,
     color = color,
     overrideOf = overrideOf,
+    overrideAt = overrideAt,
     exDates = if (recurs) exDates.filter { it.isNotBlank() }.distinct() else emptyList(),
 )

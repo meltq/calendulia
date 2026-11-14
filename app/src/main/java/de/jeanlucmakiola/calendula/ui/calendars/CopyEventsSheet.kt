@@ -16,6 +16,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -52,9 +53,9 @@ fun CopyEventsSheet(
     onDismiss: () -> Unit,
 ) {
     val list = (calendars as? CopyCalendars.Ready)?.calendars.orEmpty()
-    val sources = copySources(list)
+    val sources = remember(list) { copySources(list) }
     val source = sources.firstOrNull { it.id == selection.sourceId }
-    val targets = copyTargets(list, source?.id)
+    val targets = remember(list, source?.id) { copyTargets(list, source?.id) }
     val target = targets.firstOrNull { it.id == selection.targetId }
     val running = run is CopyRunState.Running
     var picking by rememberSaveable { mutableStateOf<CopyEnd?>(null) }

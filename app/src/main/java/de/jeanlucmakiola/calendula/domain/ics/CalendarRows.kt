@@ -27,6 +27,8 @@ data class OverrideRow(
     val originalSyncId: String?,
     val originalInstance: Instant,
     val event: IcsEvent,
+    /** The user declined this occurrence. */
+    val declined: Boolean = false,
 ) {
     val isCancelled: Boolean get() = event.status == EventStatus.Cancelled
 }
@@ -81,6 +83,7 @@ fun flattenOverrides(
             recurrenceDates = null,
             exDates = emptyList(),
             overrideOf = parent.event.uid,
+            overrideAt = override.originalInstance,
         )
     }
     // Two exception rows for one occurrence would derive the same UID; the same

@@ -1047,19 +1047,23 @@ class CalendarRepositoryImplTest {
     }
 
     @Test
-    fun `a series waits for a standalone occurrence that didn't land`(
+    fun `a series keeps an occurrence whose standalone copy didn't land`(
         @TempDir tempDir: Path,
     ) = runTest {
         val fake = FakeCalendarDataSource().apply { failingImportSummaries += "moved" }
         val repo = testRepository(fake, tempDir, Dispatchers.Unconfined)
+        val at = Instant.parse("2026-01-12T09:00:00Z")
 
         val summary = repo.importEvents(
             3L,
-            listOf(parsedEvent("1-s", summary = "moved").copy(overrideOf = "s"), parsedEvent("s"), parsedEvent("t")),
+            listOf(
+                parsedEvent("1-s", summary = "moved").copy(overrideOf = "s", overrideAt = at),
+                parsedEvent("s").copy(recurrenceRule = "FREQ=WEEKLY", exDates = listOf("20260112T090000Z", "20260119T090000Z")),
+            ),
         )
 
-        assertThat(fake.importedEvents.map { it.first.uid }).containsExactly("t")
-        assertThat(summary.failed).isEqualTo(2)
+        assertThat(summary.failed).isEqualTo(1)
+        assertThat(fake.importedEvents.single().first.exDates).containsExactly("20260119T090000Z")
     }
 
     @Test

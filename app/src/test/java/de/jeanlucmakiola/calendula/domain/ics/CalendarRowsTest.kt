@@ -181,9 +181,11 @@ class CalendarRowsTest {
 
     @Test
     fun `the override link survives the file`() {
-        val text = IcsWriter().writeCalendar(listOf(event("d").copy(overrideOf = "s;1")), start)
+        val text = IcsWriter().writeCalendar(listOf(event("d").copy(overrideOf = "s;1", overrideAt = occurrence(1))), start)
 
-        assertThat(IcsParser().parse(text).events.single().overrideOf).isEqualTo("s;1")
+        val parsed = IcsParser().parse(text).events.single()
+        assertThat(parsed.overrideOf).isEqualTo("s;1")
+        assertThat(parsed.overrideAt).isEqualTo(occurrence(1))
     }
 
     @Test
@@ -214,5 +216,17 @@ class CalendarRowsTest {
         val rows = CalendarRows(listOf(series("d").copy(declined = true), series("k", id = 2)), emptyList())
 
         assertThat(planCalendarCopy(rows, ::formatExdateStamp).map { it.uid }).containsExactly("k")
+    }
+
+    @Test
+    fun `a copy treats a declined occurrence as deleted`() {
+        val rows = CalendarRows(
+            listOf(series("s")),
+            listOf(OverrideRow(1, 1, null, occurrence(1), event("x"), declined = true)),
+        )
+
+        val plan = planCalendarCopy(rows, ::formatExdateStamp)
+        assertThat(plan.map { it.uid }).containsExactly("s")
+        assertThat(plan.single().exDates).containsExactly("20260112T090000Z")
     }
 }

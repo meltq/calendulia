@@ -295,9 +295,9 @@ class CalendarRepositoryImpl @Inject constructor(
         var skipped = 0
         var failed = 0
         var notAttempted = 0
-        // Series whose standalone occurrence didn't land: inserted, they would
-        // exclude it for good, since a re-run skips it next to its series.
-        val held = mutableSetOf<String>()
+        // Occurrences whose standalone copy didn't land, by series UID: the series
+        // keeps them instead of excluding them for good.
+        val unexcluded = mutableMapOf<String, MutableList<Instant>>()
         for ((index, event) in events.withIndex()) {
             if (index > 0) onProgress(index)
             // A known UID means the event is already in this calendar — skip,
@@ -306,12 +306,8 @@ class CalendarRepositoryImpl @Inject constructor(
                 skipped++
                 continue
             }
-            if (event.uid != null && event.uid in held) {
-                failed++
-                continue
-            }
             try {
-                dataSource.insertImportedEvent(event, targetCalendarId, allDayMinutes, palette)
+                dataSource.insertImportedEvent(event.keeping(unexcluded), targetCalendarId, allDayMinutes, palette)
                 imported++
             } catch (e: CancellationException) {
                 throw e
@@ -331,7 +327,9 @@ class CalendarRepositoryImpl @Inject constructor(
                 // rest of the file — foreign exports do carry rows it rejects
                 // outright (a malformed RRULE throws straight out of insert).
                 failed++
-                event.overrideOf?.let(held::add)
+                if (event.overrideOf != null && event.overrideAt != null) {
+                    unexcluded.getOrPut(event.overrideOf) { mutableListOf() } += event.overrideAt
+                }
                 Log.w(TAG, "Skipped an unimportable event", e)
             }
         }
@@ -424,3 +422,10 @@ private fun <T> Flow<Unit>.reQuery(block: suspend () -> T): Flow<T> = flow {
  */
 private fun ParsedIcsEvent.isAlreadyIn(existing: Set<String>): Boolean =
     (uid != null && uid in existing) || (overrideOf != null && overrideOf in existing)
+
+/** This series without the exclusions of [unexcluded] occurrences whose standalone copy failed. */
+private fun ParsedIcsEvent.keeping(unexcluded: Map<String, List<Instant>>): ParsedIcsEvent {
+    val kept = uid?.let(unexcluded::get) ?: return this
+    val stamps = kept.map { formatExdateStamp(it.toEpochMilliseconds(), isAllDay) }.toSet()
+    return copy(exDates = exDates.filterNot { it in stamps })
+}

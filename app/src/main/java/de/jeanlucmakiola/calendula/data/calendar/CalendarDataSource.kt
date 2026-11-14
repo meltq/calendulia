@@ -798,27 +798,30 @@ class AndroidCalendarDataSource @Inject constructor(
                 it != calendar?.color || !getString(EventExportProjection.IDX_EVENT_COLOR_KEY).isNullOrEmpty()
             }
             val mapped = event(calendar?.displayName).copy(color = color)
+            val declined = getIntOrNull(EventExportProjection.IDX_SELF_ATTENDEE_STATUS) ==
+                CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED
             val originalId = getLongOrNull(EventExportProjection.IDX_ORIGINAL_ID)
             val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)?.takeIf { it.isNotEmpty() }
-            val originalInstance = getLongOrNull(EventExportProjection.IDX_ORIGINAL_INSTANCE_TIME)
-            if (originalId == null && originalSyncId == null && originalInstance == null) {
+            // Without a link the provider shows the row as an event of its own.
+            if (originalId == null && originalSyncId == null) {
                 series += MasterRow(
                     eventId = getLong(EventExportProjection.IDX_ID),
                     calendarId = calendarId,
                     syncId = getString(EventExportProjection.IDX_SYNC_ID)?.takeIf { it.isNotEmpty() },
                     event = mapped,
-                    declined = getIntOrNull(EventExportProjection.IDX_SELF_ATTENDEE_STATUS) ==
-                        CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED,
+                    declined = declined,
                 )
             } else {
                 // An exception without its occurrence time can't name what it replaces.
-                if (originalInstance == null) return@forEachExportRow
+                val originalInstance = getLongOrNull(EventExportProjection.IDX_ORIGINAL_INSTANCE_TIME)
+                    ?: return@forEachExportRow
                 overrides += OverrideRow(
                     calendarId = calendarId,
                     originalId = originalId,
                     originalSyncId = originalSyncId,
                     originalInstance = originalInstance.toKotlinInstantFromEpochMillis(),
                     event = mapped,
+                    declined = declined,
                 )
             }
         }
