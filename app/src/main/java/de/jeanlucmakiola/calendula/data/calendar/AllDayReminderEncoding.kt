@@ -47,7 +47,7 @@ internal fun toProviderAllDayMinutes(
 ): Int {
     if (semanticMinutes == MINUTES_DEFAULT) return semanticMinutes
     val utcMidnight = startDate.atStartOfDay(ZoneOffset.UTC).toInstant().toEpochMilli()
-    val fire = startDate.minusDays((wholeDayLeadMinutes(semanticMinutes) / MINUTES_PER_DAY).toLong())
+    val fire = startDate.minusDays((semanticMinutes / MINUTES_PER_DAY).toLong())
         .atTime(LocalTime.of(timeOfDayMinutes / 60, timeOfDayMinutes % 60))
         .atZone(zone).toInstant().toEpochMilli()
     val raw = ((utcMidnight - fire) / MILLIS_PER_MINUTE).toInt()
@@ -56,7 +56,7 @@ internal fun toProviderAllDayMinutes(
 
 /**
  * A lead time as the whole days an all-day reminder actually fires at: the
- * sub-day part is dropped, the same truncation [toProviderAllDayMinutes] applies.
+ * sub-day part is dropped, matching [toProviderAllDayMinutes]'s day count.
  * [MINUTES_DEFAULT] passes through.
  */
 internal fun wholeDayLeadMinutes(minutes: Int): Int =

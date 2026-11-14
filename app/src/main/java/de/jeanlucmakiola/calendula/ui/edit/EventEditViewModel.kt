@@ -8,6 +8,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
 import de.jeanlucmakiola.calendula.data.calendar.wholeDayLeadMinutes
+import de.jeanlucmakiola.calendula.data.calendar.wholeDayLeadTimes
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -537,9 +538,9 @@ class EventEditViewModel @Inject constructor(
             if (opened != session) return@launch
             val current = _form.value ?: return@launch
             if (_editTarget.value != null) return@launch
-            if (default.isEmpty() || default == current.reminders) return@launch
+            if (default.isEmpty() || default == current.firingReminders()) return@launch
             _importReminderPrompt.value = ImportReminderPrompt(
-                currentReminderCount = current.reminders.size,
+                currentReminderCount = current.firingReminders().size,
                 defaultReminders = default,
             )
         }
@@ -962,3 +963,11 @@ class EventEditViewModel @Inject constructor(
         _form.value = _form.value?.let(block)
     }
 }
+
+/**
+ * Reminders as they fire: an all-day event fires on whole days, so a sub-day lead
+ * time kept from the timed form reads as its day. The form keeps the raw values,
+ * so switching all-day off again restores them.
+ */
+internal fun EventForm.firingReminders(): List<Int> =
+    if (isAllDay) wholeDayLeadTimes(reminders) else reminders
