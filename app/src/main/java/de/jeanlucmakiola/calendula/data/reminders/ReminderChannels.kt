@@ -106,15 +106,17 @@ class ReminderChannels @Inject constructor(
     fun status(calendarIds: Collection<Long>): ReminderChannelStatus {
         val manager = manager
         val appEnabled = manager.areNotificationsEnabled()
-        val blocked = blockedReminderCalendars(
-            calendarIds = calendarIds,
-            appEnabled = appEnabled,
-            channels = manager.notificationChannels.associate {
-                it.id to ReminderChannelState(it.importance == NotificationManager.IMPORTANCE_NONE, it.group)
+        val channels = manager.notificationChannels.associate {
+            it.id to ReminderChannelState(it.importance == NotificationManager.IMPORTANCE_NONE, it.group)
+        }
+        val blockedGroups = manager.notificationChannelGroups.filter { it.isBlocked }.mapTo(HashSet()) { it.id }
+        return ReminderChannelStatus(
+            appBlocked = !appEnabled,
+            blockedCalendarIds = blockedReminderCalendars(calendarIds, appEnabled, channels, blockedGroups),
+            groupBlockedCalendarIds = calendarIds.filterTo(HashSet()) {
+                channels[reminderChannelId(it)]?.groupId in blockedGroups
             },
-            blockedGroupIds = manager.notificationChannelGroups.filter { it.isBlocked }.mapTo(HashSet()) { it.id },
         )
-        return ReminderChannelStatus(appBlocked = !appEnabled, blockedCalendarIds = blocked)
     }
 
     private fun plan(
@@ -141,8 +143,7 @@ class ReminderChannels @Inject constructor(
         if (channels.isEmpty()) return
         val byId = existing.associateBy { it.id }
         val template = byId[LEGACY_REMINDER_CHANNEL_ID]
-        // Only a channel's first creation sets its behaviour; later calls just
-        // rename it, so an existing one passes its own importance back.
+        // Importance only applies on creation; an existing channel keeps its own.
         manager.createNotificationChannels(
             channels.map { spec ->
                 val current = byId[spec.id]
@@ -210,4 +211,6 @@ class ReminderChannels @Inject constructor(
 data class ReminderChannelStatus(
     val appBlocked: Boolean = false,
     val blockedCalendarIds: Set<Long> = emptySet(),
+    /** The blocked ones whose whole account group is off, which only the app's own screen can undo. */
+    val groupBlockedCalendarIds: Set<Long> = emptySet(),
 )

@@ -104,7 +104,6 @@ internal fun NotificationsScreen(
     val scope = rememberCoroutineScope()
     val channelStatus by viewModel.channelStatus.collectAsStateWithLifecycle()
     val calendarIds = state.reminderCalendars.map { it.id }
-    // Re-read whenever the screen returns from the system settings it links to.
     LifecycleResumeEffect(calendarIds) {
         viewModel.refreshChannelStatus(calendarIds)
         onPauseOrDispose { }
@@ -112,8 +111,8 @@ internal fun NotificationsScreen(
     val openCalendarSound: (Long) -> Unit = { calendarId ->
         scope.launch {
             val channelId = viewModel.reminderChannelFor(calendarId)
-            // With the whole app blocked, only the app's own screen can allow it.
-            context.openNotificationSettings(channelId.takeUnless { channelStatus.appBlocked })
+            val appScreen = channelStatus.appBlocked || calendarId in channelStatus.groupBlockedCalendarIds
+            context.openNotificationSettings(channelId.takeUnless { appScreen })
         }
     }
 
@@ -126,6 +125,7 @@ internal fun NotificationsScreen(
         if (IS_SAMSUNG && !state.notificationCategoryHintDismissed) {
             NotificationCategoryHint(
                 onOpen = {
+                    viewModel.dismissNotificationCategoryHint()
                     scope.launch {
                         viewModel.syncReminderChannels()
                         context.openNotificationSettings()
@@ -207,9 +207,7 @@ internal fun NotificationsScreen(
             onClick = { showSnooze = true },
         )
 
-        // Per-calendar settings, folded behind one header: every switched-on
-        // calendar gets its notification switch and sound (#145, #272); the ones
-        // you can edit also keep, drop or replace the default reminders.
+        // Per-calendar notifications and reminder overrides (#145, #272).
         if (state.reminderCalendars.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
             GroupedRow(

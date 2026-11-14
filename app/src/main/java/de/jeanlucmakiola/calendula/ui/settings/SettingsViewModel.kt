@@ -50,6 +50,7 @@ import de.jeanlucmakiola.calendula.ui.theme.AppFontSettings
 import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -377,8 +378,11 @@ class SettingsViewModel @Inject constructor(
     /** What the system blocks of the reminders; re-read with [refreshChannelStatus] (#145). */
     val channelStatus: StateFlow<ReminderChannelStatus> = _channelStatus.asStateFlow()
 
+    private var channelStatusJob: Job? = null
+
     fun refreshChannelStatus(calendarIds: Collection<Long>) {
-        viewModelScope.launch {
+        channelStatusJob?.cancel()
+        channelStatusJob = viewModelScope.launch {
             onChannels { status(calendarIds) }?.let { _channelStatus.value = it }
         }
     }
