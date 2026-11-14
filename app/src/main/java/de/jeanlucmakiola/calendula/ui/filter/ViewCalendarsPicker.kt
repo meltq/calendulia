@@ -12,7 +12,6 @@ import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
 import de.jeanlucmakiola.calendula.ui.common.calendarsHiddenIn
-import de.jeanlucmakiola.calendula.ui.common.label
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.FullScreenPicker
 import de.jeanlucmakiola.floret.components.GroupedHint
@@ -32,13 +31,13 @@ fun ViewCalendarsPicker(
     onDismiss: () -> Unit,
 ) {
     FullScreenPicker(
-        title = stringResource(R.string.view_calendars_title, view.label()),
+        title = stringResource(R.string.view_calendars_action),
         onDismiss = onDismiss,
         predictiveBack = true,
     ) {
         when (state) {
-            FilterUiState.Loading -> Unit
-            is FilterUiState.Failure -> GroupedHint(stringResource(R.string.state_failure_provider), verticalPadding = 8.dp)
+            FilterUiState.Loading -> FilterLoading()
+            is FilterUiState.Failure -> FilterMessage(state.reason)
             is FilterUiState.Success -> {
                 // Seeded once, then ahead of the store: the picker is the only
                 // writer while open, so a quick second tap still flips.

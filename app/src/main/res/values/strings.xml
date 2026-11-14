@@ -873,7 +873,6 @@
         <item quantity="one">Calendars in this view, %d hidden</item>
         <item quantity="other">Calendars in this view, %d hidden</item>
     </plurals>
-    <string name="view_calendars_title">Hide in %1$s</string>
     <string name="view_calendars_hint">Checked calendars stay out of this view only. Reminders, search and widgets still include them.</string>
     <string name="view_calendars_hidden_everywhere">Hidden in every view from the menu</string>
     <string name="color_name_mauve">Mauve</string>

@@ -27,7 +27,7 @@ sealed interface FilterUiState {
          * hidden everywhere from the drawer, or not listed, don't count.
          */
         fun hiddenOnlyIn(view: CalendarView): Int {
-            val listed = groups.flatMap { group -> group.calendars.map { it.id } }
+            val listed = groups.flatMapTo(mutableSetOf()) { group -> group.calendars.map { it.id } }
             return hiddenViews.calendarsHiddenIn(view).count { it in listed && it !in hidden }
         }
     }

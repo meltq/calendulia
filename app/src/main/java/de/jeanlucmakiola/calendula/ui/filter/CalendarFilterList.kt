@@ -105,7 +105,7 @@ private fun FilterList(
 }
 
 @Composable
-private fun FilterLoading(modifier: Modifier = Modifier) {
+internal fun FilterLoading(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -126,7 +126,7 @@ private fun FilterLoading(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun FilterMessage(reason: FailureReason, modifier: Modifier = Modifier) {
+internal fun FilterMessage(reason: FailureReason, modifier: Modifier = Modifier) {
     val msg = when (reason) {
         FailureReason.NoCalendarsConfigured -> R.string.state_failure_no_calendars
         FailureReason.AllCalendarsHidden -> R.string.state_failure_all_hidden

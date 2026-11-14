@@ -355,6 +355,7 @@ fun CalendarHost(
     fun dismissCoveringOverlays(keepCreate: Boolean = false) {
         showSettings = false
         showSearch = false
+        showViewCalendars = false
         showCalendars = false
         showBackup = false
         detailKey = null
@@ -615,7 +616,9 @@ fun CalendarHost(
                     onOpenDrawer = { switchScope.launch { drawerState.open() } },
                     onOpenSearch = onOpenSearch,
                     showTodayButton = todayInToolbar,
-                    hiddenInView = (filterState as? FilterUiState.Success)?.hiddenOnlyIn(view) ?: 0,
+                    hiddenInView = remember(filterState, view) {
+                        (filterState as? FilterUiState.Success)?.hiddenOnlyIn(view) ?: 0
+                    },
                     onOpenViewCalendars = { showViewCalendars = true },
                 )
             },

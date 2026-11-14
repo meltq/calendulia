@@ -137,7 +137,8 @@ fun CalendarsScreen(
     val calendars by viewModel.calendars.collectAsStateWithLifecycle()
     val deleteLockedIds by viewModel.deleteLockedCalendarIds.collectAsStateWithLifecycle()
     val error by viewModel.error.collectAsStateWithLifecycle()
-    val hiddenViews by viewModel.hiddenViews.collectAsStateWithLifecycle()
+    val loadedHiddenViews by viewModel.hiddenViews.collectAsStateWithLifecycle()
+    val hiddenViews = loadedHiddenViews.orEmpty()
 
     // null = list; NEW_CALENDAR_ID = create; any other id = edit that calendar.
     // [editorSession] bumps on every open so the editor's field state resets for
@@ -147,7 +148,8 @@ fun CalendarsScreen(
     // A synced calendar has no editor; tapping it opens its hidden-views picker.
     var hidingId by rememberSaveable { mutableStateOf<Long?>(null) }
 
-    if (editorId != null) {
+    // The editor and the picker seed from the stored hidden views, so both wait for the first read.
+    if (editorId != null && loadedHiddenViews != null) {
         val editing = calendars.firstOrNull { it.id == editorId }
         CalendarEditor(
             sessionKey = editorSession,
@@ -194,7 +196,7 @@ fun CalendarsScreen(
             // Gone while the picker was up; an empty list is one still loading, not a deletion.
             if (calendar == null && calendars.isNotEmpty()) {
                 LaunchedEffect(id) { hidingId = null }
-            } else if (calendar != null) {
+            } else if (calendar != null && loadedHiddenViews != null) {
                 HiddenViewsPicker(
                     calendarName = calendar.displayName.orUnnamed(),
                     hidden = hiddenViews[id].orEmpty(),

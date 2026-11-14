@@ -106,13 +106,13 @@ class CalendarsViewModel @Inject constructor(
             initialValue = emptySet(),
         )
 
-    /** The views each calendar is hidden in (#270). */
-    val hiddenViews: StateFlow<Map<Long, Set<CalendarView>>> =
+    /** The views each calendar is hidden in (#270); null until first read. */
+    val hiddenViews: StateFlow<Map<Long, Set<CalendarView>>?> =
         settingsPrefs.perCalendarHiddenViews
             .catch { emit(emptyMap()) }
             .stateWhileSubscribed(
                 scope = viewModelScope,
-                initialValue = emptyMap(),
+                initialValue = null,
             )
 
     fun setHiddenIn(id: Long, view: CalendarView, hidden: Boolean) = write {
