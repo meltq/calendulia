@@ -37,8 +37,8 @@ data class IcsEvent(
     val availability: Availability = Availability.Busy,
     /** Source calendar name, emitted as `X-CALENDULA-CALENDAR` so a combined backup can fan back out. */
     val calendarName: String? = null,
-    /** The provider's raw `RDATE`; carried by a calendar copy, not written to a file. */
-    val recurrenceDates: String? = null,
+    /** Extra occurrences (`RDATE`), in the same shape as [exDates]. */
+    val recurrenceDates: List<String> = emptyList(),
     /** Carried by a calendar copy, not written to a file. */
     val accessLevel: AccessLevel = AccessLevel.Default,
     /** The event's own colour, null when it shows its calendar's; carried by a calendar copy, not written to a file. */
@@ -54,7 +54,7 @@ data class IcsEvent(
 
 /** Whether this is a series: by rule, or by listed dates alone. */
 val IcsEvent.recurs: Boolean
-    get() = !recurrenceRule.isNullOrBlank() || !recurrenceDates.isNullOrBlank()
+    get() = !recurrenceRule.isNullOrBlank() || recurrenceDates.isNotEmpty()
 
 /**
  * The UID to export for a provider event. A row that already carries a UID

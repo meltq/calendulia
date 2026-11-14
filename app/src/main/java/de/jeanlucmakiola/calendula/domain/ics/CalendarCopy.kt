@@ -44,7 +44,7 @@ fun IcsEvent.toParsedIcsEvent(): ParsedIcsEvent = ParsedIcsEvent(
     isAllDay = isAllDay,
     zoneId = zoneId,
     recurrenceRule = recurrenceRule?.takeIf { it.isNotBlank() }?.removePrefix("RRULE:"),
-    recurrenceDates = recurrenceDates?.takeIf { it.isNotBlank() },
+    recurrenceDates = recurrenceDates.filter { it.isNotBlank() }.distinct(),
     location = location,
     description = description,
     // The writer emits only lead times; a negative one would be an alarm after the start.

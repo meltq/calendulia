@@ -1079,22 +1079,27 @@ class CalendarRepositoryImplTest {
     }
 
     @Test
-    fun `a backup writes an RDATE-only series as the one-off a file can hold`(
+    fun `a backup keeps an RDATE-only series and its exceptions`(
         @TempDir tempDir: Path,
     ) = runTest {
         val start = Instant.parse("2026-01-05T09:00:00Z")
-        val event = IcsEvent("s", "S", start, Instant.parse("2026-01-05T10:00:00Z"), false, "UTC", recurrenceDates = "20260112T090000Z")
+        val other = Instant.parse("2026-01-12T09:00:00Z")
+        val event = IcsEvent(
+            "s", "S", start, Instant.parse("2026-01-05T10:00:00Z"), false, "UTC",
+            recurrenceDates = listOf("20260112T090000Z", "20260119T090000Z"),
+        )
         val fake = FakeCalendarDataSource().apply {
             calendarRowsResult = CalendarRows(
                 listOf(MasterRow(1, 1, null, event)),
-                listOf(OverrideRow(1, 1, null, start, event.copy(recurrenceDates = null))),
+                listOf(OverrideRow(1, 1, null, other, event.copy(recurrenceDates = emptyList(), status = EventStatus.Cancelled))),
             )
         }
 
         val exported = testRepository(fake, tempDir, Dispatchers.Unconfined).exportEvents(setOf(1L))
+        val restored = IcsParser().parse(IcsWriter().writeCalendar(exported, start)).events.single()
 
-        assertThat(exported.map { it.uid }).containsExactly("s")
-        assertThat(exported.single().recurrenceDates).isNull()
+        assertThat(restored.recurrenceDates).containsExactly("20260112T090000Z", "20260119T090000Z")
+        assertThat(restored.exDates).containsExactly("20260112T090000Z")
     }
 
     private fun parsedEvent(uid: String?, summary: String = "E") =

@@ -252,12 +252,7 @@ class CalendarRepositoryImpl @Inject constructor(
         }
 
     override suspend fun exportEvents(calendarIds: Set<Long>) = withContext(io) {
-        // A file can't carry RDATE: such a series is written as the one-off it reads as.
-        val rows = dataSource.calendarRows(calendarIds, allDayReminderTimeMinutes())
-        flattenOverrides(
-            rows.copy(series = rows.series.map { it.copy(event = it.event.copy(recurrenceDates = null)) }),
-            ::formatExdateStamp,
-        )
+        flattenOverrides(dataSource.calendarRows(calendarIds, allDayReminderTimeMinutes()), ::formatExdateStamp)
     }
 
     override suspend fun copyEvents(

@@ -515,16 +515,26 @@ import inserts every such event ahead of the series, whatever order the file
 lists them in.
 Exceptions whose series isn't among the rows are left out, a cancelled
 series' moved occurrences stay cancelled, and sync ids link only within their
-own calendar. A file can't carry `RDATE`, so a backup treats a series that
-repeats by listed dates alone as the one-off it writes it as. Backups made before this carry no exceptions
-and restore exactly as before.
+own calendar. Backups made before this carry no exceptions and restore exactly
+as before.
+
+**`RDATE` travels like `EXDATE` (#515).** A series can repeat by listed dates
+alone. The provider stores `RDATE` in the same `<zone>;<stamps>` form as
+`EXDATE`, so `exportRecurrenceDates` resolves it the same way to UTC stamps (or
+bare days for an all-day series); a `PERIOD` entry keeps its start. `IcsWriter`
+writes it as `RDATE:` / `RDATE;VALUE=DATE:`, anchors such a series to its zone
+like an RRULE series, and writes its `EXDATE` too; `IcsParser` reads `RDATE`
+through the same normalisation as `EXDATE`, so a foreign `TZID` or floating
+value lands on the right instant. Older backups wrote such a series as a single
+event and still restore as one.
 
 **Copying a calendar.** Backup & restore → Copy events (#325) runs the source's
 flattened rows straight into `importEvents`, so the UID dedup makes a re-run skip
 what landed before. It skips the `.ics` text: the writer pins a timed one-off to
-UTC and carries no colour, visibility or `RDATE`; the direct mapping keeps them.
+UTC and carries no colour or visibility; the direct mapping keeps them.
 Attendees and organizer are never read, and cancelled events and declined
-invitations are left out (a declined occurrence counts as deleted) (an insert can't be cancelled; it would arrive live). A re-run is idempotent per
+invitations are left out (an insert can't be cancelled; it would arrive live, and
+a declined occurrence counts as deleted). A re-run is idempotent per
 snapshot: a series already in the target keeps its overrides, so an occurrence
 changed since keeps its earlier copy rather than gaining a second one.
 

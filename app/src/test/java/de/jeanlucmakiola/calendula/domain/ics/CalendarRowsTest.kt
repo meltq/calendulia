@@ -120,11 +120,11 @@ class CalendarRowsTest {
     @Test
     fun `an RDATE-only series keeps its dates and takes its exceptions`() {
         val flat = flatten(
-            listOf(MasterRow(1, 1, null, event("s").copy(recurrenceDates = "20260112T090000Z"))),
+            listOf(MasterRow(1, 1, null, event("s").copy(recurrenceDates = listOf("20260112T090000Z")))),
             listOf(OverrideRow(1, 1, null, occurrence(1), event("s", status = EventStatus.Cancelled))),
         )
 
-        assertThat(flat.single().recurrenceDates).isEqualTo("20260112T090000Z")
+        assertThat(flat.single().recurrenceDates).containsExactly("20260112T090000Z")
         assertThat(flat.single().exDates).containsExactly("20260112T090000Z")
     }
 
@@ -228,5 +228,46 @@ class CalendarRowsTest {
         val plan = planCalendarCopy(rows, ::formatExdateStamp)
         assertThat(plan.map { it.uid }).containsExactly("s")
         assertThat(plan.single().exDates).containsExactly("20260112T090000Z")
+    }
+
+    @Test
+    fun `RDATE and its exclusions survive the file`() {
+        val timed = event("t").copy(
+            recurrenceDates = listOf("20260112T090000Z", "20260120T090000Z"),
+            exDates = listOf("20260112T090000Z"),
+        )
+        val day = Instant.parse("2026-01-05T00:00:00Z")
+        val allDay = event("a", allDay = true, at = day).copy(
+            end = Instant.parse("2026-01-06T00:00:00Z"),
+            recurrenceDates = listOf("20260110"),
+            exDates = listOf("20260110"),
+        )
+        val text = IcsWriter().writeCalendar(listOf(timed, allDay), start)
+
+        assertThat(text).contains("RDATE;VALUE=DATE:20260110")
+        assertThat(text).contains("DTSTART;TZID=Europe/Berlin:20260105T100000")
+        val (t, a) = IcsParser().parse(text).events
+        assertThat(t.recurrenceDates).containsExactly("20260112T090000Z", "20260120T090000Z")
+        assertThat(t.exDates).containsExactly("20260112T090000Z")
+        assertThat(a.recurrenceDates).containsExactly("20260110")
+        assertThat(a.exDates).containsExactly("20260110")
+    }
+
+    @Test
+    fun `a foreign RDATE is read in its own zone, a period by its start`() {
+        val text = """
+            BEGIN:VCALENDAR
+            BEGIN:VEVENT
+            UID:f
+            DTSTART;TZID=Europe/Berlin:20260105T100000
+            DTEND;TZID=Europe/Berlin:20260105T110000
+            RDATE;TZID=America/New_York:20260110T090000
+            RDATE;VALUE=PERIOD:20260111T090000Z/PT1H
+            END:VEVENT
+            END:VCALENDAR
+        """.trimIndent().replace("\n", "\r\n")
+
+        assertThat(IcsParser().parse(text).events.single().recurrenceDates)
+            .containsExactly("20260110T140000Z", "20260111T090000Z")
     }
 }

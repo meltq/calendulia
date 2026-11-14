@@ -294,4 +294,16 @@ class IcsExportMapperTest {
 
         assertThat(event.exDates).isEmpty()
     }
+
+    @Test
+    fun `a zoned RDATE list is written as UTC stamps, a period by its start`() {
+        assertThat(exportRecurrenceDates("Europe/Berlin;20260110T100000,20260111T100000/PT1H", isAllDay = false))
+            .containsExactly("20260110T090000Z", "20260111T090000Z").inOrder()
+    }
+
+    @Test
+    fun `an all-day RDATE keeps its days, junk is dropped`() {
+        assertThat(exportRecurrenceDates("20260110T000000Z,20260111,garbage", isAllDay = true))
+            .containsExactly("20260110", "20260111").inOrder()
+    }
 }

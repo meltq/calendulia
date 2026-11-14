@@ -851,11 +851,12 @@ internal fun buildImportedEventValues(
     put(CalendarContract.Events.TITLE, event.summary.trim())
     put(CalendarContract.Events.ALL_DAY, if (event.isAllDay) 1 else 0)
     put(CalendarContract.Events.DTSTART, startMillis)
-    if (event.recurrenceRule == null && event.recurrenceDates == null) {
+    if (event.recurrenceRule == null && event.recurrenceDates.isEmpty()) {
         put(CalendarContract.Events.DTEND, endMillis)
     } else {
         event.recurrenceRule?.let { put(CalendarContract.Events.RRULE, it) }
-        event.recurrenceDates?.let { put(CalendarContract.Events.RDATE, it) }
+        event.recurrenceDates.takeIf { it.isNotEmpty() }
+            ?.let { put(CalendarContract.Events.RDATE, it.joinToString(",")) }
         put(
             CalendarContract.Events.DURATION,
             importDuration(startMillis, endMillis, event.isAllDay),

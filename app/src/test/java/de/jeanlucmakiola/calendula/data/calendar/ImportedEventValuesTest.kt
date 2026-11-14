@@ -127,7 +127,7 @@ class ImportedEventValuesTest {
 
     @Test
     fun `a copied RDATE-only series recurs by its dates`() {
-        val v = values(allDay().copy(recurrenceDates = "20260820", exDates = listOf("20260820")))
+        val v = values(allDay().copy(recurrenceDates = listOf("20260820"), exDates = listOf("20260820")))
         assertThat(v).doesNotContainKey(CalendarContract.Events.DTEND)
         assertThat(v).doesNotContainKey(CalendarContract.Events.RRULE)
         assertThat(v[CalendarContract.Events.RDATE]).isEqualTo("20260820")

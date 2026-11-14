@@ -80,7 +80,7 @@ fun flattenOverrides(
         detached += override.calendarId to override.event.copy(
             uid = "$occurrence-${parent.event.uid}",
             recurrenceRule = null,
-            recurrenceDates = null,
+            recurrenceDates = emptyList(),
             exDates = emptyList(),
             overrideOf = parent.event.uid,
             overrideAt = override.originalInstance,

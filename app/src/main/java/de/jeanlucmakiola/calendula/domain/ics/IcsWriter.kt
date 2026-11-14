@@ -47,6 +47,7 @@ class IcsWriter(private val prodId: String = ICS_PROD_ID) {
         appendTimes(event)
         event.recurrenceRule?.takeIf { it.isNotBlank() }
             ?.let { add("RRULE:${it.removePrefix("RRULE:")}") }
+        appendRecurrenceDates(event)
         appendExDates(event)
         event.location?.takeIf { it.isNotBlank() }
             ?.let { add("LOCATION:${escapeText(it)}") }
@@ -71,7 +72,7 @@ class IcsWriter(private val prodId: String = ICS_PROD_ID) {
             add("DTEND;VALUE=DATE:${event.end.toLocalDateTime(TimeZone.UTC).date.toBasic()}")
         }
         // Recurring: anchor to wall-clock in the event's own zone.
-        event.recurrenceRule?.isNotBlank() == true -> {
+        event.recurs -> {
             val zone = zoneOrNull(event.zoneId)
             if (zone != null) {
                 add("DTSTART;TZID=${event.zoneId}:${event.start.toLocalDateTime(zone).toBasic()}")
@@ -94,8 +95,16 @@ class IcsWriter(private val prodId: String = ICS_PROD_ID) {
      * it the bare day codes read as an invalid DATE-TIME. Only written for a
      * recurring event: an exclusion names an occurrence, and a one-off has none.
      */
+    /** Extra occurrences: the same UTC stamps / `VALUE=DATE` days as [appendExDates]. */
+    private fun MutableList<String>.appendRecurrenceDates(event: IcsEvent) {
+        val stamps = event.recurrenceDates.filter { it.isNotBlank() }.distinct()
+        if (stamps.isEmpty()) return
+        val prefix = if (event.isAllDay) "RDATE;VALUE=DATE:" else "RDATE:"
+        add(prefix + stamps.joinToString(","))
+    }
+
     private fun MutableList<String>.appendExDates(event: IcsEvent) {
-        if (event.recurrenceRule.isNullOrBlank()) return
+        if (!event.recurs) return
         val stamps = event.exDates.filter { it.isNotBlank() }.distinct()
         if (stamps.isEmpty()) return
         val prefix = if (event.isAllDay) "EXDATE;VALUE=DATE:" else "EXDATE:"

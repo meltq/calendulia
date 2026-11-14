@@ -54,8 +54,8 @@ data class ParsedIcsEvent(
     val overrideOf: String? = null,
     /** The occurrence of [overrideOf] this event replaces (`X-CALENDULA-OVERRIDE-AT`). */
     val overrideAt: Instant? = null,
-    /** The provider's raw `RDATE`, only set by a calendar copy. */
-    val recurrenceDates: String? = null,
+    /** Extra occurrences (`RDATE`), in the same shape as [exDates]. */
+    val recurrenceDates: List<String> = emptyList(),
     val accessLevel: AccessLevel = AccessLevel.Default,
 )
 
@@ -224,6 +224,7 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
         var calendarColor: Int? = null
         val reminders = mutableListOf<Int>()
         val exDateLines = mutableListOf<IcsContentLine>()
+        val rDateLines = mutableListOf<IcsContentLine>()
         var skipAsOverride = false
         var overrideOf: String? = null
         var overrideAt: Instant? = null
@@ -247,6 +248,7 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
                 "DURATION" -> duration = line.value.trim()
                 "RRULE" -> rrule = line.value.trim().ifEmpty { null }
                 "EXDATE" -> exDateLines.add(line)
+                "RDATE" -> rDateLines.add(line)
                 "LOCATION" -> location = unescapeText(line.value).ifEmpty { null }
                 "DESCRIPTION" -> description = unescapeText(line.value).ifEmpty { null }
                 "STATUS" -> status = mapIcsStatus(line.value)
@@ -295,6 +297,7 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
         val recurrence = sanitizeRrule(rrule)
         if (recurrence.repaired) warnings.add(IcsParseWarning.RecurrenceRuleRepaired)
         val end = resolveEnd(start, dtEnd, duration)
+        val recurrenceDates = normalizeExDates(rDateLines, start)
         return ParsedIcsEvent(
             uid = uid,
             summary = summary,
@@ -310,11 +313,12 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
             availability = availability,
             calendarName = calendarName ?: category,
             color = eventColor ?: calendarColor,
-            exDates = if (recurrence.rule == null) {
+            exDates = if (recurrence.rule == null && recurrenceDates.isEmpty()) {
                 emptyList()
             } else {
                 normalizeExDates(exDateLines, start)
             },
+            recurrenceDates = recurrenceDates,
             isTask = isTask,
             overrideOf = overrideOf,
             overrideAt = overrideAt,
@@ -352,13 +356,16 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
      * still means the day it spells out; resolving it to an instant first and
      * reading *that* back in UTC would roll a midnight east of UTC onto the day
      * before and exclude an occurrence that doesn't exist.
+     *
+     * `RDATE` shares the value form and is read here too.
      */
     private fun normalizeExDates(lines: List<IcsContentLine>, start: IcsDateTime): List<String> {
         if (lines.isEmpty()) return emptyList()
         val startZone = zoneOrNull(start.zoneId) ?: deviceZone
         val startTime = start.instant.toLocalDateTime(startZone).time
         return lines
-            .flatMap { line -> line.value.split(',').map { line to it.trim() } }
+            // An RDATE PERIOD (`start/end`) counts by its start.
+            .flatMap { line -> line.value.split(',').map { line to it.trim().substringBefore('/') } }
             .mapNotNull { (line, token) ->
                 when {
                     token.isEmpty() -> null
