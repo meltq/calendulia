@@ -271,13 +271,7 @@ class CalendarsViewModel @Inject constructor(
     }
 
     private suspend fun reschedule() {
-        BackupScheduler.apply(
-            context = context,
-            enabled = settingsPrefs.autoBackupEnabled.first(),
-            intervalMinutes = settingsPrefs.autoBackupIntervalMinutes.first(),
-            hasFolder = settingsPrefs.autoBackupFolderUri.first() != null,
-            onChange = settingsPrefs.autoBackupOnChange.first(),
-        )
+        BackupScheduler.reconcile(context, settingsPrefs)
     }
 
     private inline fun write(crossinline block: suspend () -> Unit) {

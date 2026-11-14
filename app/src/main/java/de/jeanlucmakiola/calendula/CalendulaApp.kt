@@ -110,13 +110,7 @@ class CalendulaApp : Application() {
         val deps = EntryPointAccessors.fromApplication(this, BackupWorker.Deps::class.java)
         CoroutineScope(SupervisorJob() + Dispatchers.Default).launch {
             val prefs = deps.settingsPrefs()
-            BackupScheduler.apply(
-                context = this@CalendulaApp,
-                enabled = prefs.autoBackupEnabled.first(),
-                intervalMinutes = prefs.autoBackupIntervalMinutes.first(),
-                hasFolder = prefs.autoBackupFolderUri.first() != null,
-                onChange = prefs.autoBackupOnChange.first(),
-            )
+            BackupScheduler.reconcile(this@CalendulaApp, prefs)
         }
     }
 

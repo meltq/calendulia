@@ -2,8 +2,11 @@ package de.jeanlucmakiola.calendula.domain.backup
 
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
+import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
+import kotlin.time.Instant
 
 class BackupPlanTest {
 
@@ -305,16 +308,38 @@ class BackupPlanTest {
     }
 
     @Test
+    fun `the writer's output hashes the same at any stamp`() {
+        val event = IcsEvent(
+            uid = "u1", summary = "A", start = Instant.fromEpochSeconds(0), end = Instant.fromEpochSeconds(3600),
+            isAllDay = false, zoneId = "UTC",
+        )
+        val early = IcsWriter().writeCalendar(listOf(event), Instant.fromEpochSeconds(0), "Work")
+        val late = IcsWriter().writeCalendar(listOf(event), Instant.fromEpochSeconds(1_800_000_000), "Work")
+        assertThat(early).isNotEqualTo(late)
+        assertThat(backupFingerprint(late)).isEqualTo(backupFingerprint(early))
+    }
+
+    @Test
     fun `a change run refreshes only a changed, missing or moving stable copy`() {
         val target = backupTargets(listOf(cal(1L, "Work")), combined = false).single()
         val ledger = mapOf(latestLedgerKey("1") to listOf("Work.ics"))
         val plan = planBackupFiles(listOf(target), ledger, setOf("Work.ics"), at, keep = 3).single()
         val stored = mapOf("1" to "h1")
-        assertThat(plan.needsRefresh("h1", stored, setOf("Work.ics"))).isFalse()
-        assertThat(plan.needsRefresh("h2", stored, setOf("Work.ics"))).isTrue()
-        assertThat(plan.needsRefresh("h1", emptyMap(), setOf("Work.ics"))).isTrue()
-        assertThat(plan.needsRefresh("h1", stored, emptySet())).isTrue()
-        assertThat(plan.copy(staleLatest = listOf("Job.ics")).needsRefresh("h1", stored, setOf("Work.ics"))).isTrue()
+        val listed = setOf("Work.ics")
+        assertThat(plan.needsRefresh("h1", stored, listed, complete = true)).isFalse()
+        assertThat(plan.needsRefresh("h2", stored, listed, complete = true)).isTrue()
+        assertThat(plan.needsRefresh("h1", emptyMap(), listed, complete = true)).isTrue()
+        assertThat(plan.needsRefresh("h1", stored, emptySet(), complete = true)).isTrue()
+        assertThat(plan.copy(staleLatest = listOf("Job.ics")).needsRefresh("h1", stored, listed, complete = true)).isTrue()
+    }
+
+    @Test
+    fun `a change run leaves a copy a loading listing doesn't show to the schedule`() {
+        val target = backupTargets(listOf(cal(1L, "Work")), combined = false).single()
+        val ledger = mapOf(latestLedgerKey("1") to listOf("Work.ics"))
+        val plan = planBackupFiles(listOf(target), ledger, setOf("Work.ics"), at, keep = 3).single()
+        assertThat(plan.needsRefresh("h2", mapOf("1" to "h1"), emptySet(), complete = false)).isFalse()
+        assertThat(plan.needsRefresh("h2", mapOf("1" to "h1"), setOf("Work.ics"), complete = false)).isTrue()
     }
 
     @Test
@@ -322,6 +347,6 @@ class BackupPlanTest {
         val target = backupTargets(listOf(cal(1L, "Work")), combined = false).single()
         val plan = planBackupFiles(listOf(target), emptyMap(), setOf("Work.ics"), at, keep = 3).single()
         assertThat(plan.latestName).isNull()
-        assertThat(plan.needsRefresh("h1", emptyMap(), setOf("Work.ics"))).isFalse()
+        assertThat(plan.needsRefresh("h1", emptyMap(), setOf("Work.ics"), complete = true)).isFalse()
     }
 }

@@ -379,24 +379,22 @@ class SettingsPrefs @Inject constructor(
 
     suspend fun setAutoBackupOnChange(enabled: Boolean) = prefs.set(SettingsKeys.autoBackupOnChange, enabled)
 
-    /** Like [updateAutoBackupLedger]: dropped once the folder is no longer [folder]. */
-    suspend fun updateAutoBackupFingerprints(folder: String, transform: (BackupFingerprints) -> BackupFingerprints) {
-        prefs.edit {
-            if (it[SettingsKeys.autoBackupFolderUri] == folder) {
-                it[SettingsKeys.autoBackupFingerprints] = transform(it[SettingsKeys.autoBackupFingerprints])
-            }
-        }
-    }
 
     /**
      * Atomic, so a run's ledger writes never undo one made meanwhile (pinning
      * the layout). Dropped when the folder is no longer [folder]: a run still
      * finishing must not carry the old folder's names into the new one's ledger.
+     * [fingerprints] updates the series' hashes (#516) in the same edit.
      */
-    suspend fun updateAutoBackupLedger(folder: String, transform: (BackupLedger) -> BackupLedger) {
+    suspend fun updateAutoBackupLedger(
+        folder: String,
+        fingerprints: (BackupFingerprints) -> BackupFingerprints = { it },
+        transform: (BackupLedger) -> BackupLedger,
+    ) {
         prefs.edit {
             if (it[SettingsKeys.autoBackupFolderUri] == folder) {
                 it[SettingsKeys.autoBackupLedger] = transform(it[SettingsKeys.autoBackupLedger])
+                it[SettingsKeys.autoBackupFingerprints] = fingerprints(it[SettingsKeys.autoBackupFingerprints])
             }
         }
     }

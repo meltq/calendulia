@@ -325,14 +325,17 @@ fun parseBackupFingerprints(stored: String?): BackupFingerprints =
 /**
  * Whether a run started by a change (#516) rewrites this series' stable copy:
  * only when its content moved on from what the copy holds, or the copy is
- * missing or mid-rename. Never when the name belongs to a file of the user's.
+ * missing or mid-rename. Never when the name belongs to a file of the user's,
+ * nor when a [complete]-less listing doesn't show the copy: writing then would
+ * add a duplicate beside it, so that is left to the scheduled run.
  */
 fun BackupFilePlan.needsRefresh(
     fingerprint: String,
     stored: BackupFingerprints,
-    existing: Set<String>,
+    listed: Set<String>,
+    complete: Boolean,
 ): Boolean {
     val latest = latestName ?: return false
-    return stored[target.key] != fingerprint || latest !in existing ||
-        staleLatest.isNotEmpty() || handOff.isNotEmpty()
+    if (latest !in listed) return complete
+    return stored[target.key] != fingerprint || staleLatest.isNotEmpty() || handOff.isNotEmpty()
 }
