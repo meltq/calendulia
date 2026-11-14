@@ -1024,9 +1024,8 @@ class AndroidCalendarDataSource @Inject constructor(
             updateEventRow(eventId, values.toContentValues(), "update event id=$eventId")
         }
         // Untouched reminder sets are left alone so unrelated edits can't
-        // disturb provider rows the form never knew about. The diff is on the
-        // form's semantic minutes; reconcile works in encoded provider minutes.
-        if (updated.reminders.toSet() != original.reminders.toSet()) {
+        // disturb provider rows the form never knew about.
+        if (remindersNeedRewrite(original, updated)) {
             reconcileReminders(eventId, encodedReminders(updated, allDayReminderTimeMinutes))
         }
         // Same untouched-set guard for guests: only reconcile when the form's
@@ -1785,3 +1784,11 @@ class AndroidCalendarDataSource @Inject constructor(
         const val MAX_SEARCH_TOKENS = 8
     }
 }
+
+/**
+ * Whether an update must rewrite the reminder rows. The diff is on the form's
+ * semantic minutes, but the provider stores encoded minutes, so switching all-day
+ * on or off re-encodes an otherwise unchanged set.
+ */
+internal fun remindersNeedRewrite(original: EventForm, updated: EventForm): Boolean =
+    updated.reminders.toSet() != original.reminders.toSet() || updated.isAllDay != original.isAllDay

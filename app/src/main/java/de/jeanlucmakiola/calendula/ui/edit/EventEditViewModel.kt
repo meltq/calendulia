@@ -538,9 +538,10 @@ class EventEditViewModel @Inject constructor(
             if (opened != session) return@launch
             val current = _form.value ?: return@launch
             if (_editTarget.value != null) return@launch
-            if (default.isEmpty() || default == current.firingReminders()) return@launch
+            val firing = current.firingReminders()
+            if (default.isEmpty() || default == firing) return@launch
             _importReminderPrompt.value = ImportReminderPrompt(
-                currentReminderCount = current.firingReminders().size,
+                currentReminderCount = firing.size,
                 defaultReminders = default,
             )
         }
@@ -967,7 +968,7 @@ class EventEditViewModel @Inject constructor(
 /**
  * Reminders as they fire: an all-day event fires on whole days, so a sub-day lead
  * time kept from the timed form reads as its day. The form keeps the raw values,
- * so switching all-day off again restores them.
+ * so switching all-day off again restores any the user did not remove.
  */
 internal fun EventForm.firingReminders(): List<Int> =
     if (isAllDay) wholeDayLeadTimes(reminders) else reminders

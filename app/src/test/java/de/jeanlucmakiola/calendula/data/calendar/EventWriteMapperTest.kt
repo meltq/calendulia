@@ -34,6 +34,14 @@ class EventWriteMapperTest {
     )
 
     @Test
+    fun `reminders are rewritten when they change or the all-day flag flips`() {
+        val timed = form().copy(reminders = listOf(10))
+        assertThat(remindersNeedRewrite(timed, timed.copy(title = "Renamed"))).isFalse()
+        assertThat(remindersNeedRewrite(timed, timed.copy(reminders = listOf(10, 30)))).isTrue()
+        assertThat(remindersNeedRewrite(timed, timed.copy(isAllDay = true))).isTrue()
+    }
+
+    @Test
     fun `timed event resolves wall clock in the given zone`() {
         val times = form().toWriteTimes(berlin)
         // 2026-06-11 is CEST (UTC+2): 10:00 local == 08:00Z.
