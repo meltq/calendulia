@@ -9,6 +9,7 @@ import android.content.Context
 import android.provider.CalendarContract
 import android.util.Log
 import dagger.hilt.android.EntryPointAccessors
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -31,14 +32,18 @@ class BackupChangeJob : JobService() {
 
     override fun onStartJob(params: JobParameters): Boolean {
         scope.launch {
-            try {
+            // Retried when it failed early, so the watch isn't lost; once re-armed, the retry is moot.
+            val failed = try {
                 val deps = EntryPointAccessors.fromApplication(applicationContext, BackupWorker.Deps::class.java)
                 BackupScheduler.changed(applicationContext, deps.settingsPrefs())
+                false
+            } catch (e: CancellationException) {
+                throw e
             } catch (e: Exception) {
                 Log.w(TAG, "Queueing a backup after a change failed", e)
-            } finally {
-                jobFinished(params, false)
+                true
             }
+            jobFinished(params, failed)
         }
         return true
     }
