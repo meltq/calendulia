@@ -1,11 +1,13 @@
 package de.jeanlucmakiola.calendula.ui.settings
 
 import android.Manifest
+import android.content.ActivityNotFoundException
 import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.os.PowerManager
 import android.provider.Settings
+import android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
@@ -29,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,7 +54,9 @@ import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.calendula.ui.common.durationLabel
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.android.hasPermission
+import de.jeanlucmakiola.floret.android.notificationSoundPickerIntent
 import de.jeanlucmakiola.floret.android.openNotificationSettings
+import de.jeanlucmakiola.floret.android.pickedSound
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.ExpandIcon
 import de.jeanlucmakiola.floret.components.GroupedRow
@@ -108,8 +113,35 @@ internal fun NotificationsScreen(
         viewModel.refreshChannelStatus(calendarIds)
         onPauseOrDispose { }
     }
-    val openCalendarSound: (Long) -> Unit = { calendarId ->
+    val openCalendarSettings: (Long) -> Unit = { calendarId ->
         scope.launch { context.openNotificationSettings(viewModel.soundSettingsChannel(calendarId)) }
+    }
+    val openAppSettings: () -> Unit = {
+        scope.launch {
+            viewModel.syncReminderChannels()
+            context.openNotificationSettings()
+        }
+    }
+    val sounds by viewModel.channelSounds.collectAsStateWithLifecycle()
+    // ALL_CALENDARS, a calendar id, or null when no pick is pending.
+    var soundTarget by rememberSaveable { mutableStateOf<Long?>(null) }
+    val soundPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val target = soundTarget
+        soundTarget = null
+        val picked = pickedSound(result.resultCode, result.data) ?: return@rememberLauncherForActivityResult
+        val ids = if (target == ALL_CALENDARS) calendarIds else listOfNotNull(target)
+        viewModel.setReminderSound(ids, picked.uri)
+    }
+    val pickSoundTitle = stringResource(R.string.settings_notification_sound)
+    val pickSound: (Long) -> Unit = { target ->
+        val current = if (target == ALL_CALENDARS) sharedSound(sounds, calendarIds)?.uri else sounds[target]?.uri
+        soundTarget = target
+        try {
+            soundPicker.launch(notificationSoundPickerIntent(current ?: DEFAULT_NOTIFICATION_URI, pickSoundTitle))
+        } catch (e: ActivityNotFoundException) {
+            soundTarget = null
+            if (target == ALL_CALENDARS) openAppSettings() else openCalendarSettings(target)
+        }
     }
 
     CollapsingScaffold(
@@ -122,10 +154,7 @@ internal fun NotificationsScreen(
             NotificationCategoryHint(
                 onOpen = {
                     viewModel.dismissNotificationCategoryHint()
-                    scope.launch {
-                        viewModel.syncReminderChannels()
-                        context.openNotificationSettings()
-                    }
+                    openAppSettings()
                 },
                 onDismiss = viewModel::dismissNotificationCategoryHint,
             )
@@ -138,8 +167,16 @@ internal fun NotificationsScreen(
             summary = stringResource(R.string.settings_reminders_hint),
             position = Position.Top,
         )
+        if (calendarIds.isNotEmpty()) {
+            GroupedRow(
+                title = stringResource(R.string.settings_notification_sound),
+                summary = globalSoundLabel(sounds, calendarIds),
+                position = Position.Middle,
+                onClick = { pickSound(ALL_CALENDARS) },
+            )
+        }
         GroupedRow(
-            title = stringResource(R.string.settings_notification_sound),
+            title = stringResource(R.string.settings_notification_more),
             summary = if (channelStatus.appBlocked) {
                 stringResource(R.string.settings_notifications_blocked_hint)
             } else {
@@ -147,12 +184,7 @@ internal fun NotificationsScreen(
             },
             position = Position.Middle,
             trailing = { ExternalLinkIcon() },
-            onClick = {
-                scope.launch {
-                    viewModel.syncReminderChannels()
-                    context.openNotificationSettings()
-                }
-            },
+            onClick = openAppSettings,
         )
         GroupedRow(
             title = stringResource(R.string.settings_default_reminder),
@@ -252,8 +284,10 @@ internal fun NotificationsScreen(
                                 state = state,
                                 notifying = notifying,
                                 blocked = blocked,
+                                soundLabel = soundLabel(sounds[calendar.id]),
                                 onSetNotifying = { viewModel.setCalendarRemindersEnabled(calendar.id, it) },
-                                onOpenSound = { openCalendarSound(calendar.id) },
+                                onPickSound = { pickSound(calendar.id) },
+                                onOpenSettings = { openCalendarSettings(calendar.id) },
                                 onOpenSpecialDates = onOpenSpecialDates,
                                 onEditOverride = { overrideDialog = it },
                             )
@@ -354,8 +388,10 @@ private fun CalendarNotificationRows(
     state: SettingsUiState,
     notifying: Boolean,
     blocked: Boolean,
+    soundLabel: String,
     onSetNotifying: (Boolean) -> Unit,
-    onOpenSound: () -> Unit,
+    onPickSound: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenSpecialDates: () -> Unit,
     onEditOverride: (OverrideTarget) -> Unit,
 ) {
@@ -371,6 +407,12 @@ private fun CalendarNotificationRows(
         )
         GroupedRow(
             title = stringResource(R.string.settings_notification_sound),
+            summary = soundLabel,
+            position = Position.Middle,
+            onClick = onPickSound,
+        )
+        GroupedRow(
+            title = stringResource(R.string.settings_notification_more),
             summary = if (blocked) {
                 stringResource(R.string.settings_notifications_blocked_hint)
             } else {
@@ -378,7 +420,7 @@ private fun CalendarNotificationRows(
             },
             position = if (managed || takesOverrides) Position.Middle else Position.Bottom,
             trailing = { ExternalLinkIcon() },
-            onClick = onOpenSound,
+            onClick = onOpenSettings,
         )
         if (managed) {
             GroupedRow(
@@ -411,6 +453,26 @@ private fun CalendarNotificationRows(
             )
         }
     }
+}
+
+/** [soundTarget] meaning every calendar at once. */
+private const val ALL_CALENDARS = Long.MIN_VALUE
+
+/** The sound every one of [calendarIds] shares, or null when they differ or one has no channel yet. */
+private fun sharedSound(sounds: Map<Long, ReminderSound>, calendarIds: List<Long>): ReminderSound? =
+    calendarIds.map { sounds[it] }.distinctBy { it?.uri }.singleOrNull()
+
+@Composable
+private fun soundLabel(sound: ReminderSound?): String = when {
+    sound == null -> stringResource(R.string.settings_notification_sound_default)
+    sound.uri == null -> stringResource(R.string.settings_notification_sound_silent)
+    else -> sound.title ?: stringResource(R.string.settings_notification_sound_default)
+}
+
+@Composable
+private fun globalSoundLabel(sounds: Map<Long, ReminderSound>, calendarIds: List<Long>): String {
+    val shared = calendarIds.map { sounds[it] }.distinctBy { it?.uri }
+    return if (shared.size == 1) soundLabel(shared.single()) else stringResource(R.string.settings_notification_sound_mixed)
 }
 
 /** Samsung's One UI can start a new notification category switched off (#145). */

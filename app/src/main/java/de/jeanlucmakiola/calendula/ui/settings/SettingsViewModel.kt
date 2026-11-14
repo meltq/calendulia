@@ -17,6 +17,7 @@ import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesScheduler
 import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesSyncEngine
 import de.jeanlucmakiola.calendula.data.contacts.resolveTitleTemplate
 import de.jeanlucmakiola.calendula.data.fonts.CustomFontStore
+import de.jeanlucmakiola.floret.android.ringtoneTitle
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
@@ -388,10 +389,37 @@ class SettingsViewModel @Inject constructor(
 
     private var channelStatusJob: Job? = null
 
+    private val _channelSounds = MutableStateFlow<Map<Long, ReminderSound>>(emptyMap())
+
+    /** Each calendar's reminder sound (#518); a calendar without a channel yet is absent. */
+    val channelSounds: StateFlow<Map<Long, ReminderSound>> = _channelSounds.asStateFlow()
+
     fun refreshChannelStatus(calendarIds: Collection<Long>) {
         channelStatusJob?.cancel()
         channelStatusJob = viewModelScope.launch {
-            onChannels { status(calendarIds) }?.let { _channelStatus.value = it }
+            val (status, sounds) = onChannels { status(calendarIds) to sounds(calendarIds) } ?: return@launch
+            _channelStatus.value = status
+            _channelSounds.value = withContext(io) {
+                sounds.mapValues { (_, uri) -> ReminderSound(uri, uri?.let { appContext.ringtoneTitle(it) }) }
+            }
+        }
+    }
+
+    /** Give [calendarIds]' reminders [sound] (null = silent), each on a fresh channel (#518). */
+    fun setReminderSound(calendarIds: Collection<Long>, sound: Uri?) {
+        viewModelScope.launch {
+            withContext(io) {
+                calendarIds.forEach { id ->
+                    try {
+                        reminderChannels.setSound(id, sound)
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (e: Exception) {
+                        Log.w("SettingsViewModel", "Could not set the reminder sound of calendar $id", e)
+                    }
+                }
+            }
+            refreshChannelStatus(state.value.reminderCalendars.map { it.id })
         }
     }
 

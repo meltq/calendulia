@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.settings
 
+import android.net.Uri
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -136,3 +137,6 @@ data class SpecialDatesUiState(
     /** Epoch millis of the last sync, or 0 if it has never run. */
     val lastRun: Long = 0L,
 )
+
+/** A reminder channel's sound: null [uri] is silent; [title] is null when it can't be resolved. */
+data class ReminderSound(val uri: Uri?, val title: String?)

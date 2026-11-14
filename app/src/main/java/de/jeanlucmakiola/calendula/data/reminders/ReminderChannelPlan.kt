@@ -10,8 +10,25 @@ private const val CHANNEL_PREFIX = "reminders.calendar."
 private const val GROUP_PREFIX = "reminders.account."
 private const val LOCAL_GROUP_ID = GROUP_PREFIX + "local"
 
-/** The notification channel [calendarId]'s reminders post on. */
-fun reminderChannelId(calendarId: Long): String = CHANNEL_PREFIX + calendarId
+private const val VERSION_SEPARATOR = ".v"
+
+/**
+ * The notification channel [calendarId]'s reminders post on. A sound picked in
+ * the app moves it to a new [version] (#518), since a channel's sound is fixed
+ * once created; version 0 is the unversioned id #145 introduced.
+ */
+fun reminderChannelId(calendarId: Long, version: Int = 0): String =
+    if (version == 0) "$CHANNEL_PREFIX$calendarId" else "$CHANNEL_PREFIX$calendarId$VERSION_SEPARATOR$version"
+
+/** The calendar and version a reminder channel id names, or null for any other id. */
+fun parseReminderChannelId(channelId: String): Pair<Long, Int>? {
+    if (!isReminderChannelId(channelId)) return null
+    val rest = channelId.removePrefix(CHANNEL_PREFIX)
+    val calendar = rest.substringBefore(VERSION_SEPARATOR).toLongOrNull() ?: return null
+    if (VERSION_SEPARATOR !in rest) return calendar to 0
+    val version = rest.substringAfter(VERSION_SEPARATOR).toIntOrNull()?.takeIf { it > 0 } ?: return null
+    return calendar to version
+}
 
 /** Whether [channelId] is one of the per-calendar reminder channels. */
 fun isReminderChannelId(channelId: String): Boolean = channelId.startsWith(CHANNEL_PREFIX)
@@ -43,6 +60,12 @@ data class ReminderChannelSpec(
      * fires, so its channel only appears once something posts on it.
      */
     val upFront: Boolean = true,
+    /**
+     * An older version of this calendar's channel to copy behaviour from when
+     * this one is missing, so a version bump that never got written loses no
+     * settings.
+     */
+    val templateId: String? = null,
 )
 
 /** What a channel already looks like in the system, as far as the plan compares it. */
@@ -60,6 +83,8 @@ data class ReminderChannelPlan(
     val groupsInUse: List<ReminderChannelGroupSpec>,
     val staleChannelIds: List<String>,
     val staleGroupIds: List<String>,
+    /** Stale channels kept for now, because a notification on them is still showing. */
+    val keptChannelIds: List<String> = emptyList(),
 )
 
 /**
@@ -75,6 +100,8 @@ fun planReminderChannels(
     existingGroupIds: Collection<String>,
     unnamed: String,
     description: String,
+    versions: Map<Long, Int> = emptyMap(),
+    showingChannelIds: Set<String> = emptySet(),
 ): ReminderChannelPlan {
     val (local, synced) = calendars.partition { it.isLocal }
     val groups = buildList {
@@ -93,16 +120,24 @@ fun planReminderChannels(
             )
         }
     }
+    val existingById = existing.associateBy { it.id }
+    val versionsByCalendar = existing.mapNotNull { parseReminderChannelId(it.id) }.groupBy({ it.first }, { it.second })
     val channels = calendars.map { calendar ->
+        val version = versions[calendar.id] ?: 0
+        val id = reminderChannelId(calendar.id, version)
         ReminderChannelSpec(
-            id = reminderChannelId(calendar.id),
+            id = id,
             calendarId = calendar.id,
             name = calendar.displayName.ifBlank { unnamed },
             groupId = if (calendar.isLocal) LOCAL_GROUP_ID else accountGroupId(calendar.accountType, calendar.accountName),
             upFront = calendar.isLocal || calendar.syncsEvents,
+            templateId = versionsByCalendar[calendar.id]
+                ?.filter { it != version }
+                ?.maxOrNull()
+                ?.let { reminderChannelId(calendar.id, it) }
+                ?.takeIf { id !in existingById },
         )
     }
-    val existingById = existing.associateBy { it.id }
     val wantedChannels = channels.mapTo(HashSet()) { it.id }
     val wantedGroups = groups.mapTo(HashSet()) { it.id }
     val toWrite = channels.filter { spec ->
@@ -117,13 +152,18 @@ fun planReminderChannels(
     val usedGroupIds = channels
         .filter { it.id in existingById || it in toWrite }
         .mapNotNullTo(HashSet()) { it.groupId }
+    val (kept, stale) = existingById.keys
+        .filter { isReminderChannelId(it) && it !in wantedChannels }
+        .partition { it in showingChannelIds }
+    val keptGroups = kept.mapNotNullTo(HashSet()) { existingById.getValue(it).groupId }
     return ReminderChannelPlan(
         groups = groups,
         channels = channels,
         channelsToWrite = toWrite,
         groupsInUse = groups.filter { it.id in usedGroupIds },
-        staleChannelIds = existingById.keys.filter { isReminderChannelId(it) && it !in wantedChannels },
-        staleGroupIds = existingGroupIds.filter { isReminderGroupId(it) && it !in wantedGroups },
+        staleChannelIds = stale,
+        staleGroupIds = existingGroupIds.filter { isReminderGroupId(it) && it !in wantedGroups && it !in keptGroups },
+        keptChannelIds = kept,
     )
 }
 
@@ -150,12 +190,14 @@ fun reminderChannelStatus(
     appEnabled: Boolean,
     channels: Map<String, ReminderChannelState>,
     blockedGroupIds: Set<String>,
+    versions: Map<Long, Int> = emptyMap(),
 ): ReminderChannelStatus {
-    val groupBlocked = calendarIds.filterTo(HashSet()) { channels[reminderChannelId(it)]?.groupId in blockedGroupIds }
+    fun channel(calendarId: Long) = channels[reminderChannelId(calendarId, versions[calendarId] ?: 0)]
+    val groupBlocked = calendarIds.filterTo(HashSet()) { channel(it)?.groupId in blockedGroupIds }
     val blocked = if (!appEnabled) {
         calendarIds.toSet()
     } else {
-        calendarIds.filterTo(HashSet()) { channels[reminderChannelId(it)]?.blocked == true } + groupBlocked
+        calendarIds.filterTo(HashSet()) { channel(it)?.blocked == true } + groupBlocked
     }
     return ReminderChannelStatus(appBlocked = !appEnabled, blockedCalendarIds = blocked, groupBlockedCalendarIds = groupBlocked)
 }

@@ -4,12 +4,17 @@ import android.app.NotificationChannel
 import android.app.NotificationChannelGroup
 import android.app.NotificationManager
 import android.content.Context
+import android.media.AudioAttributes
+import android.net.Uri
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.ui.common.sourceAppLabel
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.runBlocking
 import java.util.Locale
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -21,11 +26,14 @@ import javax.inject.Singleton
  *
  * A channel the user has touched keeps their settings; [sync] only creates the
  * missing ones, renames changed ones, and deletes those whose calendar is gone.
+ * A sound picked in the app ([setSound], #518) recreates the channel under the
+ * calendar's next version; the old one goes once nothing shows on it.
  */
 @Singleton
 class ReminderChannels @Inject constructor(
     @ApplicationContext private val context: Context,
     private val calendarDataSource: CalendarDataSource,
+    private val settingsPrefs: SettingsPrefs,
 ) {
     private val manager: NotificationManager
         get() = context.getSystemService(NotificationManager::class.java)
@@ -46,9 +54,10 @@ class ReminderChannels @Inject constructor(
         val manager = manager
         val existing = manager.notificationChannels
         val existingIds = existing.mapTo(HashSet()) { it.id }
-        if (syncKey(calendars, existingIds) == lastSync && LEGACY_REMINDER_CHANNEL_ID !in existingIds) return
+        val versions = versions()
+        if (syncKey(calendars, existingIds, versions) == lastSync && LEGACY_REMINDER_CHANNEL_ID !in existingIds) return
         val groups = manager.notificationChannelGroups
-        val plan = plan(calendars, existing, groups.map { it.id })
+        val plan = plan(calendars, existing, groups.map { it.id }, versions, showingChannelIds())
         plan.staleChannelIds.forEach(manager::deleteNotificationChannel)
         plan.staleGroupIds.forEach(manager::deleteNotificationChannelGroup)
         val groupNames = groups.associate { it.id to it.name?.toString() }
@@ -58,14 +67,31 @@ class ReminderChannels @Inject constructor(
             existing = existing,
         )
         val ids = existingIds - plan.staleChannelIds.toSet() + plan.channelsToWrite.map { it.id }
-        lastSync = syncKey(calendars, if (retireLegacyChannel()) ids - LEGACY_REMINDER_CHANNEL_ID else ids)
+        val legacyGone = retireLegacyChannel()
+        // A kept channel still has to go once its notification does, so don't cache.
+        lastSync = if (plan.keptChannelIds.isEmpty()) {
+            syncKey(calendars, if (legacyGone) ids - LEGACY_REMINDER_CHANNEL_ID else ids, versions)
+        } else {
+            null
+        }
     }
 
-    private fun syncKey(calendars: List<CalendarSource>, channelIds: Set<String>): Any = listOf(
+    private fun syncKey(calendars: List<CalendarSource>, channelIds: Set<String>, versions: Map<Long, Int>): Any = listOf(
         calendars.map { listOf(it.id, it.displayName, it.accountName, it.accountType, it.isLocal, it.syncsEvents) },
         Locale.getDefault(),
         channelIds,
+        versions,
     )
+
+    private fun versions(): Map<Long, Int> = runBlocking { settingsPrefs.reminderChannelVersions.first() }
+
+    /** Channels with a notification on screen; on failure every channel counts, so none is deleted. */
+    private fun showingChannelIds(): Set<String> = runCatching {
+        manager.activeNotifications.mapNotNullTo(HashSet()) { it.notification.channelId }
+    }.getOrElse { e ->
+        Log.w(TAG, "Could not read active notifications", e)
+        manager.notificationChannels.mapTo(HashSet()) { it.id }
+    }
 
     /**
      * The channel to post [calendarId]'s reminder on, created first if a sync
@@ -76,7 +102,8 @@ class ReminderChannels @Inject constructor(
      */
     @Synchronized
     fun channelFor(calendarId: Long): String? {
-        val id = reminderChannelId(calendarId)
+        val versions = versions()
+        val id = reminderChannelId(calendarId, versions[calendarId] ?: 0)
         val manager = manager
         if (manager.getNotificationChannel(id) != null) return id
         val existing = manager.notificationChannels
@@ -91,7 +118,7 @@ class ReminderChannels @Inject constructor(
             write(emptyList(), listOf(fallback), existing)
             return id
         }
-        val plan = plan(calendars, existing, emptyList())
+        val plan = plan(calendars, existing, emptyList(), versions)
         val spec = plan.channels.firstOrNull { it.calendarId == calendarId } ?: return null
         try {
             val knownGroups = manager.notificationChannelGroups.mapTo(HashSet()) { it.id }
@@ -115,19 +142,67 @@ class ReminderChannels @Inject constructor(
             it.id to ReminderChannelState(it.importance == NotificationManager.IMPORTANCE_NONE, it.group)
         }
         val blockedGroups = manager.notificationChannelGroups.filter { it.isBlocked }.mapTo(HashSet()) { it.id }
-        return reminderChannelStatus(calendarIds, appEnabled, channels, blockedGroups)
+        return reminderChannelStatus(calendarIds, appEnabled, channels, blockedGroups, versions())
+    }
+
+    /**
+     * The sound each of [calendarIds]' channels plays; null is silent. A
+     * calendar whose channel doesn't exist yet is left out.
+     */
+    fun sounds(calendarIds: Collection<Long>): Map<Long, Uri?> {
+        val versions = versions()
+        val manager = manager
+        return calendarIds.mapNotNull { id ->
+            manager.getNotificationChannel(reminderChannelId(id, versions[id] ?: 0))?.let { id to it.sound }
+        }.toMap()
+    }
+
+    /**
+     * Give [calendarId]'s reminders [sound] (null = silent). A channel's sound is
+     * fixed once created, so this moves the calendar to a new channel version
+     * carrying over everything else, and retires the old one. Returns whether
+     * the calendar had a channel to move.
+     */
+    suspend fun setSound(calendarId: Long, sound: Uri?): Boolean {
+        val oldId = channelFor(calendarId) ?: return false
+        val floor = manager.notificationChannels
+            .mapNotNull { parseReminderChannelId(it.id) }
+            .filter { it.first == calendarId }
+            .maxOfOrNull { it.second + 1 } ?: 1
+        val version = settingsPrefs.bumpReminderChannelVersion(calendarId, atLeast = floor)
+        return recreate(oldId, reminderChannelId(calendarId, version), sound)
+    }
+
+    @Synchronized
+    private fun recreate(oldId: String, newId: String, sound: Uri?): Boolean {
+        val manager = manager
+        val old = manager.getNotificationChannel(oldId) ?: return false
+        val channel = NotificationChannel(newId, old.name, old.importance).apply {
+            description = old.description
+            old.group?.let { group = it }
+            inheritFrom(old)
+            setSound(sound, old.audioAttributes ?: DEFAULT_AUDIO_ATTRIBUTES)
+        }
+        manager.createNotificationChannel(channel)
+        if (oldId !in showingChannelIds()) manager.deleteNotificationChannel(oldId)
+        lastSync = null
+        return true
     }
 
     private fun plan(
         calendars: List<CalendarSource>,
         existing: List<NotificationChannel>,
         existingGroupIds: List<String>,
+        versions: Map<Long, Int>,
+        showingChannelIds: Set<String> = emptySet(),
     ): ReminderChannelPlan = planReminderChannels(
         calendars = calendars,
         existing = existing.map { ExistingReminderChannel(it.id, it.name.toString(), it.description, it.group) },
         existingGroupIds = existingGroupIds,
         unnamed = context.getString(R.string.calendar_unnamed),
         description = context.getString(R.string.reminder_channel_description),
+        versions = versions,
+        showingChannelIds = showingChannelIds,
     )
 
     private fun write(
@@ -142,11 +217,12 @@ class ReminderChannels @Inject constructor(
         if (channels.isEmpty()) return
         val byId = existing.associateBy { it.id }
         val description = context.getString(R.string.reminder_channel_description)
-        val template = byId[LEGACY_REMINDER_CHANNEL_ID]
+        val legacy = byId[LEGACY_REMINDER_CHANNEL_ID]
         // Importance only applies on creation; an existing channel keeps its own.
         manager.createNotificationChannels(
             channels.map { spec ->
                 val current = byId[spec.id]
+                val template = spec.templateId?.let(byId::get) ?: legacy
                 NotificationChannel(
                     spec.id,
                     spec.name,
@@ -203,6 +279,11 @@ class ReminderChannels @Inject constructor(
 
     private companion object {
         const val TAG = "ReminderChannels"
+
+        val DEFAULT_AUDIO_ATTRIBUTES: AudioAttributes = AudioAttributes.Builder()
+            .setUsage(AudioAttributes.USAGE_NOTIFICATION_EVENT)
+            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+            .build()
     }
 }
 
