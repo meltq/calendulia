@@ -19,7 +19,7 @@ import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.components.MultiOptionRows
 
 /**
- * The calendars hidden in [view] (#517), opened from that view's top bar: the
+ * The calendars hidden in [view] (#517), opened from the drawer while on it: the
  * per-view setting from Settings → Calendars (#270), seen from the view's side.
  * Toggles apply at once.
  */

@@ -17,6 +17,7 @@ import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.hidingNothingOnError
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
@@ -109,7 +110,7 @@ class CalendarsViewModel @Inject constructor(
     /** The views each calendar is hidden in (#270); null until first read. */
     val hiddenViews: StateFlow<Map<Long, Set<CalendarView>>?> =
         settingsPrefs.perCalendarHiddenViews
-            .catch { emit(emptyMap()) }
+            .hidingNothingOnError()
             .stateWhileSubscribed(
                 scope = viewModelScope,
                 initialValue = null,

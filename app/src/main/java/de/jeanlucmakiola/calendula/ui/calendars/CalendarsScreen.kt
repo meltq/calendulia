@@ -79,7 +79,6 @@ import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.IMPLEMENTED_VIEWS
 import de.jeanlucmakiola.calendula.ui.common.icon
 import de.jeanlucmakiola.calendula.ui.common.label
-import de.jeanlucmakiola.floret.components.MultiOptionPicker
 import de.jeanlucmakiola.calendula.ui.common.CalendarVisibilitySwitch
 import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
 import de.jeanlucmakiola.calendula.ui.common.groupByAccount
@@ -100,6 +99,7 @@ import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.identity.predictiveBack
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.InlineTextField
+import de.jeanlucmakiola.floret.components.MultiOptionPicker
 import de.jeanlucmakiola.floret.components.Position
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.heightIn

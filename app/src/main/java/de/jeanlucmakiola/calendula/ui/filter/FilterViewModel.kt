@@ -10,6 +10,7 @@ import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.calendarListFailure
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.hidingNothingOnError
 import de.jeanlucmakiola.calendula.ui.common.groupByAccount
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
@@ -36,7 +37,7 @@ class FilterViewModel @Inject constructor(
             repository.calendars(),
             prefs.hiddenCalendarIds,
             // Only feeds a note on the rows; a failed read leaves it off rather than failing the list.
-            settingsPrefs.perCalendarHiddenViews.catch { emit(emptyMap()) },
+            settingsPrefs.perCalendarHiddenViews.hidingNothingOnError(),
         ) { calendars, hidden, hiddenViews ->
             // Calendars switched off device-wide don't belong in the drawer's
             // hide/show list; they live only in Settings → Calendars.

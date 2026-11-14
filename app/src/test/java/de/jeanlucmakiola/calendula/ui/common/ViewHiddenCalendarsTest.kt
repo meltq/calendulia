@@ -82,4 +82,19 @@ class ViewHiddenCalendarsTest {
             cancelAndIgnoreRemainingEvents()
         }
     }
+
+    @Test
+    fun `a failed read hides nothing and keeps reading`() = runTest {
+        var reads = 0
+        val source = kotlinx.coroutines.flow.flow {
+            reads++
+            if (reads == 1) throw java.io.IOException("disk")
+            emit(mapOf(1L to setOf(CalendarView.Month)))
+        }
+        source.hidingNothingOnError().test {
+            assertThat(awaitItem()).isEmpty()
+            assertThat(awaitItem()).containsExactly(1L, setOf(CalendarView.Month))
+            awaitComplete()
+        }
+    }
 }

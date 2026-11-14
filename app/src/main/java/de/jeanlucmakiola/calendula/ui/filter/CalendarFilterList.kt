@@ -17,6 +17,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.pluralStringResource
@@ -43,7 +44,8 @@ import de.jeanlucmakiola.floret.components.positionOf
  * Every calendar grouped by account, each with a colour swatch and a visibility
  * switch; toggling writes straight to DataStore and every calendar view
  * re-filters live. Three states (Loading / Failure / Success). A calendar hidden
- * in [currentView] through its per-view setting (#270) says so on its row.
+ * in [currentView] through its per-view setting (#270) says so on its row, and
+ * the entry below the list opens that setting for the view (#517).
  */
 @Composable
 fun CalendarFilterList(
@@ -56,15 +58,18 @@ fun CalendarFilterList(
     when (val s = state) {
         FilterUiState.Loading -> FilterLoading(modifier)
         is FilterUiState.Failure -> FilterMessage(s.reason, modifier)
-        is FilterUiState.Success -> FilterList(
-            groups = s.groups,
-            hidden = s.hidden,
-            hiddenInView = s.hiddenViews.calendarsHiddenIn(currentView),
-            hiddenOnlyHere = s.hiddenOnlyIn(currentView),
-            onHideInView = onHideInView,
-            onSetVisible = viewModel::setVisible,
-            modifier = modifier,
-        )
+        is FilterUiState.Success -> {
+            val hiddenInView = remember(s, currentView) { s.hiddenViews.calendarsHiddenIn(currentView) - s.hidden }
+            FilterList(
+                groups = s.groups,
+                hidden = s.hidden,
+                hiddenInView = hiddenInView,
+                hiddenOnlyHere = remember(s, currentView) { s.hiddenOnlyIn(currentView) },
+                onHideInView = onHideInView,
+                onSetVisible = viewModel::setVisible,
+                modifier = modifier,
+            )
+        }
     }
 }
 
@@ -125,7 +130,9 @@ private fun FilterList(
             },
             position = Position.Alone,
             minHeight = 56.dp,
-            selected = hiddenOnlyHere > 0,
+            // Tinted, not "selected": it is an entry point, not a chosen option.
+            container = if (hiddenOnlyHere > 0) MaterialTheme.colorScheme.secondaryContainer else null,
+            contentColor = if (hiddenOnlyHere > 0) MaterialTheme.colorScheme.onSecondaryContainer else null,
             leading = {
                 Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
                     Icon(Icons.Filled.FilterList, contentDescription = null)

@@ -42,8 +42,6 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.platform.LocalDensity
 import androidx.hilt.navigation.compose.hiltViewModel
-import de.jeanlucmakiola.calendula.ui.filter.FilterViewModel
-import de.jeanlucmakiola.calendula.ui.filter.ViewCalendarsPicker
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.data.time.currentDate
 import de.jeanlucmakiola.calendula.domain.EventForm
@@ -99,6 +97,8 @@ import de.jeanlucmakiola.calendula.ui.month.MonthScreen
 import de.jeanlucmakiola.calendula.ui.search.SearchScreen
 import de.jeanlucmakiola.calendula.ui.settings.SettingsScreen
 import de.jeanlucmakiola.calendula.ui.week.TimelineScreen
+import de.jeanlucmakiola.calendula.ui.filter.FilterViewModel
+import de.jeanlucmakiola.calendula.ui.filter.ViewCalendarsPicker
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
