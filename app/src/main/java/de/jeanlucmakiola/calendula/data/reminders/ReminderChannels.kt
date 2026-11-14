@@ -86,19 +86,24 @@ class ReminderChannels @Inject constructor(
             Log.w(TAG, "Could not look up calendar $calendarId for its channel", e)
             emptyList()
         }
+        val fallback = ReminderChannelSpec(id, calendarId, context.getString(R.string.reminder_channel_name), null)
         if (calendars.isEmpty()) {
-            val fallback = ReminderChannelSpec(id, calendarId, context.getString(R.string.reminder_channel_name), null)
             write(emptyList(), listOf(fallback), existing)
             return id
         }
         val plan = plan(calendars, existing, emptyList())
         val spec = plan.channels.firstOrNull { it.calendarId == calendarId } ?: return null
-        val knownGroups = manager.notificationChannelGroups.mapTo(HashSet()) { it.id }
-        write(
-            groups = plan.groups.filter { it.id == spec.groupId && it.id !in knownGroups },
-            channels = listOf(spec),
-            existing = existing,
-        )
+        try {
+            val knownGroups = manager.notificationChannelGroups.mapTo(HashSet()) { it.id }
+            write(
+                groups = plan.groups.filter { it.id == spec.groupId && it.id !in knownGroups },
+                channels = listOf(spec),
+                existing = existing,
+            )
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Could not file the channel of calendar $calendarId", e)
+            write(emptyList(), listOf(fallback), existing)
+        }
         return id
     }
 
@@ -156,8 +161,8 @@ class ReminderChannels @Inject constructor(
     }
 
     /**
-     * Carry the old single channel's sound, vibration and lock-screen choices
-     * over to a new per-calendar one, so an upgrade keeps how reminders sounded.
+     * Carry the old single channel's sound, vibration, lights and badge over to
+     * a new per-calendar one (the system resets lock-screen visibility itself), so an upgrade keeps how reminders sounded.
      */
     private fun NotificationChannel.inheritFrom(template: NotificationChannel) {
         setSound(template.sound, template.audioAttributes)
@@ -166,7 +171,6 @@ class ReminderChannels @Inject constructor(
         enableVibration(template.shouldVibrate())
         enableLights(template.shouldShowLights())
         lightColor = template.lightColor
-        lockscreenVisibility = template.lockscreenVisibility
         setShowBadge(template.canShowBadge())
         // Only honoured with Do Not Disturb access, so usually left to the user.
         setBypassDnd(template.canBypassDnd())

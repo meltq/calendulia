@@ -21,6 +21,7 @@ import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.floret.reminders.reminderOverrideFor
+import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
 import de.jeanlucmakiola.calendula.data.prefs.SettingsKeys
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -67,6 +68,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val prefs: SettingsPrefs,
+    calendarPrefs: CalendarPrefs,
     repository: CalendarRepository,
     private val specialDatesEngine: SpecialDatesSyncEngine,
     specialDatesSpec: SpecialDatesCalendarSpec,
@@ -83,9 +85,10 @@ class SettingsViewModel @Inject constructor(
      * Calendars that are switched on — the only ones that plan reminders at
      * all (#75), so the only ones with notification settings.
      */
-    private val visibleCalendars: Flow<List<CalendarSource>> = repository.calendars()
-        .map { calendars -> calendars.filter { it.isVisibleInSystem } }
-        .catch { emit(emptyList()) }
+    private val visibleCalendars: Flow<List<CalendarSource>> =
+        combine(repository.calendars(), calendarPrefs.pendingDisabledCalendarIds) { calendars, pending ->
+            calendars.filter { it.isVisibleInSystem && it.id !in pending }
+        }.catch { emit(emptyList()) }
 
     val state: StateFlow<SettingsUiState> =
         combine(prefs.data, visibleCalendars) { stored, calendars -> stored.toUiState(calendars) }
@@ -365,9 +368,14 @@ class SettingsViewModel @Inject constructor(
         }
     }
 
-    /** Re-plans, since a muted calendar armed no wake-up for its next reminder. */
+    /**
+     * Re-plans, since a muted calendar armed no wake-up for its next reminder.
+     * Unmuting scans once more before the write, so the watermark starts at the
+     * unmute and nothing that came due while muted is replayed.
+     */
     fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) {
         viewModelScope.launch {
+            if (enabled) reminderScanner.scan()
             prefs.setCalendarRemindersEnabled(calendarId, enabled)
             reminderScanner.scan()
         }

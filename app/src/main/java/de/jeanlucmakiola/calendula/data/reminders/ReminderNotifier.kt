@@ -66,12 +66,12 @@ class ReminderNotifier @Inject constructor(
     suspend fun post(alert: ReminderAlert) {
         if (isSilenced(alert.calendarId)) return
         val channelId = try {
-            channels.channelFor(alert.calendarId)
+            channels.channelFor(alert.calendarId) ?: run {
+                Log.i(TAG, "Dropped the reminder of event ${alert.eventId}: calendar ${alert.calendarId} is gone")
+                return
+            }
         } catch (e: Exception) {
             Log.w(TAG, "No channel for the reminder of event ${alert.eventId}", e)
-            null
-        } ?: run {
-            Log.i(TAG, "Dropped the reminder of event ${alert.eventId}: calendar ${alert.calendarId} is gone")
             return
         }
         val title = displayTitle(alert)
