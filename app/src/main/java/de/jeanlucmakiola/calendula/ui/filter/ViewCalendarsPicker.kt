@@ -41,7 +41,7 @@ fun ViewCalendarsPicker(
             is FilterUiState.Success -> {
                 // Seeded once, then ahead of the store: the picker is the only
                 // writer while open, so a quick second tap still flips.
-                var hidden by remember { mutableStateOf(state.hiddenViews.calendarsHiddenIn(view)) }
+                var hidden by remember(view) { mutableStateOf(state.hiddenViews.calendarsHiddenIn(view)) }
                 GroupedHint(stringResource(R.string.view_calendars_hint), verticalPadding = 8.dp)
                 state.groups.forEach { group ->
                     GroupedSectionHeader(accountGroupTitle(group))

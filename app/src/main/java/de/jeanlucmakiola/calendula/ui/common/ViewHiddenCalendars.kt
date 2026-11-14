@@ -30,7 +30,8 @@ fun Flow<Map<Long, Set<CalendarView>>>.calendarsHiddenIn(
     catch { emit(emptyMap()) }
         .map { it.calendarsHiddenIn(view) }
         .distinctUntilChanged()
-        .shareIn(scope, SharingStarted.WhileSubscribed(replayExpirationMillis = 0), replay = 1)
+        // The grace period outlasts a flatMapLatest swap, so paging doesn't re-read it.
+        .shareIn(scope, SharingStarted.WhileSubscribed(5_000, replayExpirationMillis = 0), replay = 1)
 
 /**
  * [CalendarRepository.instances] as one view shows them: also without the

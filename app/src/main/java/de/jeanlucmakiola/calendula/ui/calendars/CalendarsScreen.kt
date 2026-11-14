@@ -46,6 +46,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -197,12 +198,14 @@ fun CalendarsScreen(
             if (calendar == null && calendars.isNotEmpty()) {
                 LaunchedEffect(id) { hidingId = null }
             } else if (calendar != null && loadedHiddenViews != null) {
-                HiddenViewsPicker(
-                    calendarName = calendar.displayName.orUnnamed(),
-                    hidden = hiddenViews[id].orEmpty(),
-                    onToggle = { view, hide -> viewModel.setHiddenIn(id, view, hide) },
-                    onDismiss = { hidingId = null },
-                )
+                key(id) {
+                    HiddenViewsPicker(
+                        calendarName = calendar.displayName.orUnnamed(),
+                        hidden = hiddenViews[id].orEmpty(),
+                        onToggle = { view, hide -> viewModel.setHiddenIn(id, view, hide) },
+                        onDismiss = { hidingId = null },
+                    )
+                }
             }
         }
     }

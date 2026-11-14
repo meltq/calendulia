@@ -195,10 +195,15 @@ fun CalendarHost(
     var detailKey by rememberSaveable { mutableStateOf<LongArray?>(null) }
     val onOpenDetail: (EventInstance) -> Unit = { event -> detailKey = event.occurrenceKey() }
 
+    // The top bar's view-calendars picker (#517). It is its own window over
+    // everything here, so each external request below closes it first.
+    var showViewCalendars by rememberSaveable { mutableStateOf(false) }
+
     // A tapped reminder notification asks for a specific occurrence.
     val requestedDetailKey = requests.detailKey
     LaunchedEffect(requestedDetailKey) {
         if (requestedDetailKey != null) {
+            showViewCalendars = false
             detailKey = requestedDetailKey
             requests.detailKey = null
         }
@@ -214,7 +219,6 @@ fun CalendarHost(
     // top bar. Sits below the detail/edit overlays so tapping a result reveals
     // the detail on top and backing out returns to the results.
     var showSearch by rememberSaveable { mutableStateOf(false) }
-    var showViewCalendars by rememberSaveable { mutableStateOf(false) }
     val filterViewModel: FilterViewModel = hiltViewModel()
     val filterState by filterViewModel.state.collectAsStateWithLifecycle()
     val onOpenSearch = { showSearch = true }
@@ -322,6 +326,7 @@ fun CalendarHost(
                 requests.importUri = null
                 return@LaunchedEffect
             }
+            showViewCalendars = false
             importUri = requestedImportUri
             importForceMany = false
             importSession++
@@ -339,6 +344,7 @@ fun CalendarHost(
                 requests.insert = null
                 return@LaunchedEffect
             }
+            showViewCalendars = false
             if (importForm == null) {
                 openImportForm(requestedInsert.form, requestedInsert.source, fromRequest = true)
             } else {
@@ -346,12 +352,6 @@ fun CalendarHost(
             }
             requests.insert = null
         }
-    }
-
-    // The view-calendars picker is its own window over everything here, so a
-    // reminder tap, an insert request or an .ics file opening under it closes it.
-    LaunchedEffect(detailKey != null || importUri != null || importForm != null) {
-        if (detailKey != null || importUri != null || importForm != null) showViewCalendars = false
     }
 
     // Close every overlay that can sit over the calendar, so an externally
