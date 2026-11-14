@@ -302,9 +302,10 @@ class BackupPlanTest {
     fun `a fingerprint follows the content`() {
         val first = "BEGIN:VEVENT\r\nDTSTAMP:20261113T143005Z\r\nSUMMARY:A\r\nEND:VEVENT\r\n"
         val later = first.replace("20261113T143005Z", "20261114T090000Z")
-        assertThat(backupFingerprint(later)).isEqualTo(backupFingerprint(first))
-        assertThat(backupFingerprint(first.replace("SUMMARY:A", "SUMMARY:B"))).isNotEqualTo(backupFingerprint(first))
-        assertThat(backupFingerprint(first)).hasLength(32)
+        assertThat(backupFingerprint(later, "Work.ics")).isEqualTo(backupFingerprint(first, "Work.ics"))
+        assertThat(backupFingerprint(first.replace("SUMMARY:A", "SUMMARY:B"), "Work.ics")).isNotEqualTo(backupFingerprint(first, "Work.ics"))
+        assertThat(backupFingerprint(first, "Work.ics")).hasLength(32)
+        assertThat(backupFingerprint(first, "Job.ics")).isNotEqualTo(backupFingerprint(first, "Work.ics"))
     }
 
     @Test
@@ -316,7 +317,7 @@ class BackupPlanTest {
         val early = IcsWriter().writeCalendar(listOf(event), Instant.fromEpochSeconds(0), "Work")
         val late = IcsWriter().writeCalendar(listOf(event), Instant.fromEpochSeconds(1_800_000_000), "Work")
         assertThat(early).isNotEqualTo(late)
-        assertThat(backupFingerprint(late)).isEqualTo(backupFingerprint(early))
+        assertThat(backupFingerprint(late, "Work.ics")).isEqualTo(backupFingerprint(early, "Work.ics"))
     }
 
     @Test

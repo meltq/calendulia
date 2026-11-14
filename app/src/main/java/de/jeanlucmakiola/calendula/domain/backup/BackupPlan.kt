@@ -287,9 +287,15 @@ fun normalizeBackupKeep(stored: Int): Int =
  */
 typealias BackupFingerprints = Map<String, String>
 
-/** Hash of a series' file, leaving out the run's `DTSTAMP`s so equal events give an equal hash. */
-fun backupFingerprint(ics: String): String {
+/**
+ * Hash of a series' file, leaving out the run's `DTSTAMP`s so equal events give
+ * an equal hash, and bound to the stable copy's [fileName], so a copy under
+ * another name never passes as current.
+ */
+fun backupFingerprint(ics: String, fileName: String): String {
     val digest = MessageDigest.getInstance("SHA-256")
+    digest.update(fileName.toByteArray(Charsets.UTF_8))
+    digest.update(LINE_BREAK)
     ics.lineSequence().filterNot { it.startsWith(DTSTAMP_PREFIX) }
         .forEach {
             digest.update(it.toByteArray(Charsets.UTF_8))
@@ -343,7 +349,7 @@ fun BackupFilePlan.needsRefresh(
 }
 
 /**
- * The events in a fixed order, reminders sorted, so the same content always
+ * The events in a fixed order, their lists sorted, so the same content always
  * writes the same file and hashes the same, however the provider returned it.
  * Standalone occurrences stay first, as [flattenOverrides] puts them.
  */
@@ -353,4 +359,10 @@ fun List<IcsEvent>.inBackupOrder(): List<IcsEvent> =
             { it.overrideOf == null }, { it.start }, { it.uid }, { it.overrideAt }, { it.calendarName },
         ),
     )
-        .map { it.copy(reminderMinutes = it.reminderMinutes.sorted()) }
+        .map {
+            it.copy(
+                reminderMinutes = it.reminderMinutes.sorted(),
+                exDates = it.exDates.sorted(),
+                recurrenceDates = it.recurrenceDates.sorted(),
+            )
+        }

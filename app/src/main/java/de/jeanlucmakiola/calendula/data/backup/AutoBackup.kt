@@ -31,10 +31,12 @@ import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.backup.BackupFilePlan
+import de.jeanlucmakiola.calendula.domain.backup.BackupTarget
 import de.jeanlucmakiola.calendula.domain.backup.backupFingerprint
 import de.jeanlucmakiola.calendula.domain.backup.backupTargets
 import de.jeanlucmakiola.calendula.domain.backup.inBackupOrder
 import de.jeanlucmakiola.calendula.domain.backup.latestHeldElsewhere
+import de.jeanlucmakiola.calendula.domain.backup.latestFileName
 import de.jeanlucmakiola.calendula.domain.backup.latestLedgerKey
 import de.jeanlucmakiola.calendula.domain.backup.needsRefresh
 import de.jeanlucmakiola.calendula.domain.backup.planBackupFiles
@@ -106,7 +108,7 @@ object BackupScheduler {
                 ExistingPeriodicWorkPolicy.UPDATE,
                 request,
             )
-            if (!prefs.autoBackupOnChange.first()) {
+            if (!watchWanted(prefs)) {
                 cancelWatch()
                 return@withLock
             }
@@ -116,6 +118,14 @@ object BackupScheduler {
             if (!watching) watchChanges(context, slot = 0)
         }
     }
+
+    /** Arm [slot] for a running change run, under the same lock as [reconcile] so it can't outlast a switch-off. */
+    internal suspend fun watchNext(context: Context, prefs: SettingsPrefs, slot: Int) = withContext(NonCancellable) {
+        reconcileLock.withLock { if (watchWanted(prefs)) watchChanges(context, slot) }
+    }
+
+    private suspend fun watchWanted(prefs: SettingsPrefs): Boolean =
+        prefs.autoBackupEnabled.first() && prefs.autoBackupFolderUri.first() != null && prefs.autoBackupOnChange.first()
 
     /**
      * Run one export immediately (e.g. right after enabling or changing the
@@ -181,11 +191,7 @@ class BackupWorker(
         val prefs = deps.settingsPrefs()
         val slot = inputData.getInt(BackupScheduler.KEY_CHANGE_SLOT, -1)
         if (slot < 0) return backUp(deps, prefs, changeRun = false)
-        suspend fun watchNext() {
-            val wanted = prefs.autoBackupEnabled.first() && prefs.autoBackupOnChange.first() &&
-                prefs.autoBackupFolderUri.first() != null
-            if (wanted) BackupScheduler.watchChanges(applicationContext, slot = 1 - slot)
-        }
+        suspend fun watchNext() = BackupScheduler.watchNext(applicationContext, prefs, slot = 1 - slot)
         runCatching { watchNext() }.onFailure { Log.w(TAG, "Arming the next change run failed", it) }
         // Never fails or retries: a retry would only wait for another change.
         try {
@@ -195,7 +201,7 @@ class BackupWorker(
         } catch (e: Exception) {
             Log.w(TAG, "Backup after a change failed", e)
         } finally {
-            withContext(NonCancellable) { runCatching { watchNext() } }
+            runCatching { watchNext() }
         }
         return Result.success()
     }
@@ -208,10 +214,7 @@ class BackupWorker(
      */
     private suspend fun backUp(deps: Deps, prefs: SettingsPrefs, changeRun: Boolean): Result {
         val now = System.currentTimeMillis()
-        // The periodic, the immediate and the change runs are separate unique
-        // works; one at a time, or each would overwrite the other's ledger.
-        // The record is made under the lock too, so each streak reaches the
-        // threshold in exactly one run.
+        // One run at a time, or each would overwrite the other's ledger.
         var failures = 0
         val outcome = runLock.withLock {
             // Respect the toggles even for already-queued work, so a lingering
@@ -228,8 +231,10 @@ class BackupWorker(
                 RunOutcome.Failed
             }
             if (outcome != RunOutcome.NothingToDo) {
-                prefs.recordAutoBackupRun(success = outcome == RunOutcome.Written, atMillis = now)
-                failures = prefs.autoBackupStatus.first().consecutiveFailures
+                withContext(NonCancellable) {
+                    prefs.recordAutoBackupRun(success = outcome == RunOutcome.Written, atMillis = now)
+                    failures = prefs.autoBackupStatus.first().consecutiveFailures
+                }
             }
             outcome
         }
@@ -243,8 +248,8 @@ class BackupWorker(
 
     private enum class RunOutcome { Written, PartlyFailed, Failed, NothingToDo }
 
-    /** A stable copy's write: whether it [landed] under its own name, or [failed] before it was written. */
-    private data class LatestWrite(val landed: Boolean, val failed: Boolean)
+    /** How a stable copy's write went: under its own name, under one the provider picked, or not at all. */
+    private enum class LatestWrite { Landed, Renamed, Failed }
 
     /**
      * Writes each series and prunes it only once its new file has landed. A
@@ -259,10 +264,31 @@ class BackupWorker(
         val selection = prefs.autoBackupSelection.first()
         val targets = backupTargets(all.filter(selection::selects), combined = prefs.autoBackupCombined.first())
         if (targets.isEmpty()) return RunOutcome.NothingToDo
+        val stamp = Clock.System.now()
+        val fingerprints = prefs.autoBackupFingerprints.first()
+        suspend fun export(target: BackupTarget): String? = try {
+            val events = repository.exportEvents(target.calendarIds).inBackupOrder()
+            IcsWriter().writeCalendar(events, stamp, target.calendarName)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Reading one series failed", e)
+            null
+        }
+        fun fingerprintOf(target: BackupTarget, text: String) =
+            backupFingerprint(text, latestFileName(target.baseName))
+        // A change run reads first and leaves the folder alone when nothing moved.
+        val texts = HashMap<String, String?>()
+        if (latestOnly) {
+            targets.forEach { texts[it.key] = export(it) }
+            val unchanged = targets.all { target ->
+                texts[target.key]?.let { fingerprintOf(target, it) }.let { it != null && it == fingerprints[target.key] }
+            }
+            if (unchanged) return RunOutcome.NothingToDo
+        }
         prefs.adoptLegacyBackupFile()
         val listing = exporter.listFolder(folder)
         val ledger = prefs.autoBackupLedger.first()
-        val fingerprints = prefs.autoBackupFingerprints.first()
         // A listing still loading can't tell a gone file from a late one.
         val existing = if (listing.complete) listing.files.keys else listing.files.keys + ledger.values.flatten()
         val plans = planBackupFiles(
@@ -272,7 +298,6 @@ class BackupWorker(
             at = LocalDateTime.now(),
             keep = prefs.autoBackupKeep.first(),
         )
-        val stamp = Clock.System.now()
         val liveKeys = all.map { it.id.toString() }.toSet()
         suspend fun record(key: String, files: List<String>) =
             prefs.updateAutoBackupLedger(folder.toString()) { withLedgerEntry(it, key, files, liveKeys) }
@@ -288,15 +313,13 @@ class BackupWorker(
             false
         }
 
-        // An old copy goes only once the new one has landed, so a series is
-        // never left without one.
+        // An old copy goes only once the new one has landed.
         suspend fun writeLatest(plan: BackupFilePlan, bytes: ByteArray, fingerprint: String): LatestWrite {
             val target = plan.target
             val latest = checkNotNull(plan.latestName)
             var landed: String? = null
             return try {
                 val latestKey = latestLedgerKey(target.key)
-                // A write cut short leaves a partial copy that must not pass as current.
                 if (target.key in fingerprints) prefs.dropAutoBackupFingerprint(folder.toString(), target.key)
                 landed = exporter.writeToFolder(folder, listing, latest, bytes)
                 // A provider that renamed it leaves a copy to clean up next
@@ -317,10 +340,14 @@ class BackupWorker(
                 recordLatest(plan.staleLatest, fingerprint.takeIf { landed == latest })
                 val staleLeft = exporter.deleteFromFolder(listing, plan.staleLatest)
                 recordLatest(plan.staleLatest.filter { it in staleLeft })
-                LatestWrite(landed = landed == latest, failed = false)
+                if (landed == latest) LatestWrite.Landed else LatestWrite.Renamed
             } catch (e: Exception) {
                 Log.w(TAG, "Stable copy of one series failed", e)
-                LatestWrite(landed = landed == latest, failed = landed == null)
+                when (landed) {
+                    null -> LatestWrite.Failed
+                    latest -> LatestWrite.Landed
+                    else -> LatestWrite.Renamed
+                }
             }
         }
 
@@ -330,34 +357,24 @@ class BackupWorker(
         for (plan in plans) {
             val target = plan.target
             if (latestOnly && plan.latestName == null) continue
-            val text = try {
-                val events = repository.exportEvents(target.calendarIds).inBackupOrder()
-                IcsWriter().writeCalendar(events, stamp, target.calendarName)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                Log.w(TAG, "Reading one series failed", e)
+            val text = (if (target.key in texts) texts.remove(target.key) else export(target)) ?: run {
                 failed++
                 continue
             }
-            val fingerprint = backupFingerprint(text)
+            val fingerprint = fingerprintOf(target, text)
             if (latestOnly && !plan.needsRefresh(fingerprint, fingerprints, listing.files.keys, listing.complete)) {
                 if (plan.latestName in listing.files) landedLatest += target.key
                 continue
             }
             val bytes = text.toByteArray(Charsets.UTF_8)
-            // Not cancellable once a file exists: it must reach the ledger, or
-            // nothing would ever prune it.
+            // Not cancellable once a file exists: it must reach the ledger.
             withContext(NonCancellable) {
-                if (!latestOnly) {
-                    if (writeDated(plan, bytes)) written++ else failed++
-                }
-                // Best-effort in a full run: it never holds up the run's status.
+                val dated = if (latestOnly) null else writeDated(plan, bytes)
                 val latest = plan.latestName?.let { writeLatest(plan, bytes, fingerprint) }
-                if (latest?.landed == true) landedLatest += target.key
-                if (latestOnly && latest != null) {
-                    if (latest.failed) failed++ else written++
-                }
+                if (latest == LatestWrite.Landed) landedLatest += target.key
+                // A full run's status follows its dated file; the stable copy is best-effort there.
+                val ok = dated ?: (latest != LatestWrite.Failed)
+                if (ok) written++ else failed++
             }
         }
         // A layout switch retires the other layout's copies once every new one is there.
