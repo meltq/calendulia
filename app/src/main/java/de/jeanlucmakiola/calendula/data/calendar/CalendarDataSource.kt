@@ -798,8 +798,8 @@ class AndroidCalendarDataSource @Inject constructor(
                 it != calendar?.color || !getString(EventExportProjection.IDX_EVENT_COLOR_KEY).isNullOrEmpty()
             }
             val mapped = event(calendar?.displayName).copy(color = color)
-            val declined = getIntOrNull(EventExportProjection.IDX_SELF_ATTENDEE_STATUS) ==
-                CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED
+            val selfStatus = getIntOrNull(EventExportProjection.IDX_SELF_ATTENDEE_STATUS)
+            val declined = selfStatus == CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED
             val originalId = getLongOrNull(EventExportProjection.IDX_ORIGINAL_ID)
             val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)?.takeIf { it.isNotEmpty() }
             // Without a link the provider shows the row as an event of its own.
@@ -822,6 +822,8 @@ class AndroidCalendarDataSource @Inject constructor(
                     originalInstance = originalInstance.toKotlinInstantFromEpochMillis(),
                     event = mapped,
                     declined = declined,
+                    accepted = selfStatus == CalendarContract.Attendees.ATTENDEE_STATUS_ACCEPTED ||
+                        selfStatus == CalendarContract.Attendees.ATTENDEE_STATUS_TENTATIVE,
                 )
             }
         }

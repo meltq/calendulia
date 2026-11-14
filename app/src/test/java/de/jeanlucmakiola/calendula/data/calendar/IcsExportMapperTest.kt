@@ -318,4 +318,15 @@ class IcsExportMapperTest {
         assertThat(exportExDates("Europe/Berlin;20260110T100000\nEurope/Berlin;20260117T100000,junk", isAllDay = false))
             .containsExactly("20260110T090000Z", "20260117T090000Z").inOrder()
     }
+
+    @Test
+    fun `a bare day on a timed series is read at the series' time of day`() {
+        val tenBerlin = java.time.ZonedDateTime.of(2026, 1, 5, 10, 0, 0, 0, java.time.ZoneId.of("Europe/Berlin"))
+            .toInstant().toEpochMilli()
+
+        assertThat(exportExDates("20260112", isAllDay = false, "Europe/Berlin", tenBerlin))
+            .containsExactly("20260112T090000Z")
+        assertThat(exportRecurrenceDates("20260712", isAllDay = false, "Europe/Berlin", tenBerlin))
+            .containsExactly("20260712T080000Z")
+    }
 }

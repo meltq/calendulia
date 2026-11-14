@@ -215,7 +215,10 @@ class CalendarRowsTest {
     fun `a copy leaves declined invitations out but keeps an occurrence accepted on its own`() {
         val rows = CalendarRows(
             listOf(series("d").copy(declined = true), series("k", id = 2)),
-            listOf(OverrideRow(1, 1, null, occurrence(1), event("accepted"))),
+            listOf(
+                OverrideRow(1, 1, null, occurrence(1), event("accepted"), accepted = true),
+                OverrideRow(1, 1, null, occurrence(2), event("moved by the organizer")),
+            ),
         )
 
         val plan = planCalendarCopy(rows, ::formatExdateStamp)

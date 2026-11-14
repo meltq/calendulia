@@ -29,6 +29,8 @@ data class OverrideRow(
     val event: IcsEvent,
     /** The user declined this occurrence. */
     val declined: Boolean = false,
+    /** The user accepted (or tentatively accepted) this occurrence on its own. */
+    val accepted: Boolean = false,
 ) {
     val isCancelled: Boolean get() = event.status == EventStatus.Cancelled
 }

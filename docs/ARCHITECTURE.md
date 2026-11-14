@@ -522,7 +522,9 @@ as before.
 alone. The provider stores `RDATE` in the same `<zone>;<stamps>` form as
 `EXDATE`, so `exportRecurrenceDates` resolves it the same way to UTC stamps (or
 bare days for an all-day series), line by line where several `RDATE`s were
-stored; a `PERIOD` entry keeps its start. `IcsWriter`
+stored; a `PERIOD` entry keeps its start, and a bare day on a timed series
+becomes the occurrence at the series' time of day, so the copy (which never
+goes through the parser) and a file get the same stamps. `IcsWriter`
 writes it as `RDATE:` / `RDATE;VALUE=DATE:`, anchors such a series to its zone
 like an RRULE series, and writes its `EXDATE` too; `IcsParser` reads `RDATE`
 through the same normalisation as `EXDATE`, so a foreign `TZID` or floating
@@ -535,7 +537,8 @@ what landed before. It skips the `.ics` text: the writer pins a timed one-off to
 UTC and carries no colour or visibility; the direct mapping keeps them.
 Attendees and organizer are never read, and cancelled events and declined
 invitations are left out (an insert can't be cancelled; it would arrive live, and
-a declined occurrence counts as deleted). A re-run is idempotent per
+a declined occurrence counts as deleted, as does one of a declined series the
+user didn't accept on its own). A re-run is idempotent per
 snapshot: a series already in the target keeps its overrides, so an occurrence
 changed since keeps its earlier copy rather than gaining a second one.
 

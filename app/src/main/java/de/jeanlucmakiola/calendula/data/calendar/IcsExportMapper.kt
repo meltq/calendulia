@@ -4,7 +4,10 @@ import de.jeanlucmakiola.floret.time.toKotlinInstantFromEpochMillis
 import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.deriveIcsUid
+import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /**
  * Map one Events row (read through [EventExportProjection]) into an [IcsEvent]
@@ -30,7 +33,7 @@ internal fun ColumnReader.toIcsEvent(
     val rrule = getString(EventExportProjection.IDX_RRULE)?.takeIf { it.isNotBlank() }
     val isAllDay = getInt(EventExportProjection.IDX_ALL_DAY) != 0
     val timezone = getString(EventExportProjection.IDX_EVENT_TIMEZONE)
-    val rdates = exportRecurrenceDates(getString(EventExportProjection.IDX_RDATE), isAllDay, timezone)
+    val rdates = exportRecurrenceDates(getString(EventExportProjection.IDX_RDATE), isAllDay, timezone, dtStart)
 
     // Unclamped: the writer renders DTEND as stored.
     val end = endMillis(dtStart, EventExportProjection.IDX_DTEND, EventExportProjection.IDX_DURATION)
@@ -46,7 +49,7 @@ internal fun ColumnReader.toIcsEvent(
         exDates = if (rrule == null && rdates.isEmpty()) {
             emptyList()
         } else {
-            exportExDates(getString(EventExportProjection.IDX_EXDATE), isAllDay, timezone)
+            exportExDates(getString(EventExportProjection.IDX_EXDATE), isAllDay, timezone, dtStart)
         },
         location = getString(EventExportProjection.IDX_LOCATION),
         description = getString(EventExportProjection.IDX_DESCRIPTION),
@@ -94,21 +97,22 @@ internal fun exportExDates(
     exdate: String?,
     isAllDay: Boolean,
     eventTimezone: String? = null,
+    seriesStartMillis: Long? = null,
 ): List<String> {
     if (exdate.isNullOrBlank()) return emptyList()
     // Several properties are stored one per line, each with its own zone prefix.
     return exdate.lines().filter { it.isNotBlank() }.flatMap { line ->
         val zone = exdateListZone(line, eventTimezone)
-        exdateStamps(line).map { stamp ->
-            if (isAllDay) {
-                stamp.substringBefore('T')
-            } else {
-                canonicalExdateStamp(stamp, isAllDay = false, listZone = zone) ?: stamp
+        exdateStamps(line).mapNotNull { stamp ->
+            when {
+                isAllDay -> stamp.substringBefore('T')
+                // A bare day on a timed series means the occurrence at the series' time of day.
+                seriesStartMillis != null && BARE_DAY.matches(stamp) -> atSeriesTime(stamp, seriesStartMillis, zone)
+                else -> canonicalExdateStamp(stamp, isAllDay = false, listZone = zone) ?: stamp
             }
         }
     }
-        // A bare day on a timed series stays: a restore reads it at the series' time of day.
-        .filter { EXPORTED_STAMP.matches(it) }
+        .filter { (if (isAllDay) BARE_DAY else UTC_STAMP).matches(it) }
         .distinct()
 }
 
@@ -122,6 +126,7 @@ internal fun exportRecurrenceDates(
     rdate: String?,
     isAllDay: Boolean,
     eventTimezone: String? = null,
+    seriesStartMillis: Long? = null,
 ): List<String> {
     if (rdate.isNullOrBlank()) return emptyList()
     // The zone prefix may hold a '/' of its own (Europe/Berlin), so only the stamps lose their period end.
@@ -129,9 +134,16 @@ internal fun exportRecurrenceDates(
         val stamps = line.withoutExdateParameters()
         line.dropLast(stamps.length) + stamps.split(',').joinToString(",") { it.substringBefore('/') }
     }
-    return exportExDates(starts, isAllDay, eventTimezone)
+    return exportExDates(starts, isAllDay, eventTimezone, seriesStartMillis)
 }
 
-/** What a file and a provider both read back: a day, or a UTC stamp. */
-private val EXPORTED_STAMP = Regex("""\d{8}(T\d{6}Z)?""")
+/** [day] (`yyyyMMdd`) at the wall-clock time the series starts at in [zone], as a UTC stamp. */
+private fun atSeriesTime(day: String, seriesStartMillis: Long, zone: ZoneId): String? {
+    val date = runCatching { LocalDate.parse(day, DateTimeFormatter.BASIC_ISO_DATE) }.getOrNull() ?: return null
+    val time = Instant.ofEpochMilli(seriesStartMillis).atZone(zone).toLocalTime()
+    return formatExdateStamp(date.atTime(time).atZone(zone).toInstant().toEpochMilli(), isAllDay = false)
+}
+
+private val BARE_DAY = Regex("""\d{8}""")
+private val UTC_STAMP = Regex("""\d{8}T\d{6}Z""")
 

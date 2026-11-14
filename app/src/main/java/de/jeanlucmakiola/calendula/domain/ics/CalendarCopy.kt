@@ -18,15 +18,25 @@ fun planCalendarCopy(
     rows: CalendarRows,
     exdateStamp: (occurrenceMillis: Long, isAllDay: Boolean) -> String,
 ): List<ParsedIcsEvent> {
+    val declinedSeries = rows.series.filter { it.declined }
+    val declinedIds = declinedSeries.map { it.eventId }.toSet()
+    val declinedSyncIds = declinedSeries.filter { it.syncId != null }.map { it.calendarId to it.syncId }.toSet()
+    fun OverrideRow.ofDeclinedSeries() =
+        originalId in declinedIds || (originalSyncId != null && (calendarId to originalSyncId) in declinedSyncIds)
     val live = CalendarRows(
         series = rows.series.filterNot { it.event.status == EventStatus.Cancelled },
-        // A declined occurrence is as good as deleted here.
+        // A declined occurrence is as good as deleted here, and so is one of a
+        // declined series the user didn't accept on its own.
         overrides = rows.overrides.map {
-            if (it.declined) it.copy(event = it.event.copy(status = EventStatus.Cancelled)) else it
+            if (it.declined || (it.ofDeclinedSeries() && !it.accepted)) {
+                it.copy(event = it.event.copy(status = EventStatus.Cancelled))
+            } else {
+                it
+            }
         },
     )
     // A declined series still hands its accepted occurrences on before it goes.
-    val declined = rows.series.filter { it.declined }.map { it.event.uid }.toSet()
+    val declined = declinedSeries.map { it.event.uid }.toSet()
     return flattenOverrides(live, exdateStamp)
         .filterNot { it.overrideOf == null && it.uid in declined }
         .map { it.toParsedIcsEvent() }
