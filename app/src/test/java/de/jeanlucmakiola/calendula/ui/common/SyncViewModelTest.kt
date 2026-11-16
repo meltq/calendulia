@@ -190,4 +190,20 @@ class SyncViewModelTest {
 
         assertThat(vm.targets.value).isEqualTo(SyncTargets(emptySet(), emptySet(), dismissed = setOf(davAccount)))
     }
+
+    @Test
+    fun `a failed read of the targets is retried rather than hiding Sync now for good`(@TempDir dir: Path) =
+        runTest(dispatcher) {
+            val (vm, source) = viewModel(dir)
+            source.calendarsError = IllegalStateException("provider gone")
+            backgroundScope.launch { vm.targets.collect {} }
+            runCurrent()
+            assertThat(vm.targets.value?.reachable.orEmpty()).isEmpty()
+
+            source.calendarsError = null
+            advanceTimeBy(31_000)
+            runCurrent()
+
+            assertThat(vm.targets.value?.reachable).containsExactly(davAccount)
+        }
 }

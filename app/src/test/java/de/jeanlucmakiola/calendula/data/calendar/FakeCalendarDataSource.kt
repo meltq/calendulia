@@ -79,8 +79,12 @@ internal class FakeCalendarDataSource : CalendarDataSource {
     var calendarQueries = 0
         private set
 
+    /** Set to make [calendars] throw until cleared. */
+    var calendarsError: Exception? = null
+
     override fun calendars(): List<CalendarSource> {
         calendarQueries++
+        calendarsError?.let { throw it }
         return calendarsResult
     }
     override fun instances(beginMillis: Long, endMillis: Long): List<EventInstance> =

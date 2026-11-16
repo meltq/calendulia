@@ -201,7 +201,15 @@ class CalendarRepositoryImpl @Inject constructor(
 
     override val syncTargets: Flow<SyncTargets>
         get() = combine(calendars(), prefs.syncAccessDismissed, accessChecks) { calendars, dismissed, _ ->
-            targetsOf(calendars, dismissed)
+            // One failed read leaves the rows off until the next change, not for good.
+            try {
+                targetsOf(calendars, dismissed)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Sync targets unreadable", e)
+                SyncTargets.None
+            }
         }.flowOn(io)
 
     override fun refreshSyncAccess() {

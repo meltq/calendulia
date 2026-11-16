@@ -16,7 +16,8 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.catch
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.retryWhen
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -33,7 +34,13 @@ class SyncViewModel @Inject constructor(
 
     /** Who "Sync now" can reach, and who first needs the user's grant; null until first read. */
     val targets: StateFlow<SyncTargets?> = repository.syncTargets
-        .catch { emit(SyncTargets.None) }
+        // A failed read hides the rows for now, then reads again rather than for good.
+        .retryWhen { e, attempt ->
+            if (e is CancellationException) return@retryWhen false
+            emit(SyncTargets.None)
+            delay((RETRY_BASE_MILLIS shl attempt.coerceAtMost(5).toInt()).coerceAtMost(RETRY_MAX_MILLIS))
+            true
+        }
         .stateWhileSubscribed(scope = viewModelScope, initialValue = null)
 
     /** Re-read account access: on resume (which includes the picker returning) and drawer open. */
@@ -81,6 +88,8 @@ class SyncViewModel @Inject constructor(
     }
 
     private companion object {
+        const val RETRY_BASE_MILLIS = 1_000L
+        const val RETRY_MAX_MILLIS = 30_000L
         const val TAG = "SyncViewModel"
     }
 }
