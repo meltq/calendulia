@@ -10,9 +10,7 @@ import android.provider.Settings.System.DEFAULT_NOTIFICATION_URI
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -46,30 +44,23 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
-import de.jeanlucmakiola.calendula.domain.CalendarSource
-import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.DurationPicker
 import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
 import de.jeanlucmakiola.calendula.ui.common.durationLabel
-import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.android.hasPermission
 import de.jeanlucmakiola.floret.android.notificationSoundPickerIntent
 import de.jeanlucmakiola.floret.android.openNotificationSettings
 import de.jeanlucmakiola.floret.android.pickedSound
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
-import de.jeanlucmakiola.floret.components.ExpandIcon
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSwitchRow
 import de.jeanlucmakiola.floret.components.IconInfoCard
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.SelectedCheck
-import de.jeanlucmakiola.floret.identity.collapseExit
-import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.floret.reminders.minutesOrEmpty
-import de.jeanlucmakiola.floret.reminders.reminderOverrideFor
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalTime
 
@@ -83,7 +74,7 @@ internal fun NotificationsScreen(
     state: SettingsUiState,
     viewModel: SettingsViewModel,
     onBack: () -> Unit,
-    onOpenSpecialDates: () -> Unit,
+    onOpenCalendarReminders: () -> Unit,
     visible: Boolean = true,
 ) {
     val context = LocalContext.current
@@ -104,9 +95,6 @@ internal fun NotificationsScreen(
     var showAllDayReminder by remember { mutableStateOf(false) }
     var showAllDayReminderTime by remember { mutableStateOf(false) }
     var showSnooze by remember { mutableStateOf(false) }
-    var overrideDialog by remember { mutableStateOf<OverrideTarget?>(null) }
-    var calendarSectionExpanded by remember { mutableStateOf(false) }
-    var expandedCalendars by remember { mutableStateOf(emptySet<Long>()) }
     val scope = rememberCoroutineScope()
     val channelStatus by viewModel.channelStatus.collectAsStateWithLifecycle()
     val calendarIds = state.reminderCalendars.map { it.id }
@@ -114,56 +102,10 @@ internal fun NotificationsScreen(
         viewModel.refreshChannelStatus(calendarIds)
         onPauseOrDispose { }
     }
-    val openCalendarSettings: (Long) -> Unit = { calendarId ->
-        scope.launch { context.openNotificationSettings(viewModel.soundSettingsChannel(calendarId)) }
-    }
-    val openAppSettings: () -> Unit = {
-        scope.launch {
-            viewModel.syncReminderChannels()
-            context.openNotificationSettings()
-        }
-    }
-    val loadedSounds by viewModel.channelSounds.collectAsStateWithLifecycle()
-    val sounds = loadedSounds.orEmpty()
-    val soundFailedMessage = stringResource(R.string.settings_notification_sound_failed)
-    val soundUnreadableMessage = stringResource(R.string.settings_notification_sound_unreadable)
-    LaunchedEffect(Unit) {
-        viewModel.soundFailed.collect { failure ->
-            val message = if (failure == SoundFailure.Unreadable) soundUnreadableMessage else soundFailedMessage
-            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
-        }
-    }
-    // ALL_CALENDARS, a calendar id, or null when no pick is pending.
-    var soundTarget by rememberSaveable { mutableStateOf<Long?>(null) }
-    val soundPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-        val target = soundTarget
-        soundTarget = null
-        val picked = pickedSound(result.resultCode, result.data) ?: return@rememberLauncherForActivityResult
-        when (target) {
-            null -> Unit
-            ALL_CALENDARS -> viewModel.setReminderSoundForAll(picked.uri)
-            else -> viewModel.setReminderSound(target, picked.uri)
-        }
-    }
-    val pickSoundTitle = stringResource(R.string.settings_notification_sound)
-    val pickSound: (Long) -> Unit = pick@{ target ->
-        if (soundTarget != null) return@pick
-        val current = if (target == ALL_CALENDARS) {
-            (sharedSound(sounds, calendarIds) as? SharedSound.Same)?.sound
-        } else {
-            sounds[target]
-        }
-        soundTarget = target
-        try {
-            // A missing or mixed sound preselects Default; a silent one, Silent.
-            val preselect = if (current == null) DEFAULT_NOTIFICATION_URI else current.uri
-            soundPicker.launch(notificationSoundPickerIntent(preselect, pickSoundTitle))
-        } catch (e: RuntimeException) {
-            // No picker, or one that refuses to start: the system screen still has the sound.
-            soundTarget = null
-            if (target == ALL_CALENDARS) openAppSettings() else openCalendarSettings(target)
-        }
-    }
+    val soundPicker = rememberReminderSoundPicker(viewModel, calendarIds)
+    val openAppSettings = soundPicker.openAppSettings
+    val loadedSounds = soundPicker.loadedSounds
+    val pickSound = soundPicker.pick
 
     CollapsingScaffold(
         title = stringResource(R.string.settings_section_notifications),
@@ -256,66 +198,21 @@ internal fun NotificationsScreen(
             onClick = { showSnooze = true },
         )
 
-        // Per-calendar notifications and reminder overrides (#145, #272).
         if (state.reminderCalendars.isNotEmpty()) {
             Spacer(Modifier.height(24.dp))
             GroupedRow(
                 title = stringResource(R.string.settings_calendar_reminders_title),
-                summary = stringResource(R.string.settings_calendar_reminders_hint),
+                summary = stringResource(R.string.settings_calendar_reminders_subtitle),
                 position = Position.Alone,
-                trailing = { ExpandIcon(calendarSectionExpanded) },
-                onClick = { calendarSectionExpanded = !calendarSectionExpanded },
+                trailing = {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
+                onClick = onOpenCalendarReminders,
             )
-            AnimatedVisibility(
-                visible = calendarSectionExpanded,
-                enter = expandEnter(),
-                exit = collapseExit(),
-            ) {
-                Column {
-                    state.reminderCalendars.forEach { calendar ->
-                        Spacer(Modifier.height(16.dp))
-                        val expanded = calendar.id in expandedCalendars
-                        val notifying = calendar.id !in state.mutedReminderCalendarIds
-                        val blocked = notifying && calendar.id in channelStatus.blockedCalendarIds
-                        GroupedRow(
-                            title = calendar.displayName.orUnnamed(),
-                            summary = when {
-                                !notifying -> stringResource(R.string.settings_calendar_notifications_off)
-                                blocked -> stringResource(R.string.settings_notifications_blocked)
-                                else -> null
-                            },
-                            position = if (expanded) Position.Top else Position.Alone,
-                            leading = { CalendarColorChip(calendar.color) },
-                            trailing = { ExpandIcon(expanded) },
-                            onClick = {
-                                expandedCalendars = if (expanded) {
-                                    expandedCalendars - calendar.id
-                                } else {
-                                    expandedCalendars + calendar.id
-                                }
-                            },
-                        )
-                        AnimatedVisibility(
-                            visible = expanded,
-                            enter = expandEnter(),
-                            exit = collapseExit(),
-                        ) {
-                            CalendarNotificationRows(
-                                calendar = calendar,
-                                state = state,
-                                notifying = notifying,
-                                blocked = blocked,
-                                soundLabel = loadedSounds?.let { soundLabel(it[calendar.id]) },
-                                onSetNotifying = { viewModel.setCalendarRemindersEnabled(calendar.id, it) },
-                                onPickSound = { pickSound(calendar.id) },
-                                onOpenSettings = { openCalendarSettings(calendar.id) },
-                                onOpenSpecialDates = onOpenSpecialDates,
-                                onEditOverride = { overrideDialog = it },
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 
@@ -364,120 +261,10 @@ internal fun NotificationsScreen(
             onDismiss = { showAllDayReminderTime = false },
         )
     }
-    overrideDialog?.let { target ->
-        val map = if (target.isAllDay) {
-            state.perCalendarAllDayReminderOverride
-        } else {
-            state.perCalendarReminderOverride
-        }
-        ReminderDefaultPicker(
-            title = stringResource(
-                if (target.isAllDay) {
-                    R.string.settings_default_reminder_allday
-                } else {
-                    R.string.settings_default_reminder
-                },
-            ),
-            presets = if (target.isAllDay) ALLDAY_REMINDER_PRESETS else REMINDER_PRESETS,
-            selected = map.reminderOverrideFor(target.calendarId),
-            allowInherit = true,
-            onSelect = {
-                if (target.isAllDay) {
-                    viewModel.setCalendarAllDayReminderOverride(target.calendarId, it)
-                } else {
-                    viewModel.setCalendarReminderOverride(target.calendarId, it)
-                }
-            },
-            onDismiss = { overrideDialog = null },
-            leadTimeSummary = if (target.isAllDay) {
-                allDayFiringTimeSummary(state.allDayReminderTimeMinutes)
-            } else {
-                null
-            },
-        )
-    }
-}
-
-/**
- * One calendar's expanded rows: its notification switch and channel deep-link
- * for every calendar, then the default-reminder overrides where it takes them —
- * or, for a special-dates calendar, a link to the section that owns them.
- */
-@Composable
-private fun CalendarNotificationRows(
-    calendar: CalendarSource,
-    state: SettingsUiState,
-    notifying: Boolean,
-    blocked: Boolean,
-    soundLabel: String?,
-    onSetNotifying: (Boolean) -> Unit,
-    onPickSound: () -> Unit,
-    onOpenSettings: () -> Unit,
-    onOpenSpecialDates: () -> Unit,
-    onEditOverride: (OverrideTarget) -> Unit,
-) {
-    val managed = calendar.id in state.managedCalendarIds
-    val takesOverrides = calendar.canModifyContents && !managed
-    Column {
-        GroupedSwitchRow(
-            title = stringResource(R.string.settings_calendar_notifications),
-            checked = notifying,
-            onCheckedChange = onSetNotifying,
-            summary = stringResource(R.string.settings_calendar_notifications_hint),
-            position = Position.Middle,
-        )
-        GroupedRow(
-            title = stringResource(R.string.settings_notification_sound),
-            summary = soundLabel,
-            position = Position.Middle,
-            onClick = onPickSound,
-        )
-        GroupedRow(
-            title = stringResource(R.string.settings_notification_more),
-            summary = if (blocked) {
-                stringResource(R.string.settings_notifications_blocked_hint)
-            } else {
-                stringResource(R.string.settings_calendar_notification_sound_hint)
-            },
-            position = if (managed || takesOverrides) Position.Middle else Position.Bottom,
-            trailing = { ExternalLinkIcon() },
-            onClick = onOpenSettings,
-        )
-        if (managed) {
-            GroupedRow(
-                title = stringResource(R.string.settings_default_reminder_allday),
-                summary = stringResource(R.string.settings_calendar_reminders_managed_hint),
-                position = Position.Bottom,
-                trailing = {
-                    Icon(
-                        imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                },
-                onClick = onOpenSpecialDates,
-            )
-        } else if (takesOverrides) {
-            val timed = state.perCalendarReminderOverride.reminderOverrideFor(calendar.id)
-            GroupedRow(
-                title = stringResource(R.string.settings_default_reminder),
-                summary = calendarOverrideSummary(timed, state.defaultReminderMinutes),
-                position = Position.Middle,
-                onClick = { onEditOverride(OverrideTarget(calendar.id, isAllDay = false)) },
-            )
-            val allDay = state.perCalendarAllDayReminderOverride.reminderOverrideFor(calendar.id)
-            GroupedRow(
-                title = stringResource(R.string.settings_default_reminder_allday),
-                summary = calendarOverrideSummary(allDay, state.defaultAllDayReminderMinutes),
-                position = Position.Bottom,
-                onClick = { onEditOverride(OverrideTarget(calendar.id, isAllDay = true)) },
-            )
-        }
-    }
 }
 
 /** [soundTarget] meaning every calendar at once. */
-private const val ALL_CALENDARS = Long.MIN_VALUE
+internal const val ALL_CALENDARS = Long.MIN_VALUE
 
 /** What the calendars that have a channel share, sound-wise. */
 private sealed interface SharedSound {
@@ -496,7 +283,7 @@ private fun sharedSound(sounds: Map<Long, ReminderSound>, calendarIds: List<Long
 }
 
 @Composable
-private fun soundLabel(sound: ReminderSound?): String = when {
+internal fun soundLabel(sound: ReminderSound?): String = when {
     sound == null -> stringResource(R.string.settings_notification_sound_default)
     sound.uri == null -> stringResource(R.string.settings_notification_sound_silent)
     sound.uri == DEFAULT_NOTIFICATION_URI -> sound.title
@@ -536,7 +323,7 @@ private fun NotificationCategoryHint(onOpen: () -> Unit, onDismiss: () -> Unit) 
 }
 
 @Composable
-private fun ExternalLinkIcon() {
+internal fun ExternalLinkIcon() {
     Icon(
         imageVector = Icons.AutoMirrored.Filled.OpenInNew,
         contentDescription = null,
@@ -544,24 +331,9 @@ private fun ExternalLinkIcon() {
     )
 }
 
-/** Which calendar + event kind a per-calendar reminder-override dialog targets. */
-private data class OverrideTarget(val calendarId: Long, val isAllDay: Boolean)
-
 /** A global default (empty = none) as a picker choice for selection highlighting. */
 private fun List<Int>.toReminderChoice(): ReminderOverride =
     if (isEmpty()) ReminderOverride.None else ReminderOverride.Minutes(this)
-
-/** Row summary for a calendar: its override, or the inherited global default. */
-@Composable
-private fun calendarOverrideSummary(
-    choice: ReminderOverride,
-    globalDefault: List<Int>,
-): String = when (choice) {
-    ReminderOverride.Inherit ->
-        stringResource(R.string.settings_calendar_reminder_inherits, reminderChoiceLabel(globalDefault))
-    ReminderOverride.None -> stringResource(R.string.reminder_none)
-    is ReminderOverride.Minutes -> reminderChoiceLabel(choice.minutes)
-}
 
 /** Snooze delays offered for the notification "Snooze" action, in minutes. */
 private val SNOOZE_PRESETS = listOf(5, 10, 15, 30, 60)
@@ -606,4 +378,69 @@ private fun openBatteryOptimizationSettings(context: Context) {
             context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS))
         }
     }
+}
+
+/** The reminder-sound picker (#518) shared by Notifications (all calendars) and the per-calendar page. */
+internal class ReminderSoundPicker(
+    val loadedSounds: Map<Long, ReminderSound>?,
+    val pick: (Long) -> Unit,
+    val openAppSettings: () -> Unit,
+    val openCalendarSettings: (Long) -> Unit,
+)
+
+@Composable
+internal fun rememberReminderSoundPicker(viewModel: SettingsViewModel, calendarIds: List<Long>): ReminderSoundPicker {
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    val openCalendarSettings: (Long) -> Unit = { calendarId ->
+        scope.launch { context.openNotificationSettings(viewModel.soundSettingsChannel(calendarId)) }
+    }
+    val openAppSettings: () -> Unit = {
+        scope.launch {
+            viewModel.syncReminderChannels()
+            context.openNotificationSettings()
+        }
+    }
+    val loadedSounds by viewModel.channelSounds.collectAsStateWithLifecycle()
+    val sounds = loadedSounds.orEmpty()
+    val soundFailedMessage = stringResource(R.string.settings_notification_sound_failed)
+    val soundUnreadableMessage = stringResource(R.string.settings_notification_sound_unreadable)
+    LaunchedEffect(Unit) {
+        viewModel.soundFailed.collect { failure ->
+            val message = if (failure == SoundFailure.Unreadable) soundUnreadableMessage else soundFailedMessage
+            Toast.makeText(context, message, Toast.LENGTH_LONG).show()
+        }
+    }
+    // ALL_CALENDARS, a calendar id, or null when no pick is pending.
+    var soundTarget by rememberSaveable { mutableStateOf<Long?>(null) }
+    val soundPicker = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+        val target = soundTarget
+        soundTarget = null
+        val picked = pickedSound(result.resultCode, result.data) ?: return@rememberLauncherForActivityResult
+        when (target) {
+            null -> Unit
+            ALL_CALENDARS -> viewModel.setReminderSoundForAll(picked.uri)
+            else -> viewModel.setReminderSound(target, picked.uri)
+        }
+    }
+    val pickSoundTitle = stringResource(R.string.settings_notification_sound)
+    val pickSound: (Long) -> Unit = pick@{ target ->
+        if (soundTarget != null) return@pick
+        val current = if (target == ALL_CALENDARS) {
+            (sharedSound(sounds, calendarIds) as? SharedSound.Same)?.sound
+        } else {
+            sounds[target]
+        }
+        soundTarget = target
+        try {
+            // A missing or mixed sound preselects Default; a silent one, Silent.
+            val preselect = if (current == null) DEFAULT_NOTIFICATION_URI else current.uri
+            soundPicker.launch(notificationSoundPickerIntent(preselect, pickSoundTitle))
+        } catch (e: RuntimeException) {
+            // No picker, or one that refuses to start: the system screen still has the sound.
+            soundTarget = null
+            if (target == ALL_CALENDARS) openAppSettings() else openCalendarSettings(target)
+        }
+    }
+    return ReminderSoundPicker(loadedSounds, pickSound, openAppSettings, openCalendarSettings)
 }
