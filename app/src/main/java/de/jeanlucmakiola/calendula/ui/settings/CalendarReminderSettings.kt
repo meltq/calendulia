@@ -4,6 +4,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material3.Icon
@@ -38,6 +39,7 @@ import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.components.GroupedSwitchRow
 import de.jeanlucmakiola.floret.components.Position
+import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.floret.identity.collapseExit
 import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
@@ -81,15 +83,11 @@ internal fun CalendarRemindersScreen(
             val calendars = group.calendars
             calendars.forEachIndexed { index, calendar ->
                 val expanded = calendar.id in expandedCalendars
-                val isExpanded = { i: Int -> calendars[i].id in expandedCalendars }
                 val notifying = calendar.id !in state.mutedReminderCalendarIds
                 CalendarReminderEntry(
                     calendar = calendar,
                     state = state,
-                    position = segmentPosition(
-                        startsSegment = expanded || index == 0 || isExpanded(index - 1),
-                        endsSegment = !expanded && (index == calendars.lastIndex || isExpanded(index + 1)),
-                    ),
+                    position = positionOf(index, calendars.size),
                     expanded = expanded,
                     notifying = notifying,
                     blocked = notifying && calendar.id in channelStatus.blockedCalendarIds,
@@ -167,6 +165,8 @@ private fun CalendarReminderEntry(
     onOpenSpecialDates: () -> Unit,
     onEditOverride: (OverrideTarget) -> Unit,
 ) {
+    val opensGroup = position == Position.Top || position == Position.Alone
+    val closesGroup = position == Position.Bottom || position == Position.Alone
     GroupedRow(
         title = calendar.displayName.orUnnamed(),
         summary = when {
@@ -174,7 +174,11 @@ private fun CalendarReminderEntry(
             blocked -> stringResource(R.string.settings_notifications_blocked)
             else -> null
         },
-        position = position,
+        position = when {
+            !expanded -> position
+            opensGroup -> Position.Top
+            else -> Position.Middle
+        },
         leading = { CalendarColorChip(calendar.color) },
         trailing = { ExpandIcon(expanded) },
         onClick = onToggleExpand,
@@ -187,8 +191,8 @@ private fun CalendarReminderEntry(
         val managed = calendar.id in state.managedCalendarIds
         val takesOverrides = calendar.canModifyContents && !managed
         val nested = MaterialTheme.colorScheme.surfaceContainerHighest
-        val last = Position.Bottom
-        Column {
+        // The options round off their calendar; mid-group they keep the row gap.
+        Column(if (closesGroup) Modifier else Modifier.padding(bottom = 2.dp)) {
             GroupedSwitchRow(
                 title = stringResource(R.string.settings_calendar_notifications),
                 checked = notifying,
@@ -204,7 +208,7 @@ private fun CalendarReminderEntry(
                 } else {
                     stringResource(R.string.settings_calendar_notification_sound_hint)
                 },
-                position = if (managed || takesOverrides) Position.Middle else last,
+                position = if (managed || takesOverrides) Position.Middle else Position.Bottom,
                 container = nested,
                 trailing = { ExternalLinkIcon() },
                 onClick = onOpenSound,
@@ -213,7 +217,7 @@ private fun CalendarReminderEntry(
                 GroupedRow(
                     title = stringResource(R.string.settings_default_reminder_allday),
                     summary = stringResource(R.string.settings_calendar_reminders_managed_hint),
-                    position = last,
+                    position = Position.Bottom,
                     container = nested,
                     trailing = { ChevronIcon() },
                     onClick = onOpenSpecialDates,
@@ -233,24 +237,13 @@ private fun CalendarReminderEntry(
                     isAllDay = true,
                     choice = state.perCalendarAllDayReminderOverride.reminderOverrideFor(calendar.id),
                     globalDefault = state.defaultAllDayReminderMinutes,
-                    position = last,
+                    position = Position.Bottom,
                     container = nested,
                     onEditOverride = onEditOverride,
                 )
             }
         }
     }
-}
-
-/**
- * A calendar row's place in its connected run: an expanded calendar opens its own
- * run that its options close, so the rows around it round off against it.
- */
-private fun segmentPosition(startsSegment: Boolean, endsSegment: Boolean): Position = when {
-    startsSegment && endsSegment -> Position.Alone
-    startsSegment -> Position.Top
-    endsSegment -> Position.Bottom
-    else -> Position.Middle
 }
 
 @Composable
