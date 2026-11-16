@@ -121,23 +121,23 @@ internal fun ReminderAlertScreen(
                 }
             }
             Spacer(Modifier.size(24.dp))
-            Row(
+            Column(
                 modifier = Modifier.widthIn(max = 480.dp).fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                AlertButton(
-                    label = stringResource(R.string.reminder_action_snooze),
-                    icon = Icons.Outlined.Snooze,
-                    tonal = true,
-                    onClick = onSnooze,
-                    modifier = Modifier.weight(1f),
-                )
                 AlertButton(
                     label = stringResource(R.string.reminder_action_dismiss),
                     icon = Icons.Rounded.Close,
                     tonal = false,
                     onClick = onDismiss,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.fillMaxWidth(),
+                )
+                AlertButton(
+                    label = stringResource(R.string.reminder_action_snooze),
+                    icon = Icons.Outlined.Snooze,
+                    tonal = true,
+                    onClick = onSnooze,
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }
