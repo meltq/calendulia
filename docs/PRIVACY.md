@@ -96,6 +96,7 @@ The settings screen contains links to the source code, the licence, the issue tr
 - `USE_EXACT_ALARM`, `SCHEDULE_EXACT_ALARM`: deliver reminders at the exact time, including after snoozing.
 - `RECEIVE_BOOT_COMPLETED`: re-register pending reminders after a restart.
 - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`: only to open the system dialog for the “Reliable delivery” setting.
+- `READ_SYNC_STATS`: only to see whether a sync asked for with “Sync now” is still pending or running, so the menu can say when it has finished. It reveals nothing about your data.
 - `WAKE_LOCK`, `FOREGROUND_SERVICE`, `ACCESS_NETWORK_STATE`: required by the Android system component used for scheduled background work (WorkManager).
 
 `ACCESS_NETWORK_STATE` allows reading *whether* a network connection exists. It does **not** permit using one. Without `INTERNET`, no connection is possible.

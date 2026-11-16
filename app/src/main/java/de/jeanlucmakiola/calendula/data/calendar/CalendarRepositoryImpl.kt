@@ -218,30 +218,32 @@ class CalendarRepositoryImpl @Inject constructor(
         }
     }
 
-    override suspend fun requestSync(): SyncRequestResult = withContext(io) {
+    override suspend fun requestSync(): SyncRequest = withContext(io) {
         val targets = try {
             targetsOf(calendars().first(), prefs.syncAccessDismissed.first())
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
             Log.w(TAG, "Sync request skipped: calendars unreadable", e)
-            return@withContext SyncRequestResult.Failed
+            return@withContext SyncRequest(SyncRequestResult.Failed)
         }
         if (targets.reachable.isEmpty()) {
-            return@withContext if (targets.needsAccess.isEmpty()) {
-                SyncRequestResult.NothingToSync
-            } else {
-                SyncRequestResult.NeedsAccess
-            }
+            return@withContext SyncRequest(
+                if (targets.needsAccess.isEmpty()) SyncRequestResult.NothingToSync else SyncRequestResult.NeedsAccess,
+            )
         }
-        val sent = targets.reachable.count { requestSync(it, userInitiated = true) }
-        when {
-            sent == 0 -> SyncRequestResult.Failed
-            sent < targets.reachable.size -> SyncRequestResult.PartlyFailed
+        val sent = targets.reachable.filterTo(linkedSetOf()) { requestSync(it, userInitiated = true) }
+        val result = when {
+            sent.isEmpty() -> SyncRequestResult.Failed
+            sent.size < targets.reachable.size -> SyncRequestResult.PartlyFailed
             targets.needsAccess.isNotEmpty() -> SyncRequestResult.SomeNeedAccess
             else -> SyncRequestResult.Requested
         }
+        SyncRequest(result, sent)
     }
+
+    override suspend fun awaitSyncs(accounts: Set<SyncAccount>): SyncWait =
+        withContext(io) { syncRequester.awaitSyncs(accounts) }
 
     override val localChanges: Flow<Unit> = merge(
         writes,

@@ -150,11 +150,13 @@ fun CalendarDrawer(
 
 /**
  * The drawer's sync rows: "Sync now" when [canSync] ([inFlight] shows progress
- * and ignores taps), and a grant row while some account [needsAccess].
+ * and ignores taps, [outcome] the last request's result while the drawer stays
+ * open), and a grant row while some account [needsAccess].
  */
 data class DrawerSync(
     val canSync: Boolean,
     val inFlight: Boolean,
+    val outcome: String?,
     val needsAccess: Boolean,
     val onSync: () -> Unit,
     val onGrantAccess: () -> Unit,
@@ -182,9 +184,10 @@ private fun SyncRows(sync: DrawerSync) {
 @OptIn(ExperimentalMaterial3ExpressiveApi::class)
 @Composable
 private fun SyncNowRow(sync: DrawerSync, position: Position) {
-    val inFlightText = stringResource(R.string.sync_requested)
+    val inFlightText = stringResource(R.string.sync_in_progress)
     GroupedRow(
         title = stringResource(R.string.drawer_sync_now),
+        summary = if (sync.inFlight) inFlightText else sync.outcome,
         position = position,
         modifier = if (sync.inFlight) {
             Modifier.semantics { stateDescription = inFlightText }

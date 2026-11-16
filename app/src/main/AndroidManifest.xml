@@ -41,6 +41,9 @@
     -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Lets "Sync now" (#240) follow the sync it asked for: read-only sync state, install-time. -->
+    <uses-permission android:name="android.permission.READ_SYNC_STATS" />
+
     <!-- WorkManager declares these for network constraints and foreground workers, neither of which the app uses (#448). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
     <uses-permission android:name="android.permission.WAKE_LOCK" tools:node="remove" />

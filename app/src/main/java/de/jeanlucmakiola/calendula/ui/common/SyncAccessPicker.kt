@@ -1,5 +1,10 @@
 package de.jeanlucmakiola.calendula.ui.common
 
+import kotlinx.coroutines.flow.combine
+import de.jeanlucmakiola.calendula.data.calendar.SyncRequestResult
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.MutableState
 import android.content.ActivityNotFoundException
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -67,6 +72,33 @@ fun RefreshSyncAccessOnOpen(drawerState: DrawerState, sync: SyncViewModel) {
     LaunchedEffect(drawerState.targetValue) {
         if (drawerState.targetValue == DrawerValue.Open) sync.refreshAccess()
     }
+}
+
+/**
+ * Routes "Sync now"'s outcome (#240): one that lands while the drawer is open
+ * shows in its row and is dropped when the drawer closes; one that lands while
+ * it is closed is handed to the returned state, for the chip.
+ */
+@Composable
+fun rememberSyncChipOutcome(drawerState: DrawerState, sync: SyncViewModel): MutableState<SyncRequestResult?> {
+    val chip = rememberSaveable { mutableStateOf<SyncRequestResult?>(null) }
+    LaunchedEffect(drawerState, sync) {
+        var shownInRow = false
+        combine(sync.result, snapshotFlow { drawerState.targetValue == DrawerValue.Closed }) { result, closed ->
+            result to closed
+        }.collect { (result, closed) ->
+            when {
+                result == null -> shownInRow = false
+                !closed -> shownInRow = true
+                else -> {
+                    if (!shownInRow) chip.value = result
+                    shownInRow = false
+                    sync.consumeResult()
+                }
+            }
+        }
+    }
+    return chip
 }
 
 /**

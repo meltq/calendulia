@@ -151,7 +151,7 @@ class SyncNudgeTest {
         }
         val repo = testRepository(source, dir, Dispatchers.Unconfined, syncRequester = sync)
 
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
+        assertThat(repo.requestSync().result).isEqualTo(SyncRequestResult.Requested)
         assertThat(sync.requests).containsExactly(Request(dav, true), Request(google, true))
     }
 
@@ -161,7 +161,7 @@ class SyncNudgeTest {
         val source = FakeCalendarDataSource().apply { calendarsResult = listOf(cal(4L, local)) }
         val repo = testRepository(source, dir, Dispatchers.Unconfined, syncRequester = sync)
 
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.NothingToSync)
+        assertThat(repo.requestSync().result).isEqualTo(SyncRequestResult.NothingToSync)
         assertThat(sync.requests).isEmpty()
     }
 
@@ -170,7 +170,7 @@ class SyncNudgeTest {
         val sync = RecordingSyncRequester(accepts = false)
         val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
 
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Failed)
+        assertThat(repo.requestSync().result).isEqualTo(SyncRequestResult.Failed)
     }
 
     @Test
@@ -194,7 +194,7 @@ class SyncNudgeTest {
         repo.createEvent(form(3L))
         assertThat(sync.requests).isEmpty()
 
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
+        assertThat(repo.requestSync().result).isEqualTo(SyncRequestResult.Requested)
         assertThat(sync.requests).containsExactly(Request(dav, true))
     }
 
@@ -217,7 +217,7 @@ class SyncNudgeTest {
         val sync = RecordingSyncRequester(refusedTypes = setOf(google.type))
         val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
 
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.PartlyFailed)
+        assertThat(repo.requestSync().result).isEqualTo(SyncRequestResult.PartlyFailed)
         assertThat(sync.requests).containsExactly(Request(dav, true))
     }
 
@@ -233,7 +233,7 @@ class SyncNudgeTest {
         assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), setOf(google)))
 
         sync.requests.clear()
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.SomeNeedAccess)
+        assertThat(repo.requestSync().result).isEqualTo(SyncRequestResult.SomeNeedAccess)
         assertThat(sync.requests).containsExactly(Request(dav, true))
     }
 
@@ -246,7 +246,7 @@ class SyncNudgeTest {
         sync.hiddenTypes = setOf("other")
 
         assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav, google), emptySet()))
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
+        assertThat(repo.requestSync().result).isEqualTo(SyncRequestResult.Requested)
         assertThat(sync.requests).containsExactly(Request(dav, true), Request(google, true))
     }
 
@@ -256,7 +256,7 @@ class SyncNudgeTest {
         sync.knownAccounts = setOf(dav, google)
         val repo = testRepository(fake(), dir, Dispatchers.Unconfined, syncRequester = sync)
 
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.NeedsAccess)
+        assertThat(repo.requestSync().result).isEqualTo(SyncRequestResult.NeedsAccess)
         repo.createEvent(form(1L))
         assertThat(sync.requests).isEmpty()
     }
@@ -281,7 +281,7 @@ class SyncNudgeTest {
         repo.setSyncAccessDismissed(google, dismissed = true)
 
         assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), emptySet(), dismissed = setOf(google)))
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.Requested)
+        assertThat(repo.requestSync().result).isEqualTo(SyncRequestResult.Requested)
 
         repo.setSyncAccessDismissed(google, dismissed = false)
         assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(setOf(dav), setOf(google)))
@@ -297,7 +297,7 @@ class SyncNudgeTest {
         repo.setSyncAccessDismissed(google, dismissed = true)
 
         assertThat(repo.syncTargets.first()).isEqualTo(SyncTargets(emptySet(), emptySet(), dismissed = setOf(dav, google)))
-        assertThat(repo.requestSync()).isEqualTo(SyncRequestResult.NothingToSync)
+        assertThat(repo.requestSync().result).isEqualTo(SyncRequestResult.NothingToSync)
     }
 
     @Test

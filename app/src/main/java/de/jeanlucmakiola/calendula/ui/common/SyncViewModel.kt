@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.common
 
+import android.util.Log
 import androidx.annotation.StringRes
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -9,23 +10,21 @@ import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
 import de.jeanlucmakiola.calendula.data.calendar.SyncRequestResult
 import de.jeanlucmakiola.calendula.data.calendar.SyncTargets
+import de.jeanlucmakiola.calendula.data.calendar.SyncWait
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
-import kotlinx.coroutines.CoroutineStart
-import kotlinx.coroutines.async
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.catch
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
 
 /**
  * The drawer's "Sync now" (#240): asks the sync adapters of every visible synced
- * calendar to run now. [inFlight] holds until the provider next reports a change
- * or [SETTLE_MILLIS] pass — the request itself says nothing about when, or
- * whether, the sync completes.
+ * calendar to run now, then follows them through the system's sync state.
+ * [inFlight] holds until every reached account has synced or the wait gives up;
+ * [result] then says [SyncRequestResult.Completed] only when that was seen.
  */
 @HiltViewModel
 class SyncViewModel @Inject constructor(
@@ -51,18 +50,21 @@ class SyncViewModel @Inject constructor(
     fun requestSync() {
         if (_inFlight.value) return
         _inFlight.value = true
+        _result.value = null
         viewModelScope.launch {
             try {
-                // Listening before asking, so a sync that lands at once still counts.
-                val settled = async(start = CoroutineStart.UNDISPATCHED) {
-                    withTimeoutOrNull(SETTLE_MILLIS) { repository.providerChanges.firstOrNull() }
+                val request = repository.requestSync()
+                val waited = if (request.accounts.isEmpty()) null else repository.awaitSyncs(request.accounts)
+                _result.value = if (waited == SyncWait.Completed && request.result == SyncRequestResult.Requested) {
+                    SyncRequestResult.Completed
+                } else {
+                    request.result
                 }
-                val outcome = repository.requestSync()
-                _result.value = outcome
-                val sent = outcome == SyncRequestResult.Requested ||
-                    outcome == SyncRequestResult.SomeNeedAccess ||
-                    outcome == SyncRequestResult.PartlyFailed
-                if (sent) settled.await() else settled.cancel()
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Sync now failed", e)
+                _result.value = SyncRequestResult.Failed
             } finally {
                 _inFlight.value = false
             }
@@ -79,14 +81,15 @@ class SyncViewModel @Inject constructor(
     }
 
     private companion object {
-        const val SETTLE_MILLIS = 15_000L
+        const val TAG = "SyncViewModel"
     }
 }
 
-/** The chip text for a sync request's outcome. */
+/** The text for a sync request's outcome, in the drawer row or the chip. */
 @StringRes
 fun SyncRequestResult.messageRes(): Int = when (this) {
     SyncRequestResult.Requested -> R.string.sync_requested
+    SyncRequestResult.Completed -> R.string.sync_completed
     SyncRequestResult.PartlyFailed -> R.string.sync_request_partly_failed
     SyncRequestResult.NeedsAccess -> R.string.sync_request_needs_access
     SyncRequestResult.SomeNeedAccess -> R.string.sync_request_some_need_access

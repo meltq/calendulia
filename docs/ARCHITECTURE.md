@@ -28,6 +28,14 @@ the package list (recurring writes, save conflicts, reminder delivery).
    grant row. Per account the user can choose "Don't ask" instead
    (`CalendarPrefs.syncAccessDismissed`); such accounts drop out of the grant
    row and the receipts, and the calendar manager lists them to ask again. Whether and when the adapter syncs stays its call.
+   "Sync now" then follows what it asked for through the system's sync state
+   (`READ_SYNC_STATS`: `isSyncPending` / `isSyncActive` plus a status-change
+   listener, see `awaitSyncs`): it reports "Sync completed" once every reached
+   account was seen pending or running and is idle again (or, never seen, is
+   still idle after a short grace), and only "Sync requested" when that isn't
+   seen within a minute or the state can't be read. The outcome shows in the
+   drawer row while the drawer is open; one that lands with the drawer closed
+   gets the chip.
 2. **Observer-driven UI.** A `ContentObserver` on the provider triggers
    re-queries; every screen recomposes from fresh provider state. After a
    write, nothing is patched by hand — the views refresh from the provider.

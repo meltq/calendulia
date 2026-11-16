@@ -56,6 +56,7 @@ import de.jeanlucmakiola.calendula.ui.common.CalendarDrawer
 import de.jeanlucmakiola.calendula.ui.common.DrawerSync
 import de.jeanlucmakiola.calendula.ui.common.SyncViewModel
 import de.jeanlucmakiola.calendula.ui.common.RefreshSyncAccessOnOpen
+import de.jeanlucmakiola.calendula.ui.common.rememberSyncChipOutcome
 import de.jeanlucmakiola.calendula.ui.common.SyncAccessSheet
 import de.jeanlucmakiola.calendula.data.calendar.SyncTargets
 import de.jeanlucmakiola.calendula.ui.common.rememberSyncAccessPicker
@@ -449,14 +450,15 @@ fun CalendarHost(
     val eventActions: EventActionsViewModel = hiltViewModel()
     val moveOutcome by reschedule.outcome.collectAsStateWithLifecycle()
     val selectionFailure by eventActions.failure.collectAsStateWithLifecycle()
-    // "Sync now" in the drawer (#240); its receipt shares the move chip.
+    // "Sync now" in the drawer (#240): its outcome shows in the drawer row, or in
+    // the move chip when it lands with the drawer closed.
     val sync: SyncViewModel = hiltViewModel()
     val loadedSyncTargets by sync.targets.collectAsStateWithLifecycle()
     val syncTargets = loadedSyncTargets ?: SyncTargets.None
     val syncInFlight by sync.inFlight.collectAsStateWithLifecycle()
     val syncResult by sync.result.collectAsStateWithLifecycle()
     val selectionFailureMessage = eventActionFailureMessage(selectionFailure)
-    val syncMessage = syncResult?.let { stringResource(it.messageRes()) }
+    val syncRowMessage = syncResult?.let { stringResource(it.messageRes()) }
     val launchAccessPicker = rememberSyncAccessPicker(sync)
     var showSyncAccess by rememberSaveable { mutableStateOf(false) }
     val onEditEvent: (EventInstance) -> Unit = { event -> editKey = event.occurrenceKey() }
@@ -557,6 +559,8 @@ fun CalendarHost(
         val chromeHost = remember { ChromeHost() }
         val drawerState = rememberDrawerState(DrawerValue.Closed)
         RefreshSyncAccessOnOpen(drawerState, sync)
+        val syncChip = rememberSyncChipOutcome(drawerState, sync)
+        val syncChipMessage = syncChip.value?.let { stringResource(it.messageRes()) }
         val density = LocalDensity.current
         val topBarBottom = TopAppBarDefaults.windowInsets.getTop(density) +
             with(density) { TopAppBarDefaults.TopAppBarExpandedHeight.toPx() }
@@ -607,10 +611,11 @@ fun CalendarHost(
                         onOpenSettings()
                         switchScope.launch { drawerState.close() }
                     },
-                    sync = remember(syncTargets, syncInFlight) {
+                    sync = remember(syncTargets, syncInFlight, syncRowMessage) {
                         DrawerSync(
                             canSync = syncTargets.reachable.isNotEmpty(),
                             inFlight = syncInFlight,
+                            outcome = syncRowMessage,
                             needsAccess = syncTargets.needsAccess.isNotEmpty(),
                             // Stays open, so the row's progress and the result are seen.
                             onSync = { sync.requestSync() },
@@ -642,12 +647,12 @@ fun CalendarHost(
                         // A fresh event, like a duplicate from the detail screen (#52).
                         openImportForm(form, ImportSource.Insert)
                     },
-                    chipShown = moveOutcome != null || selectionFailure != null || syncResult != null,
+                    chipShown = moveOutcome != null || selectionFailure != null || syncChip.value != null,
                     onDismissChip = {
                         reschedule.consumeOutcome()
                         eventActions.consumeFailure()
                         // Only the chip on show: a receipt queued behind it still gets its turn.
-                        if (moveOutcome == null && selectionFailure == null) sync.consumeResult()
+                        if (moveOutcome == null && selectionFailure == null) syncChip.value = null
                     },
                 )
                 CalendarFab(chromeHost, todayInToolbar, fabSelection)
@@ -710,9 +715,9 @@ fun CalendarHost(
         EventMoveHost(
             reschedule,
             modifier = Modifier.fillMaxSize(),
-            notice = selectionFailureMessage ?: syncMessage,
+            notice = selectionFailureMessage ?: syncChipMessage,
             onNoticeShown = {
-                if (selectionFailureMessage != null) eventActions.consumeFailure() else sync.consumeResult()
+                if (selectionFailureMessage != null) eventActions.consumeFailure() else syncChip.value = null
             },
         )
 

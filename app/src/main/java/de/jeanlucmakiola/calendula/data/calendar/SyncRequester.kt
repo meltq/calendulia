@@ -10,6 +10,18 @@ import android.os.Bundle
 import android.provider.CalendarContract
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import kotlinx.coroutines.channels.awaitClose
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.callbackFlow
+import kotlinx.coroutines.flow.channelFlow
+import kotlinx.coroutines.flow.conflate
+import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
+import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
 import javax.inject.Singleton
 
@@ -39,7 +51,70 @@ interface SyncRequester {
      * marks it manual, which also overrides master-sync-off — only for a user's tap.
      */
     fun requestSync(account: SyncAccount, userInitiated: Boolean)
+
+    /** Where [account]'s calendar sync stands, or null when the system won't say. */
+    fun syncActivity(account: SyncAccount): SyncActivity?
+
+    /** Fires whenever any sync on the device becomes pending, starts or ends. */
+    fun syncActivityChanges(): Flow<Unit>
 }
+
+/** A calendar sync adapter's state for one account, from `READ_SYNC_STATS`. */
+enum class SyncActivity { Idle, Pending, Active }
+
+/** How waiting on requested syncs ended: seen through, or not confirmed in time. */
+enum class SyncWait { Completed, Unconfirmed }
+
+/**
+ * Waits until the syncs of [accounts] have run (#240): each account must have
+ * been seen pending or active and be idle again, or — for one that never showed
+ * up within [graceMillis] — be idle. A sync already running at the first look
+ * isn't the requested one, so it has to finish before the account counts. Unconfirmed after [timeoutMillis], or at
+ * once when the system won't report sync state.
+ */
+suspend fun SyncRequester.awaitSyncs(
+    accounts: Set<SyncAccount>,
+    timeoutMillis: Long = SYNC_WAIT_MILLIS,
+    graceMillis: Long = SYNC_GRACE_MILLIS,
+    pollMillis: Long = SYNC_POLL_MILLIS,
+): SyncWait {
+    if (accounts.isEmpty()) return SyncWait.Completed
+    val seen = HashSet<SyncAccount>()
+    // One already running when asked is someone else's sync: it only counts once idle again.
+    var priorRuns: MutableSet<SyncAccount>? = null
+    val graceOver = AtomicBoolean(false)
+    return withTimeoutOrNull(timeoutMillis) {
+        channelFlow {
+            launch { syncActivityChanges().collect { send(Unit) } }
+            launch {
+                delay(graceMillis)
+                graceOver.set(true)
+                send(Unit)
+            }
+            // The listener alone can miss a change made before it was registered.
+            while (true) {
+                send(Unit)
+                delay(pollMillis)
+            }
+        }.conflate().map {
+            val states = accounts.associateWith { syncActivity(it) ?: return@map SyncWait.Unconfirmed }
+            val prior = priorRuns ?: states.filterValues { it == SyncActivity.Active }.keys.toMutableSet()
+                .also { priorRuns = it }
+            states.forEach { (account, state) ->
+                if (state != SyncActivity.Active) prior -= account
+                if (state != SyncActivity.Idle && account !in prior) seen += account
+            }
+            val done = states.all { (account, state) ->
+                state == SyncActivity.Idle && account !in prior && (account in seen || graceOver.get())
+            }
+            if (done) SyncWait.Completed else null
+        }.filterNotNull().first()
+    } ?: SyncWait.Unconfirmed
+}
+
+const val SYNC_WAIT_MILLIS = 60_000L
+const val SYNC_GRACE_MILLIS = 5_000L
+const val SYNC_POLL_MILLIS = 2_000L
 
 @Singleton
 class AndroidSyncRequester @Inject constructor(
@@ -69,6 +144,28 @@ class AndroidSyncRequester @Inject constructor(
             CalendarContract.AUTHORITY,
             extras,
         )
+    }
+
+    override fun syncActivity(account: SyncAccount): SyncActivity? = try {
+        val android = Account(account.name, account.type)
+        when {
+            ContentResolver.isSyncActive(android, CalendarContract.AUTHORITY) -> SyncActivity.Active
+            ContentResolver.isSyncPending(android, CalendarContract.AUTHORITY) -> SyncActivity.Pending
+            else -> SyncActivity.Idle
+        }
+    } catch (e: SecurityException) {
+        null
+    }
+
+    override fun syncActivityChanges(): Flow<Unit> = callbackFlow {
+        val handle = try {
+            ContentResolver.addStatusChangeListener(
+                ContentResolver.SYNC_OBSERVER_TYPE_ACTIVE or ContentResolver.SYNC_OBSERVER_TYPE_PENDING,
+            ) { trySend(Unit) }
+        } catch (e: SecurityException) {
+            null
+        }
+        awaitClose { handle?.let(ContentResolver::removeStatusChangeListener) }
     }
 }
 
@@ -108,5 +205,11 @@ fun accountAccessIntent(account: SyncAccount, description: String): Intent =
         null,
     )
 
-/** Outcome of a user-triggered sync request (#240). */
-enum class SyncRequestResult { Requested, SomeNeedAccess, PartlyFailed, NeedsAccess, NothingToSync, Failed }
+/**
+ * Outcome of a user-triggered sync request (#240). [Completed] is only ever set
+ * once the requested syncs were seen through, see [awaitSyncs].
+ */
+enum class SyncRequestResult { Requested, Completed, SomeNeedAccess, PartlyFailed, NeedsAccess, NothingToSync, Failed }
+
+/** A sync request's [result] and the [accounts] it actually reached. */
+data class SyncRequest(val result: SyncRequestResult, val accounts: Set<SyncAccount> = emptySet())

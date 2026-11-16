@@ -5,6 +5,7 @@ import de.jeanlucmakiola.calendula.MainDispatcherExtension
 import de.jeanlucmakiola.calendula.RecordingSyncRequester
 import de.jeanlucmakiola.calendula.data.calendar.FakeCalendarDataSource
 import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
+import de.jeanlucmakiola.calendula.data.calendar.SyncActivity
 import de.jeanlucmakiola.calendula.data.calendar.SyncRequestResult
 import de.jeanlucmakiola.calendula.data.calendar.SyncTargets
 import kotlinx.coroutines.launch
@@ -46,29 +47,89 @@ class SyncViewModelTest {
     }
 
     @Test
-    fun `in flight until the provider next reports a change`(@TempDir dir: Path) = runTest(dispatcher) {
-        val (vm, source) = viewModel(dir)
+    fun `completed once the reached account has synced`(@TempDir dir: Path) = runTest(dispatcher) {
+        val sync = RecordingSyncRequester()
+        var state = SyncActivity.Pending
+        sync.activity = { state }
+        val (vm, _) = viewModel(dir, sync)
 
         vm.requestSync()
         runCurrent()
-
         assertThat(vm.inFlight.value).isTrue()
-        assertThat(vm.result.value).isEqualTo(SyncRequestResult.Requested)
+        assertThat(vm.result.value).isNull()
 
-        source.tick()
+        state = SyncActivity.Active
+        sync.activityChanges.tryEmit(Unit)
+        runCurrent()
+        assertThat(vm.inFlight.value).isTrue()
+
+        state = SyncActivity.Idle
+        sync.activityChanges.tryEmit(Unit)
         runCurrent()
 
         assertThat(vm.inFlight.value).isFalse()
+        assertThat(vm.result.value).isEqualTo(SyncRequestResult.Completed)
     }
 
     @Test
-    fun `in flight ends on its own when nothing changes`(@TempDir dir: Path) = runTest(dispatcher) {
+    fun `a sync already running when asked has to finish and the asked one run`(@TempDir dir: Path) = runTest(dispatcher) {
+        val sync = RecordingSyncRequester()
+        var state = SyncActivity.Active
+        sync.activity = { state }
+        val (vm, _) = viewModel(dir, sync)
+
+        vm.requestSync()
+        runCurrent()
+        state = SyncActivity.Pending
+        sync.activityChanges.tryEmit(Unit)
+        runCurrent()
+        assertThat(vm.inFlight.value).isTrue()
+
+        state = SyncActivity.Idle
+        sync.activityChanges.tryEmit(Unit)
+        runCurrent()
+
+        assertThat(vm.inFlight.value).isFalse()
+        assertThat(vm.result.value).isEqualTo(SyncRequestResult.Completed)
+    }
+
+    @Test
+    fun `a sync that never shows up counts as done after the grace`(@TempDir dir: Path) = runTest(dispatcher) {
         val (vm, _) = viewModel(dir)
 
         vm.requestSync()
-        advanceTimeBy(15_001L)
+        advanceTimeBy(4_000L)
+        assertThat(vm.inFlight.value).isTrue()
+
+        advanceTimeBy(1_500L)
+        assertThat(vm.inFlight.value).isFalse()
+        assertThat(vm.result.value).isEqualTo(SyncRequestResult.Completed)
+    }
+
+    @Test
+    fun `a sync still running after a minute stays unconfirmed`(@TempDir dir: Path) = runTest(dispatcher) {
+        val sync = RecordingSyncRequester().apply { activity = { SyncActivity.Active } }
+        val (vm, _) = viewModel(dir, sync)
+
+        vm.requestSync()
+        advanceTimeBy(59_000L)
+        assertThat(vm.inFlight.value).isTrue()
+
+        advanceTimeBy(1_500L)
+        assertThat(vm.inFlight.value).isFalse()
+        assertThat(vm.result.value).isEqualTo(SyncRequestResult.Requested)
+    }
+
+    @Test
+    fun `unreadable sync state says requested at once`(@TempDir dir: Path) = runTest(dispatcher) {
+        val sync = RecordingSyncRequester().apply { activity = { null } }
+        val (vm, _) = viewModel(dir, sync)
+
+        vm.requestSync()
+        runCurrent()
 
         assertThat(vm.inFlight.value).isFalse()
+        assertThat(vm.result.value).isEqualTo(SyncRequestResult.Requested)
     }
 
     @Test

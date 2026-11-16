@@ -140,7 +140,10 @@ interface CalendarRepository {
      * Ask every account behind a visible synced calendar to sync now (#240).
      * Only a request: the adapter may still run it late, or fail.
      */
-    suspend fun requestSync(): SyncRequestResult = SyncRequestResult.NothingToSync
+    suspend fun requestSync(): SyncRequest = SyncRequest(SyncRequestResult.NothingToSync)
+
+    /** Wait for the syncs a [requestSync] reached to run, see [awaitSyncs]. */
+    suspend fun awaitSyncs(accounts: Set<SyncAccount>): SyncWait = SyncWait.Unconfirmed
 
     /**
      * The accounts behind visible calendars with a sync adapter, split by

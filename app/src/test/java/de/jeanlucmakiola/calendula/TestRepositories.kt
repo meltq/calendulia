@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepositoryImpl
 import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
+import de.jeanlucmakiola.calendula.data.calendar.SyncActivity
 import de.jeanlucmakiola.calendula.data.calendar.SyncRequester
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -13,6 +14,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -86,6 +89,16 @@ class RecordingSyncRequester(
         if (!accepts || account.type in refusedTypes) throw SecurityException("refused")
         requests += Request(account, userInitiated)
     }
+
+    /** Each account's sync state; null stands for a system that won't say. */
+    var activity: (SyncAccount) -> SyncActivity? = { SyncActivity.Idle }
+
+    /** Emit to tell waiters the sync state changed. */
+    val activityChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
+
+    override fun syncActivity(account: SyncAccount): SyncActivity? = activity(account)
+
+    override fun syncActivityChanges(): Flow<Unit> = activityChanges
 }
 
 /** Installs [dispatcher] as `Dispatchers.Main` around each test. */
