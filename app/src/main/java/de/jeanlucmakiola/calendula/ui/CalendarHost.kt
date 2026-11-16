@@ -612,10 +612,8 @@ fun CalendarHost(
                             canSync = syncTargets.reachable.isNotEmpty(),
                             inFlight = syncInFlight,
                             needsAccess = syncTargets.needsAccess.isNotEmpty(),
-                            onSync = {
-                                sync.requestSync()
-                                switchScope.launch { drawerState.close() }
-                            },
+                            // Stays open, so the row's progress and the result are seen.
+                            onSync = { sync.requestSync() },
                             onGrantAccess = { showSyncAccess = true },
                         )
                     },
