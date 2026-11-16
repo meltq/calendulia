@@ -38,7 +38,6 @@ import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.components.GroupedSwitchRow
 import de.jeanlucmakiola.floret.components.Position
-import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.floret.identity.collapseExit
 import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
@@ -79,13 +78,18 @@ internal fun CalendarRemindersScreen(
         state.reminderCalendars.groupByAccount().forEachIndexed { groupIndex, group ->
             if (groupIndex > 0) Spacer(Modifier.height(8.dp))
             GroupedSectionHeader(accountGroupTitle(group))
-            group.calendars.forEachIndexed { index, calendar ->
+            val calendars = group.calendars
+            calendars.forEachIndexed { index, calendar ->
                 val expanded = calendar.id in expandedCalendars
+                val isExpanded = { i: Int -> calendars[i].id in expandedCalendars }
                 val notifying = calendar.id !in state.mutedReminderCalendarIds
                 CalendarReminderEntry(
                     calendar = calendar,
                     state = state,
-                    position = positionOf(index, group.calendars.size),
+                    position = segmentPosition(
+                        startsSegment = expanded || index == 0 || isExpanded(index - 1),
+                        endsSegment = !expanded && (index == calendars.lastIndex || isExpanded(index + 1)),
+                    ),
                     expanded = expanded,
                     notifying = notifying,
                     blocked = notifying && calendar.id in channelStatus.blockedCalendarIds,
@@ -163,8 +167,6 @@ private fun CalendarReminderEntry(
     onOpenSpecialDates: () -> Unit,
     onEditOverride: (OverrideTarget) -> Unit,
 ) {
-    val opensGroup = position == Position.Top || position == Position.Alone
-    val closesGroup = position == Position.Bottom || position == Position.Alone
     GroupedRow(
         title = calendar.displayName.orUnnamed(),
         summary = when {
@@ -172,11 +174,7 @@ private fun CalendarReminderEntry(
             blocked -> stringResource(R.string.settings_notifications_blocked)
             else -> null
         },
-        position = when {
-            !expanded -> position
-            opensGroup -> Position.Top
-            else -> Position.Middle
-        },
+        position = position,
         leading = { CalendarColorChip(calendar.color) },
         trailing = { ExpandIcon(expanded) },
         onClick = onToggleExpand,
@@ -189,7 +187,7 @@ private fun CalendarReminderEntry(
         val managed = calendar.id in state.managedCalendarIds
         val takesOverrides = calendar.canModifyContents && !managed
         val nested = MaterialTheme.colorScheme.surfaceContainerHighest
-        val last = if (closesGroup) Position.Bottom else Position.Middle
+        val last = Position.Bottom
         Column {
             GroupedSwitchRow(
                 title = stringResource(R.string.settings_calendar_notifications),
@@ -242,6 +240,17 @@ private fun CalendarReminderEntry(
             }
         }
     }
+}
+
+/**
+ * A calendar row's place in its connected run: an expanded calendar opens its own
+ * run that its options close, so the rows around it round off against it.
+ */
+private fun segmentPosition(startsSegment: Boolean, endsSegment: Boolean): Position = when {
+    startsSegment && endsSegment -> Position.Alone
+    startsSegment -> Position.Top
+    endsSegment -> Position.Bottom
+    else -> Position.Middle
 }
 
 @Composable
