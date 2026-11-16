@@ -158,11 +158,12 @@ class BackupWorker(
         if (!applicationContext.hasPermission(Manifest.permission.READ_CALENDAR)) return RunOutcome.Failed
         val all = repository.calendars().first()
         val selection = prefs.autoBackupSelection.first()
-        val targets = backupTargets(all.filter(selection::selects), combined = prefs.autoBackupCombined.first())
-        if (targets.isEmpty()) return RunOutcome.NothingSelected
+        val combined = prefs.autoBackupCombined.first()
+        if (all.none(selection::selects)) return RunOutcome.NothingSelected
         prefs.adoptLegacyBackupFile()
         val listing = exporter.listFolder(folder)
         val ledger = prefs.autoBackupLedger.first()
+        val targets = backupTargets(all.filter(selection::selects), combined, ledger)
         // A listing still loading can't tell a gone file from a late one.
         val existing = if (listing.complete) listing.files.keys else listing.files.keys + ledger.values.flatten()
         val plans = planBackupFiles(

@@ -54,13 +54,33 @@ class BackupPlanTest {
     }
 
     @Test
-    fun `one target per calendar, clashing names told apart by id`() {
+    fun `one target per calendar, with no owner the lowest id keeps a clashing name`() {
         val targets = backupTargets(
-            listOf(cal(1L, "Personal", local = true), cal(2L, "personal"), cal(3L, "Work")),
+            listOf(cal(2L, "personal"), cal(1L, "Personal", local = true), cal(3L, "Work")),
             combined = false,
         )
-        assertThat(targets.map { it.baseName }).containsExactly("Personal-1", "personal-2", "Work").inOrder()
-        assertThat(targets.map { it.calendarName }).containsExactly("Personal", "personal", "Work").inOrder()
+        assertThat(targets.map { it.baseName }).containsExactly("personal-2", "Personal", "Work").inOrder()
+        assertThat(targets.map { it.calendarName }).containsExactly("personal", "Personal", "Work").inOrder()
+    }
+
+    @Test
+    fun `the calendar already owning a name keeps it when a new one shares it`() {
+        val calendars = listOf(cal(9L, "Fitness"), cal(20L, "Fitness"), cal(4L, "Fitness"))
+        val byStable = backupTargets(calendars, combined = false, mapOf(latestLedgerKey("9") to listOf("Fitness.ics")))
+        assertThat(byStable.map { it.baseName }).containsExactly("Fitness", "Fitness-20", "Fitness-4").inOrder()
+        // A dated file counts too, for a series whose stable copy was blocked by the user's own file.
+        val byDated = backupTargets(calendars, combined = false, mapOf("20" to listOf("Fitness_2026-11-13_14-30-05.ics")))
+        assertThat(byDated.map { it.baseName }).containsExactly("Fitness-9", "Fitness", "Fitness-4").inOrder()
+    }
+
+    @Test
+    fun `a suffixed series doesn't count as owning the plain name`() {
+        val ledger = mapOf(
+            latestLedgerKey("9") to listOf("Fitness-9.ics"),
+            "9" to listOf("Fitness-9_2026-11-13_14-30-05.ics"),
+        )
+        val targets = backupTargets(listOf(cal(20L, "Fitness"), cal(9L, "Fitness")), combined = false, ledger)
+        assertThat(targets.map { it.baseName }).containsExactly("Fitness-20", "Fitness").inOrder()
     }
 
     @Test
@@ -262,10 +282,10 @@ class BackupPlanTest {
     @Test
     fun `a suffixed name that meets a real one is told apart again`() {
         val targets = backupTargets(
-            listOf(cal(5L, "Work"), cal(6L, "Work"), cal(9L, "Work-5")),
+            listOf(cal(5L, "Work"), cal(6L, "Work"), cal(9L, "Work-6")),
             combined = false,
         )
-        assertThat(targets.map { it.baseName }).containsExactly("Work-5-5", "Work-6", "Work-5-9").inOrder()
+        assertThat(targets.map { it.baseName }).containsExactly("Work", "Work-6", "Work-6-9").inOrder()
     }
 
     @Test

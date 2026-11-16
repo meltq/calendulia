@@ -122,10 +122,18 @@ private val STAMP_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern(STAMP_
 /**
  * The file series the automatic backup writes: one combined file, or one per
  * calendar named after it. Calendars whose names clash case-insensitively (a
- * local and a synced "Personal") take their id as a suffix until every name in
- * the run is distinct, so no two series write the same file.
+ * local and a synced "Personal") must not write the same file: the one whose
+ * series already holds the name in [ledger] keeps it, so a path something
+ * follows doesn't move when another calendar takes the same name; with no
+ * owner the lowest id keeps it. The others take their id as a suffix until
+ * every name in the run is distinct. A calendar named like the combined file
+ * is always suffixed.
  */
-fun backupTargets(calendars: List<CalendarSource>, combined: Boolean): List<BackupTarget> {
+fun backupTargets(
+    calendars: List<CalendarSource>,
+    combined: Boolean,
+    ledger: BackupLedger = emptyMap(),
+): List<BackupTarget> {
     if (calendars.isEmpty()) return emptyList()
     if (combined) {
         return listOf(
@@ -136,12 +144,17 @@ fun backupTargets(calendars: List<CalendarSource>, combined: Boolean): List<Back
         it.id to safeFileName(it.displayName, MAX_BASE_BYTES, fallback = "calendar")
     }
     while (true) {
-        val counts = bases.values.groupingBy { it.lowercase() }.eachCount()
-        val clashing = bases.filterValues {
-            counts.getValue(it.lowercase()) > 1 || it.equals(COMBINED_BACKUP_BASE, ignoreCase = true)
-        }
+        val clashing = bases.entries.groupBy({ it.value.lowercase() }, { it.key })
+            .filter { (lower, ids) -> ids.size > 1 || lower == COMBINED_BACKUP_BASE }
         if (clashing.isEmpty()) break
-        clashing.forEach { (id, base) -> bases[id] = "$base-$id" }
+        clashing.forEach { (lower, ids) ->
+            val keeper = if (lower == COMBINED_BACKUP_BASE) {
+                null
+            } else {
+                ids.filter { ledger.holdsBase(it.toString(), bases.getValue(it)) }.minOrNull() ?: ids.min()
+            }
+            ids.filter { it != keeper }.forEach { id -> bases[id] = "${bases.getValue(id)}-$id" }
+        }
     }
     return calendars.map { calendar ->
         BackupTarget(
@@ -151,6 +164,17 @@ fun backupTargets(calendars: List<CalendarSource>, combined: Boolean): List<Back
             calendarName = calendar.displayName,
         )
     }
+}
+
+/** Whether series [key] has written files under [base]: its stable copy, or a dated file. */
+private fun BackupLedger.holdsBase(key: String, base: String): Boolean {
+    val latest = latestFileName(base)
+    val datedLength = base.length + 1 + STAMP_PATTERN.length + ICS_EXTENSION.length
+    return this[latestLedgerKey(key)].orEmpty().any { it.equals(latest, ignoreCase = true) } ||
+        this[key].orEmpty().any {
+            it.length == datedLength && it.startsWith("${base}_", ignoreCase = true) &&
+                it.endsWith(ICS_EXTENSION, ignoreCase = true)
+        }
 }
 
 /** `Work_2026-11-13_14-30-05.ics`: the series name and the local time of the run. */
