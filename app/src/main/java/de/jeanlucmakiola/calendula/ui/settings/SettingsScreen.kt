@@ -73,7 +73,7 @@ import de.jeanlucmakiola.floret.identity.predictiveBackExit
 
 /** The settings sub-screens reached from the hub's category rows. */
 private enum class SettingsSection {
-    Appearance, Views, EventForm, Notifications, SpecialDates, Widgets, Licences
+    Appearance, Views, EventForm, Notifications, CalendarReminders, SpecialDates, Widgets, Licences
 }
 
 /**
@@ -131,8 +131,9 @@ fun SettingsScreen(
         ) {
             EventFormScreen(state = state, viewModel = viewModel, onBack = { section = null }, visible = section == SettingsSection.EventForm)
         }
+        // Stays up beneath its per-calendar subpage, so backing out reveals it.
         AnimatedVisibility(
-            visible = section == SettingsSection.Notifications,
+            visible = section == SettingsSection.Notifications || section == SettingsSection.CalendarReminders,
             enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
             exit = overlayExit,
         ) {
@@ -140,8 +141,21 @@ fun SettingsScreen(
                 state = state,
                 viewModel = viewModel,
                 onBack = { section = null },
-                onOpenSpecialDates = { section = SettingsSection.SpecialDates },
+                onOpenCalendarReminders = { section = SettingsSection.CalendarReminders },
                 visible = section == SettingsSection.Notifications,
+            )
+        }
+        AnimatedVisibility(
+            visible = section == SettingsSection.CalendarReminders,
+            enter = slideInHorizontally(slideSpec) { it } + fadeIn(),
+            exit = overlayExit,
+        ) {
+            CalendarRemindersScreen(
+                state = state,
+                viewModel = viewModel,
+                onBack = { section = SettingsSection.Notifications },
+                onOpenSpecialDates = { section = SettingsSection.SpecialDates },
+                visible = section == SettingsSection.CalendarReminders,
             )
         }
         AnimatedVisibility(

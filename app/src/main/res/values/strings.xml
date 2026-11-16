@@ -733,6 +733,7 @@
     <string name="reminder_custom_amount">Amount</string>
     <string name="reminder_custom_set">Set</string>
     <string name="settings_calendar_reminders_title">Per-calendar reminders</string>
+    <string name="settings_calendar_reminders_subtitle">Notifications, sound and default reminders per calendar</string>
     <string name="settings_calendar_reminders_hint">Turn notifications off or pick a sound per calendar, and override the default reminder for calendars you can edit.</string>
     <string name="settings_calendar_notifications">Notifications</string>
     <string name="settings_calendar_notifications_hint">Notify at this calendar\'s reminder times</string>
