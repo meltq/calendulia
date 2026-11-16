@@ -122,17 +122,20 @@ private val STAMP_FORMAT: DateTimeFormatter = DateTimeFormatter.ofPattern(STAMP_
 /**
  * The file series the automatic backup writes: one combined file, or one per
  * calendar named after it. Calendars whose names clash case-insensitively (a
- * local and a synced "Personal") must not write the same file: the one whose
- * series already holds the name in [ledger] keeps it, so a path something
- * follows doesn't move when another calendar takes the same name; with no
- * owner the lowest id keeps it. The others take their id as a suffix until
- * every name in the run is distinct. A calendar named like the combined file
- * is always suffixed.
+ * local and a synced "Personal") must not write the same file, and a path
+ * something follows shouldn't move because another calendar took the same
+ * name. So the series holding the stable copy of the name in [ledger] keeps
+ * it, then one holding dated files under it; series that already write under
+ * their id suffix keep that; with no claim at all the lowest id keeps the
+ * name. The others take their id as a suffix until every name in the run is
+ * distinct. Ledger names gone from the folder ([existing], when known) claim
+ * nothing. A calendar named like the combined file is always suffixed.
  */
 fun backupTargets(
     calendars: List<CalendarSource>,
     combined: Boolean,
     ledger: BackupLedger = emptyMap(),
+    existing: Set<String>? = null,
 ): List<BackupTarget> {
     if (calendars.isEmpty()) return emptyList()
     if (combined) {
@@ -140,19 +143,16 @@ fun backupTargets(
             BackupTarget(COMBINED_SERIES, calendars.map { it.id }.toSet(), COMBINED_BACKUP_BASE, calendarName = null),
         )
     }
+    val present = if (existing == null) ledger else ledger.mapValues { (_, names) -> names.filter { it in existing } }
     val bases = calendars.associateTo(LinkedHashMap()) {
         it.id to safeFileName(it.displayName, MAX_BASE_BYTES, fallback = "calendar")
     }
     while (true) {
         val clashing = bases.entries.groupBy({ it.value.lowercase() }, { it.key })
-            .filter { (lower, ids) -> ids.size > 1 || lower == COMBINED_BACKUP_BASE }
+            .filter { (lower, ids) -> ids.size > 1 || lower == COMBINED_BACKUP_BASE.lowercase() }
         if (clashing.isEmpty()) break
         clashing.forEach { (lower, ids) ->
-            val keeper = if (lower == COMBINED_BACKUP_BASE) {
-                null
-            } else {
-                ids.filter { ledger.holdsBase(it.toString(), bases.getValue(it)) }.minOrNull() ?: ids.min()
-            }
+            val keeper = if (lower == COMBINED_BACKUP_BASE.lowercase()) null else present.keeperOf(ids, bases)
             ids.filter { it != keeper }.forEach { id -> bases[id] = "${bases.getValue(id)}-$id" }
         }
     }
@@ -166,15 +166,25 @@ fun backupTargets(
     }
 }
 
-/** Whether series [key] has written files under [base]: its stable copy, or a dated file. */
-private fun BackupLedger.holdsBase(key: String, base: String): Boolean {
-    val latest = latestFileName(base)
-    val datedLength = base.length + 1 + STAMP_PATTERN.length + ICS_EXTENSION.length
-    return this[latestLedgerKey(key)].orEmpty().any { it.equals(latest, ignoreCase = true) } ||
-        this[key].orEmpty().any {
-            it.length == datedLength && it.startsWith("${base}_", ignoreCase = true) &&
-                it.endsWith(ICS_EXTENSION, ignoreCase = true)
-        }
+/** Which of the clashing [ids] keeps its name in [bases], or null when all take their suffix. */
+private fun BackupLedger.keeperOf(ids: List<Long>, bases: Map<Long, String>): Long? {
+    fun base(id: Long) = bases.getValue(id)
+    return ids.filter { holdsLatest(it.toString(), base(it)) }.minOrNull()
+        ?: ids.filter { holdsDated(it.toString(), base(it)) }.minOrNull()
+        ?: ids.filterNot { holdsLatest(it.toString(), "${base(it)}-$it") || holdsDated(it.toString(), "${base(it)}-$it") }
+            .minOrNull()
+}
+
+private fun BackupLedger.holdsLatest(key: String, base: String): Boolean =
+    this[latestLedgerKey(key)].orEmpty().any { it.equals(latestFileName(base), ignoreCase = true) }
+
+/** Dated files of [base], including ones a provider renamed (`… (1).ics`). */
+private fun BackupLedger.holdsDated(key: String, base: String): Boolean {
+    val dated = Regex(
+        "${Regex.escape(base)}_\\d{4}-\\d{2}-\\d{2}_\\d{2}-\\d{2}-\\d{2}.*\\.ics",
+        RegexOption.IGNORE_CASE,
+    )
+    return this[key].orEmpty().any { dated.matches(it) }
 }
 
 /** `Work_2026-11-13_14-30-05.ics`: the series name and the local time of the run. */

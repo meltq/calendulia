@@ -163,9 +163,9 @@ class BackupWorker(
         prefs.adoptLegacyBackupFile()
         val listing = exporter.listFolder(folder)
         val ledger = prefs.autoBackupLedger.first()
-        val targets = backupTargets(all.filter(selection::selects), combined, ledger)
         // A listing still loading can't tell a gone file from a late one.
         val existing = if (listing.complete) listing.files.keys else listing.files.keys + ledger.values.flatten()
+        val targets = backupTargets(all.filter(selection::selects), combined, ledger, existing)
         val plans = planBackupFiles(
             targets = targets,
             ledger = ledger,

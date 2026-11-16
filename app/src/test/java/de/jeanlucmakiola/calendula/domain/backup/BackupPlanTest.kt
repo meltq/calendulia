@@ -74,13 +74,34 @@ class BackupPlanTest {
     }
 
     @Test
-    fun `a suffixed series doesn't count as owning the plain name`() {
+    fun `series already writing under their id suffix keep it`() {
         val ledger = mapOf(
             latestLedgerKey("9") to listOf("Fitness-9.ics"),
-            "9" to listOf("Fitness-9_2026-11-13_14-30-05.ics"),
+            latestLedgerKey("20") to listOf("Fitness-20.ics"),
         )
         val targets = backupTargets(listOf(cal(20L, "Fitness"), cal(9L, "Fitness")), combined = false, ledger)
-        assertThat(targets.map { it.baseName }).containsExactly("Fitness-20", "Fitness").inOrder()
+        assertThat(targets.map { it.baseName }).containsExactly("Fitness-20", "Fitness-9").inOrder()
+    }
+
+    @Test
+    fun `the stable copy's owner beats a series with only old dated files under the name`() {
+        val ledger = mapOf(
+            "9" to listOf("Fitness_2026-11-01_10-00-00.ics"),
+            latestLedgerKey("20") to listOf("Fitness.ics"),
+        )
+        val targets = backupTargets(listOf(cal(9L, "Fitness"), cal(20L, "Fitness")), combined = false, ledger)
+        assertThat(targets.map { it.baseName }).containsExactly("Fitness-9", "Fitness").inOrder()
+    }
+
+    @Test
+    fun `a provider-renamed dated file still claims the name, a file gone from the folder doesn't`() {
+        val calendars = listOf(cal(9L, "Fitness"), cal(20L, "Fitness"))
+        val renamed = mapOf("20" to listOf("Fitness_2026-11-13_14-30-05 (1).ics"))
+        assertThat(backupTargets(calendars, combined = false, renamed).map { it.baseName })
+            .containsExactly("Fitness-9", "Fitness").inOrder()
+        val gone = mapOf(latestLedgerKey("20") to listOf("Fitness.ics"))
+        assertThat(backupTargets(calendars, combined = false, gone, existing = emptySet()).map { it.baseName })
+            .containsExactly("Fitness", "Fitness-20").inOrder()
     }
 
     @Test
