@@ -203,7 +203,7 @@ class ReminderChannels @Inject constructor(
     /**
      * Give [calendarIds]' reminders [sound] (null = silent). A channel's sound is
      * fixed once created, so each moves to a new channel version carrying over
-     * everything else, and the old one retires on the next sync (#518). Calendars without a
+     * everything else, and the old one retires in the sync that follows (#518). Calendars without a
      * channel are skipped unless [createMissing]. Returns whether every move
      * went through.
      */
@@ -215,7 +215,14 @@ class ReminderChannels @Inject constructor(
             .filter { reminderChannelId(it, current[it] ?: 0) in existingIds }
             .associateWith { (current[it] ?: 0) + 1 }
         if (floors.isEmpty()) return false
-        return recreate(settingsPrefs.reserveReminderChannelVersions(floors), sound)
+        val applied = recreate(settingsPrefs.reserveReminderChannelVersions(floors), sound)
+        // Retire the old versions now, or each calendar shows twice in system settings until the next scan.
+        try {
+            sync()
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "Old channel versions left to the next sync", e)
+        }
+        return applied
     }
 
     /**
