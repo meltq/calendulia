@@ -12,3 +12,7 @@ fun reminderMapQuery(location: String?): String? {
     val trimmed = location?.trim()?.takeIf { it.isNotEmpty() } ?: return null
     return trimmed.takeIf { webLinkRegex.replace(it, "").any(Char::isLetterOrDigit) }
 }
+
+/** The first web (meeting) link in [location], for the reminder's "Open link" button; null without one. */
+fun reminderLink(location: String?): String? =
+    location?.let { webLinkRegex.find(it)?.value?.trimEnd('.', ',', ';', ')', '>') }

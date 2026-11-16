@@ -6,6 +6,7 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
+import androidx.core.net.toUri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -19,6 +20,7 @@ import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.prefs.is24Hour
 import de.jeanlucmakiola.calendula.data.prefs.resolveFirstDay
+import de.jeanlucmakiola.calendula.domain.reminders.reminderLink
 import de.jeanlucmakiola.calendula.domain.reminders.reminderMapQuery
 import de.jeanlucmakiola.floret.android.hasPermission
 import de.jeanlucmakiola.floret.android.resolvableMapsSearchIntent
@@ -114,7 +116,10 @@ class ReminderNotifier @Inject constructor(
                 actionIntent(alert, ReminderActionReceiver.ACTION_DISMISS),
             )
             .apply {
-                mapIntent(alert)?.let {
+                // Room for one more button: a meeting link beats the place, being the likelier next step.
+                linkIntent(alert)?.let {
+                    addAction(R.drawable.ic_notification_link, context.getString(R.string.reminder_action_open_link), it)
+                } ?: mapIntent(alert)?.let {
                     addAction(R.drawable.ic_notification_map, context.getString(R.string.event_detail_open_in_maps), it)
                 }
             }
@@ -188,6 +193,24 @@ class ReminderNotifier @Inject constructor(
         MainActivity.eventDetailIntent(context, alert.eventId, alert.beginMillis, alert.endMillis),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
+
+    /**
+     * Opens the first web link in [alert]'s location, e.g. a meeting, started
+     * directly like [mapIntent]. Null without a link or an app to open it.
+     */
+    private fun linkIntent(alert: ReminderAlert): PendingIntent? {
+        val link = reminderLink(alert.location) ?: return null
+        val intent = Intent(Intent.ACTION_VIEW, link.toUri())
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (intent.resolveActivity(context.packageManager) == null) return null
+        return PendingIntent.getActivity(
+            context,
+            /* requestCode = */ 0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
 
     /**
      * Opens [alert]'s location in maps like the detail screen does, started

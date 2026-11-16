@@ -34,4 +34,18 @@ class ReminderMapQueryTest {
     fun `a place with a link beside it is still looked up`() {
         assertThat(reminderMapQuery("Room 4, https://example.com/map")).isEqualTo("Room 4, https://example.com/map")
     }
+
+    @Test
+    fun `the first web link is the reminder's link`() {
+        assertThat(reminderLink("https://meet.google.com/abc-defg-hij")).isEqualTo("https://meet.google.com/abc-defg-hij")
+        assertThat(reminderLink("<https://teams.microsoft.com/l/meetup-join/x>")).isEqualTo("https://teams.microsoft.com/l/meetup-join/x")
+        assertThat(reminderLink("Room 4, https://example.com/map.")).isEqualTo("https://example.com/map")
+        assertThat(reminderLink("https://a.example\nhttps://b.example")).isEqualTo("https://a.example")
+    }
+
+    @Test
+    fun `no link without one`() {
+        assertThat(reminderLink(null)).isNull()
+        assertThat(reminderLink("Hauptstr. 12/3, Wien")).isNull()
+    }
 }
