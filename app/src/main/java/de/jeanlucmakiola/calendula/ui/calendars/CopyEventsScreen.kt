@@ -28,7 +28,7 @@ import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
 import androidx.compose.material3.LinearWavyProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -54,6 +54,7 @@ import de.jeanlucmakiola.calendula.ui.common.ImportSummaryStats
 import de.jeanlucmakiola.calendula.ui.common.ResultBadge
 import de.jeanlucmakiola.calendula.ui.common.ResultMessage
 import de.jeanlucmakiola.calendula.ui.common.importSummaryNotes
+import de.jeanlucmakiola.floret.components.OnboardingPrimaryButton
 import de.jeanlucmakiola.floret.components.ResultBadge as FloretResultBadge
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.FullScreenPicker
@@ -232,12 +233,21 @@ private fun ColumnScope.CopyRun(
         }
         }
         when (run) {
-            is CopyRunState.Running -> OutlinedButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
+            is CopyRunState.Running -> TextButton(onClick = onCancel, modifier = Modifier.fillMaxWidth()) {
                 Text(stringResource(R.string.dialog_cancel))
             }
-            is CopyRunState.Done -> CopyEndButtons(stringResource(R.string.calendars_copy_more), onCopyMore, onClose)
-            CopyRunState.Cancelled, CopyRunState.Failed ->
-                CopyEndButtons(stringResource(R.string.state_retry), onRetry, onClose)
+            is CopyRunState.Done -> CopyEndButtons(
+                primary = stringResource(R.string.import_close),
+                onPrimary = onClose,
+                secondary = stringResource(R.string.calendars_copy_more),
+                onSecondary = onCopyMore,
+            )
+            CopyRunState.Cancelled, CopyRunState.Failed -> CopyEndButtons(
+                primary = stringResource(R.string.state_retry),
+                onPrimary = onRetry,
+                secondary = stringResource(R.string.import_close),
+                onSecondary = onClose,
+            )
             CopyRunState.Idle -> Unit
         }
     }
@@ -298,10 +308,10 @@ private fun CopyDone(run: CopyRunState.Done) {
 
 /** The way on ([secondary], e.g. Copy more) above the way out (Close). */
 @Composable
-private fun CopyEndButtons(secondary: String, onSecondary: () -> Unit, onClose: () -> Unit) {
-    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        OutlinedButton(onClick = onSecondary, modifier = Modifier.fillMaxWidth()) { Text(secondary) }
-        Button(onClick = onClose, modifier = Modifier.fillMaxWidth()) { Text(stringResource(R.string.import_close)) }
+private fun CopyEndButtons(primary: String, onPrimary: () -> Unit, secondary: String, onSecondary: () -> Unit) {
+    Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        OnboardingPrimaryButton(text = primary, onClick = onPrimary)
+        TextButton(onClick = onSecondary, modifier = Modifier.fillMaxWidth()) { Text(secondary) }
     }
 }
 

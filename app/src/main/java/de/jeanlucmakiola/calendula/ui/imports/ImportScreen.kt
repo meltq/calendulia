@@ -37,6 +37,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import de.jeanlucmakiola.floret.components.OnboardingPrimaryButton
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.ics.IcsParseWarning
@@ -224,12 +225,10 @@ private fun DoneContent(state: ImportUiState.Done, onClose: () -> Unit) {
         Spacer(Modifier.height(24.dp))
         ImportSummaryStats(state.summary)
         Spacer(Modifier.weight(1f))
-        Button(
+        OnboardingPrimaryButton(
+            text = stringResource(R.string.import_close),
             onClick = onClose,
-            modifier = Modifier.fillMaxWidth(),
-        ) {
-            Text(stringResource(R.string.import_close))
-        }
+        )
     }
 }
 
