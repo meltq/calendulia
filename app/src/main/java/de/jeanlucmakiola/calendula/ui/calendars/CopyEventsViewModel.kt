@@ -120,7 +120,7 @@ data class CopySelection(val sourceId: Long? = null, val targetId: Long? = null)
         CopySelection(sourceId = id, targetId = targetId?.takeIf { it != id })
 }
 
-/** The calendar list the copy sheet picks from. */
+/** The calendar list the copy screen picks from. */
 sealed interface CopyCalendars {
     data object Loading : CopyCalendars
     data object Failure : CopyCalendars
@@ -137,7 +137,7 @@ sealed interface CopyRunState {
         /** The target stopped taking events part way, so some were never tried. */
         val stopped: Boolean get() = summary.notAttempted > 0
 
-        /** How the run ended, the same words on the row and in the sheet. */
+        /** How the run ended, the same words on the row and on the result screen. */
         @get:StringRes
         val titleRes: Int get() = when {
             stopped -> R.string.calendars_copy_stopped_title

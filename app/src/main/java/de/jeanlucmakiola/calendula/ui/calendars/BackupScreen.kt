@@ -188,7 +188,7 @@ fun BackupScreen(
     if (showCopy) {
         val calendars by copyViewModel.calendars.collectAsStateWithLifecycle()
         val selection by copyViewModel.selection.collectAsStateWithLifecycle()
-        CopyEventsSheet(
+        CopyEventsScreen(
             calendars = calendars,
             selection = selection,
             run = copyRun,
@@ -196,6 +196,7 @@ fun BackupScreen(
             onSelectTarget = copyViewModel::setTarget,
             onStart = copyViewModel::start,
             onCancel = copyViewModel::cancel,
+            onClearFinished = copyViewModel::clearFinished,
             onDismiss = {
                 showCopy = false
                 copyViewModel.clearFinished()

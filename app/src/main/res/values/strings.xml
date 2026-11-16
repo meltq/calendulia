@@ -891,13 +891,14 @@
     <string name="calendars_restore_unavailable">No calendar can take the imported events yet.</string>
     <string name="calendars_copy_action">Copy events</string>
     <string name="calendars_copy_summary">Copy one calendar\'s events into another, for example to move off Google.</string>
-    <string name="calendars_copy_hint">Copies your events, including repeating ones with the occurrences you changed or deleted. Cancelled events and invitations you declined are left out, guests stay behind, and the original calendar is left as it is.</string>
+    <string name="calendars_copy_hint">The original calendar stays as it is. Guests and invitations you declined are left out.</string>
     <string name="calendars_copy_from">From</string>
     <string name="calendars_copy_to">To</string>
     <string name="calendars_copy_choose">Choose a calendar</string>
     <string name="calendars_copy_from_title">Copy from</string>
     <string name="calendars_copy_to_title">Copy into</string>
     <string name="calendars_copy_start">Copy</string>
+    <string name="calendars_copy_more">Copy more</string>
     <string name="calendars_copy_reading">Reading events…</string>
     <plurals name="calendars_copy_progress">
         <item quantity="one">%1$d of %2$d event</item>

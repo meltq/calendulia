@@ -1,15 +1,9 @@
 package de.jeanlucmakiola.calendula.ui.imports
 
 import android.net.Uri
-import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.Spring
-import androidx.compose.animation.core.spring
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -17,13 +11,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.PriorityHigh
 import androidx.compose.material3.Button
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -31,25 +21,17 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.semantics.clearAndSetSemantics
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -59,6 +41,10 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.ics.IcsParseWarning
 import de.jeanlucmakiola.calendula.ui.common.CalendarPickerGroups
+import de.jeanlucmakiola.calendula.ui.common.ImportSummaryStats
+import de.jeanlucmakiola.calendula.ui.common.ResultBadge
+import de.jeanlucmakiola.calendula.ui.common.ResultMessage
+import de.jeanlucmakiola.calendula.ui.common.importSummaryNotes
 import de.jeanlucmakiola.floret.identity.predictiveBack
 
 /**
@@ -211,18 +197,6 @@ private fun ManyContent(
 
 @Composable
 private fun DoneContent(state: ImportUiState.Done, onClose: () -> Unit) {
-    // A little expressive pop on the success badge — springs in on first show.
-    val badgeScale = remember { Animatable(0.7f) }
-    LaunchedEffect(Unit) {
-        badgeScale.animateTo(
-            targetValue = 1f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow,
-            ),
-        )
-    }
-
     // Part of the file never reached the calendar, so the screen doesn't get to
     // read as a plain success.
     val stopped = state.summary.notAttempted > 0
@@ -232,159 +206,29 @@ private fun DoneContent(state: ImportUiState.Done, onClose: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Spacer(Modifier.weight(1f))
-        Box(
-            Modifier
-                .size(112.dp)
-                .graphicsLayer {
-                    scaleX = badgeScale.value
-                    scaleY = badgeScale.value
-                }
-                .clip(CircleShape)
-                .background(
-                    if (stopped) {
-                        MaterialTheme.colorScheme.errorContainer
-                    } else {
-                        MaterialTheme.colorScheme.primaryContainer
-                    },
-                ),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                if (stopped) Icons.Default.PriorityHigh else Icons.Default.Check,
-                contentDescription = null,
-                tint = if (stopped) {
-                    MaterialTheme.colorScheme.onErrorContainer
-                } else {
-                    MaterialTheme.colorScheme.onPrimaryContainer
-                },
-                modifier = Modifier.size(56.dp),
-            )
-        }
-        Spacer(Modifier.height(24.dp))
-        Text(
-            stringResource(
+        ResultBadge(error = stopped)
+        ResultMessage(
+            title = stringResource(
                 if (stopped) R.string.import_done_stopped_title else R.string.import_done_title,
             ),
-            style = MaterialTheme.typography.headlineSmall,
-            color = MaterialTheme.colorScheme.onSurface,
+            // The counts cover the part of the file that was tried, so say how much never was.
+            notes = importSummaryNotes(
+                state.summary,
+                stoppedNote = if (stopped) {
+                    pluralStringResource(R.plurals.import_done_stopped, state.summary.notAttempted, state.summary.notAttempted)
+                } else {
+                    null
+                },
+            ),
         )
-        if (state.summary.failed > 0) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.import_done_failed_note),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
-        if (state.summary.skippedDuplicate > 0) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                stringResource(R.string.import_done_dedup_note),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center,
-            )
-        }
-        // The one note that isn't about individual events: the counts below cover
-        // the part of the file that was tried, so say how much never was.
-        if (stopped) {
-            Spacer(Modifier.height(8.dp))
-            Text(
-                pluralStringResource(
-                    R.plurals.import_done_stopped,
-                    state.summary.notAttempted,
-                    state.summary.notAttempted,
-                ),
-                style = MaterialTheme.typography.bodyMedium,
-                color = MaterialTheme.colorScheme.error,
-                textAlign = TextAlign.Center,
-            )
-        }
         Spacer(Modifier.height(24.dp))
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            ImportStatCard(
-                count = state.summary.imported,
-                label = stringResource(R.string.import_done_added_label),
-                contentDescription = pluralStringResource(
-                    R.plurals.import_done_imported,
-                    state.summary.imported,
-                    state.summary.imported,
-                ),
-                container = MaterialTheme.colorScheme.secondaryContainer,
-                onContainer = MaterialTheme.colorScheme.onSecondaryContainer,
-            )
-            if (state.summary.skippedDuplicate > 0) {
-                ImportStatCard(
-                    count = state.summary.skippedDuplicate,
-                    label = stringResource(R.string.import_done_skipped_label),
-                    contentDescription = pluralStringResource(
-                        R.plurals.import_done_skipped,
-                        state.summary.skippedDuplicate,
-                        state.summary.skippedDuplicate,
-                    ),
-                    container = MaterialTheme.colorScheme.surfaceContainerHighest,
-                    onContainer = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (state.summary.failed > 0) {
-                ImportStatCard(
-                    count = state.summary.failed,
-                    label = stringResource(R.string.import_done_failed_label),
-                    contentDescription = pluralStringResource(
-                        R.plurals.import_done_failed,
-                        state.summary.failed,
-                        state.summary.failed,
-                    ),
-                    container = MaterialTheme.colorScheme.errorContainer,
-                    onContainer = MaterialTheme.colorScheme.onErrorContainer,
-                )
-            }
-        }
+        ImportSummaryStats(state.summary)
         Spacer(Modifier.weight(1f))
         Button(
             onClick = onClose,
             modifier = Modifier.fillMaxWidth(),
         ) {
             Text(stringResource(R.string.import_close))
-        }
-    }
-}
-
-/** A big-number tonal tile summarising one import outcome (added / skipped / failed). */
-@Composable
-private fun RowScope.ImportStatCard(
-    count: Int,
-    label: String,
-    contentDescription: String,
-    container: Color,
-    onContainer: Color,
-) {
-    Surface(
-        modifier = Modifier
-            .weight(1f)
-            .clearAndSetSemantics { this.contentDescription = contentDescription },
-        shape = RoundedCornerShape(24.dp),
-        color = container,
-    ) {
-        Column(
-            Modifier.padding(vertical = 20.dp, horizontal = 12.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                count.toString(),
-                style = MaterialTheme.typography.displaySmall,
-                color = onContainer,
-            )
-            Text(
-                label,
-                style = MaterialTheme.typography.labelLarge,
-                color = onContainer.copy(alpha = 0.85f),
-            )
         }
     }
 }
