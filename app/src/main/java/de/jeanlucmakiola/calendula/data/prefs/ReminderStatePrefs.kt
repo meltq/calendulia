@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.data.prefs
 
 import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.Preferences
+import de.jeanlucmakiola.floret.prefs.Pref
 import de.jeanlucmakiola.floret.prefs.PrefStore
 import de.jeanlucmakiola.floret.prefs.nullableLongPref
 import de.jeanlucmakiola.floret.prefs.nullableStringPref
@@ -25,9 +26,9 @@ class ReminderStatePrefs @Inject constructor(
     private val prefs = PrefStore(store)
 
     /** The watermark, or `null` before the first scan has ever run. */
-    suspend fun lastScanMillis(): Long? = prefs.get(LAST_SCAN)
+    suspend fun lastScanMillis(): Long? = prefs.get(ReminderStateKeys.lastScanMillis)
 
-    suspend fun setLastScanMillis(millis: Long) = prefs.set(LAST_SCAN, millis)
+    suspend fun setLastScanMillis(millis: Long) = prefs.set(ReminderStateKeys.lastScanMillis, millis)
 
     /**
      * The day the last daily summary listed (#459): recorded at once, so neither
@@ -35,14 +36,15 @@ class ReminderStatePrefs @Inject constructor(
      * lists it twice.
      */
     suspend fun lastDigestDay(): LocalDate? =
-        prefs.get(LAST_DIGEST_DAY)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
+        prefs.get(ReminderStateKeys.lastDigestDay)?.let { runCatching { LocalDate.parse(it) }.getOrNull() }
 
-    suspend fun setLastDigestDay(day: LocalDate) = prefs.set(LAST_DIGEST_DAY, day.toString())
+    suspend fun setLastDigestDay(day: LocalDate) = prefs.set(ReminderStateKeys.lastDigestDay, day.toString())
 
-    suspend fun clearLastDigestDay() = prefs.set(LAST_DIGEST_DAY, null)
+    suspend fun clearLastDigestDay() = prefs.set(ReminderStateKeys.lastDigestDay, null)
+}
 
-    private companion object {
-        val LAST_SCAN = nullableLongPref("reminder_last_scan_millis")
-        val LAST_DIGEST_DAY = nullableStringPref("reminder_last_digest_day")
-    }
+/** The keys [ReminderStatePrefs] stores. */
+internal object ReminderStateKeys {
+    val lastScanMillis: Pref<Long?> = nullableLongPref("reminder_last_scan_millis")
+    val lastDigestDay: Pref<String?> = nullableStringPref("reminder_last_digest_day")
 }

@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
@@ -80,6 +81,10 @@ private val RESTORE_MIME_TYPES = arrayOf(
 /**
  * Backup & restore (#69): `.ics` export and restore, with
  * optional automatic backup. Shares [CalendarsViewModel] with the manager.
+ * Backup & restore (#69): `.ics` export and restore for local calendars, with
+ * optional automatic backup, and the app's settings as JSON (#481). Shares
+ * [CalendarsViewModel] with the manager; the settings block works whatever
+ * state the calendar list is in.
  *
  * A full-screen destination hoisted in `CalendarHost`; [onBack] pops it,
  * [onImport] hands a picked file to the app's normal .ics import flow.
@@ -90,7 +95,7 @@ fun BackupScreen(
     onImport: (Uri) -> Unit,
     visible: Boolean = true,
     viewModel: CalendarsViewModel = hiltViewModel(),
-    copyViewModel: CopyEventsViewModel = hiltViewModel(),
+    settingsBackup: SettingsBackupViewModel = hiltViewModel(),
 ) {
     val state by viewModel.backupState.collectAsStateWithLifecycle()
     val copyRun by copyViewModel.run.collectAsStateWithLifecycle()
@@ -145,20 +150,27 @@ fun BackupScreen(
         }
     }
 
+    val settings = rememberSettingsBackupActions(settingsBackup)
+
     CollapsingScaffold(
         title = stringResource(R.string.settings_section_backup),
         onBack = onBack,
-        // Loading and failure fill the screen and centre themselves, which they
-        // can only do in an unscrolled column — the scrolling one measures them
-        // against an unbounded height and leaves them hanging under the header.
-        scrollable = state is BackupUiState.Ready,
         snackbarHost = { SnackbarHost(snackbarHostState) },
         predictiveBack = true,
         visible = visible,
     ) {
+        // Loading and failure get a fixed-height slot in the scrolling column (it
+        // can't centre them in an unbounded height); the settings block below
+        // works in every state.
         when (val s = state) {
-            BackupUiState.Loading -> BackupLoading()
-            is BackupUiState.Failure -> CalendarFailure(reason = s.reason, onRetry = onBack)
+            BackupUiState.Loading -> {
+                StateSlot { BackupLoading() }
+                SettingsBackupSection(settings)
+            }
+            is BackupUiState.Failure -> {
+                StateSlot { CalendarFailure(reason = s.reason, onRetry = onBack) }
+                SettingsBackupSection(settings)
+            }
             is BackupUiState.Ready -> BackupContent(
                 exportable = s.exportable,
                 canImport = s.canImport,
@@ -180,6 +192,7 @@ fun BackupScreen(
                     showBackupCalendars = true
                 },
                 onEditKeep = { showKeep = true },
+                settings = settings,
             )
         }
     }
@@ -242,6 +255,7 @@ fun BackupScreen(
             onDismiss = { showKeep = false },
         )
     }
+    SettingsBackupDialogs(settings, settingsBackup, snackbarHostState)
     if (showInterval) {
         BackupIntervalDialog(
             currentMinutes = autoBackup.intervalMinutes,
@@ -249,6 +263,14 @@ fun BackupScreen(
             onDismiss = { showInterval = false },
         )
     }
+}
+
+@Composable
+private fun StateSlot(content: @Composable () -> Unit) {
+    Box(
+        modifier = Modifier.fillMaxWidth().heightIn(min = STATE_MIN_HEIGHT),
+        contentAlignment = Alignment.Center,
+    ) { content() }
 }
 
 /** The screen's loading state, centred in the scaffold's content column. */
@@ -287,6 +309,7 @@ private fun BackupContent(
     onEditInterval: () -> Unit,
     onEditCalendars: () -> Unit,
     onEditKeep: () -> Unit,
+    settings: SettingsBackupActions,
 ) {
     val manageCalendars = LocalManageCalendars.current
     // Restore never depends on export eligibility, and never disappears: when no
@@ -308,6 +331,7 @@ private fun BackupContent(
             onClick = onRestoreClick,
         )
         if (copyRun != CopyRunState.Idle) CopyEventsRow(copyRun, Position.Bottom, onCopy)
+        SettingsBackupSection(settings)
         return
     }
 
@@ -398,6 +422,7 @@ private fun BackupContent(
             style = MaterialTheme.typography.bodySmall,
         )
     }
+    SettingsBackupSection(settings)
 }
 
 @Composable
@@ -592,5 +617,6 @@ private fun BackupIntervalDialog(
     )
 }
 
+private val STATE_MIN_HEIGHT = 360.dp
 private const val MINUTES_PER_DAY = 1_440L
 private const val MINUTES_PER_WEEK = 10_080L

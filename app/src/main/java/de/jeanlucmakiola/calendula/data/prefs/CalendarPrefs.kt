@@ -30,13 +30,13 @@ class CalendarPrefs @Inject constructor(
 ) {
     private val prefs = PrefStore(store)
 
-    val hiddenCalendarIds: Flow<Set<Long>> = prefs.flow(HIDDEN_IDS)
+    val hiddenCalendarIds: Flow<Set<Long>> = prefs.flow(CalendarPrefKeys.hiddenCalendarIds)
 
-    suspend fun setHiddenCalendarIds(ids: Set<Long>) = prefs.set(HIDDEN_IDS, ids)
+    suspend fun setHiddenCalendarIds(ids: Set<Long>) = prefs.set(CalendarPrefKeys.hiddenCalendarIds, ids)
 
     /** Rewrite the drawer's hidden set atomically from its current value. */
     suspend fun updateHiddenCalendarIds(transform: (Set<Long>) -> Set<Long>) {
-        prefs.update(HIDDEN_IDS, transform)
+        prefs.update(CalendarPrefKeys.hiddenCalendarIds, transform)
     }
 
     /**
@@ -48,10 +48,10 @@ class CalendarPrefs @Inject constructor(
      * second visibility model: `CalendarVisibilityReconciler` drains it entry by
      * entry as soon as the app may write, and nothing adds to it while it may.
      */
-    val pendingDisabledCalendarIds: Flow<Set<Long>> = prefs.flow(DISABLED_IDS)
+    val pendingDisabledCalendarIds: Flow<Set<Long>> = prefs.flow(CalendarPrefKeys.pendingDisabledCalendarIds)
 
     suspend fun addPendingDisabledCalendarIds(ids: Collection<Long>) {
-        prefs.update(DISABLED_IDS) { it + ids }
+        prefs.update(CalendarPrefKeys.pendingDisabledCalendarIds) { it + ids }
     }
 
     /**
@@ -59,7 +59,7 @@ class CalendarPrefs @Inject constructor(
      * them, so a run that fails part-way never re-applies what already landed.
      */
     suspend fun removePendingDisabledCalendarIds(ids: Collection<Long>) {
-        prefs.update(DISABLED_IDS) { it - ids.toSet() }
+        prefs.update(CalendarPrefKeys.pendingDisabledCalendarIds) { it - ids.toSet() }
     }
 
     /**
@@ -67,44 +67,45 @@ class CalendarPrefs @Inject constructor(
      * owed. Null until the reconciler has evaluated it (which needs the calendar
      * permission), false once it has been shown or was never needed.
      */
-    val visibilityNoticePending: Flow<Boolean?> = prefs.flow(VISIBILITY_NOTICE)
+    val visibilityNoticePending: Flow<Boolean?> = prefs.flow(CalendarPrefKeys.visibilityNoticePending)
 
-    suspend fun setVisibilityNoticePending(pending: Boolean) = prefs.set(VISIBILITY_NOTICE, pending)
+    suspend fun setVisibilityNoticePending(pending: Boolean) = prefs.set(CalendarPrefKeys.visibilityNoticePending, pending)
 
     /**
      * The calendar the user last created an event in; preselected in the
      * event form. Null until the first event is created.
      */
-    val lastUsedCalendarId: Flow<Long?> = prefs.flow(LAST_USED_CALENDAR)
+    val lastUsedCalendarId: Flow<Long?> = prefs.flow(CalendarPrefKeys.lastUsedCalendarId)
 
-    suspend fun setLastUsedCalendarId(id: Long) = prefs.set(LAST_USED_CALENDAR, id)
+    suspend fun setLastUsedCalendarId(id: Long) = prefs.set(CalendarPrefKeys.lastUsedCalendarId, id)
 
     /**
      * Synced accounts the user chose never to be asked to grant sync-request
      * access for (#240): no grant row, no "other accounts" receipt.
      */
-    val syncAccessDismissed: Flow<Set<SyncAccount>> = prefs.flow(SYNC_ACCESS_DISMISSED)
+    val syncAccessDismissed: Flow<Set<SyncAccount>> = prefs.flow(CalendarPrefKeys.syncAccessDismissed)
 
     suspend fun setSyncAccessDismissed(account: SyncAccount, dismissed: Boolean) {
-        prefs.update(SYNC_ACCESS_DISMISSED) { if (dismissed) it + account else it - account }
+        prefs.update(CalendarPrefKeys.syncAccessDismissed) { if (dismissed) it + account else it - account }
     }
+}
 
-    private companion object {
-        val SYNC_ACCESS_DISMISSED = stringSetPref("sync_access_dismissed").map<Set<SyncAccount>>(
-            { stored -> stored.mapNotNullTo(mutableSetOf()) { it.toSyncAccount() } },
-            { accounts -> accounts.mapTo(mutableSetOf()) { "${it.type}$FIELD_SEPARATOR${it.name}" } },
-        )
-        const val FIELD_SEPARATOR = '\u001F'
+/** Every key [CalendarPrefs] stores; the names are on-disk data. */
+internal object CalendarPrefKeys {
+    val hiddenCalendarIds: Pref<Set<Long>> = idSetPref("hidden_calendar_ids")
+    val pendingDisabledCalendarIds: Pref<Set<Long>> = idSetPref("disabled_calendar_ids")
+    val visibilityNoticePending: Pref<Boolean?> = nullableBooleanPref("visibility_notice_pending")
+    val lastUsedCalendarId: Pref<Long?> = nullableLongPref("last_used_calendar_id")
+    val syncAccessDismissed: Pref<Set<SyncAccount>> = stringSetPref("sync_access_dismissed").map(
+        { stored -> stored.mapNotNullTo(mutableSetOf()) { it.toSyncAccount() } },
+        { accounts -> accounts.mapTo(mutableSetOf()) { "${it.type}$FIELD_SEPARATOR${it.name}" } },
+    )
 
-        fun String.toSyncAccount(): SyncAccount? {
-            val split = indexOf(FIELD_SEPARATOR)
-            return if (split <= 0) null else SyncAccount(name = substring(split + 1), type = substring(0, split))
-        }
+    private const val FIELD_SEPARATOR = '\u001F'
 
-        val HIDDEN_IDS = idSetPref("hidden_calendar_ids")
-        val DISABLED_IDS = idSetPref("disabled_calendar_ids")
-        val VISIBILITY_NOTICE = nullableBooleanPref("visibility_notice_pending")
-        val LAST_USED_CALENDAR = nullableLongPref("last_used_calendar_id")
+    private fun String.toSyncAccount(): SyncAccount? {
+        val split = indexOf(FIELD_SEPARATOR)
+        return if (split <= 0) null else SyncAccount(name = substring(split + 1), type = substring(0, split))
     }
 }
 

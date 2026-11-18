@@ -719,6 +719,17 @@ one the calendar accepts. The single-event review form deliberately keeps no col
 first question is which calendar to use, and answering it clears the colour
 anyway.
 
+## Settings backup
+
+Backup & restore also exports the app's settings as versioned JSON (#481),
+with the envelope and the generic preference section from floret-kit's
+`core-backup`. Every stored key is either carried or deliberately left out
+(`SettingsBackupSchema`, enforced by a test); per-calendar settings travel
+under the calendar's account and name, since provider ids are per device. An
+import replaces rather than merges, in one DataStore edit, then re-runs what
+reads settings outside DataStore. Format and per-key decisions:
+docs/SETTINGS_BACKUP.md.
+
 ## Testing
 
 JUnit 5 + Truth + Turbine on the JVM. The seams that make it work:

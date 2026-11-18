@@ -177,6 +177,7 @@ dependencies {
     implementation("de.jeanlucmakiola.floret:core-crash")
     implementation("de.jeanlucmakiola.floret:core-di")
     implementation("de.jeanlucmakiola.floret:core-prefs")
+    implementation("de.jeanlucmakiola.floret:core-backup")
     implementation("de.jeanlucmakiola.floret:core-reminders")
     implementation("de.jeanlucmakiola.floret:core-android")
     implementation("de.jeanlucmakiola.floret:identity")
