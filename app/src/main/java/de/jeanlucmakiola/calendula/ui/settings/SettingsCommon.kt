@@ -72,9 +72,6 @@ internal fun reminderChoiceLabel(minutes: List<Int>): String {
     return minutes.map { reminderLeadTimeLabel(it) }.joinToString(", ")
 }
 
-/** Day-scale lead times for all-day defaults and contact special dates. */
-internal val ALLDAY_REMINDER_PRESETS = listOf(0, 1_440, 2_880, 10_080)
-
 /** A minute-of-day in the app's own 12/24-hour convention ([LocalUse24HourFormat]). */
 @Composable
 internal fun settingsTimeOfDay(minutesOfDay: Int): String =

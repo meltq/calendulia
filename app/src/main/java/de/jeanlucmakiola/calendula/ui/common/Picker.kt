@@ -6,6 +6,7 @@ import androidx.compose.material3.Checkbox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -38,8 +39,8 @@ import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 
 /**
- * Reminder-default picker, full-screen and **multi-select**: each [presets]
- * lead time (plus any chosen custom value) is a checkbox row that toggles
+ * Reminder-default picker, full-screen and **multi-select**: each preset
+ * lead time ([reminderPresets] for [isAllDay]) (plus any chosen custom value) is a checkbox row that toggles
  * independently, so a default can carry several reminders ("1 week before" *and*
  * "on the day"). Two exclusive checkmark rows sit above the list: an explicit
  * "No reminder" (both pickers, so the empty state stays visible and reachable)
@@ -59,7 +60,7 @@ import kotlin.time.Clock
 @Composable
 fun ReminderDefaultPicker(
     title: String,
-    presets: List<Int>,
+    isAllDay: Boolean,
     selected: ReminderOverride,
     allowInherit: Boolean,
     onSelect: (ReminderOverride) -> Unit,
@@ -87,14 +88,17 @@ fun ReminderDefaultPicker(
     // Custom (non-preset) lead times seen this session, so unchecking one keeps
     // its row (unchecked) until the picker closes instead of vanishing mid-tap,
     // which would strand a hand-entered value with no way to re-check it.
+    val presets = reminderPresets(isAllDay)
+    val units = customReminderUnits(isAllDay)
     val seenCustom = remember { mutableSetOf<Int>() }
     seenCustom += selectedMinutes.filter { it !in presets }
     // Presets plus every custom value seen this session, each as its own row.
-    val rows = presets + seenCustom.sorted()
+    val rows = presets + seenCustom
 
     var customExpanded by rememberSaveable { mutableStateOf(false) }
     var amountText by rememberSaveable { mutableStateOf("") }
-    var unit by rememberSaveable { mutableStateOf(ReminderUnit.Minutes) }
+    var pickedUnit by rememberSaveable { mutableStateOf(units.first()) }
+    val unit = pickedUnit.takeIf { it in units } ?: units.first()
 
     fun apply(override: ReminderOverride) {
         userEdited = true
@@ -125,37 +129,66 @@ fun ReminderDefaultPicker(
             onClick = { apply(ReminderOverride.None) },
         )
         Spacer(Modifier.height(24.dp))
-        val rowCount = rows.size + 1 // + the custom row
-        rows.forEachIndexed { index, minute ->
-            val checked = minute in selectedMinutes
-            GroupedRow(
-                title = reminderLeadTimeLabel(minute),
-                summary = leadTimeSummary?.invoke(minute),
-                position = positionOf(index, rowCount),
-                selected = checked,
-                trailing = { Checkbox(checked = checked, onCheckedChange = { toggle(minute) }) },
-                onClick = { toggle(minute) },
-            )
-        }
-        CustomExpandRow(
-            title = stringResource(R.string.event_edit_reminder_custom),
-            position = positionOf(rows.size, rowCount),
-            expanded = customExpanded,
-            onExpandedChange = { customExpanded = it },
-        ) {
-            CustomReminderEditor(
-                amountText = amountText,
-                onAmountChange = { amountText = it },
-                unit = unit,
-                onUnitChange = { unit = it },
-                onConfirm = { minutes ->
-                    emit(selectedMinutes + minutes)
-                    amountText = ""
-                    customExpanded = false
-                },
-            )
-        }
+        GroupedLeadTimeRows(
+            minutes = rows,
+            splitSubDay = splitsSubDay(presets),
+            row = { minute, position ->
+                val checked = minute in selectedMinutes
+                GroupedRow(
+                    title = reminderLeadTimeLabel(minute),
+                    summary = leadTimeSummary?.invoke(minute),
+                    position = position,
+                    selected = checked,
+                    trailing = { Checkbox(checked = checked, onCheckedChange = { toggle(minute) }) },
+                    onClick = { toggle(minute) },
+                )
+            },
+            trailing = { position ->
+                CustomExpandRow(
+                    title = stringResource(R.string.event_edit_reminder_custom),
+                    position = position,
+                    expanded = customExpanded,
+                    onExpandedChange = { customExpanded = it },
+                ) {
+                    CustomReminderEditor(
+                        amountText = amountText,
+                        onAmountChange = { amountText = it },
+                        units = units,
+                        unit = unit,
+                        onUnitChange = { pickedUnit = it },
+                        onConfirm = { minutes ->
+                            emit(selectedMinutes + minutes)
+                            amountText = ""
+                            customExpanded = false
+                        },
+                    )
+                }
+            },
+        )
     }
+}
+
+/**
+ * Lead-time rows laid out as [groupReminderLeadTimes] groups, each a connected
+ * card, with [trailing] (the Custom row) closing the last one.
+ */
+@Composable
+internal fun GroupedLeadTimeRows(
+    minutes: Collection<Int>,
+    splitSubDay: Boolean,
+    row: @Composable (minute: Int, position: Position) -> Unit,
+    trailing: @Composable (position: Position) -> Unit,
+) {
+    val groups = groupReminderLeadTimes(minutes, splitSubDay)
+    groups.forEachIndexed { groupIndex, group ->
+        val isLast = groupIndex == groups.lastIndex
+        val rowCount = group.size + if (isLast) 1 else 0
+        group.forEachIndexed { index, minute ->
+            key(minute) { row(minute, positionOf(index, rowCount)) }
+        }
+        if (!isLast) Spacer(Modifier.height(12.dp))
+    }
+    trailing(if (groups.isEmpty()) Position.Alone else Position.Bottom)
 }
 
 
@@ -170,6 +203,7 @@ fun ReminderDefaultPicker(
 private fun CustomReminderEditor(
     amountText: String,
     onAmountChange: (String) -> Unit,
+    units: List<ReminderUnit>,
     unit: ReminderUnit,
     onUnitChange: (ReminderUnit) -> Unit,
     onConfirm: (Int) -> Unit,
@@ -178,9 +212,10 @@ private fun CustomReminderEditor(
     CustomAmountEditor(
         amountText = amountText,
         onAmountChange = onAmountChange,
-        unitLabels = ReminderUnit.entries.map { stringResource(reminderUnitLabel(it)) },
-        selectedUnit = unit.ordinal,
-        onUnitChange = { onUnitChange(ReminderUnit.entries[it]) },
+        unitLabels = units.map { stringResource(reminderUnitLabel(it)) },
+        placeholder = customReminderPlaceholder(unit),
+        selectedUnit = units.indexOf(unit),
+        onUnitChange = { onUnitChange(units[it]) },
         preview = amount?.let { reminderLeadTimeLabel(it * unit.minutesFactor) }
             ?: stringResource(R.string.reminder_custom_amount),
         setLabel = stringResource(R.string.reminder_custom_set),

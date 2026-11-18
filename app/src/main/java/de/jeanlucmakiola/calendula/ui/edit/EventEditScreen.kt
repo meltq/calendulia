@@ -170,9 +170,12 @@ import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.groupedShape as floretGroupedShape
 import de.jeanlucmakiola.floret.components.positionOf
-import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
+import de.jeanlucmakiola.calendula.ui.common.reminderPresets
+import de.jeanlucmakiola.calendula.ui.common.customReminderUnits
+import de.jeanlucmakiola.calendula.ui.common.customReminderPlaceholder
+import de.jeanlucmakiola.calendula.ui.common.splitsSubDay
+import de.jeanlucmakiola.calendula.ui.common.GroupedLeadTimeRows
 import de.jeanlucmakiola.calendula.ui.common.TimePickerAlert
-import de.jeanlucmakiola.floret.reminders.ReminderUnit
 import de.jeanlucmakiola.floret.locale.currentLocale
 import de.jeanlucmakiola.calendula.ui.common.LocalUse24HourFormat
 import de.jeanlucmakiola.calendula.ui.common.formatTimeOfDay
@@ -879,7 +882,7 @@ private fun EventEditContent(
         OptionalFormSection(visible = EventFormField.Reminders in state.visibleFields) {
             Spacer(Modifier.height(gap))
             RemindersSection(
-                reminders = form.reminders,
+                reminders = form.firingReminders(),
                 fixedReminders = if (form.isAllDay) emptyList() else form.fixedReminders,
                 onRemove = viewModel::removeReminder,
                 onRemoveFixed = viewModel::removeFixedReminder,
@@ -1511,7 +1514,8 @@ private fun EditSheetHost(
             )
         }
         EditSheet.Reminder -> ReminderPickerDialog(
-            alreadyChosen = form.reminders,
+            isAllDay = form.isAllDay,
+            alreadyChosen = form.firingReminders(),
             offerFixedTime = !form.isAllDay,
             onSelect = { minutes ->
                 viewModel.addReminder(minutes)
@@ -1608,6 +1612,7 @@ private fun FieldPickerDialog(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun ReminderPickerDialog(
+    isAllDay: Boolean,
     alreadyChosen: List<Int>,
     offerFixedTime: Boolean,
     onSelect: (Int) -> Unit,
@@ -1618,7 +1623,9 @@ private fun ReminderPickerDialog(
     var fixedMode by rememberSaveable { mutableStateOf(false) }
     var pendingFixed by remember { mutableStateOf<FixedTimeReminder?>(null) }
     var amountText by rememberSaveable { mutableStateOf("") }
-    var unit by rememberSaveable { mutableStateOf(ReminderUnit.Minutes) }
+    val units = customReminderUnits(isAllDay)
+    var pickedUnit by rememberSaveable { mutableStateOf(units.first()) }
+    val unit = pickedUnit.takeIf { it in units } ?: units.first()
     val customMinutes = amountText.toIntOrNull()
         ?.takeIf { it in 1..999 }
         ?.let { it * unit.minutesFactor }
@@ -1650,27 +1657,32 @@ private fun ReminderPickerDialog(
                 connected = false,
             )
         } else if (!customMode) {
-            val presets = REMINDER_PRESETS.filterNot { it in alreadyChosen }
-            val rowCount = presets.size + if (offerFixedTime) 2 else 1
-            presets.forEachIndexed { index, minutes ->
-                GroupedRow(
-                    title = reminderLeadTimeLabel(minutes),
-                    position = positionOf(index, rowCount),
-                    onClick = { onSelect(minutes) },
-                )
-            }
-            if (offerFixedTime) {
-                GroupedRow(
-                    title = stringResource(R.string.reminder_fixed_at_set_time),
-                    summary = stringResource(R.string.event_edit_reminder_fixed_summary),
-                    position = positionOf(presets.size, rowCount),
-                    onClick = { fixedMode = true },
-                )
-            }
-            GroupedRow(
-                title = stringResource(R.string.event_edit_reminder_custom),
-                position = positionOf(rowCount - 1, rowCount),
-                onClick = { customMode = true },
+            val presets = reminderPresets(isAllDay)
+            GroupedLeadTimeRows(
+                minutes = presets.filterNot { it in alreadyChosen },
+                splitSubDay = splitsSubDay(presets),
+                row = { minutes, position ->
+                    GroupedRow(
+                        title = reminderLeadTimeLabel(minutes),
+                        position = position,
+                        onClick = { onSelect(minutes) },
+                    )
+                },
+                trailing = { position ->
+                    if (offerFixedTime) {
+                        GroupedRow(
+                            title = stringResource(R.string.reminder_fixed_at_set_time),
+                            summary = stringResource(R.string.event_edit_reminder_fixed_summary),
+                            position = if (position == Position.Alone) Position.Top else Position.Middle,
+                            onClick = { fixedMode = true },
+                        )
+                    }
+                    GroupedRow(
+                        title = stringResource(R.string.event_edit_reminder_custom),
+                        position = if (offerFixedTime) Position.Bottom else position,
+                        onClick = { customMode = true },
+                    )
+                },
             )
         } else {
             Row(
@@ -1680,13 +1692,13 @@ private fun ReminderPickerDialog(
                 DialogAmountField(
                     value = amountText,
                     onValueChange = { amountText = it },
-                    placeholder = "10",
+                    placeholder = customReminderPlaceholder(unit),
                 )
                 Spacer(Modifier.width(12.dp))
                 DialogUnitDropdown(
                     label = stringResource(reminderUnitLabel(unit)),
-                    entries = ReminderUnit.entries.map { stringResource(reminderUnitLabel(it)) },
-                    onPick = { unit = ReminderUnit.entries[it] },
+                    entries = units.map { stringResource(reminderUnitLabel(it)) },
+                    onPick = { pickedUnit = units[it] },
                 )
             }
         }

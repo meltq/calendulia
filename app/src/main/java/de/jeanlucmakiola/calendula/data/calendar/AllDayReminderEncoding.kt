@@ -55,6 +55,18 @@ internal fun toProviderAllDayMinutes(
 }
 
 /**
+ * A lead time as the whole days an all-day reminder actually fires at: the
+ * sub-day part is dropped, matching [toProviderAllDayMinutes]'s day count.
+ * [MINUTES_DEFAULT] passes through.
+ */
+internal fun wholeDayLeadMinutes(minutes: Int): Int =
+    if (minutes == MINUTES_DEFAULT) minutes else minutes / MINUTES_PER_DAY * MINUTES_PER_DAY
+
+/** [wholeDayLeadMinutes] for a reminder list, merging lead times that land on the same day. */
+internal fun wholeDayLeadTimes(minutes: List<Int>): List<Int> =
+    minutes.map(::wholeDayLeadMinutes).distinct().sorted()
+
+/**
  * The next date on or after [today] carrying [month]/[day] — the date to sample
  * a yearly all-day reminder's UTC offset at. A managed birthday's DTSTART is an
  * ancient anchor (1972 for year-less dates), a year whose timezone rules

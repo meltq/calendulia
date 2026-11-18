@@ -32,7 +32,6 @@ import de.jeanlucmakiola.calendula.domain.reminders.alertStyleFor
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.FixedTimeReminderPicker
 import de.jeanlucmakiola.calendula.ui.common.fixedTimeReminderLabel
-import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
 import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
 import de.jeanlucmakiola.calendula.ui.common.groupByAccount
@@ -204,7 +203,7 @@ internal fun CalendarRemindersScreen(
                     R.string.settings_default_reminder
                 },
             ),
-            presets = if (target.isAllDay) ALLDAY_REMINDER_PRESETS else REMINDER_PRESETS,
+            isAllDay = target.isAllDay,
             selected = map.reminderOverrideFor(target.calendarId),
             allowInherit = true,
             onSelect = {

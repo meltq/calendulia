@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
 import de.jeanlucmakiola.calendula.data.calendar.NoSuchEventException
+import de.jeanlucmakiola.calendula.data.calendar.wholeDayLeadMinutes
+import de.jeanlucmakiola.calendula.data.calendar.wholeDayLeadTimes
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -470,7 +472,7 @@ class EventEditViewModel @Inject constructor(
             ImportSource.File -> {
                 // Respect the file's own reminders; never silently overwrite them.
                 _remindersTouched.value = true
-                maybePromptImportedReminderDefault(form)
+                maybePromptImportedReminderDefault()
             }
         }
     }
@@ -564,21 +566,24 @@ class EventEditViewModel @Inject constructor(
      * settings default — but only when there's a real choice: a default is
      * configured and it isn't already exactly what the file carried.
      */
-    private fun maybePromptImportedReminderDefault(form: EventForm) {
+    private fun maybePromptImportedReminderDefault() {
         val opened = session
         viewModelScope.launch {
             val targetId = resolvedCalendarId.first()
             val defaults = reminderDefaults()
-            val default = defaults.resolveFor(targetId, form.isAllDay)
-            val fixed = defaults.resolveFixedFor(targetId, form.isAllDay)
             // Bail if the form closed or became an edit while we resolved.
             if (opened != session) return@launch
             val current = _form.value ?: return@launch
             if (_editTarget.value != null) return@launch
+            // The form may have switched all-day meanwhile; offer that kind's default.
+            val default = defaults.resolveFor(targetId, current.isAllDay)
+            val fixed = defaults.resolveFixedFor(targetId, current.isAllDay)
+            val firing = current.firingReminders()
+            val firingFixed = if (current.isAllDay) emptyList() else current.fixedReminders
             if (default.isEmpty() && fixed.isEmpty()) return@launch
-            if (default == current.reminders && fixed == current.fixedReminders) return@launch
+            if (default == firing && fixed == firingFixed) return@launch
             _importReminderPrompt.value = ImportReminderPrompt(
-                currentReminderCount = current.reminders.size + current.fixedReminders.size,
+                currentReminderCount = firing.size + firingFixed.size,
                 defaultReminders = default,
                 defaultFixedReminders = fixed,
             )
@@ -765,9 +770,20 @@ class EventEditViewModel @Inject constructor(
         }
     }
 
+    /**
+     * On an all-day event a reminder is shown as the whole day it fires on, so
+     * removing it drops every stored lead time that lands on that day.
+     */
     fun removeReminder(minutes: Int) {
         _remindersTouched.value = true
-        edit { it.copy(reminders = it.reminders - minutes) }
+        edit { form ->
+            val removed = if (form.isAllDay) {
+                form.reminders.filter { wholeDayLeadMinutes(it) == wholeDayLeadMinutes(minutes) }
+            } else {
+                listOf(minutes)
+            }
+            form.copy(reminders = form.reminders - removed.toSet())
+        }
     }
 
     /**
@@ -1057,3 +1073,11 @@ class EventEditViewModel @Inject constructor(
 /** [EditSnapshot.form] with its timed reminders read back into lead times and fixed-time ones. */
 private fun EditSnapshot.withFixedTimeRemindersRead(known: Set<FixedTimeReminder>, zone: TimeZone): EditSnapshot =
     copy(form = form.withFixedTimeRemindersRead(known, zone))
+
+/**
+ * Reminders as they fire: an all-day event fires on whole days, so a sub-day lead
+ * time kept from the timed form reads as its day. The form keeps the raw values,
+ * so switching all-day off again restores any the user did not remove.
+ */
+internal fun EventForm.firingReminders(): List<Int> =
+    if (isAllDay) wholeDayLeadTimes(reminders) else reminders

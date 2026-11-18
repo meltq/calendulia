@@ -196,7 +196,7 @@ internal fun SpecialDatesScreen(
     reminderPickerType?.let { type ->
         ReminderDefaultPicker(
             title = stringResource(R.string.settings_special_dates_reminders),
-            presets = ALLDAY_REMINDER_PRESETS,
+            isAllDay = true,
             selected = state.reminderChoices[type] ?: ReminderOverride.None,
             // Managed calendars own their reminders outright — no "inherit global".
             allowInherit = false,
