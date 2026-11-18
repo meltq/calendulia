@@ -34,6 +34,11 @@ class CalendarPrefs @Inject constructor(
 
     suspend fun setHiddenCalendarIds(ids: Set<Long>) = prefs.set(HIDDEN_IDS, ids)
 
+    /** Rewrite the drawer's hidden set atomically from its current value. */
+    suspend fun updateHiddenCalendarIds(transform: (Set<Long>) -> Set<Long>) {
+        prefs.update(HIDDEN_IDS, transform)
+    }
+
     /**
      * Switch-offs the provider does not know about yet, because writing
      * `Calendars.VISIBLE` needs `WRITE_CALENDAR` (#75). Also inherits the

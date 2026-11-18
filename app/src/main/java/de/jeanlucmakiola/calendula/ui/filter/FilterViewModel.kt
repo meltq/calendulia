@@ -19,7 +19,6 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -69,13 +68,19 @@ class FilterViewModel @Inject constructor(
         }
     }
 
-    /** Show or hide a single calendar; persists the new hidden set. */
-    fun setVisible(calendarId: Long, visible: Boolean) {
+    /**
+     * Flip one calendar, or a whole group from its header (#143). Both decide
+     * against the stored set rather than the last drawn state, so quick repeated
+     * taps still alternate.
+     */
+    fun toggleCalendar(calendarId: Long) {
         viewModelScope.launch {
-            val current = prefs.hiddenCalendarIds.first()
-            val next = if (visible) current - calendarId else current + calendarId
-            if (next != current) prefs.setHiddenCalendarIds(next)
+            prefs.updateHiddenCalendarIds { if (calendarId in it) it - calendarId else it + calendarId }
         }
+    }
+
+    fun toggleGroup(calendarIds: List<Long>) {
+        viewModelScope.launch { prefs.updateHiddenCalendarIds { toggledGroup(it, calendarIds) } }
     }
 }
 

@@ -1,6 +1,9 @@
 package de.jeanlucmakiola.calendula.ui.filter
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.wrapContentHeight
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -20,8 +23,11 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
@@ -65,7 +71,8 @@ fun CalendarFilterList(
                 hiddenInView = hiddenInView,
                 hiddenOnlyHere = hiddenInView.size,
                 onHideInView = onHideInView,
-                onSetVisible = viewModel::setVisible,
+                onToggleCalendar = viewModel::toggleCalendar,
+                onToggleGroup = viewModel::toggleGroup,
                 modifier = modifier,
             )
         }
@@ -84,21 +91,17 @@ private fun FilterList(
     hiddenInView: Set<Long>,
     hiddenOnlyHere: Int,
     onHideInView: () -> Unit,
-    onSetVisible: (Long, Boolean) -> Unit,
+    onToggleCalendar: (Long) -> Unit,
+    onToggleGroup: (List<Long>) -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(modifier = modifier.fillMaxWidth()) {
         groups.forEach { group ->
-            Text(
-                text = accountGroupTitle(group),
-                style = MaterialTheme.typography.labelMedium,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(
-                    start = GroupedListInset,
-                    end = GroupedListInset,
-                    top = 12.dp,
-                    bottom = 4.dp,
-                ),
+            val ids = group.calendars.map { it.id }
+            GroupHeader(
+                title = accountGroupTitle(group),
+                state = groupVisibility(ids, hidden),
+                onToggle = { onToggleGroup(ids) },
             )
             group.calendars.forEachIndexed { index, cal ->
                 val visible = cal.id !in hidden
@@ -111,10 +114,10 @@ private fun FilterList(
                     trailing = {
                         Checkbox(
                             checked = visible,
-                            onCheckedChange = { onSetVisible(cal.id, it) },
+                            onCheckedChange = { onToggleCalendar(cal.id) },
                         )
                     },
-                    onClick = { onSetVisible(cal.id, !visible) },
+                    onClick = { onToggleCalendar(cal.id) },
                 )
             }
         }
@@ -140,6 +143,36 @@ private fun FilterList(
             onClick = onHideInView,
         )
     }
+}
+
+/**
+ * An account's header doubling as the group's parent checkbox (#143): checked
+ * when every calendar shows, indeterminate when some do. Tapping it shows all,
+ * or hides all when the group is fully shown.
+ */
+@Composable
+private fun GroupHeader(
+    title: String,
+    state: ToggleableState,
+    onToggle: () -> Unit,
+) {
+    val label = stringResource(
+        if (state.nextGroupVisible()) R.string.filter_group_show_all else R.string.filter_group_hide_all,
+    )
+    // The header itself is the toggle; the rows' checkboxes show the result.
+    Text(
+        text = title,
+        style = MaterialTheme.typography.labelMedium,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = GroupedListInset / 2)
+            .clip(MaterialTheme.shapes.large)
+            .clickable(onClickLabel = label, role = Role.Button) { onToggle() }
+            .heightIn(min = 48.dp)
+            .wrapContentHeight(Alignment.CenterVertically)
+            .padding(horizontal = GroupedListInset / 2),
+    )
 }
 
 @Composable
