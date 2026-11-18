@@ -106,6 +106,8 @@ import de.jeanlucmakiola.calendula.ui.month.MonthScreen
 import de.jeanlucmakiola.calendula.ui.search.SearchScreen
 import de.jeanlucmakiola.calendula.ui.settings.SettingsScreen
 import de.jeanlucmakiola.calendula.ui.week.TimelineScreen
+import de.jeanlucmakiola.calendula.ui.filter.FilterViewModel
+import de.jeanlucmakiola.calendula.ui.filter.ViewCalendarsPicker
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
@@ -201,10 +203,15 @@ fun CalendarHost(
     var detailKey by rememberSaveable { mutableStateOf<LongArray?>(null) }
     val onOpenDetail: (EventInstance) -> Unit = { event -> detailKey = event.occurrenceKey() }
 
+    // The drawer's "Hide in this view" picker (#517). It is its own window over
+    // everything here, so each external request below closes it first.
+    var showViewCalendars by rememberSaveable { mutableStateOf(false) }
+
     // A tapped reminder notification asks for a specific occurrence.
     val requestedDetailKey = requests.detailKey
     LaunchedEffect(requestedDetailKey) {
         if (requestedDetailKey != null) {
+            showViewCalendars = false
             detailKey = requestedDetailKey
             requests.detailKey = null
         }
@@ -220,6 +227,7 @@ fun CalendarHost(
     // top bar. Sits below the detail/edit overlays so tapping a result reveals
     // the detail on top and backing out returns to the results.
     var showSearch by rememberSaveable { mutableStateOf(false) }
+    val filterViewModel: FilterViewModel = hiltViewModel()
     val onOpenSearch = { showSearch = true }
 
     // Calendar manager (reached from Settings) — its own overlay so it slides
@@ -325,6 +333,7 @@ fun CalendarHost(
                 requests.importUri = null
                 return@LaunchedEffect
             }
+            showViewCalendars = false
             importUri = requestedImportUri
             importForceMany = false
             importSession++
@@ -342,6 +351,7 @@ fun CalendarHost(
                 requests.insert = null
                 return@LaunchedEffect
             }
+            showViewCalendars = false
             if (importForm == null) {
                 openImportForm(requestedInsert.form, requestedInsert.source, fromRequest = true)
             } else {
@@ -358,6 +368,7 @@ fun CalendarHost(
     fun dismissCoveringOverlays(keepCreate: Boolean = false) {
         showSettings = false
         showSearch = false
+        showViewCalendars = false
         showCalendars = false
         showBackup = false
         detailKey = null
@@ -581,6 +592,15 @@ fun CalendarHost(
             // (#239); nothing else in the calendar surfaces navigates here.
             LocalManageCalendars provides remember { { showCalendars = true } },
         ) {
+        if (showViewCalendars) {
+            val filterState by filterViewModel.state.collectAsStateWithLifecycle()
+            ViewCalendarsPicker(
+                view = view,
+                state = filterState,
+                onSetHidden = { id, hidden -> filterViewModel.setHiddenIn(id, view, hidden) },
+                onDismiss = { showViewCalendars = false },
+            )
+        }
         // One drawer, top bar and FAB for every screen (#184): a switch changes
         // what they say, from what the screen on show publishes, rather than
         // swapping them for another screen's.
@@ -621,6 +641,10 @@ fun CalendarHost(
                             onSync = { sync.requestSync() },
                             onGrantAccess = { showSyncAccess = true },
                         )
+                    },
+                    onHideInView = {
+                        showViewCalendars = true
+                        switchScope.launch { drawerState.close() }
                     },
                 )
             },

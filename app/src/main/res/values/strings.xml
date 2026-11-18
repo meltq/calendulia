@@ -940,7 +940,7 @@
     <string name="calendars_state_managed">Filled from your contacts</string>
     <string name="calendars_managed_delete_locked">This calendar is filled from your contacts, so Calendula would create it again on the next sync. Turn special dates off under Settings → Special dates to delete it.</string>
     <string name="calendars_synced_header">Synced calendars</string>
-    <string name="calendars_synced_hint">These come from accounts on your device. Create and edit them in their own app.</string>
+    <string name="calendars_synced_hint">These come from accounts on your device. Create and edit them in their own app; tap one here to hide it in some views.</string>
     <string name="calendars_manage_in_app">Manage in app</string>
     <!-- Account header when two accounts share a name: %1$s is the account, %2$s the app it comes from. -->
     <string name="calendars_account_from_source">%1$s (%2$s)</string>
@@ -954,6 +954,19 @@
     <string name="calendars_color_label">Color</string>
     <string name="calendars_description_label">Description</string>
     <string name="calendars_description_hint">Add a description</string>
+    <string name="calendars_hide_in_views">Hide in views</string>
+    <string name="calendars_hide_in_views_hint">Events from “%1$s” stay out of the views checked here. Reminders, search and widgets still include them.</string>
+    <string name="calendars_hide_in_views_none">Shown in every view</string>
+    <string name="calendars_hidden_in">Hidden in %1$s</string>
+    <string name="filter_hidden_in_view">Hidden in this view</string>
+    <string name="view_calendars_title">Hide in this view</string>
+    <plurals name="drawer_hidden_in_view_count">
+        <item quantity="one">%d calendar hidden in this view</item>
+        <item quantity="other">%d calendars hidden in this view</item>
+    </plurals>
+    <string name="drawer_hidden_in_view_none">Leave calendars out of this view only</string>
+    <string name="view_calendars_hint">Checked calendars stay out of this view only. Reminders, search and widgets still include them.</string>
+    <string name="view_calendars_hidden_everywhere">Hidden in every view from the menu</string>
     <string name="color_name_mauve">Mauve</string>
     <string name="color_name_red">Red</string>
     <string name="color_name_orange">Orange</string>

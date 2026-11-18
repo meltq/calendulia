@@ -15,6 +15,9 @@ import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.calendarListFailure
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.calendarsHiddenIn
+import de.jeanlucmakiola.calendula.ui.common.instancesWithout
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
@@ -45,6 +48,8 @@ class AgendaViewModel @Inject constructor(
     todaySource: TodaySource,
     @IoDispatcher private val io: CoroutineDispatcher,
 ) : ViewModel() {
+
+    private val hiddenHere = settingsPrefs.perCalendarHiddenViews.calendarsHiddenIn(CalendarView.Agenda, viewModelScope)
 
     // The saved agenda range plus the range-bar visibility toggle.
     private val agendaSettings = combine(
@@ -138,7 +143,7 @@ class AgendaViewModel @Inject constructor(
             )
             combine(
                 repository.calendars(),
-                repository.instances(window),
+                repository.instancesWithout(window, hiddenHere),
                 today,
             ) { calendars, instances, today ->
                 buildState(params, calendars, instances, today)

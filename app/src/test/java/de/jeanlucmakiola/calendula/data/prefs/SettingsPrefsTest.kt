@@ -658,6 +658,66 @@ class SettingsPrefsTest {
     }
 
     @Test
+    fun `per-calendar hidden views round-trip and clear back to every view`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val prefs = testSettings(tempDir)
+        assertThat(prefs.perCalendarHiddenViews.first()).isEmpty()
+        prefs.applyCalendarHiddenChanges(7L, listOf(CalendarView.Month, CalendarView.Agenda).associateWith { true })
+        prefs.applyCalendarHiddenChanges(9L, listOf(CalendarView.MultiDay).associateWith { true })
+        assertThat(prefs.perCalendarHiddenViews.first()).containsExactly(
+            7L, setOf(CalendarView.Month, CalendarView.Agenda),
+            9L, setOf(CalendarView.MultiDay),
+        )
+        prefs.clearCalendarHiddenViews(7L)
+        assertThat(prefs.perCalendarHiddenViews.first()).containsExactly(9L, setOf(CalendarView.MultiDay))
+        // One write can hide some views and show others, leaving the rest alone.
+        prefs.applyCalendarHiddenChanges(9L, mapOf(CalendarView.MultiDay to false, CalendarView.Day to true))
+        assertThat(prefs.perCalendarHiddenViews.first()).containsExactly(9L, setOf(CalendarView.Day))
+    }
+
+    @Test
+    fun `toggling one hidden view keeps the others and clears the entry when empty`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val prefs = testSettings(tempDir)
+        prefs.setCalendarHiddenIn(7L, CalendarView.Month, hidden = true)
+        prefs.setCalendarHiddenIn(7L, CalendarView.Week, hidden = true)
+        assertThat(prefs.perCalendarHiddenViews.first())
+            .containsExactly(7L, setOf(CalendarView.Month, CalendarView.Week))
+        prefs.setCalendarHiddenIn(7L, CalendarView.Month, hidden = false)
+        prefs.setCalendarHiddenIn(7L, CalendarView.Week, hidden = false)
+        assertThat(prefs.perCalendarHiddenViews.first()).isEmpty()
+    }
+
+    @Test
+    fun `garbage hidden-views entries are dropped, the rest survive`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val store = testDataStore(tempDir, "test_settings")
+        val prefs = SettingsPrefs(store)
+        store.updateData { p ->
+            val m = p.toMutablePreferences()
+            // A bad id, only an unknown view, no separator, and a good entry with one unknown view.
+            m[stringPreferencesKey("per_calendar_hidden_views")] = "x=Month;7=Year;8;9=Month,Year,Agenda"
+            m
+        }
+        assertThat(prefs.perCalendarHiddenViews.first())
+            .containsExactly(9L, setOf(CalendarView.Month, CalendarView.Agenda))
+    }
+
+    @Test
+    fun `hidden views serialise in view order and drop empty entries`() {
+        val stored = mapOf(
+            3L to setOf(CalendarView.Agenda, CalendarView.Month),
+            1L to emptySet(),
+        ).toStoredHiddenViews()
+        assertThat(stored).isEqualTo("3=Month,Agenda")
+        assertThat(emptyMap<Long, Set<CalendarView>>().toStoredHiddenViews()).isNull()
+        assertThat(parseHiddenViews(stored)).containsExactly(3L, setOf(CalendarView.Month, CalendarView.Agenda))
+    }
+
+    @Test
     fun `resolveDefaultEventDuration prefers the calendar's own length`() {
         val overrides = mapOf(7L to 480)
         assertThat(resolveDefaultEventDuration(60, overrides, calendarId = 7L)).isEqualTo(480)

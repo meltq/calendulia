@@ -11,7 +11,6 @@ import androidx.glance.GlanceId
 import androidx.glance.appwidget.state.getAppWidgetState
 import androidx.glance.state.PreferencesGlanceStateDefinition
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
-import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.parseAgendaRange
 import de.jeanlucmakiola.calendula.ui.agenda.storageValue
@@ -115,9 +114,6 @@ internal val Preferences.hiddenCalendars: Set<Long>
 internal fun MutablePreferences.putHiddenCalendars(ids: Set<Long>) {
     this[HiddenCalendarsKey] = ids.map(Long::toString).toSet()
 }
-
-internal fun List<EventInstance>.withoutCalendars(hidden: Set<Long>): List<EventInstance> =
-    if (hidden.isEmpty()) this else filterNot { it.calendarId in hidden }
 
 internal suspend fun Context.widgetState(id: GlanceId): Preferences =
     getAppWidgetState(this, PreferencesGlanceStateDefinition, id)

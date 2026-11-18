@@ -78,6 +78,7 @@ fun CalendarDrawer(
     onSelectView: (CalendarView) -> Unit,
     onJumpToDate: (LocalDate) -> Unit,
     onSettings: () -> Unit,
+    onHideInView: () -> Unit,
     viewOrder: List<CalendarView> = IMPLEMENTED_VIEWS,
     sync: DrawerSync? = null,
 ) {
@@ -122,7 +123,7 @@ fun CalendarDrawer(
             Spacer(Modifier.height(16.dp))
 
             DrawerSectionHeader(stringResource(R.string.filter_title))
-            CalendarFilterList()
+            CalendarFilterList(currentView = currentView, onHideInView = onHideInView)
 
             Spacer(Modifier.height(16.dp))
             GroupedRow(

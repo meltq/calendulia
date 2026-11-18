@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.ui.calendars
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -18,6 +19,8 @@ import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.backup.BackupSelection
 import de.jeanlucmakiola.calendula.domain.backup.DEFAULT_BACKUP_KEEP
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.hidingNothingOnError
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
@@ -134,6 +137,19 @@ class CalendarsViewModel @Inject constructor(
             initialValue = emptySet(),
         )
 
+    /** The views each calendar is hidden in (#270); null until first read. */
+    val hiddenViews: StateFlow<Map<Long, Set<CalendarView>>?> =
+        settingsPrefs.perCalendarHiddenViews
+            .hidingNothingOnError()
+            .stateWhileSubscribed(
+                scope = viewModelScope,
+                initialValue = null,
+            )
+
+    fun setHiddenIn(id: Long, view: CalendarView, hidden: Boolean) = write {
+        settingsPrefs.setCalendarHiddenIn(id, view, hidden)
+    }
+
     private val _error = MutableStateFlow(false)
     val error: StateFlow<Boolean> = _error.asStateFlow()
 
@@ -173,16 +189,41 @@ class CalendarsViewModel @Inject constructor(
         }
     }
 
-    fun createCalendar(displayName: String, color: Int, description: String?) = write {
-        repository.createLocalCalendar(displayName, color, description)
+    fun createCalendar(
+        displayName: String,
+        color: Int,
+        description: String?,
+        hiddenChanges: Map<CalendarView, Boolean>,
+    ) = write {
+        val id = repository.createLocalCalendar(displayName, color, description)
+        settingsPrefs.applyCalendarHiddenChanges(id, hiddenChanges)
     }
 
-    fun updateCalendar(id: Long, displayName: String, color: Int, description: String?) = write {
+    fun updateCalendar(
+        id: Long,
+        displayName: String,
+        color: Int,
+        description: String?,
+        hiddenChanges: Map<CalendarView, Boolean>,
+    ) = write {
         repository.updateCalendar(id, displayName, color, description)
+        settingsPrefs.applyCalendarHiddenChanges(id, hiddenChanges)
     }
 
     fun deleteCalendar(id: Long) = write {
         repository.deleteCalendar(id)
+        // Tidy-up only: the delete already landed, so a failure here isn't its failure.
+        bestEffort { settingsPrefs.clearCalendarHiddenViews(id) }
+    }
+
+    private suspend fun bestEffort(block: suspend () -> Unit) {
+        try {
+            block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("CalendarsViewModel", "Hidden-views write failed", e)
+        }
     }
 
     /**

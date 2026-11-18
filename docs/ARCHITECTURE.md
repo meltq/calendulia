@@ -415,7 +415,12 @@ pre-permission launch); `CalendarVisibilityReconciler` drains it entry by entry,
 and until it does, the repository and `ReminderNotifier.post` honour it. That
 gate also covers a snooze re-shown from our own alarm after its calendar was
 switched off. The drawer's filter sheet (`CalendarPrefs.hiddenCalendarIds`) is a
-separate in-app declutter that never touches reminders.
+separate in-app declutter that never touches reminders. Narrower still is the per-view hide
+(`SettingsPrefs.perCalendarHiddenViews`, #270): each view model asks for its
+events through `instancesWithout(range, calendarsHiddenIn(view, …))`, which drops
+the calendars hidden in that one view on top of the repository's filters; reminders, search and widgets read
+the repository and never see it. The drawer's "Hide in this view" entry (#517) edits the same
+set for the view on show, and the drawer's per-row "Hidden in this view" notes read it.
 
 **A channel per calendar (#145).** `ReminderChannels` keeps one notification
 channel per calendar, grouped by account (one that syncs no events only gets

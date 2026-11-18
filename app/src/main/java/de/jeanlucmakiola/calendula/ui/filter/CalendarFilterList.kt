@@ -4,15 +4,23 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -22,20 +30,26 @@ import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.ui.common.CalendarAccountGroup
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.GroupedListInset
 import de.jeanlucmakiola.floret.components.GroupedRow
+import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.positionOf
 
 /**
  * Calendar-visibility filter (M3), rendered inline in the navigation drawer.
  * Every calendar grouped by account, each with a colour swatch and a visibility
  * switch; toggling writes straight to DataStore and every calendar view
- * re-filters live. Three states (Loading / Failure / Success).
+ * re-filters live. Three states (Loading / Failure / Success). A calendar hidden
+ * in [currentView] through its per-view setting (#270) says so on its row, and
+ * the entry below the list opens that setting for the view (#517).
  */
 @Composable
 fun CalendarFilterList(
+    currentView: CalendarView,
+    onHideInView: () -> Unit,
     modifier: Modifier = Modifier,
     viewModel: FilterViewModel = hiltViewModel(),
 ) {
@@ -43,12 +57,18 @@ fun CalendarFilterList(
     when (val s = state) {
         FilterUiState.Loading -> FilterLoading(modifier)
         is FilterUiState.Failure -> FilterMessage(s.reason, modifier)
-        is FilterUiState.Success -> FilterList(
-            groups = s.groups,
-            hidden = s.hidden,
-            onSetVisible = viewModel::setVisible,
-            modifier = modifier,
-        )
+        is FilterUiState.Success -> {
+            val hiddenInView = remember(s, currentView) { s.hiddenOnlyIn(currentView) }
+            FilterList(
+                groups = s.groups,
+                hidden = s.hidden,
+                hiddenInView = hiddenInView,
+                hiddenOnlyHere = hiddenInView.size,
+                onHideInView = onHideInView,
+                onSetVisible = viewModel::setVisible,
+                modifier = modifier,
+            )
+        }
     }
 }
 
@@ -61,6 +81,9 @@ fun CalendarFilterList(
 private fun FilterList(
     groups: List<CalendarAccountGroup>,
     hidden: Set<Long>,
+    hiddenInView: Set<Long>,
+    hiddenOnlyHere: Int,
+    onHideInView: () -> Unit,
     onSetVisible: (Long, Boolean) -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -81,6 +104,7 @@ private fun FilterList(
                 val visible = cal.id !in hidden
                 GroupedRow(
                     title = cal.displayName.orUnnamed(),
+                    summary = if (cal.id in hiddenInView) stringResource(R.string.filter_hidden_in_view) else null,
                     position = positionOf(index, group.calendars.size),
                     minHeight = 56.dp,
                     leading = { CalendarColorChip(cal.color) },
@@ -94,11 +118,32 @@ private fun FilterList(
                 )
             }
         }
+        // The per-view hide (#517): the drawer filter above hides everywhere, this only here.
+        Spacer(Modifier.height(8.dp))
+        GroupedRow(
+            title = stringResource(R.string.view_calendars_title),
+            summary = if (hiddenOnlyHere > 0) {
+                pluralStringResource(R.plurals.drawer_hidden_in_view_count, hiddenOnlyHere, hiddenOnlyHere)
+            } else {
+                stringResource(R.string.drawer_hidden_in_view_none)
+            },
+            position = Position.Alone,
+            minHeight = 56.dp,
+            // Tinted, not "selected": it is an entry point, not a chosen option.
+            container = if (hiddenOnlyHere > 0) MaterialTheme.colorScheme.secondaryContainer else null,
+            contentColor = if (hiddenOnlyHere > 0) MaterialTheme.colorScheme.onSecondaryContainer else null,
+            leading = {
+                Box(Modifier.size(40.dp), contentAlignment = Alignment.Center) {
+                    Icon(Icons.Filled.FilterList, contentDescription = null)
+                }
+            },
+            onClick = onHideInView,
+        )
     }
 }
 
 @Composable
-private fun FilterLoading(modifier: Modifier = Modifier) {
+internal fun FilterLoading(modifier: Modifier = Modifier) {
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(8.dp),
@@ -119,7 +164,7 @@ private fun FilterLoading(modifier: Modifier = Modifier) {
 }
 
 @Composable
-private fun FilterMessage(reason: FailureReason, modifier: Modifier = Modifier) {
+internal fun FilterMessage(reason: FailureReason, modifier: Modifier = Modifier) {
     val msg = when (reason) {
         FailureReason.NoCalendarsConfigured -> R.string.state_failure_no_calendars
         FailureReason.AllCalendarsHidden -> R.string.state_failure_all_hidden

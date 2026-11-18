@@ -2,6 +2,8 @@ package de.jeanlucmakiola.calendula.ui.filter
 
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.ui.common.CalendarAccountGroup
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
+import de.jeanlucmakiola.calendula.ui.common.calendarsHiddenIn
 
 /**
  * State for the calendar-filter sheet (M3). The user toggles per-calendar
@@ -11,9 +13,22 @@ import de.jeanlucmakiola.calendula.ui.common.CalendarAccountGroup
 sealed interface FilterUiState {
     data object Loading : FilterUiState
     data class Failure(val reason: FailureReason) : FilterUiState
-    /** A calendar shows when its id is *not* in [hidden]. */
+    /**
+     * A calendar shows when its id is *not* in [hidden]; [hiddenViews] are the
+     * views each calendar is hidden in regardless (#270).
+     */
     data class Success(
         val groups: List<CalendarAccountGroup>,
         val hidden: Set<Long>,
-    ) : FilterUiState
+        val hiddenViews: Map<Long, Set<CalendarView>> = emptyMap(),
+    ) : FilterUiState {
+        /**
+         * The listed calendars [view] hides on its own (#517); ones already
+         * hidden everywhere from the drawer, or not listed, aren't included.
+         */
+        fun hiddenOnlyIn(view: CalendarView): Set<Long> {
+            val listed = groups.flatMapTo(mutableSetOf()) { group -> group.calendars.map { it.id } }
+            return hiddenViews.calendarsHiddenIn(view).filterTo(mutableSetOf()) { it in listed && it !in hidden }
+        }
+    }
 }

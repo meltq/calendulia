@@ -19,7 +19,10 @@ import de.jeanlucmakiola.calendula.domain.calendarListFailure
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaDay
 import de.jeanlucmakiola.calendula.ui.agenda.anchorTodayIfMissing
 import de.jeanlucmakiola.calendula.ui.common.CalendarSpan
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.common.PageStateCache
+import de.jeanlucmakiola.calendula.ui.common.calendarsHiddenIn
+import de.jeanlucmakiola.calendula.ui.common.instancesWithout
 import de.jeanlucmakiola.calendula.domain.isCrossedOut
 import de.jeanlucmakiola.calendula.domain.sortedForDisplay
 import de.jeanlucmakiola.calendula.ui.week.coversDay
@@ -67,6 +70,8 @@ class MonthViewModel @Inject constructor(
 ) : ViewModel() {
 
     private val zone = TimeZone.currentSystemDefault()
+
+    private val hiddenHere = settingsPrefs.perCalendarHiddenViews.calendarsHiddenIn(CalendarView.Month, viewModelScope)
 
     /** First day of the week, from the Settings preference (AUTO → locale). */
     val weekStart: StateFlow<DayOfWeek> = settingsPrefs.firstDayOfWeek(viewModelScope)
@@ -152,7 +157,7 @@ class MonthViewModel @Inject constructor(
     ) { (ym, ws) ->
         combine(
             repository.calendars(),
-            repository.instances(monthGridRange(ym, ws, zone)),
+            repository.instancesWithout(monthGridRange(ym, ws, zone), hiddenHere),
             today,
         ) { calendars, instances, today ->
             buildState(ym, ws, calendars, instances, today)
@@ -224,7 +229,7 @@ class MonthViewModel @Inject constructor(
                 val range = dayRange(first, last, zone)
                 combine(
                     repository.calendars(),
-                    repository.instances(range),
+                    repository.instancesWithout(range, hiddenHere),
                     today,
                 ) { calendars, instances, today ->
                     buildContinuousState(window, ws, style, calendars, instances, today)
