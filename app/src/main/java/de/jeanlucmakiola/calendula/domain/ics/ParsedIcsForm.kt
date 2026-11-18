@@ -10,7 +10,7 @@ import kotlinx.datetime.toLocalDateTime
 
 /**
  * Prefill the create form from a single parsed `.ics` event (the "open one
- * event" path). [calendarId] is left null so the form preselects the last-used
+ * event" path). [calendarId] is left null so the form preselects the default
  * calendar, exactly like a fresh create — the user confirms the target and
  * reviews everything before saving. Mirrors `EventDetail.toEditForm`'s all-day
  * handling (provider all-day times are UTC midnights with an exclusive end).

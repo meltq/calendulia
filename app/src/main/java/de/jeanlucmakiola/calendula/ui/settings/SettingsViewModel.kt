@@ -51,7 +51,10 @@ import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
 import de.jeanlucmakiola.calendula.domain.EventFormField
+import de.jeanlucmakiola.calendula.domain.DefaultCalendarRef
+import de.jeanlucmakiola.calendula.domain.effectiveDefaultCalendar
 import de.jeanlucmakiola.calendula.domain.FontRole
+import de.jeanlucmakiola.calendula.domain.isEventTarget
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
 import de.jeanlucmakiola.calendula.ui.agenda.AgendaRange
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
@@ -100,68 +103,84 @@ class SettingsViewModel @Inject constructor(
     private val dynamicColorAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     /**
+     * Every calendar, for the default calendar picker (#429); the settings
+     * that only apply to switched-on calendars filter it with [switchedOn].
+     */
+    private val calendars: Flow<List<CalendarSource>> = repository.calendars()
+        .catch { emit(emptyList()) }
+
+    /**
      * Calendars that are switched on — the only ones that plan reminders at
      * all (#75), so the only ones with notification settings.
      */
     private val visibleCalendars: Flow<List<CalendarSource>> =
-        combine(repository.calendars(), calendarPrefs.pendingDisabledCalendarIds) { calendars, pending ->
-            calendars.filter { it.isVisibleInSystem && it.id !in pending }
-        }.catch { emit(emptyList()) }
+        combine(calendars, calendarPrefs.pendingDisabledCalendarIds, ::switchedOn)
+
+    private fun switchedOn(calendars: List<CalendarSource>, pending: Set<Long>) =
+        calendars.filter { it.isVisibleInSystem && it.id !in pending }
 
     val state: StateFlow<SettingsUiState> =
-        combine(prefs.data, visibleCalendars) { stored, calendars -> stored.toUiState(calendars) }
+        combine(prefs.data, calendars, calendarPrefs.pendingDisabledCalendarIds) { stored, calendars, pending ->
+            stored.toUiState(calendars, switchedOn(calendars, pending))
+        }
             .stateWhileSubscribed(
                 scope = viewModelScope,
                 initialValue = SettingsUiState(dynamicColorAvailable = dynamicColorAvailable),
             )
 
-    private fun Preferences.toUiState(calendars: List<CalendarSource>) = SettingsUiState(
-        themeMode = this[SettingsKeys.themeMode],
-        dynamicColor = this[SettingsKeys.dynamicColor] && dynamicColorAvailable,
-        dynamicColorAvailable = dynamicColorAvailable,
-        softenColors = this[SettingsKeys.softenCalendarColors],
-        weekStart = this[SettingsKeys.weekStart],
-        timeFormat = this[SettingsKeys.timeFormat],
-        showHourGrid = this[SettingsKeys.showHourGrid],
-        multiDayCount = this[SettingsKeys.multiDayCount],
-        pastEventDisplay = this[SettingsKeys.pastEventDisplay],
-        dimCompletedEvents = this[SettingsKeys.dimCompletedEvents],
-        showWeekNumbers = this[SettingsKeys.showWeekNumbers],
-        monthShowStartTimes = this[SettingsKeys.monthShowStartTimes],
-        todayButtonInToolbar = this[SettingsKeys.todayButtonInToolbar],
-        dragToReschedule = this[SettingsKeys.dragToReschedule],
-        tapOpensEditor = this[SettingsKeys.tapOpensEditor],
-        agendaScreenRange = this[SettingsKeys.agendaScreenRange],
-        agendaShowToday = this[SettingsKeys.agendaShowToday],
-        agendaShowRangeBar = this[SettingsKeys.agendaShowRangeBar],
-        defaultView = this[SettingsKeys.defaultView],
-        quickSwitchConfig = this[SettingsKeys.quickSwitchConfig],
-        monthViewStyle = this[SettingsKeys.monthViewStyle],
-        timelineScale = this[SettingsKeys.timelineScale],
-        timelineHours = timelineHours,
-        drawerViewOrder = this[SettingsKeys.drawerViewOrder],
-        defaultFormFields = this[SettingsKeys.defaultFormFields],
-        autofocusEventTitle = this[SettingsKeys.autofocusEventTitle],
-        defaultEventDurationMinutes = this[SettingsKeys.defaultEventDurationMinutes],
-        perCalendarEventDuration = this[SettingsKeys.perCalendarEventDuration],
-        remindersEnabled = this[SettingsKeys.remindersEnabled],
-        defaultReminderMinutes = this[SettingsKeys.defaultReminderMinutes],
-        defaultAllDayReminderMinutes = this[SettingsKeys.defaultAllDayReminderMinutes],
-        allDayReminderTimeMinutes = this[SettingsKeys.allDayReminderTimeMinutes],
-        snoozeMinutes = this[SettingsKeys.snoozeMinutes],
-        perCalendarReminderOverride = this[SettingsKeys.perCalendarReminderOverride],
-        perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
-        defaultFixedTimeReminder = this[SettingsKeys.defaultFixedTimeReminder],
-        perCalendarFixedTimeReminderOverride = this[SettingsKeys.perCalendarFixedTimeReminderOverride],
-        dailyDigest = dailyDigest,
-        writableCalendars = calendars.filter { it.canModifyContents },
-        reminderCalendars = calendars,
-        mutedReminderCalendarIds = this[SettingsKeys.mutedReminderCalendarIds],
-        reminderAlertStyles = this[SettingsKeys.reminderAlertStyles],
-        notificationCategoryHintDismissed = this[SettingsKeys.notificationCategoryHintDismissed],
-        allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
-        managedCalendarIds = specialDatesCalendars.values.toSet(),
-    )
+    private fun Preferences.toUiState(calendars: List<CalendarSource>, visible: List<CalendarSource>): SettingsUiState {
+        val storedDefault = this[SettingsKeys.defaultNewEventCalendar]
+        return SettingsUiState(
+            themeMode = this[SettingsKeys.themeMode],
+            dynamicColor = this[SettingsKeys.dynamicColor] && dynamicColorAvailable,
+            dynamicColorAvailable = dynamicColorAvailable,
+            softenColors = this[SettingsKeys.softenCalendarColors],
+            weekStart = this[SettingsKeys.weekStart],
+            timeFormat = this[SettingsKeys.timeFormat],
+            showHourGrid = this[SettingsKeys.showHourGrid],
+            multiDayCount = this[SettingsKeys.multiDayCount],
+            pastEventDisplay = this[SettingsKeys.pastEventDisplay],
+            dimCompletedEvents = this[SettingsKeys.dimCompletedEvents],
+            showWeekNumbers = this[SettingsKeys.showWeekNumbers],
+            monthShowStartTimes = this[SettingsKeys.monthShowStartTimes],
+            todayButtonInToolbar = this[SettingsKeys.todayButtonInToolbar],
+            dragToReschedule = this[SettingsKeys.dragToReschedule],
+            tapOpensEditor = this[SettingsKeys.tapOpensEditor],
+            agendaScreenRange = this[SettingsKeys.agendaScreenRange],
+            agendaShowToday = this[SettingsKeys.agendaShowToday],
+            agendaShowRangeBar = this[SettingsKeys.agendaShowRangeBar],
+            defaultView = this[SettingsKeys.defaultView],
+            quickSwitchConfig = this[SettingsKeys.quickSwitchConfig],
+            monthViewStyle = this[SettingsKeys.monthViewStyle],
+            timelineScale = this[SettingsKeys.timelineScale],
+            timelineHours = timelineHours,
+            drawerViewOrder = this[SettingsKeys.drawerViewOrder],
+            defaultFormFields = this[SettingsKeys.defaultFormFields],
+            autofocusEventTitle = this[SettingsKeys.autofocusEventTitle],
+            defaultEventDurationMinutes = this[SettingsKeys.defaultEventDurationMinutes],
+            perCalendarEventDuration = this[SettingsKeys.perCalendarEventDuration],
+            remindersEnabled = this[SettingsKeys.remindersEnabled],
+            defaultReminderMinutes = this[SettingsKeys.defaultReminderMinutes],
+            defaultAllDayReminderMinutes = this[SettingsKeys.defaultAllDayReminderMinutes],
+            allDayReminderTimeMinutes = this[SettingsKeys.allDayReminderTimeMinutes],
+            snoozeMinutes = this[SettingsKeys.snoozeMinutes],
+            perCalendarReminderOverride = this[SettingsKeys.perCalendarReminderOverride],
+            perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
+            defaultFixedTimeReminder = this[SettingsKeys.defaultFixedTimeReminder],
+            perCalendarFixedTimeReminderOverride = this[SettingsKeys.perCalendarFixedTimeReminderOverride],
+            dailyDigest = dailyDigest,
+            writableCalendars = visible.filter { it.canModifyContents },
+            reminderCalendars = visible,
+            mutedReminderCalendarIds = this[SettingsKeys.mutedReminderCalendarIds],
+            reminderAlertStyles = this[SettingsKeys.reminderAlertStyles],
+            notificationCategoryHintDismissed = this[SettingsKeys.notificationCategoryHintDismissed],
+            eventTargetCalendars = calendars.filter { it.isEventTarget },
+            defaultNewEventCalendar = effectiveDefaultCalendar(storedDefault, calendars),
+            unavailableDefaultCalendar = storedDefault?.find(calendars)?.takeUnless { it.isEventTarget },
+            allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
+            managedCalendarIds = specialDatesCalendars.values.toSet(),
+        )
+    }
 
     /**
      * The app-wide custom-font choice (issue #19). Its own flow — both this
@@ -549,6 +568,10 @@ class SettingsViewModel @Inject constructor(
     }
 
     fun setAutofocusEventTitle(enabled: Boolean) = save { setAutofocusEventTitle(enabled) }
+
+    /** [calendar] null goes back to Automatic. */
+    fun setDefaultNewEventCalendar(calendar: CalendarSource?) =
+        save { setDefaultNewEventCalendar(calendar?.let(DefaultCalendarRef::of)) }
 
     fun setDefaultEventDuration(minutes: Int) = save { setDefaultEventDurationMinutes(minutes) }
 

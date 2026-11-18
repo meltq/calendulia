@@ -5,6 +5,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoMode
+import androidx.compose.material.icons.filled.Event
 import androidx.compose.material.icons.filled.Keyboard
 import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.Icon
@@ -19,7 +21,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
+import de.jeanlucmakiola.calendula.ui.common.CalendarPickerGroups
+import de.jeanlucmakiola.calendula.ui.common.LeadingAvatar
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.DurationPicker
 import de.jeanlucmakiola.calendula.ui.common.durationLabel
@@ -28,6 +33,7 @@ import de.jeanlucmakiola.calendula.ui.common.eventFormFieldLabel
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.ExpandIcon
+import de.jeanlucmakiola.floret.components.FullScreenPicker
 import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSwitchRow
@@ -45,6 +51,7 @@ internal fun EventFormScreen(
     visible: Boolean = true,
 ) {
     var showDefaultDuration by remember { mutableStateOf(false) }
+    var showDefaultCalendar by remember { mutableStateOf(false) }
     // The calendar whose duration-override picker is open, if any.
     var durationTarget by remember { mutableStateOf<Long?>(null) }
     var durationSectionExpanded by remember { mutableStateOf(false) }
@@ -77,6 +84,26 @@ internal fun EventFormScreen(
                 },
             )
         }
+
+        // The calendar a new event opens in (#429).
+        Spacer(Modifier.height(24.dp))
+        GroupedRow(
+            title = stringResource(R.string.settings_default_calendar),
+            summary = state.defaultNewEventCalendar?.displayName?.orUnnamed()
+                ?: state.unavailableDefaultCalendar?.let {
+                    stringResource(R.string.settings_default_calendar_unavailable, it.displayName.orUnnamed())
+                }
+                ?: stringResource(R.string.settings_default_calendar_automatic),
+            position = Position.Alone,
+            leading = {
+                Icon(
+                    imageVector = Icons.Default.Event,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            },
+            onClick = { showDefaultCalendar = true },
+        )
 
         // Auto-focus the title on a new event (#10), on by default.
         Spacer(Modifier.height(24.dp))
@@ -159,6 +186,17 @@ internal fun EventFormScreen(
         )
     }
 
+    if (showDefaultCalendar) {
+        DefaultCalendarPicker(
+            calendars = state.eventTargetCalendars,
+            selectedId = state.defaultNewEventCalendar?.id,
+            onSelect = { id ->
+                viewModel.setDefaultNewEventCalendar(state.eventTargetCalendars.firstOrNull { it.id == id })
+                showDefaultCalendar = false
+            },
+            onDismiss = { showDefaultCalendar = false },
+        )
+    }
     if (showDefaultDuration) {
         DurationPicker(
             title = stringResource(R.string.settings_event_duration),
@@ -185,6 +223,35 @@ internal fun EventFormScreen(
             onSelect = { viewModel.setCalendarEventDuration(calendarId, it) },
             onDismiss = { durationTarget = null },
             maxMinutes = SettingsPrefs.MAX_EVENT_DURATION,
+        )
+    }
+}
+
+/** "Automatic" above every calendar a new event can go into, grouped by account. */
+@Composable
+private fun DefaultCalendarPicker(
+    calendars: List<CalendarSource>,
+    selectedId: Long?,
+    onSelect: (Long?) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    FullScreenPicker(
+        title = stringResource(R.string.settings_default_calendar),
+        onDismiss = onDismiss,
+    ) {
+        GroupedRow(
+            title = stringResource(R.string.settings_default_calendar_automatic),
+            summary = stringResource(R.string.settings_default_calendar_automatic_hint),
+            position = Position.Alone,
+            checked = selectedId == null,
+            leading = { LeadingAvatar(Icons.Default.AutoMode) },
+            onClick = { onSelect(null) },
+        )
+        if (calendars.isNotEmpty()) Spacer(Modifier.height(16.dp))
+        CalendarPickerGroups(
+            calendars = calendars,
+            selectedId = selectedId,
+            onSelect = onSelect,
         )
     }
 }

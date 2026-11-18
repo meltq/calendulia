@@ -583,9 +583,16 @@ class EventFormTest {
     @Test
     fun `a copy of a cancelled event starts confirmed, a tentative one stays tentative`() {
         val zone = TimeZone.of("Europe/Berlin")
-        assertThat(testDetail(status = EventStatus.Cancelled).toDuplicateForm(canModify = true, zone).status)
+        assertThat(testDetail(status = EventStatus.Cancelled).toDuplicateForm(zone).status)
             .isEqualTo(EventStatus.Confirmed)
-        assertThat(testDetail(status = EventStatus.Tentative).toDuplicateForm(canModify = true, zone).status)
+        assertThat(testDetail(status = EventStatus.Tentative).toDuplicateForm(zone).status)
             .isEqualTo(EventStatus.Tentative)
+    }
+
+    @Test
+    fun `a copy requests its source calendar and keeps its colour`() {
+        val form = testDetail(eventColor = 7, eventColorKey = "3").toDuplicateForm(TimeZone.of("Europe/Berlin"))
+        assertThat(form.calendarId).isEqualTo(testEvent().calendarId)
+        assertThat(form.colorKey).isEqualTo("3")
     }
 }

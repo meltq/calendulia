@@ -13,9 +13,9 @@ import kotlin.time.Instant
  * back to the same defaults the in-app "new event" uses — a timed start at the
  * next full hour, and a placeholder hour for a missing end that the form then
  * stretches to the default-duration setting (the intent is opened as
- * `ImportSource.InsertOpenEnded`, #54). [EventForm.calendarId] is left null so
- * it resolves to the last-used / first-writable calendar, exactly like the
- * `.ics` single-event and plain new-event paths.
+ * `ImportSource.InsertOpenEnded`, #54). [calendarId] is the calendar the
+ * intent names, if any; the editor preselects it while it is a target and otherwise
+ * resolves the calendar like a plain new event (#429).
  *
  * Pure (no Android types) so it is unit-testable; the intent parsing that reads
  * the extras lives in `MainActivity.insertFormOrNull`.
@@ -28,6 +28,7 @@ fun buildInsertEventForm(
     description: String?,
     location: String? = null,
     rrule: String? = null,
+    calendarId: Long? = null,
     zone: TimeZone,
     now: Instant,
 ): EventForm {
@@ -44,7 +45,7 @@ fun buildInsertEventForm(
         startAt.toFormTime(zone) to endAt.toFormTime(zone)
     }
     return EventForm(
-        calendarId = null,
+        calendarId = calendarId,
         title = title.orEmpty(),
         isAllDay = isAllDay,
         start = start,

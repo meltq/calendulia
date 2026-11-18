@@ -727,6 +727,10 @@
     <string name="reorder_drag_handle">Drag to reorder</string>
     <string name="settings_section_event_form">New event form</string>
     <string name="settings_form_fields_hint">Fields shown by default — everything else sits behind \"More fields\"</string>
+    <string name="settings_default_calendar">Default calendar</string>
+    <string name="settings_default_calendar_automatic">Automatic</string>
+    <string name="settings_default_calendar_unavailable">Automatic while %1$s can’t take new events</string>
+    <string name="settings_default_calendar_automatic_hint">The calendar you last added or moved an event to</string>
     <string name="settings_autofocus_title">Focus title on new event</string>
     <string name="settings_autofocus_title_hint">When you start a new event, place the cursor in the title field and open the keyboard right away.</string>
     <string name="settings_event_duration">Default duration</string>

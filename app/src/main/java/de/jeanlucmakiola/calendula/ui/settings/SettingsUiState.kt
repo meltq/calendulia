@@ -116,6 +116,12 @@ data class SettingsUiState(
     val reminderAlertStyles: Map<Long, ReminderAlertStyle> = emptyMap(),
     /** Whether the Samsung notification-category hint has been dismissed (#145); hidden until prefs load. */
     val notificationCategoryHintDismissed: Boolean = true,
+    /** Calendars a new event can go into: the default calendar picker's choices. */
+    val eventTargetCalendars: List<CalendarSource> = emptyList(),
+    /** The default calendar for new events (#429); null is Automatic, also when the stored one fell out. */
+    val defaultNewEventCalendar: CalendarSource? = null,
+    /** The stored default while it exists but takes no new events, named on the Automatic row. */
+    val unavailableDefaultCalendar: CalendarSource? = null,
     /**
      * Whether the event-colour picker is offered on calendars that publish no
      * colour palette (the colour may then not survive their next sync).

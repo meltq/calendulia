@@ -12,7 +12,7 @@ import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
  * form means the screen hasn't been opened yet.
  */
 data class EventEditUiState(
-    /** The form with its calendar id resolved (picked > last used > first writable). */
+    /** The form with its calendar id resolved, see [de.jeanlucmakiola.calendula.domain.resolveEventCalendar]. */
     val form: EventForm,
     /** Calendars that accept writes — the only valid targets. */
     val calendars: List<CalendarSource>,

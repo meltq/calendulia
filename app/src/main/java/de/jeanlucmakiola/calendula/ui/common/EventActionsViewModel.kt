@@ -66,8 +66,7 @@ class EventActionsViewModel @Inject constructor(
     /** A create form copying [event], or null when it can't be read. */
     suspend fun duplicateForm(event: EventInstance): EventForm? {
         val detail = load(event) ?: return null
-        val canModify = calendars.value[event.calendarId]?.canModifyContents == true
-        return detail.toDuplicateForm(canModify, zoneSource.current(), settingsPrefs.knownFixedTimeReminders.first())
+        return detail.toDuplicateForm(zoneSource.current(), settingsPrefs.knownFixedTimeReminders.first())
     }
 
     /** A staged `.ics` for [event], or null — reported — when it can't be built. */

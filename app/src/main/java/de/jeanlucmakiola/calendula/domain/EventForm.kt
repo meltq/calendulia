@@ -328,12 +328,12 @@ fun EventForm.problems(deviceZone: TimeZone): Set<EventFormProblem> = buildSet {
 /**
  * A create form seeded from this occurrence, to save a copy as a new,
  * independent event (#52). The recurrence is dropped — a duplicate is a single
- * event. The source calendar is kept only when [canModify], otherwise the id is
- * cleared so the create resolves to a writable calendar, which lets a read-only
- * event be copied into an editable one. [instance]'s own times carry over.
+ * event. The source calendar is only requested: the editor keeps it while it can
+ * take new events and otherwise resolves the calendar like a new event, which
+ * lets a read-only event be copied into an editable one. [instance]'s own times
+ * carry over.
  */
 fun EventDetail.toDuplicateForm(
-    canModify: Boolean,
     zone: TimeZone,
     knownFixed: Set<FixedTimeReminder> = emptySet(),
 ): EventForm =
@@ -343,7 +343,6 @@ fun EventDetail.toDuplicateForm(
         zone = zone,
     ).withFixedTimeRemindersRead(knownFixed, zone).copy(
         rrule = null,
-        calendarId = instance.calendarId.takeIf { canModify },
         status = status.forNewEvent(),
     )
 

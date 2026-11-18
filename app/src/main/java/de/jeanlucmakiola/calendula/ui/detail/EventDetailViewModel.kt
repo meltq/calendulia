@@ -145,7 +145,7 @@ class EventDetailViewModel @Inject constructor(
      */
     fun duplicateForm(): EventForm? {
         val loaded = state.value as? EventDetailUiState.Success ?: return null
-        return loaded.detail.toDuplicateForm(loaded.canModify, zoneSource.current(), loaded.knownFixed)
+        return loaded.detail.toDuplicateForm(zoneSource.current(), loaded.knownFixed)
     }
 
     private suspend fun loadDetail(target: Target): EventDetailUiState = try {

@@ -4,6 +4,7 @@ import androidx.datastore.core.DataStore
 import androidx.datastore.preferences.core.MutablePreferences
 import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.DefaultCalendarRef
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.backup.BackupSelection
@@ -185,6 +186,7 @@ class SettingsPrefs @Inject constructor(
     val defaultFormFields: Flow<Set<EventFormField>> = prefs.flow(SettingsKeys.defaultFormFields)
     val recentTimeZones: Flow<List<String>> = prefs.flow(SettingsKeys.recentTimeZones)
     val autofocusEventTitle: Flow<Boolean> = prefs.flow(SettingsKeys.autofocusEventTitle)
+    val defaultNewEventCalendar: Flow<DefaultCalendarRef?> = prefs.flow(SettingsKeys.defaultNewEventCalendar)
     val defaultEventDurationMinutes: Flow<Int> = prefs.flow(SettingsKeys.defaultEventDurationMinutes)
     val perCalendarEventDuration: Flow<Map<Long, Int>> = prefs.flow(SettingsKeys.perCalendarEventDuration)
     val perCalendarHiddenViews: Flow<Map<Long, Set<CalendarView>>> = prefs.flow(SettingsKeys.perCalendarHiddenViews)
@@ -303,6 +305,10 @@ class SettingsPrefs @Inject constructor(
     }
 
     suspend fun setAutofocusEventTitle(enabled: Boolean) = prefs.set(SettingsKeys.autofocusEventTitle, enabled)
+
+    /** [calendar] null goes back to Automatic. */
+    suspend fun setDefaultNewEventCalendar(calendar: DefaultCalendarRef?) =
+        prefs.set(SettingsKeys.defaultNewEventCalendar, calendar)
 
     suspend fun setDefaultEventDurationMinutes(minutes: Int) =
         prefs.set(SettingsKeys.defaultEventDurationMinutes, minutes)
@@ -801,6 +807,14 @@ object SettingsKeys {
      * keyboard straight away (issue #10). Only the create form auto-focuses.
      */
     val autofocusEventTitle: Pref<Boolean> = booleanPref("autofocus_event_title", true)
+
+    /**
+     * The calendar new events open in (#429); null is Automatic (the last-used
+     * calendar). Kept when the calendar stops being a target, which only makes
+     * it fall back for as long as that lasts.
+     */
+    val defaultNewEventCalendar: Pref<DefaultCalendarRef?> =
+        nullableStringPref("default_new_event_calendar").map(DefaultCalendarRef::decode) { it?.encode() }
 
     /**
      * How long a new **timed** event lasts, in minutes (#54). Per-calendar
