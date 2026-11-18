@@ -20,8 +20,12 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.DateRange
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.ManageAccounts
+import androidx.compose.material.icons.filled.Sync
 import androidx.compose.material3.DrawerState
+import androidx.compose.material3.ExperimentalMaterial3ExpressiveApi
 import androidx.compose.material3.Icon
+import androidx.compose.material3.LoadingIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalDrawerSheet
 import androidx.compose.material3.Text
@@ -38,6 +42,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.colorResource
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.ui.filter.CalendarFilterList
@@ -61,6 +67,8 @@ import kotlinx.datetime.LocalDate
  *
  * [currentDate] seeds the jump-to-date picker (the visible day/week-start/month
  * anchor); [onJumpToDate] navigates the active view to the chosen day.
+ * [sync] adds "Sync now" beside it while there is a synced calendar (#240),
+ * and a row to grant account access while some account can't be reached yet.
  */
 @Composable
 fun CalendarDrawer(
@@ -71,6 +79,7 @@ fun CalendarDrawer(
     onJumpToDate: (LocalDate) -> Unit,
     onSettings: () -> Unit,
     viewOrder: List<CalendarView> = IMPLEMENTED_VIEWS,
+    sync: DrawerSync? = null,
 ) {
     var showDatePicker by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
@@ -103,11 +112,12 @@ fun CalendarDrawer(
             Spacer(Modifier.height(16.dp))
             GroupedRow(
                 title = stringResource(R.string.drawer_jump_to_date),
-                position = Position.Alone,
+                position = if (sync?.hasRows == true) Position.Top else Position.Alone,
                 minHeight = 56.dp,
                 leading = { DrawerLeadingIcon(Icons.Filled.DateRange) },
                 onClick = { showDatePicker = true },
             )
+            if (sync != null) SyncRows(sync)
 
             Spacer(Modifier.height(16.dp))
 
@@ -136,6 +146,64 @@ fun CalendarDrawer(
             onDismiss = { showDatePicker = false },
         )
     }
+}
+
+/**
+ * The drawer's sync rows: "Sync now" when [canSync] ([inFlight] shows progress
+ * and ignores taps, [outcome] the last request's result while the drawer stays
+ * open), and a grant row while some account [needsAccess].
+ */
+data class DrawerSync(
+    val canSync: Boolean,
+    val inFlight: Boolean,
+    val outcome: String?,
+    val needsAccess: Boolean,
+    val onSync: () -> Unit,
+    val onGrantAccess: () -> Unit,
+) {
+    val hasRows: Boolean get() = canSync || needsAccess
+}
+
+@Composable
+private fun SyncRows(sync: DrawerSync) {
+    if (sync.canSync) {
+        SyncNowRow(sync, if (sync.needsAccess) Position.Middle else Position.Bottom)
+    }
+    if (sync.needsAccess) {
+        GroupedRow(
+            title = stringResource(R.string.drawer_sync_access),
+            summary = stringResource(R.string.drawer_sync_access_summary),
+            position = Position.Bottom,
+            minHeight = 56.dp,
+            leading = { DrawerLeadingIcon(Icons.Filled.ManageAccounts) },
+            onClick = sync.onGrantAccess,
+        )
+    }
+}
+
+@OptIn(ExperimentalMaterial3ExpressiveApi::class)
+@Composable
+private fun SyncNowRow(sync: DrawerSync, position: Position) {
+    val inFlightText = stringResource(R.string.sync_in_progress)
+    GroupedRow(
+        title = stringResource(R.string.drawer_sync_now),
+        summary = if (sync.inFlight) inFlightText else sync.outcome,
+        position = position,
+        modifier = if (sync.inFlight) {
+            Modifier.semantics { stateDescription = inFlightText }
+        } else {
+            Modifier
+        },
+        dimmed = sync.inFlight,
+        minHeight = 56.dp,
+        leading = { DrawerLeadingIcon(Icons.Filled.Sync) },
+        trailing = if (sync.inFlight) {
+            { LoadingIndicator(Modifier.size(32.dp)) }
+        } else {
+            null
+        },
+        onClick = sync.onSync.takeIf { !sync.inFlight },
+    )
 }
 
 /** Leading slot for the drawer's plain icons: the same 40.dp footprint

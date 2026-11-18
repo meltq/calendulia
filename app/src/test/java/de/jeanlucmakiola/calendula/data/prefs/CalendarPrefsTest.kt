@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.data.prefs
 
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
 import de.jeanlucmakiola.calendula.testDataStore
 import de.jeanlucmakiola.calendula.testPrefs
 import kotlinx.coroutines.flow.first
@@ -107,5 +108,19 @@ class CalendarPrefsTest {
 
         prefs.setVisibilityNoticePending(false)
         assertThat(prefs.visibilityNoticePending.first()).isFalse()
+    }
+
+    @Test
+    fun `sync access dismissals round-trip per account, names with any characters`(@TempDir tempDir: Path) = runTest {
+        val prefs = testPrefs(tempDir)
+        val dav = SyncAccount("me@dav.example/cal, 1", "bitfire.at.davdroid")
+        val google = SyncAccount("me@dav.example/cal, 1", "com.google")
+
+        prefs.setSyncAccessDismissed(dav, dismissed = true)
+        prefs.setSyncAccessDismissed(google, dismissed = true)
+        assertThat(prefs.syncAccessDismissed.first()).containsExactly(dav, google)
+
+        prefs.setSyncAccessDismissed(dav, dismissed = false)
+        assertThat(prefs.syncAccessDismissed.first()).containsExactly(google)
     }
 }

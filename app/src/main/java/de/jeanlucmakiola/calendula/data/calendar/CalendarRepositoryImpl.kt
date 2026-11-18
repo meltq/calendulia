@@ -20,6 +20,8 @@ import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.drop
@@ -51,6 +53,7 @@ class CalendarRepositoryImpl @Inject constructor(
     private val prefs: CalendarPrefs,
     private val settingsPrefs: SettingsPrefs,
     @IoDispatcher private val io: CoroutineDispatcher,
+    private val syncRequester: SyncRequester,
 ) : CalendarRepository {
 
     /** The configured wall-clock fire time for all-day reminders, read per write. */
@@ -88,15 +91,171 @@ class CalendarRepositoryImpl @Inject constructor(
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
-    /** Run a provider write on [io], then re-query whether or not it threw. */
-    private suspend fun <T> write(block: suspend () -> T): T = withContext(io) {
+    override val providerChanges: Flow<Unit> get() = ticks
+
+    /**
+     * Run a provider write on [io], then re-query whether or not it threw. The
+     * accounts behind [syncCalendars] (read before the write, which may delete
+     * the row) then get one sync nudge each (#303), also after a failure, which
+     * may have landed part of a multi-row write. Once per write, so a multi-row
+     * save or a whole import asks once per account.
+     */
+    private suspend fun <T> write(
+        syncCalendars: suspend () -> Collection<Long?>,
+        block: suspend () -> T,
+    ): T = withContext(io) {
+        val accounts = syncAccountsOf(syncCalendars)
         try {
             block()
         } finally {
             refresh()
             writes.tryEmit(Unit)
+            requestSyncs(accounts, userInitiated = false)
         }
     }
+
+    private val noSync: suspend () -> Collection<Long?> = { emptyList() }
+
+    private suspend fun syncAccountsOf(calendarIds: suspend () -> Collection<Long?>): Set<SyncAccount> =
+        try {
+            calendarIds().filterNotNull().distinct()
+                .mapNotNull { accountOf(it) }
+                .withAdapter()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "No sync nudge: the calendar account could not be read", e)
+            emptySet()
+        }
+
+    /** From the shared per-tick read; a calendar newer than it is read on its own. */
+    private suspend fun accountOf(calendarId: Long): SyncAccount? =
+        calendarsSnapshot().firstOrNull { it.id == calendarId }
+            ?.let { SyncAccount(it.accountName, it.accountType) }
+            ?: dataSource.calendarAccount(calendarId)
+
+    /** The syncable accounts among these whose type has a calendar sync adapter. */
+    private fun Collection<SyncAccount>.withAdapter(): Set<SyncAccount> {
+        val candidates = filter { it.isSyncable }
+        if (candidates.isEmpty()) return emptySet()
+        val adapterTypes = try {
+            syncRequester.adapterAccountTypes()
+        } catch (e: Exception) {
+            Log.w(TAG, "Sync adapters unreadable", e)
+            return emptySet()
+        }
+        return candidates.filterTo(linkedSetOf()) { it.type in adapterTypes }
+    }
+
+    /**
+     * Splits [accounts] by whether a request may name them (see
+     * [SyncRequester.addressableAccounts]). The rest wait for the user's grant:
+     * an account-less request would reach them, but also every other calendar
+     * account on the device, so none is sent.
+     */
+    private fun reach(accounts: Set<SyncAccount>): SyncTargets {
+        if (accounts.isEmpty()) return SyncTargets.None
+        // Unreadable access counts as reachable: a grant can't fix a failing read.
+        val addressable = try {
+            syncRequester.addressableAccounts(accounts.mapTo(mutableSetOf()) { it.type })
+        } catch (e: Exception) {
+            Log.w(TAG, "Account visibility unreadable", e)
+            null
+        }
+        if (addressable == null) return SyncTargets(reachable = accounts, needsAccess = emptySet())
+        val (reachable, hidden) = accounts.partition { it in addressable }
+        return SyncTargets(reachable.toSet(), hidden.toSet())
+    }
+
+    /** Ask each reachable one of [accounts] once. */
+    private fun requestSyncs(accounts: Set<SyncAccount>, userInitiated: Boolean) {
+        reach(accounts).reachable.forEach { requestSync(it, userInitiated) }
+    }
+
+    private fun requestSync(account: SyncAccount, userInitiated: Boolean): Boolean = try {
+        syncRequester.requestSync(account, userInitiated)
+        true
+    } catch (e: Exception) {
+        Log.w(TAG, "Sync request refused", e)
+        false
+    }
+
+    /** The event's own calendar (from [original] when given, else read), plus [others]. */
+    private fun eventCalendar(
+        eventId: Long,
+        original: EventForm? = null,
+        vararg others: Long?,
+    ): suspend () -> Collection<Long?> =
+        { listOf(original?.calendarId ?: dataSource.eventCalendarId(eventId), *others) }
+
+    private fun targetsOf(calendars: List<CalendarSource>, dismissed: Set<SyncAccount>): SyncTargets =
+        reach(
+            calendars.syncAccounts().withAdapter()
+                .sortedWith(compareBy({ it.name.lowercase() }, { it.type }))
+                .toSet(),
+        ).let {
+            if (dismissed.isEmpty()) {
+                it
+            } else {
+                it.copy(needsAccess = it.needsAccess - dismissed, dismissed = it.needsAccess intersect dismissed)
+            }
+        }
+
+    private val accessChecks = MutableStateFlow(0)
+
+    override val syncTargets: Flow<SyncTargets>
+        get() = combine(calendars(), prefs.syncAccessDismissed, accessChecks) { calendars, dismissed, _ ->
+            // One failed read leaves the rows off until the next change, not for good.
+            try {
+                targetsOf(calendars, dismissed)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Sync targets unreadable", e)
+                SyncTargets.None
+            }
+        }.flowOn(io)
+
+    override fun refreshSyncAccess() {
+        accessChecks.update { it + 1 }
+    }
+
+    override suspend fun setSyncAccessDismissed(account: SyncAccount, dismissed: Boolean) {
+        try {
+            prefs.setSyncAccessDismissed(account, dismissed)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Sync access dismissal not saved", e)
+        }
+    }
+
+    override suspend fun requestSync(): SyncRequest = withContext(io) {
+        val targets = try {
+            targetsOf(calendars().first(), prefs.syncAccessDismissed.first())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "Sync request skipped: calendars unreadable", e)
+            return@withContext SyncRequest(SyncRequestResult.Failed)
+        }
+        if (targets.reachable.isEmpty()) {
+            return@withContext SyncRequest(
+                if (targets.needsAccess.isEmpty()) SyncRequestResult.NothingToSync else SyncRequestResult.NeedsAccess,
+            )
+        }
+        val sent = targets.reachable.filterTo(linkedSetOf()) { requestSync(it, userInitiated = true) }
+        val result = when {
+            sent.isEmpty() -> SyncRequestResult.Failed
+            sent.size < targets.reachable.size -> SyncRequestResult.PartlyFailed
+            targets.needsAccess.isNotEmpty() -> SyncRequestResult.SomeNeedAccess
+            else -> SyncRequestResult.Requested
+        }
+        SyncRequest(result, sent)
+    }
+
+    override suspend fun awaitSyncs(accounts: Set<SyncAccount>): SyncWait =
+        withContext(io) { syncRequester.awaitSyncs(accounts) }
 
     override val localChanges: Flow<Unit> = merge(
         writes,
@@ -222,7 +381,7 @@ class CalendarRepositoryImpl @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-    ): Long = write {
+    ): Long = write(noSync) {
         dataSource.createLocalCalendar(displayName, color, description)
     }
 
@@ -231,13 +390,14 @@ class CalendarRepositoryImpl @Inject constructor(
         displayName: String,
         color: Int,
         description: String?,
-    ) = write { dataSource.updateCalendar(id, displayName, color, description) }
+    ) = write(noSync) { dataSource.updateCalendar(id, displayName, color, description) }
 
     override suspend fun deleteCalendar(id: Long) =
-        write { dataSource.deleteCalendar(id) }
+        write(noSync) { dataSource.deleteCalendar(id) }
 
     override suspend fun setCalendarsVisible(ids: Collection<Long>, visible: Boolean) =
-        write {
+        // VISIBLE is device-local: nothing for an adapter to upload.
+        write(noSync) {
             val canWrite = dataSource.canWriteCalendars()
             if (canWrite) ids.forEach { dataSource.setCalendarVisible(it, visible) }
             // Nothing of ours is left waiting for the provider once the write
@@ -278,7 +438,7 @@ class CalendarRepositoryImpl @Inject constructor(
         targetCalendarId: Long,
         events: List<ParsedIcsEvent>,
         onProgress: (done: Int) -> Unit,
-    ): IcsImportSummary = write {
+    ): IcsImportSummary = write({ listOf(targetCalendarId) }) {
         val existing = dataSource.existingUids(targetCalendarId)
         // Both are per-calendar, not per-event: looking them up once keeps a
         // thousand-event restore to two extra queries. The palette is the
@@ -339,7 +499,7 @@ class CalendarRepositoryImpl @Inject constructor(
         )
     }
 
-    override suspend fun createEvent(form: EventForm): Long = write {
+    override suspend fun createEvent(form: EventForm): Long = write({ listOf(form.calendarId) }) {
         dataSource.insertEvent(form, allDayReminderTimeMinutes())
     }
 
@@ -347,11 +507,11 @@ class CalendarRepositoryImpl @Inject constructor(
         eventId: Long,
         original: EventForm,
         updated: EventForm,
-    ) = write {
+    ) = write(eventCalendar(eventId, original, updated.calendarId)) {
         dataSource.updateEvent(eventId, original, updated, allDayReminderTimeMinutes())
     }
 
-    override suspend fun deleteEvent(eventId: Long) = write {
+    override suspend fun deleteEvent(eventId: Long) = write(eventCalendar(eventId)) {
         dataSource.deleteEvent(eventId)
     }
 
@@ -360,7 +520,7 @@ class CalendarRepositoryImpl @Inject constructor(
         targetCalendarId: Long,
         original: EventForm,
         updated: EventForm,
-    ): Long = write {
+    ): Long = write(eventCalendar(eventId, original, targetCalendarId)) {
         dataSource.moveEvent(
             eventId, targetCalendarId, original, updated, allDayReminderTimeMinutes(),
         )
@@ -371,7 +531,7 @@ class CalendarRepositoryImpl @Inject constructor(
         beginMillis: Long,
         original: EventForm,
         form: EventForm,
-    ): Long = write {
+    ): Long = write(eventCalendar(eventId, original)) {
         dataSource.updateOccurrence(
             eventId, beginMillis, original, form, allDayReminderTimeMinutes(),
         )
@@ -382,7 +542,7 @@ class CalendarRepositoryImpl @Inject constructor(
         beginMillis: Long,
         original: EventForm,
         updated: EventForm,
-    ): Long = write {
+    ): Long = write(eventCalendar(eventId, original)) {
         dataSource.updateEventFromOccurrence(
             eventId, beginMillis, original, updated, allDayReminderTimeMinutes(),
         )
@@ -392,14 +552,14 @@ class CalendarRepositoryImpl @Inject constructor(
 
     override val seriesSplits: Flow<SeriesSplit> = splits
 
-    override suspend fun deleteOccurrence(eventId: Long, beginMillis: Long) = write {
+    override suspend fun deleteOccurrence(eventId: Long, beginMillis: Long) = write(eventCalendar(eventId)) {
         dataSource.deleteOccurrence(eventId, beginMillis)
     }
 
     override suspend fun deleteEventFromOccurrence(
         eventId: Long,
         beginMillis: Long,
-    ) = write {
+    ) = write(eventCalendar(eventId)) {
         dataSource.deleteEventFromOccurrence(eventId, beginMillis)
     }
 

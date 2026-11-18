@@ -41,6 +41,9 @@
     -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+    <!-- Lets "Sync now" (#240) follow the sync it asked for: read-only sync state, install-time. -->
+    <uses-permission android:name="android.permission.READ_SYNC_STATS" />
+
     <!-- WorkManager declares this for network constraints, which the app doesn't use (#448). -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
 
@@ -60,6 +63,10 @@
         <intent>
             <action android:name="android.intent.action.MAIN" />
             <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
+        <!-- Sync adapters to ask for a calendar sync (#240, #303). -->
+        <intent>
+            <action android:name="android.content.SyncAdapter" />
         </intent>
     </queries>
 

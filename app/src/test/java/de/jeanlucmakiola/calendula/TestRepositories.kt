@@ -5,12 +5,17 @@ import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepositoryImpl
+import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
+import de.jeanlucmakiola.calendula.data.calendar.SyncActivity
+import de.jeanlucmakiola.calendula.data.calendar.SyncRequester
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.test.TestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.resetMain
@@ -43,7 +48,58 @@ fun testRepository(
     io: CoroutineDispatcher,
     prefs: CalendarPrefs = testPrefs(dir),
     settings: SettingsPrefs = testSettings(dir),
-): CalendarRepositoryImpl = CalendarRepositoryImpl(source, prefs, settings, io)
+    syncRequester: SyncRequester = RecordingSyncRequester(),
+): CalendarRepositoryImpl = CalendarRepositoryImpl(source, prefs, settings, io, syncRequester)
+
+/**
+ * Records every sync request; [accepts] false models the system refusing all,
+ * [refusedTypes] refusing those account types, [adapterTypes] the installed
+ * calendar sync adapters (null: a fixed set covering the test accounts),
+ * [hiddenTypes] account types the app can't address by name.
+ */
+class RecordingSyncRequester(
+    var accepts: Boolean = true,
+    var adapterTypes: Set<String>? = null,
+    var refusedTypes: Set<String> = emptySet(),
+    var hiddenTypes: Set<String> = emptySet(),
+) : SyncRequester {
+    data class Request(val account: SyncAccount, val userInitiated: Boolean)
+
+    val requests = mutableListOf<Request>()
+
+    override fun adapterAccountTypes(): Set<String> =
+        adapterTypes ?: setOf("bitfire.at.davdroid", "com.google", "LOCAL")
+
+    override fun addressableAccounts(types: Set<String>): Set<SyncAccount>? {
+        visibilityError?.let { throw it }
+        return if (hiddenTypes.isEmpty()) {
+            null
+        } else {
+            knownAccounts.filterTo(mutableSetOf()) { it.type in types && it.type !in hiddenTypes }
+        }
+    }
+
+    /** Thrown by [addressableAccounts] when set. */
+    var visibilityError: Exception? = null
+
+    /** The accounts on the "device", for [addressableAccounts]. */
+    var knownAccounts: Set<SyncAccount> = emptySet()
+
+    override fun requestSync(account: SyncAccount, userInitiated: Boolean) {
+        if (!accepts || account.type in refusedTypes) throw SecurityException("refused")
+        requests += Request(account, userInitiated)
+    }
+
+    /** Each account's sync state; null stands for a system that won't say. */
+    var activity: (SyncAccount) -> SyncActivity? = { SyncActivity.Idle }
+
+    /** Emit to tell waiters the sync state changed. */
+    val activityChanges = MutableSharedFlow<Unit>(extraBufferCapacity = 8)
+
+    override fun syncActivity(account: SyncAccount): SyncActivity? = activity(account)
+
+    override fun syncActivityChanges(): Flow<Unit> = activityChanges
+}
 
 /** Installs [dispatcher] as `Dispatchers.Main` around each test. */
 @OptIn(ExperimentalCoroutinesApi::class)

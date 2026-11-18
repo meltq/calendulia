@@ -98,6 +98,7 @@ The settings screen contains links to the source code, the licence, the issue tr
 - `REQUEST_IGNORE_BATTERY_OPTIMIZATIONS`: only to open the system dialog for the “Reliable delivery” setting.
 - `USE_FULL_SCREEN_INTENT`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_SYSTEM_EXEMPTED`, `VIBRATE`: for calendars you set to full-screen alerts — showing the alert over the lock screen and, with “Ring until dismissed”, ringing and vibrating until you dismiss or snooze it.
 - `WAKE_LOCK`: keeps the phone awake while a full-screen alert rings, and lets the Android component that runs scheduled background work (WorkManager) finish it.
+- `READ_SYNC_STATS`: only to see whether a sync asked for with “Sync now” is still pending or running, so the menu can say when it has finished. It reveals nothing about your data.
 
 ## 7. Distribution channels
 

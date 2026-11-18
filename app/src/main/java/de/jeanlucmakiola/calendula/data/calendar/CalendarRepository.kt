@@ -11,6 +11,7 @@ import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.emptyFlow
+import kotlinx.coroutines.flow.flowOf
 import kotlin.time.Instant
 
 interface CalendarRepository {
@@ -157,6 +158,31 @@ interface CalendarRepository {
 
     /** Delete a recurring event from the occurrence at [beginMillis] onwards. */
     suspend fun deleteEventFromOccurrence(eventId: Long, beginMillis: Long)
+
+    /**
+     * Ask every account behind a visible synced calendar to sync now (#240).
+     * Only a request: the adapter may still run it late, or fail.
+     */
+    suspend fun requestSync(): SyncRequest = SyncRequest(SyncRequestResult.NothingToSync)
+
+    /** Wait for the syncs a [requestSync] reached to run, see [awaitSyncs]. */
+    suspend fun awaitSyncs(accounts: Set<SyncAccount>): SyncWait = SyncWait.Unconfirmed
+
+    /**
+     * The accounts behind visible calendars with a sync adapter, split by
+     * whether [requestSync] can reach them yet. Account access isn't observable:
+     * it is re-read on each collection and on every [refreshSyncAccess].
+     */
+    val syncTargets: Flow<SyncTargets> get() = flowOf(SyncTargets.None)
+
+    /** Re-read account access for every [syncTargets] collector; it can change outside the app. */
+    fun refreshSyncAccess() {}
+
+    /** Stop or resume asking for [account]'s sync-request access. */
+    suspend fun setSyncAccessDismissed(account: SyncAccount, dismissed: Boolean) {}
+
+    /** Every provider notification and [refresh], including the app's own writes. */
+    val providerChanges: Flow<Unit> get() = emptyFlow()
 }
 
 class NoSuchEventException(eventId: Long) :

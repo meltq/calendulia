@@ -9,6 +9,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.data.backup.BackupScheduler
 import de.jeanlucmakiola.calendula.data.calendar.CalendarRepository
+import de.jeanlucmakiola.calendula.data.calendar.SyncAccount
 import de.jeanlucmakiola.calendula.data.ics.IcsExporter
 import de.jeanlucmakiola.calendula.data.prefs.BackupStatus
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -59,6 +60,23 @@ class CalendarsViewModel @Inject constructor(
                 scope = viewModelScope,
                 initialValue = emptyList(),
             )
+
+    /**
+     * Accounts the drawer was told not to ask sync-request access for (#240),
+     * limited to those still behind a visible calendar and still unreachable.
+     */
+    val syncAccessDismissed: StateFlow<List<SyncAccount>> =
+        repository.syncTargets
+            .map { it.dismissed.toList() }
+            .catch { emit(emptyList()) }
+            .stateWhileSubscribed(scope = viewModelScope, initialValue = emptyList())
+
+    /** Re-read account access, which can change outside the app; called on resume. */
+    fun refreshAccess() = repository.refreshSyncAccess()
+
+    fun askSyncAccessAgain(account: SyncAccount) {
+        viewModelScope.launch { repository.setSyncAccessDismissed(account, dismissed = false) }
+    }
 
     /**
      * The Backup & restore screen's own view of that list, with the loading and

@@ -10,6 +10,32 @@ the package list (recurring writes, save conflicts, reminder delivery).
 1. **`CalendarContract` is the single source of truth.** No app database,
    no caching layer, no sync code. Reads query the provider; writes go
    straight back to it. Sync is DAVx5's / Google's / the system's job.
+   The app only *asks* for one through `ContentResolver.requestSync`: an
+   expedited nudge for the account after each of its own writes to a synced
+   calendar (#303, once per write, so a multi-row save or an import asks once
+   per account, and never `MANUAL`, which would override master-sync-off), and
+   a manual request from the drawer's "Sync now" (#240), which like the
+   system's own "Sync now" also runs for accounts whose auto-sync is off. Both
+   go through `SyncRequester` and only ask account types with a calendar sync
+   adapter (visible to the app via a `<queries>` entry). From Android 13 a
+   request naming an account the app can't see is silently dropped, and
+   without `GET_ACCOUNTS` that is most of them. Such accounts are not asked at
+   all (an account-less request would sync every account on the device); the
+   drawer offers "Allow sync requests" instead, which opens the system account
+   picker (`AccountManager.newChooseAccountIntent`) — the picked account
+   becomes visible to the app. Access is re-read on every request and on
+   every resume and drawer open, so a revoke simply puts the account back behind the
+   grant row. Per account the user can choose "Don't ask" instead
+   (`CalendarPrefs.syncAccessDismissed`); such accounts drop out of the grant
+   row and the receipts, and the calendar manager lists them to ask again. Whether and when the adapter syncs stays its call.
+   "Sync now" then follows what it asked for through the system's sync state
+   (`READ_SYNC_STATS`: `isSyncPending` / `isSyncActive` plus a status-change
+   listener, see `awaitSyncs`): it reports "Sync completed" once every reached
+   account was seen pending or running and is idle again (or, never seen, is
+   still idle after a short grace), and only "Sync requested" when that isn't
+   seen within a minute or the state can't be read. The outcome shows in the
+   drawer row while the drawer is open; one that lands with the drawer closed
+   gets the chip.
 2. **Observer-driven UI.** A `ContentObserver` on the provider triggers
    re-queries; every screen recomposes from fresh provider state. After a
    write, nothing is patched by hand — the views refresh from the provider.

@@ -35,6 +35,7 @@ import androidx.compose.runtime.saveable.listSaver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.stringResource
 import de.jeanlucmakiola.calendula.ui.common.rememberHeld
 import de.jeanlucmakiola.calendula.ui.common.screen
 import de.jeanlucmakiola.calendula.ui.common.ViewScreen
@@ -52,6 +53,14 @@ import de.jeanlucmakiola.calendula.ui.calendars.CalendarsScreen
 import de.jeanlucmakiola.calendula.ui.common.BelowTopBarClip
 import de.jeanlucmakiola.calendula.ui.common.StayingPut
 import de.jeanlucmakiola.calendula.ui.common.CalendarDrawer
+import de.jeanlucmakiola.calendula.ui.common.DrawerSync
+import de.jeanlucmakiola.calendula.ui.common.SyncViewModel
+import de.jeanlucmakiola.calendula.ui.common.RefreshSyncAccessOnOpen
+import de.jeanlucmakiola.calendula.ui.common.rememberSyncChipOutcome
+import de.jeanlucmakiola.calendula.ui.common.SyncAccessSheet
+import de.jeanlucmakiola.calendula.data.calendar.SyncTargets
+import de.jeanlucmakiola.calendula.ui.common.rememberSyncAccessPicker
+import de.jeanlucmakiola.calendula.ui.common.messageRes
 import de.jeanlucmakiola.calendula.ui.common.CalendarFab
 import de.jeanlucmakiola.calendula.ui.common.CalendarTopBar
 import de.jeanlucmakiola.calendula.ui.common.ChromeHost
@@ -441,6 +450,17 @@ fun CalendarHost(
     val eventActions: EventActionsViewModel = hiltViewModel()
     val moveOutcome by reschedule.outcome.collectAsStateWithLifecycle()
     val selectionFailure by eventActions.failure.collectAsStateWithLifecycle()
+    // "Sync now" in the drawer (#240): its outcome shows in the drawer row, or in
+    // the move chip when it lands with the drawer closed.
+    val sync: SyncViewModel = hiltViewModel()
+    val loadedSyncTargets by sync.targets.collectAsStateWithLifecycle()
+    val syncTargets = loadedSyncTargets ?: SyncTargets.None
+    val syncInFlight by sync.inFlight.collectAsStateWithLifecycle()
+    val syncResult by sync.result.collectAsStateWithLifecycle()
+    val selectionFailureMessage = eventActionFailureMessage(selectionFailure)
+    val syncRowMessage = syncResult?.let { stringResource(it.messageRes()) }
+    val launchAccessPicker = rememberSyncAccessPicker(sync)
+    var showSyncAccess by rememberSaveable { mutableStateOf(false) }
     val onEditEvent: (EventInstance) -> Unit = { event -> editKey = event.occurrenceKey() }
     // A tap opens the edit form instead of the detail screen when the user chose
     // so (#178) — only for events whose calendar takes writes. Both are read at
@@ -538,6 +558,9 @@ fun CalendarHost(
         val stayingPut = remember { StayingPut() }
         val chromeHost = remember { ChromeHost() }
         val drawerState = rememberDrawerState(DrawerValue.Closed)
+        RefreshSyncAccessOnOpen(drawerState, sync)
+        val syncChip = rememberSyncChipOutcome(drawerState, sync)
+        val syncChipMessage = syncChip.value?.let { stringResource(it.messageRes()) }
         val density = LocalDensity.current
         val topBarBottom = TopAppBarDefaults.windowInsets.getTop(density) +
             with(density) { TopAppBarDefaults.TopAppBarExpandedHeight.toPx() }
@@ -588,6 +611,17 @@ fun CalendarHost(
                         onOpenSettings()
                         switchScope.launch { drawerState.close() }
                     },
+                    sync = remember(syncTargets, syncInFlight, syncRowMessage) {
+                        DrawerSync(
+                            canSync = syncTargets.reachable.isNotEmpty(),
+                            inFlight = syncInFlight,
+                            outcome = syncRowMessage,
+                            needsAccess = syncTargets.needsAccess.isNotEmpty(),
+                            // Stays open, so the row's progress and the result are seen.
+                            onSync = { sync.requestSync() },
+                            onGrantAccess = { showSyncAccess = true },
+                        )
+                    },
                 )
             },
         ) {
@@ -613,10 +647,12 @@ fun CalendarHost(
                         // A fresh event, like a duplicate from the detail screen (#52).
                         openImportForm(form, ImportSource.Insert)
                     },
-                    chipShown = moveOutcome != null || selectionFailure != null,
+                    chipShown = moveOutcome != null || selectionFailure != null || syncChip.value != null,
                     onDismissChip = {
                         reschedule.consumeOutcome()
                         eventActions.consumeFailure()
+                        // Only the chip on show: a receipt queued behind it still gets its turn.
+                        if (moveOutcome == null && selectionFailure == null) syncChip.value = null
                     },
                 )
                 CalendarFab(chromeHost, todayInToolbar, fabSelection)
@@ -679,9 +715,20 @@ fun CalendarHost(
         EventMoveHost(
             reschedule,
             modifier = Modifier.fillMaxSize(),
-            actionFailure = eventActionFailureMessage(selectionFailure),
-            onActionFailureShown = eventActions::consumeFailure,
+            notice = selectionFailureMessage ?: syncChipMessage,
+            onNoticeShown = {
+                if (selectionFailureMessage != null) eventActions.consumeFailure() else syncChip.value = null
+            },
         )
+
+        if (showSyncAccess) {
+            SyncAccessSheet(
+                accounts = loadedSyncTargets?.needsAccess?.toList(),
+                onGrant = launchAccessPicker,
+                onDismissAccount = sync::dismissAccess,
+                onDismiss = { showSyncAccess = false },
+            )
+        }
 
         // The delete prompt and failure chip of a selected event's actions (#141).
         EventSelectionHost(host = chromeHost, viewModel = eventActions)

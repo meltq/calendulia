@@ -37,6 +37,7 @@ class CalendarRepositorySmokeTest {
             CalendarPrefs(store),
             SettingsPrefs(store),
             Dispatchers.IO,
+            AndroidSyncRequester(context),
         )
     }
 

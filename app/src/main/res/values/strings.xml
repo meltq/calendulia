@@ -397,6 +397,23 @@
 
     <!-- Jump to date (drawer) -->
     <string name="drawer_jump_to_date">Jump to date</string>
+    <string name="drawer_sync_now">Sync now</string>
+    <string name="drawer_sync_access">Allow sync requests</string>
+    <string name="drawer_sync_access_summary">Pick each account Calendula may ask to sync</string>
+    <string name="sync_access_hint">Android only lets Calendula ask an account to sync once you pick it here. Tap an account to allow it, or choose Don\'t ask to stop offering it.</string>
+    <string name="sync_access_dont_ask">Don\'t ask</string>
+    <string name="calendars_sync_access_header">Not asked for sync access</string>
+    <string name="calendars_sync_access_hint">Calendula won\'t offer to request syncs for these accounts. Ask again to bring them back to Allow sync requests in the menu.</string>
+    <string name="calendars_sync_access_ask_again">Ask again</string>
+    <string name="sync_access_picker_description">Choose an account Calendula may ask to sync your calendars</string>
+    <string name="sync_requested">Sync requested</string>
+    <string name="sync_in_progress">Syncing…</string>
+    <string name="sync_completed">Sync completed</string>
+    <string name="sync_request_failed">Couldn\'t request a sync</string>
+    <string name="sync_request_some_need_access">Sync requested. Allow sync requests in the menu for the other accounts</string>
+    <string name="sync_request_needs_access">Allow sync requests in the menu first</string>
+    <string name="sync_request_partly_failed">Sync requested, but not for every account</string>
+    <string name="sync_nothing_to_sync">No synced calendars to sync</string>
 
     <!-- Agenda view -->
     <string name="agenda_today_action">Today</string>
