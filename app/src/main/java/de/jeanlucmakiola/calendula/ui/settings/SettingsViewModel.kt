@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.ui.settings
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.util.Log
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -20,6 +21,7 @@ import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.floret.reminders.reminderOverrideFor
+import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
 import de.jeanlucmakiola.calendula.data.prefs.SettingsKeys
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -33,6 +35,8 @@ import de.jeanlucmakiola.calendula.data.prefs.SpecialDatesStalledReason
 import de.jeanlucmakiola.floret.prefs.ThemeMode
 import de.jeanlucmakiola.calendula.data.prefs.TimeFormatPref
 import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
+import de.jeanlucmakiola.calendula.data.reminders.ReminderChannelStatus
+import de.jeanlucmakiola.calendula.data.reminders.ReminderChannels
 import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
@@ -45,7 +49,9 @@ import de.jeanlucmakiola.calendula.ui.common.TimelineScale
 import de.jeanlucmakiola.calendula.ui.month.MonthViewStyle
 import de.jeanlucmakiola.calendula.ui.theme.AppFontSettings
 import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -62,11 +68,13 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val prefs: SettingsPrefs,
+    calendarPrefs: CalendarPrefs,
     repository: CalendarRepository,
     private val specialDatesEngine: SpecialDatesSyncEngine,
     specialDatesSpec: SpecialDatesCalendarSpec,
     private val launcherNameManager: LauncherNameManager,
     private val reminderScanner: ReminderScanner,
+    private val reminderChannels: ReminderChannels,
     @IoDispatcher private val io: CoroutineDispatcher,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
@@ -74,16 +82,16 @@ class SettingsViewModel @Inject constructor(
     private val dynamicColorAvailable = Build.VERSION.SDK_INT >= Build.VERSION_CODES.S
 
     /**
-     * Writable calendars that are switched on — the only ones that take a
-     * per-calendar reminder override, since a switched-off one plans no
-     * reminders at all (#75).
+     * Calendars that are switched on — the only ones that plan reminders at
+     * all (#75), so the only ones with notification settings.
      */
-    private val writableCalendars: Flow<List<CalendarSource>> = repository.calendars()
-        .map { calendars -> calendars.filter { it.canModifyContents && it.isVisibleInSystem } }
-        .catch { emit(emptyList()) }
+    private val visibleCalendars: Flow<List<CalendarSource>> =
+        combine(repository.calendars(), calendarPrefs.pendingDisabledCalendarIds) { calendars, pending ->
+            calendars.filter { it.isVisibleInSystem && it.id !in pending }
+        }.catch { emit(emptyList()) }
 
     val state: StateFlow<SettingsUiState> =
-        combine(prefs.data, writableCalendars) { stored, calendars -> stored.toUiState(calendars) }
+        combine(prefs.data, visibleCalendars) { stored, calendars -> stored.toUiState(calendars) }
             .stateWhileSubscribed(
                 scope = viewModelScope,
                 initialValue = SettingsUiState(dynamicColorAvailable = dynamicColorAvailable),
@@ -125,7 +133,10 @@ class SettingsViewModel @Inject constructor(
         snoozeMinutes = this[SettingsKeys.snoozeMinutes],
         perCalendarReminderOverride = this[SettingsKeys.perCalendarReminderOverride],
         perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
-        writableCalendars = calendars,
+        writableCalendars = calendars.filter { it.canModifyContents },
+        reminderCalendars = calendars,
+        mutedReminderCalendarIds = this[SettingsKeys.mutedReminderCalendarIds],
+        notificationCategoryHintDismissed = this[SettingsKeys.notificationCategoryHintDismissed],
         allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
         managedCalendarIds = specialDatesCalendars.values.toSet(),
     )
@@ -354,6 +365,62 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             prefs.setRemindersEnabled(enabled)
             reminderScanner.scan()
+        }
+    }
+
+    /**
+     * Re-plans, since a muted calendar armed no wake-up for its next reminder.
+     * Unmuting scans once more before the write, so the watermark starts at the
+     * unmute and nothing that came due while muted is replayed.
+     */
+    fun setCalendarRemindersEnabled(calendarId: Long, enabled: Boolean) {
+        viewModelScope.launch {
+            if (enabled) reminderScanner.scan()
+            prefs.setCalendarRemindersEnabled(calendarId, enabled)
+            reminderScanner.scan()
+        }
+    }
+
+    private val _channelStatus = MutableStateFlow(ReminderChannelStatus())
+
+    /** What the system blocks of the reminders; re-read with [refreshChannelStatus] (#145). */
+    val channelStatus: StateFlow<ReminderChannelStatus> = _channelStatus.asStateFlow()
+
+    private var channelStatusJob: Job? = null
+
+    fun refreshChannelStatus(calendarIds: Collection<Long>) {
+        channelStatusJob?.cancel()
+        channelStatusJob = viewModelScope.launch {
+            onChannels { status(calendarIds) }?.let { _channelStatus.value = it }
+        }
+    }
+
+    fun dismissNotificationCategoryHint() = save { dismissNotificationCategoryHint() }
+
+    /**
+     * The channel whose system screen to open for [calendarId] (#340), created
+     * if needed; null when only the app's own screen can help — the app or the
+     * calendar's account group is blocked there, or the channel couldn't be made.
+     */
+    suspend fun soundSettingsChannel(calendarId: Long): String? = onChannels {
+        val channelId = channelFor(calendarId) ?: return@onChannels null
+        val status = status(listOf(calendarId))
+        channelId.takeUnless { status.appBlocked || calendarId in status.groupBlockedCalendarIds }
+    }
+
+    /** Create the per-calendar channels before showing the app's channel list, even with reminders off. */
+    suspend fun syncReminderChannels() {
+        onChannels { sync() }
+    }
+
+    private suspend fun <T> onChannels(block: ReminderChannels.() -> T): T? = withContext(io) {
+        try {
+            reminderChannels.block()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w("SettingsViewModel", "Reminder channel update failed", e)
+            null
         }
     }
 

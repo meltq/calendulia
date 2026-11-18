@@ -43,6 +43,7 @@ class ReminderScanner @Inject constructor(
     private val source: ReminderInstanceSource,
     private val calendarDataSource: CalendarDataSource,
     private val notifier: ReminderNotifier,
+    private val channels: ReminderChannels,
     private val snoozes: ReminderSnoozeScheduler,
     private val alarms: ReminderAlarmScheduler,
     private val state: ReminderStatePrefs,
@@ -85,10 +86,14 @@ class ReminderScanner @Inject constructor(
             return
         }
 
+        syncChannels()
         val lookahead = reminderQueryHorizon(LOOKAHEAD_MILLIS, source.longestReminderMinutes())
         // Reach into the past too: an all-day "at time of event" encodes to a
         // negative offset, and a catch-up pass needs the occurrences it missed.
+        // Calendars muted in-app (#272) plan nothing, so they arm no wake-ups.
+        val muted = settingsPrefs.mutedReminderCalendarIds.first()
         val occurrences = source.occurrences(now - PAST_WINDOW_MILLIS, now + lookahead)
+            .filter { it.calendarId !in muted }
         val planned = planReminders(
             instances = occurrences,
             minutesByEvent = source.reminderMinutes(occurrences.map { it.eventId })
@@ -115,6 +120,19 @@ class ReminderScanner @Inject constructor(
         // doesn't build a backlog.
         state.setLastScanMillis(now)
         alarms.scheduleScan(schedule.nextAlarmMillis)
+    }
+
+    /**
+     * A provider change re-scans, so a calendar added, renamed or removed keeps
+     * its channel in step here. Skipped while reminders are off, when the
+     * channels have nothing to do. A failure never costs the reminders.
+     */
+    private fun syncChannels() {
+        try {
+            channels.sync()
+        } catch (e: Exception) {
+            Log.w(TAG, "Reminder channel sync failed", e)
+        }
     }
 
     private fun hasReadCalendar(): Boolean = context.hasPermission(Manifest.permission.READ_CALENDAR)

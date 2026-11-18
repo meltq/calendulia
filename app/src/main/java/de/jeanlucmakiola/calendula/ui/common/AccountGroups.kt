@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.common
 
+import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.platform.LocalContext
@@ -72,11 +73,13 @@ fun accountGroupTitle(group: CalendarAccountGroup): String {
 @Composable
 fun sourceAppName(accountType: String): String {
     val context = LocalContext.current
-    return remember(accountType) {
-        val pm = context.packageManager
-        val packages = sourceAppPackages(context, accountType)
-        packages.firstNotNullOfOrNull { pkg ->
-            runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrNull()
-        } ?: accountType
-    }
+    return remember(accountType) { sourceAppLabel(context, accountType) }
+}
+
+/** [sourceAppName] outside composition, e.g. for notification channel groups. */
+fun sourceAppLabel(context: Context, accountType: String): String {
+    val pm = context.packageManager
+    return sourceAppPackages(context, accountType).firstNotNullOfOrNull { pkg ->
+        runCatching { pm.getApplicationLabel(pm.getApplicationInfo(pkg, 0)).toString() }.getOrNull()
+    } ?: accountType
 }

@@ -1,8 +1,6 @@
 package de.jeanlucmakiola.calendula.data.reminders
 
 import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.os.Build
@@ -29,8 +27,8 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Posts one notification per occurrence on a dedicated channel. Tapping opens
- * the event's detail screen.
+ * Posts one notification per occurrence on its calendar's channel
+ * ([ReminderChannels], #145). Tapping opens the event's detail screen.
  *
  * The tag is the [occurrenceKey], so each reminder for an occurrence replaces
  * the one before it in place (#463). A different reminder alerts afresh; the
@@ -43,6 +41,7 @@ class ReminderNotifier @Inject constructor(
     private val settingsPrefs: SettingsPrefs,
     private val calendarPrefs: CalendarPrefs,
     private val calendarDataSource: CalendarDataSource,
+    private val channels: ReminderChannels,
 ) {
 
     /** False when the user declined `POST_NOTIFICATIONS` or muted the app. */
@@ -53,19 +52,28 @@ class ReminderNotifier @Inject constructor(
     }
 
     /**
-     * The single choke point for "this calendar is switched off", covering the
-     * two paths that reach [post] around the scan's own filter: a snooze armed
-     * before the switch-off, and a read-only install whose switch lives in
-     * [CalendarPrefs].
+     * The single choke point for "this calendar posts no reminders": switched
+     * off (also covering a snooze armed before the switch-off, and a read-only
+     * install whose switch lives in [CalendarPrefs]), or its notifications
+     * turned off in Calendula's own settings (#272).
      */
     private suspend fun isSilenced(calendarId: Long): Boolean =
-        calendarId in calendarPrefs.pendingDisabledCalendarIds.first() ||
+        calendarId in settingsPrefs.mutedReminderCalendarIds.first() ||
+            calendarId in calendarPrefs.pendingDisabledCalendarIds.first() ||
             calendarDataSource.isCalendarVisible(calendarId) == false
 
-    /** Post [alert], unless its calendar is switched off. */
+    /** Post [alert], unless its calendar is silenced or gone. */
     suspend fun post(alert: ReminderAlert) {
         if (isSilenced(alert.calendarId)) return
-        ensureChannel()
+        val channelId = try {
+            channels.channelFor(alert.calendarId) ?: run {
+                Log.i(TAG, "Dropped the reminder of event ${alert.eventId}: calendar ${alert.calendarId} is gone")
+                return
+            }
+        } catch (e: Exception) {
+            Log.w(TAG, "No channel for the reminder of event ${alert.eventId}", e)
+            return
+        }
         val title = displayTitle(alert)
         val is24Hour = settingsPrefs.timeFormat.first()
             .is24Hour(android.text.format.DateFormat.is24HourFormat(context))
@@ -88,7 +96,7 @@ class ReminderNotifier @Inject constructor(
             yesterdayLabel = context.getString(R.string.reminder_day_yesterday),
         )
         val text = listOfNotNull(time, alert.location).joinToString(" · ")
-        val notification = NotificationCompat.Builder(context, CHANNEL_ID)
+        val notification = NotificationCompat.Builder(context, channelId)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(title)
             .setContentText(text)
@@ -153,7 +161,7 @@ class ReminderNotifier @Inject constructor(
     private fun cancelLegacy(alert: ReminderAlert) {
         val manager = NotificationManagerCompat.from(context)
         manager.activeNotifications
-            .filter { it.id == NOTIFICATION_ID && it.notification.channelId == CHANNEL_ID }
+            .filter { it.id == NOTIFICATION_ID && it.notification.channelId == LEGACY_REMINDER_CHANNEL_ID }
             .filter { !it.notification.extras.containsKey(EXTRA_REMINDER_KEY) }
             .filter { it.notification.`when` == alert.beginMillis }
             .filter { it.notification.extras.getCharSequence(NotificationCompat.EXTRA_TITLE)?.toString() == displayTitle(alert) }
@@ -181,21 +189,8 @@ class ReminderNotifier @Inject constructor(
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
 
-    /** Channel creation is idempotent; re-running refreshes the localized name. */
-    private fun ensureChannel() {
-        val channel = NotificationChannel(
-            CHANNEL_ID,
-            context.getString(R.string.reminder_channel_name),
-            NotificationManager.IMPORTANCE_HIGH,
-        ).apply {
-            description = context.getString(R.string.reminder_channel_description)
-        }
-        NotificationManagerCompat.from(context).createNotificationChannel(channel)
-    }
-
     private companion object {
         const val TAG = "ReminderNotifier"
-        const val CHANNEL_ID = "reminders"
 
         // One id, distinct tags: the tag (occurrence) already keys the
         // notification, so a fixed id keeps cancellation/replacement simple.
