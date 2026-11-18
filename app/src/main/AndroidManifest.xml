@@ -68,6 +68,17 @@
         <intent>
             <action android:name="android.content.SyncAdapter" />
         </intent>
+        <!-- A reminder's "Open link" button only shows when something can open the link (#464). -->
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="https" />
+        </intent>
+        <intent>
+            <action android:name="android.intent.action.VIEW" />
+            <category android:name="android.intent.category.BROWSABLE" />
+            <data android:scheme="http" />
+        </intent>
     </queries>
 
     <application

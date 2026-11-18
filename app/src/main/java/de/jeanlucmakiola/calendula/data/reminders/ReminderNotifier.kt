@@ -4,6 +4,8 @@ import android.Manifest
 import android.app.Notification
 import android.app.PendingIntent
 import android.content.Context
+import android.content.Intent
+import androidx.core.net.toUri
 import android.os.Build
 import android.os.Bundle
 import android.util.Log
@@ -22,6 +24,9 @@ import de.jeanlucmakiola.calendula.domain.reminders.alertStyleFor
 import de.jeanlucmakiola.calendula.ui.reminders.ReminderAlertActivity
 import de.jeanlucmakiola.floret.android.hasPermission
 import de.jeanlucmakiola.floret.ring.canUseFullScreenIntent
+import de.jeanlucmakiola.calendula.domain.reminders.reminderLink
+import de.jeanlucmakiola.calendula.domain.reminders.reminderMapQuery
+import de.jeanlucmakiola.floret.android.resolvableMapsSearchIntent
 import kotlinx.coroutines.flow.first
 import kotlinx.datetime.isoDayNumber
 import java.time.DayOfWeek
@@ -208,6 +213,15 @@ class ReminderNotifier @Inject constructor(
                 context.getString(R.string.reminder_action_dismiss),
                 actionIntent(alert, ReminderActionReceiver.ACTION_DISMISS),
             )
+        // Room for one more button: a meeting link beats the place, being the likelier next step.
+        // A ring leaves it to the alert screen, so opening something can't leave it sounding.
+        if (!ringing) {
+            linkIntent(alert)?.let {
+                builder.addAction(R.drawable.ic_notification_link, context.getString(R.string.reminder_action_open_link), it)
+            } ?: mapIntent(alert)?.let {
+                builder.addAction(R.drawable.ic_notification_map, context.getString(R.string.event_detail_open_in_maps), it)
+            }
+        }
         if (fullScreen) builder.setDeleteIntent(actionIntent(alert, ReminderActionReceiver.ACTION_DISMISS))
         if (ringing) {
             builder.setOngoing(true).setVisibility(NotificationCompat.VISIBILITY_PUBLIC)
@@ -311,6 +325,42 @@ class ReminderNotifier @Inject constructor(
         MainActivity.eventDetailIntent(context, alert.eventId, alert.beginMillis, alert.endMillis),
         PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
     )
+
+    /**
+     * Opens the first web link in [alert]'s location, e.g. a meeting, started
+     * directly like [mapIntent]. Null without a link or an app to open it.
+     */
+    private fun linkIntent(alert: ReminderAlert): PendingIntent? {
+        val link = reminderLink(alert.location) ?: return null
+        val intent = Intent(Intent.ACTION_VIEW, link.toUri())
+            .addCategory(Intent.CATEGORY_BROWSABLE)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        if (intent.resolveActivity(context.packageManager) == null) return null
+        return PendingIntent.getActivity(
+            context,
+            /* requestCode = */ 0,
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
+
+    /**
+     * Opens [alert]'s location in maps like the detail screen does, started
+     * directly (no receiver trampoline). Leaves the notification up for a later
+     * snooze or dismiss. Null without a place to look up (a bare meeting link
+     * isn't one) or an app to open it.
+     */
+    private fun mapIntent(alert: ReminderAlert): PendingIntent? {
+        val query = reminderMapQuery(alert.location) ?: return null
+        val intent = context.resolvableMapsSearchIntent(query) ?: return null
+        return PendingIntent.getActivity(
+            context,
+            // An implicit activity intent: filterEquals already keeps it apart from the others.
+            /* requestCode = */ 0,
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE,
+        )
+    }
 
     private companion object {
         const val TAG = "ReminderNotifier"
