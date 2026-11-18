@@ -2,8 +2,11 @@ package de.jeanlucmakiola.calendula.domain.backup
 
 import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
+import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import org.junit.jupiter.api.Test
 import java.time.LocalDateTime
+import kotlin.time.Instant
 
 class BackupPlanTest {
 
@@ -324,5 +327,79 @@ class BackupPlanTest {
         val ledger = mapOf(latestLedgerKey("1") to listOf("Job.ics"), latestLedgerKey("2") to listOf("Work.ics"), "2" to listOf("Work_a.ics"))
         assertThat(ledger.latestHeldElsewhere("1")).containsExactly("Work.ics")
         assertThat(ledger.latestHeldElsewhere("2")).containsExactly("Job.ics")
+    }
+
+    @Test
+    fun `fingerprints survive storage and drop deleted calendars`() {
+        val stored = persistBackupFingerprints(mapOf("1" to "ab", COMBINED_SERIES to "cd"))
+        assertThat(parseBackupFingerprints(stored)).containsExactly("1", "ab", COMBINED_SERIES, "cd")
+        assertThat(persistBackupFingerprints(emptyMap())).isNull()
+        assertThat(parseBackupFingerprints(null)).isEmpty()
+        val next = withFingerprint(mapOf("1" to "ab", "9" to "ef", COMBINED_SERIES to "cd"), "2", "gh", setOf("1", "2"))
+        assertThat(next).containsExactly("1", "ab", COMBINED_SERIES, "cd", "2", "gh")
+    }
+
+    @Test
+    fun `a fingerprint follows the content`() {
+        val first = "BEGIN:VEVENT\r\nDTSTAMP:20261113T143005Z\r\nSUMMARY:A\r\nEND:VEVENT\r\n"
+        val later = first.replace("20261113T143005Z", "20261114T090000Z")
+        assertThat(backupFingerprint(later, "Work.ics")).isEqualTo(backupFingerprint(first, "Work.ics"))
+        assertThat(backupFingerprint(first.replace("SUMMARY:A", "SUMMARY:B"), "Work.ics")).isNotEqualTo(backupFingerprint(first, "Work.ics"))
+        assertThat(backupFingerprint(first, "Work.ics")).hasLength(32)
+        assertThat(backupFingerprint(first, "Job.ics")).isNotEqualTo(backupFingerprint(first, "Work.ics"))
+    }
+
+    @Test
+    fun `the writer's output hashes the same at any stamp`() {
+        val event = IcsEvent(
+            uid = "u1", summary = "A", start = Instant.fromEpochSeconds(0), end = Instant.fromEpochSeconds(3600),
+            isAllDay = false, zoneId = "UTC",
+        )
+        val early = IcsWriter().writeCalendar(listOf(event), Instant.fromEpochSeconds(0), "Work")
+        val late = IcsWriter().writeCalendar(listOf(event), Instant.fromEpochSeconds(1_800_000_000), "Work")
+        assertThat(early).isNotEqualTo(late)
+        assertThat(backupFingerprint(late, "Work.ics")).isEqualTo(backupFingerprint(early, "Work.ics"))
+    }
+
+    @Test
+    fun `a change run refreshes only a changed or missing stable copy`() {
+        val target = backupTargets(listOf(cal(1L, "Work")), combined = false).single()
+        val ledger = mapOf(latestLedgerKey("1") to listOf("Work.ics"))
+        val plan = planBackupFiles(listOf(target), ledger, setOf("Work.ics"), at, keep = 3).single()
+        val stored = mapOf("1" to "h1")
+        val listed = setOf("Work.ics")
+        assertThat(plan.needsRefresh("h1", stored, listed, complete = true)).isFalse()
+        assertThat(plan.needsRefresh("h2", stored, listed, complete = true)).isTrue()
+        assertThat(plan.needsRefresh("h1", emptyMap(), listed, complete = true)).isTrue()
+        assertThat(plan.needsRefresh("h1", stored, emptySet(), complete = true)).isTrue()
+    }
+
+    @Test
+    fun `a change run leaves a copy a loading listing doesn't show to the schedule`() {
+        val target = backupTargets(listOf(cal(1L, "Work")), combined = false).single()
+        val ledger = mapOf(latestLedgerKey("1") to listOf("Work.ics"))
+        val plan = planBackupFiles(listOf(target), ledger, setOf("Work.ics"), at, keep = 3).single()
+        assertThat(plan.needsRefresh("h2", mapOf("1" to "h1"), emptySet(), complete = false)).isFalse()
+        assertThat(plan.needsRefresh("h2", mapOf("1" to "h1"), setOf("Work.ics"), complete = false)).isTrue()
+    }
+
+    @Test
+    fun `a change run never writes over a file of the user's`() {
+        val target = backupTargets(listOf(cal(1L, "Work")), combined = false).single()
+        val plan = planBackupFiles(listOf(target), emptyMap(), setOf("Work.ics"), at, keep = 3).single()
+        assertThat(plan.latestName).isNull()
+        assertThat(plan.needsRefresh("h1", emptyMap(), setOf("Work.ics"), complete = true)).isFalse()
+    }
+
+    @Test
+    fun `backup order doesn't depend on the provider's`() {
+        fun event(uid: String, reminders: List<Int>) = IcsEvent(
+            uid = uid, summary = uid, start = Instant.fromEpochSeconds(0), end = Instant.fromEpochSeconds(3600),
+            isAllDay = false, zoneId = "UTC", reminderMinutes = reminders,
+        )
+        val one = listOf(event("b", listOf(15, 10)), event("a", listOf(5)))
+        val other = listOf(event("a", listOf(5)), event("b", listOf(10, 15)))
+        assertThat(one.inBackupOrder()).isEqualTo(other.inBackupOrder())
+        assertThat(one.inBackupOrder().map { it.uid }).containsExactly("a", "b").inOrder()
     }
 }

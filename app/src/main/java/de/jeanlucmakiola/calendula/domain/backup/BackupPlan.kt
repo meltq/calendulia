@@ -1,8 +1,11 @@
 package de.jeanlucmakiola.calendula.domain.backup
 
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
+import de.jeanlucmakiola.calendula.domain.ics.flattenOverrides
 import de.jeanlucmakiola.calendula.domain.isNotSynced
 import de.jeanlucmakiola.floret.android.safeFileName
+import java.security.MessageDigest
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
@@ -311,3 +314,89 @@ fun parseBackupLedger(stored: String?): BackupLedger =
 /** Closest offered retention count to [stored], so a stray value still shows a row. */
 fun normalizeBackupKeep(stored: Int): Int =
     BACKUP_KEEP_OPTIONS.minBy { kotlin.math.abs(it - stored) }
+
+/**
+ * Content hash of a series' file, per series key (#516), so a run started by a
+ * change can tell whether the calendars it covers changed at all.
+ */
+typealias BackupFingerprints = Map<String, String>
+
+/**
+ * Hash of a series' file, leaving out the run's `DTSTAMP`s so equal events give
+ * an equal hash, and bound to the stable copy's [fileName], so a copy under
+ * another name never passes as current.
+ */
+fun backupFingerprint(ics: String, fileName: String): String {
+    val digest = MessageDigest.getInstance("SHA-256")
+    digest.update(fileName.toByteArray(Charsets.UTF_8))
+    digest.update(LINE_BREAK)
+    ics.lineSequence().filterNot { it.startsWith(DTSTAMP_PREFIX) }
+        .forEach {
+            digest.update(it.toByteArray(Charsets.UTF_8))
+            digest.update(LINE_BREAK)
+        }
+    return digest.digest().take(FINGERPRINT_BYTES).joinToString("") { "%02x".format(it) }
+}
+
+/** [previous] with [key] set to [fingerprint]; entries of deleted calendars go, as in [withLedgerEntry]. */
+fun withFingerprint(
+    previous: BackupFingerprints,
+    key: String,
+    fingerprint: String,
+    liveKeys: Set<String>,
+): BackupFingerprints =
+    previous.filterKeys { it in liveKeys || it == COMBINED_SERIES } + (key to fingerprint)
+
+private const val FINGERPRINT_BYTES = 16
+private const val DTSTAMP_PREFIX = "DTSTAMP:"
+private val LINE_BREAK = byteArrayOf('\n'.code.toByte())
+private const val FINGERPRINT_SEP = "="
+
+fun persistBackupFingerprints(fingerprints: BackupFingerprints): String? =
+    fingerprints.takeIf { it.isNotEmpty() }
+        ?.entries?.sortedBy { it.key }
+        ?.joinToString(LEDGER_ENTRY_SEP) { (key, hash) -> "$key$FINGERPRINT_SEP$hash" }
+
+fun parseBackupFingerprints(stored: String?): BackupFingerprints =
+    stored?.split(LEDGER_ENTRY_SEP).orEmpty().mapNotNull { entry ->
+        val key = entry.substringBefore(FINGERPRINT_SEP, "")
+        val hash = entry.substringAfter(FINGERPRINT_SEP, "")
+        if (key.isEmpty() || hash.isEmpty()) null else key to hash
+    }.toMap()
+
+/**
+ * Whether a run started by a change (#516) rewrites this series' stable copy:
+ * only when its content moved on from what the copy holds (a rename changes
+ * the name written into it), or the copy is missing. Never when the name belongs to a file of the user's,
+ * nor when a [complete]-less listing doesn't show the copy: writing then would
+ * add a duplicate beside it, so that is left to the scheduled run.
+ */
+fun BackupFilePlan.needsRefresh(
+    fingerprint: String,
+    stored: BackupFingerprints,
+    listed: Set<String>,
+    complete: Boolean,
+): Boolean {
+    val latest = latestName ?: return false
+    if (latest !in listed) return complete
+    return stored[target.key] != fingerprint
+}
+
+/**
+ * The events in a fixed order, their lists sorted, so the same content always
+ * writes the same file and hashes the same, however the provider returned it.
+ * Standalone occurrences stay first, as [flattenOverrides] puts them.
+ */
+fun List<IcsEvent>.inBackupOrder(): List<IcsEvent> =
+    map {
+        it.copy(
+            reminderMinutes = it.reminderMinutes.sorted(),
+            exDates = it.exDates.sorted(),
+            recurrenceDates = it.recurrenceDates.sorted(),
+        )
+    }.sortedWith(
+        compareBy<IcsEvent>(
+            { it.overrideOf == null }, { it.start }, { it.uid }, { it.overrideAt }, { it.calendarName },
+            { it.toString() },
+        ),
+    )

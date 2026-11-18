@@ -88,8 +88,9 @@ class CalendarsViewModel @Inject constructor(
         settingsPrefs.autoBackupSelection,
         settingsPrefs.autoBackupCombined,
         settingsPrefs.autoBackupKeep,
-    ) { base, selection, combined, keep ->
-        base.copy(selection = selection, combined = combined, keep = keep)
+        settingsPrefs.autoBackupOnChange,
+    ) { base, selection, combined, keep, onChange ->
+        base.copy(selection = selection, combined = combined, keep = keep, onChange = onChange)
     }
         .flowOn(io)
         .stateWhileSubscribed(
@@ -234,6 +235,13 @@ class CalendarsViewModel @Inject constructor(
         }
     }
 
+    fun setAutoBackupOnChange(enabled: Boolean) {
+        viewModelScope.launch {
+            settingsPrefs.setAutoBackupOnChange(enabled)
+            reschedule()
+        }
+    }
+
     fun setAutoBackupKeep(keep: Int) {
         viewModelScope.launch {
             if (settingsPrefs.autoBackupKeep.first() == keep) return@launch
@@ -263,12 +271,7 @@ class CalendarsViewModel @Inject constructor(
     }
 
     private suspend fun reschedule() {
-        BackupScheduler.apply(
-            context = context,
-            enabled = settingsPrefs.autoBackupEnabled.first(),
-            intervalMinutes = settingsPrefs.autoBackupIntervalMinutes.first(),
-            hasFolder = settingsPrefs.autoBackupFolderUri.first() != null,
-        )
+        BackupScheduler.reconcile(context, settingsPrefs)
     }
 
     private inline fun write(crossinline block: suspend () -> Unit) {
@@ -293,6 +296,7 @@ data class AutoBackupUiState(
     val selection: BackupSelection = BackupSelection(),
     val combined: Boolean = false,
     val keep: Int = DEFAULT_BACKUP_KEEP,
+    val onChange: Boolean = false,
 )
 
 /** Outcome of a whole-calendar backup, surfaced once to the screen. */

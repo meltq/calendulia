@@ -340,12 +340,7 @@ class OnboardingViewModel @Inject constructor(
             }
             prefs.setAutoBackupFolderUri(folder.toString())
             prefs.setAutoBackupEnabled(true)
-            BackupScheduler.apply(
-                context = context,
-                enabled = true,
-                intervalMinutes = prefs.autoBackupIntervalMinutes.first(),
-                hasFolder = true,
-            )
+            BackupScheduler.reconcile(context, prefs)
             // Immediate feedback: the first backup lands while onboarding runs.
             BackupScheduler.runNow(context)
             prefs.setOnboardingDone(OnboardingStep.Backup)
