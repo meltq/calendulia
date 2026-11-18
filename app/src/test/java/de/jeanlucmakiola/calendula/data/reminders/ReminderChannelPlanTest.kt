@@ -145,6 +145,14 @@ class ReminderChannelPlanTest {
         assertThat(appOff.blockedCalendarIds).containsExactly(1L, 2L, 3L, 4L)
     }
 
+    @Test
+    fun `a switched-off ring channel is reported while the app may notify`() {
+        val ringOff = mapOf(RING_CHANNEL_ID to ReminderChannelState(blocked = true, groupId = null))
+        assertThat(reminderChannelStatus(listOf(1L), appEnabled = true, ringOff, emptySet()).ringBlocked).isTrue()
+        assertThat(reminderChannelStatus(listOf(1L), appEnabled = false, ringOff, emptySet()).ringBlocked).isFalse()
+        assertThat(reminderChannelStatus(listOf(1L), appEnabled = true, emptyMap(), emptySet()).ringBlocked).isFalse()
+    }
+
     private companion object {
         const val DESC = "Reminders"
     }

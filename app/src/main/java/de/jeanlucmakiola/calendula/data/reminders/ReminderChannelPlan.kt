@@ -6,6 +6,9 @@ import de.jeanlucmakiola.calendula.ui.common.groupByAccount
 /** The single channel every reminder posted on before they moved per calendar (#145). */
 const val LEGACY_REMINDER_CHANNEL_ID = "reminders"
 
+/** The silent channel ringing full-screen alerts post on (#171); outside the per-calendar namespace. */
+const val RING_CHANNEL_ID = "reminders_ring"
+
 private const val CHANNEL_PREFIX = "reminders.calendar."
 private const val GROUP_PREFIX = "reminders.account."
 private const val LOCAL_GROUP_ID = GROUP_PREFIX + "local"
@@ -138,6 +141,8 @@ data class ReminderChannelStatus(
     val blockedCalendarIds: Set<Long> = emptySet(),
     /** The blocked ones whose whole account group is off, which only the app's own screen can undo. */
     val groupBlockedCalendarIds: Set<Long> = emptySet(),
+    /** The shared ring channel (#171) is switched off, so ringing calendars only sound once. */
+    val ringBlocked: Boolean = false,
 )
 
 /**
@@ -157,5 +162,10 @@ fun reminderChannelStatus(
     } else {
         calendarIds.filterTo(HashSet()) { channels[reminderChannelId(it)]?.blocked == true } + groupBlocked
     }
-    return ReminderChannelStatus(appBlocked = !appEnabled, blockedCalendarIds = blocked, groupBlockedCalendarIds = groupBlocked)
+    return ReminderChannelStatus(
+        appBlocked = !appEnabled,
+        blockedCalendarIds = blocked,
+        groupBlockedCalendarIds = groupBlocked,
+        ringBlocked = appEnabled && channels[RING_CHANNEL_ID]?.blocked == true,
+    )
 }

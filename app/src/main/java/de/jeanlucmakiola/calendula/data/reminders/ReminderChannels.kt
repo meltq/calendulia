@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.data.reminders
 
+import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationChannelGroup
 import android.app.NotificationManager
@@ -9,6 +10,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
 import de.jeanlucmakiola.calendula.ui.common.sourceAppLabel
 import java.util.Locale
 import javax.inject.Inject
@@ -57,6 +59,7 @@ class ReminderChannels @Inject constructor(
             channels = plan.channelsToWrite,
             existing = existing,
         )
+        if (RING_CHANNEL_ID in existingIds) ensureRingChannel()
         val ids = existingIds - plan.staleChannelIds.toSet() + plan.channelsToWrite.map { it.id }
         lastSync = syncKey(calendars, if (retireLegacyChannel()) ids - LEGACY_REMINDER_CHANNEL_ID else ids)
     }
@@ -72,10 +75,64 @@ class ReminderChannels @Inject constructor(
      * has not got to it yet. Null when the calendar no longer exists. Should the
      * calendar lookup fail or come back empty, the channel is still created,
      * plainly named and ungrouped, for the next sync to name and file — a
-     * reminder is never lost to its channel.
+     * reminder is never lost to its channel. A ringing [style] posts on the
+     * shared ring channel instead, once the calendar is known to exist.
      */
     @Synchronized
-    fun channelFor(calendarId: Long): String? {
+    fun channelFor(calendarId: Long, style: ReminderAlertStyle = ReminderAlertStyle.Notification): String? {
+        val calendarChannel = calendarChannelFor(calendarId) ?: return null
+        return if (style == ReminderAlertStyle.FullScreenRing) ringChannel() else calendarChannel
+    }
+
+    /**
+     * The channel a ringing full-screen alert (#171) posts on, shared by every
+     * calendar. Silent: the ring service owns the sound and vibration, so the
+     * channel adds neither. High importance keeps the heads-up a denied
+     * full-screen intent degrades to.
+     */
+    private fun ringChannel(): String {
+        ensureRingChannel()
+        return RING_CHANNEL_ID
+    }
+
+    /**
+     * Creates the ring channel, or renames it after a language change. Called
+     * as soon as a calendar is set to ring, so the channel can be checked in
+     * system settings (and switched on, where a skin starts it off) before the
+     * first ring.
+     */
+    @Synchronized
+    fun ensureRingChannel() {
+        val manager = manager
+        val name = context.getString(R.string.reminder_ring_channel_name)
+        val description = context.getString(R.string.reminder_ring_channel_description)
+        val current = manager.getNotificationChannel(RING_CHANNEL_ID)
+        if (current != null && current.name?.toString() == name && current.description == description) return
+        manager.createNotificationChannel(
+            NotificationChannel(
+                RING_CHANNEL_ID,
+                name,
+                NotificationManager.IMPORTANCE_HIGH,
+            ).apply {
+                this.description = description
+                setSound(null, null)
+                enableVibration(false)
+                lockscreenVisibility = Notification.VISIBILITY_PUBLIC
+            },
+        )
+    }
+
+    /**
+     * Whether a ring may sound for [calendarId]: neither its own channel, its
+     * account's group nor the ring channel is blocked, since the service plays
+     * the sound itself.
+     */
+    fun canRing(calendarId: Long): Boolean {
+        val status = status(listOf(calendarId))
+        return !status.appBlocked && calendarId !in status.blockedCalendarIds && !status.ringBlocked
+    }
+
+    private fun calendarChannelFor(calendarId: Long): String? {
         val id = reminderChannelId(calendarId)
         val manager = manager
         if (manager.getNotificationChannel(id) != null) return id

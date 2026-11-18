@@ -37,8 +37,11 @@ import de.jeanlucmakiola.calendula.data.prefs.TimeFormatPref
 import de.jeanlucmakiola.calendula.data.prefs.WeekStartPref
 import de.jeanlucmakiola.calendula.data.reminders.ReminderChannelStatus
 import de.jeanlucmakiola.calendula.data.reminders.ReminderChannels
+import de.jeanlucmakiola.calendula.data.reminders.ReminderNotifier
+import de.jeanlucmakiola.calendula.data.reminders.RingMatch
 import de.jeanlucmakiola.calendula.data.reminders.ReminderScanner
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
@@ -75,6 +78,7 @@ class SettingsViewModel @Inject constructor(
     private val launcherNameManager: LauncherNameManager,
     private val reminderScanner: ReminderScanner,
     private val reminderChannels: ReminderChannels,
+    private val reminderNotifier: ReminderNotifier,
     @IoDispatcher private val io: CoroutineDispatcher,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
@@ -136,6 +140,7 @@ class SettingsViewModel @Inject constructor(
         writableCalendars = calendars.filter { it.canModifyContents },
         reminderCalendars = calendars,
         mutedReminderCalendarIds = this[SettingsKeys.mutedReminderCalendarIds],
+        reminderAlertStyles = this[SettingsKeys.reminderAlertStyles],
         notificationCategoryHintDismissed = this[SettingsKeys.notificationCategoryHintDismissed],
         allowColorOnUnsupportedCalendars = this[SettingsKeys.allowColorOnUnsupportedCalendars],
         managedCalendarIds = specialDatesCalendars.values.toSet(),
@@ -364,6 +369,7 @@ class SettingsViewModel @Inject constructor(
     fun setRemindersEnabled(enabled: Boolean) {
         viewModelScope.launch {
             prefs.setRemindersEnabled(enabled)
+            if (!enabled) reminderNotifier.stopRing(RingMatch.Any)
             reminderScanner.scan()
         }
     }
@@ -377,7 +383,23 @@ class SettingsViewModel @Inject constructor(
         viewModelScope.launch {
             if (enabled) reminderScanner.scan()
             prefs.setCalendarRemindersEnabled(calendarId, enabled)
+            if (!enabled) reminderNotifier.stopRing(RingMatch.Calendar(calendarId))
             reminderScanner.scan()
+        }
+    }
+
+    fun setCalendarAlertStyle(calendarId: Long, style: ReminderAlertStyle) {
+        viewModelScope.launch {
+            prefs.setCalendarAlertStyle(calendarId, style)
+            // Up front, so it can be checked in system settings before the first ring.
+            if (style == ReminderAlertStyle.FullScreenRing) {
+                onChannels { ensureRingChannel() }
+                refreshChannelStatus(state.value.reminderCalendars.map { it.id })
+            }
+            // A ring for it goes quiet but stays in the shade.
+            if (style != ReminderAlertStyle.FullScreenRing) {
+                reminderNotifier.stopRing(RingMatch.Calendar(calendarId), handBack = true)
+            }
         }
     }
 
@@ -410,7 +432,11 @@ class SettingsViewModel @Inject constructor(
 
     /** Create the per-calendar channels before showing the app's channel list, even with reminders off. */
     suspend fun syncReminderChannels() {
-        onChannels { sync() }
+        val ringing = state.value.reminderAlertStyles.containsValue(ReminderAlertStyle.FullScreenRing)
+        onChannels {
+            sync()
+            if (ringing) ensureRingChannel()
+        }
     }
 
     private suspend fun <T> onChannels(block: ReminderChannels.() -> T): T? = withContext(io) {

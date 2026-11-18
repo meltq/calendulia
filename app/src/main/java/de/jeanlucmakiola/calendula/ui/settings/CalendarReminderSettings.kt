@@ -24,7 +24,10 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.data.reminders.RING_CHANNEL_ID
 import de.jeanlucmakiola.calendula.domain.CalendarSource
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
+import de.jeanlucmakiola.calendula.domain.reminders.alertStyleFor
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
 import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
@@ -38,12 +41,15 @@ import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSectionHeader
 import de.jeanlucmakiola.floret.components.GroupedSwitchRow
+import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.positionOf
 import de.jeanlucmakiola.floret.identity.collapseExit
 import de.jeanlucmakiola.floret.identity.expandEnter
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.floret.reminders.reminderOverrideFor
+import de.jeanlucmakiola.floret.ring.canUseFullScreenIntent
+import de.jeanlucmakiola.floret.ring.openFullScreenIntentSettings
 import kotlinx.coroutines.launch
 
 /**
@@ -63,6 +69,9 @@ internal fun CalendarRemindersScreen(
     val scope = rememberCoroutineScope()
     var expandedCalendars by rememberSaveable { mutableStateOf(emptyList<Long>()) }
     var overrideDialog by remember { mutableStateOf<OverrideTarget?>(null) }
+    var alertStylePicker by remember { mutableStateOf<Long?>(null) }
+    var alertSoundPicker by remember { mutableStateOf<Long?>(null) }
+    val canFullScreen = rememberCanUseFullScreenIntent()
     val channelStatus by viewModel.channelStatus.collectAsStateWithLifecycle()
     val calendarIds = state.reminderCalendars.map { it.id }
     LifecycleResumeEffect(calendarIds) {
@@ -84,13 +93,21 @@ internal fun CalendarRemindersScreen(
             calendars.forEachIndexed { index, calendar ->
                 val expanded = calendar.id in expandedCalendars
                 val notifying = calendar.id !in state.mutedReminderCalendarIds
+                val blocked = notifying && calendar.id in channelStatus.blockedCalendarIds
                 CalendarReminderEntry(
                     calendar = calendar,
                     state = state,
                     position = positionOf(index, calendars.size),
                     expanded = expanded,
                     notifying = notifying,
-                    blocked = notifying && calendar.id in channelStatus.blockedCalendarIds,
+                    blocked = blocked,
+                    heldBack = fullScreenHeldBack(
+                        style = state.reminderAlertStyles.alertStyleFor(calendar.id),
+                        notifying = notifying,
+                        blocked = blocked,
+                        ringBlocked = channelStatus.ringBlocked,
+                        canFullScreen = canFullScreen,
+                    ),
                     onToggleExpand = {
                         expandedCalendars = if (expanded) {
                             expandedCalendars - calendar.id
@@ -104,6 +121,10 @@ internal fun CalendarRemindersScreen(
                             context.openNotificationSettings(viewModel.soundSettingsChannel(calendar.id))
                         }
                     },
+                    onOpenRingSettings = { context.openNotificationSettings(RING_CHANNEL_ID) },
+                    onEditAlertStyle = { alertStylePicker = calendar.id },
+                    onEditAlertSound = { alertSoundPicker = calendar.id },
+                    onAllowFullScreen = { context.openFullScreenIntentSettings() },
                     onOpenSpecialDates = onOpenSpecialDates,
                     onEditOverride = { overrideDialog = it },
                 )
@@ -111,6 +132,51 @@ internal fun CalendarRemindersScreen(
         }
     }
 
+    alertStylePicker?.let { calendarId ->
+        val current = state.reminderAlertStyles.alertStyleFor(calendarId)
+        OptionPicker(
+            title = stringResource(R.string.settings_alert_style),
+            options = listOf(ReminderAlertStyle.Notification, ReminderAlertStyle.FullScreen),
+            selected = if (current.isFullScreen) ReminderAlertStyle.FullScreen else ReminderAlertStyle.Notification,
+            label = { alertStyleLabel(it) },
+            summary = {
+                stringResource(
+                    if (it.isFullScreen) {
+                        R.string.settings_alert_style_full_screen_summary
+                    } else {
+                        R.string.settings_alert_style_notification_summary
+                    },
+                )
+            },
+            onSelect = { picked ->
+                if (picked.isFullScreen != current.isFullScreen) {
+                    viewModel.setCalendarAlertStyle(calendarId, picked)
+                    // Guide the user straight to the switch Android 14+ may hold back.
+                    if (picked.isFullScreen && !canFullScreen) context.openFullScreenIntentSettings()
+                }
+            },
+            onDismiss = { alertStylePicker = null },
+        )
+    }
+    alertSoundPicker?.let { calendarId ->
+        OptionPicker(
+            title = stringResource(R.string.settings_alert_sound),
+            options = listOf(ReminderAlertStyle.FullScreen, ReminderAlertStyle.FullScreenRing),
+            selected = state.reminderAlertStyles.alertStyleFor(calendarId),
+            label = { alertSoundLabel(it) },
+            summary = {
+                stringResource(
+                    if (it == ReminderAlertStyle.FullScreenRing) {
+                        R.string.settings_alert_sound_ring_summary
+                    } else {
+                        R.string.settings_alert_sound_once_summary
+                    },
+                )
+            },
+            onSelect = { viewModel.setCalendarAlertStyle(calendarId, it) },
+            onDismiss = { alertSoundPicker = null },
+        )
+    }
     overrideDialog?.let { target ->
         val map = if (target.isAllDay) {
             state.perCalendarAllDayReminderOverride
@@ -159,9 +225,14 @@ private fun CalendarReminderEntry(
     expanded: Boolean,
     notifying: Boolean,
     blocked: Boolean,
+    heldBack: FullScreenHeldBack,
     onToggleExpand: () -> Unit,
     onSetNotifying: (Boolean) -> Unit,
     onOpenSound: () -> Unit,
+    onOpenRingSettings: () -> Unit,
+    onEditAlertStyle: () -> Unit,
+    onEditAlertSound: () -> Unit,
+    onAllowFullScreen: () -> Unit,
     onOpenSpecialDates: () -> Unit,
     onEditOverride: (OverrideTarget) -> Unit,
 ) {
@@ -172,6 +243,7 @@ private fun CalendarReminderEntry(
         summary = when {
             !notifying -> stringResource(R.string.settings_calendar_notifications_off)
             blocked -> stringResource(R.string.settings_notifications_blocked)
+            heldBack.any -> stringResource(R.string.settings_full_screen_held_back)
             else -> null
         },
         position = when {
@@ -190,6 +262,7 @@ private fun CalendarReminderEntry(
     ) {
         val managed = calendar.id in state.managedCalendarIds
         val takesOverrides = calendar.canModifyContents && !managed
+        val alertStyle = state.reminderAlertStyles.alertStyleFor(calendar.id)
         val nested = MaterialTheme.colorScheme.surfaceContainerHighest
         // The options round off their calendar; mid-group they keep the row gap.
         Column(if (closesGroup) Modifier else Modifier.padding(bottom = 2.dp)) {
@@ -203,16 +276,54 @@ private fun CalendarReminderEntry(
             )
             GroupedRow(
                 title = stringResource(R.string.settings_notification_sound),
-                summary = if (blocked) {
-                    stringResource(R.string.settings_notifications_blocked_hint)
-                } else {
-                    stringResource(R.string.settings_calendar_notification_sound_hint)
+                summary = when {
+                    blocked -> stringResource(R.string.settings_notifications_blocked_hint)
+                    alertStyle == ReminderAlertStyle.FullScreenRing ->
+                        stringResource(R.string.settings_calendar_notification_sound_ring_hint)
+                    else -> stringResource(R.string.settings_calendar_notification_sound_hint)
                 },
-                position = if (managed || takesOverrides) Position.Middle else Position.Bottom,
+                position = Position.Middle,
                 container = nested,
                 trailing = { ExternalLinkIcon() },
                 onClick = onOpenSound,
             )
+            val lastAlertRow = !(managed || takesOverrides)
+            GroupedRow(
+                title = stringResource(R.string.settings_alert_style),
+                summary = alertStyleLabel(alertStyle),
+                position = if (lastAlertRow && !alertStyle.isFullScreen) Position.Bottom else Position.Middle,
+                container = nested,
+                onClick = onEditAlertStyle,
+            )
+            if (alertStyle.isFullScreen) {
+                GroupedRow(
+                    title = stringResource(R.string.settings_alert_sound),
+                    summary = alertSoundLabel(alertStyle),
+                    position = if (lastAlertRow && !heldBack.any) Position.Bottom else Position.Middle,
+                    container = nested,
+                    onClick = onEditAlertSound,
+                )
+            }
+            if (heldBack.ring) {
+                GroupedRow(
+                    title = stringResource(R.string.reminder_ring_channel_name),
+                    summary = stringResource(R.string.settings_ring_blocked_hint),
+                    position = if (lastAlertRow && !heldBack.permission) Position.Bottom else Position.Middle,
+                    container = nested,
+                    trailing = { ExternalLinkIcon() },
+                    onClick = onOpenRingSettings,
+                )
+            }
+            if (heldBack.permission) {
+                GroupedRow(
+                    title = stringResource(R.string.settings_full_screen_permission),
+                    summary = stringResource(R.string.settings_full_screen_permission_hint),
+                    position = if (lastAlertRow) Position.Bottom else Position.Middle,
+                    container = nested,
+                    trailing = { ExternalLinkIcon() },
+                    onClick = onAllowFullScreen,
+                )
+            }
             if (managed) {
                 GroupedRow(
                     title = stringResource(R.string.settings_default_reminder_allday),
@@ -290,3 +401,36 @@ private fun calendarOverrideSummary(
     ReminderOverride.None -> stringResource(R.string.reminder_none)
     is ReminderOverride.Minutes -> reminderChoiceLabel(choice.minutes)
 }
+
+/** What keeps a full-screen calendar from alerting as chosen: the missing permission, or the blocked ring channel. */
+private data class FullScreenHeldBack(val permission: Boolean, val ring: Boolean) {
+    val any: Boolean get() = permission || ring
+}
+
+private fun fullScreenHeldBack(
+    style: ReminderAlertStyle,
+    notifying: Boolean,
+    blocked: Boolean,
+    ringBlocked: Boolean,
+    canFullScreen: Boolean,
+): FullScreenHeldBack {
+    val live = notifying && !blocked
+    return FullScreenHeldBack(
+        permission = live && style.isFullScreen && !canFullScreen,
+        ring = live && style == ReminderAlertStyle.FullScreenRing && ringBlocked,
+    )
+}
+
+@Composable
+private fun alertStyleLabel(style: ReminderAlertStyle): String = stringResource(
+    if (style.isFullScreen) R.string.settings_alert_style_full_screen else R.string.settings_alert_style_notification,
+)
+
+@Composable
+private fun alertSoundLabel(style: ReminderAlertStyle): String = stringResource(
+    if (style == ReminderAlertStyle.FullScreenRing) R.string.settings_alert_sound_ring else R.string.settings_alert_sound_once,
+)
+
+/** Whether Android lets full-screen alerts open, re-read on every `ON_RESUME`. */
+@Composable
+private fun rememberCanUseFullScreenIntent(): Boolean = rememberOnResume { it.canUseFullScreenIntent() }

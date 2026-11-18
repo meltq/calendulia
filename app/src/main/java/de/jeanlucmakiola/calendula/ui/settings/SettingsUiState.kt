@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.ui.settings
 
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.calendula.data.prefs.PastEventDisplay
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
@@ -102,6 +103,8 @@ data class SettingsUiState(
     val reminderCalendars: List<CalendarSource> = emptyList(),
     /** Calendars whose reminders Calendula doesn't post (#272). */
     val mutedReminderCalendarIds: Set<Long> = emptySet(),
+    /** Per-calendar alert styles (#171); absent means a plain notification. */
+    val reminderAlertStyles: Map<Long, ReminderAlertStyle> = emptyMap(),
     /** Whether the Samsung notification-category hint has been dismissed (#145); hidden until prefs load. */
     val notificationCategoryHintDismissed: Boolean = true,
     /**

@@ -376,6 +376,8 @@
     <string name="reminder_onboarding_skip_button">Not now</string>
     <string name="reminder_action_snooze">Snooze</string>
     <string name="reminder_action_dismiss">Dismiss</string>
+    <string name="reminder_ring_channel_name">Ringing reminders</string>
+    <string name="reminder_ring_channel_description">Full-screen reminders that ring until you dismiss them. Calendula plays their sound itself.</string>
     <!-- Day context prefix in a reminder for an event on another day (v2.15.0) -->
     <string name="reminder_day_today">Today</string>
     <string name="reminder_day_tomorrow">Tomorrow</string>
@@ -743,6 +745,21 @@
     <string name="settings_notification_category_hint">On Samsung phones, new notification categories can start switched off. If a calendar\'s reminders don\'t arrive, check that its category is on.</string>
     <string name="settings_notification_category_hint_open">Open settings</string>
     <string name="settings_calendar_notification_sound_hint">Sound, vibration and pop-ups for this calendar, in system settings</string>
+    <string name="settings_alert_style">Alert style</string>
+    <string name="settings_alert_style_notification">Notification</string>
+    <string name="settings_alert_style_notification_summary">A notification that pops up and waits in the shade</string>
+    <string name="settings_alert_style_full_screen">Full-screen alert</string>
+    <string name="settings_alert_style_full_screen_summary">Fills the screen, even on the lock screen, until you dismiss or snooze it</string>
+    <string name="settings_alert_sound">Full-screen sound</string>
+    <string name="settings_alert_sound_once">Play sound once</string>
+    <string name="settings_alert_sound_once_summary">This calendar\'s notification sound, once</string>
+    <string name="settings_alert_sound_ring">Ring until dismissed</string>
+    <string name="settings_alert_sound_ring_summary">Your alarm sound and vibration, like an alarm, also in Do Not Disturb when alarms may sound</string>
+    <string name="settings_calendar_notification_sound_ring_hint">Ringing reminders use your alarm sound. This sets the sound of the ones handed back to the shade.</string>
+    <string name="settings_full_screen_held_back">Full-screen alerts held back</string>
+    <string name="settings_ring_blocked_hint">Blocked in system settings, so this calendar\'s reminders only sound once — tap to allow</string>
+    <string name="settings_full_screen_permission">Allow full-screen alerts</string>
+    <string name="settings_full_screen_permission_hint">Android blocks Calendula\'s full-screen alerts, so they only pop up as notifications. Tap to allow them.</string>
     <string name="settings_calendar_reminder_inherits">Default (%1$s)</string>
     <string name="settings_reliable_delivery">Reliable delivery</string>
     <string name="settings_reliable_delivery_hint">Android may delay reminders to save battery. Exempt Calendula so they arrive on time.</string>

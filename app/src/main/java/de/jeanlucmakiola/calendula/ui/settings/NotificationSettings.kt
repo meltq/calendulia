@@ -22,7 +22,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -34,10 +33,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.core.net.toUri
-import androidx.lifecycle.Lifecycle
-import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LifecycleResumeEffect
-import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.ui.common.DurationPicker
@@ -51,6 +47,7 @@ import de.jeanlucmakiola.floret.components.CollapsingScaffold
 import de.jeanlucmakiola.floret.components.GroupedRow
 import de.jeanlucmakiola.floret.components.GroupedSwitchRow
 import de.jeanlucmakiola.floret.components.IconInfoCard
+import de.jeanlucmakiola.floret.components.OptionPicker
 import de.jeanlucmakiola.floret.components.Position
 import de.jeanlucmakiola.floret.components.SelectedCheck
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
@@ -296,20 +293,18 @@ private val SNOOZE_PRESETS = listOf(5, 10, 15, 30, 60)
  * `ON_RESUME` so a change made in system settings shows up at once.
  */
 @Composable
-private fun rememberBatteryOptimizationExempt(): Boolean {
+private fun rememberBatteryOptimizationExempt(): Boolean = rememberOnResume(::isIgnoringBatteryOptimizations)
+
+/** [read], re-read on every `ON_RESUME` so a change made in system settings shows up at once. */
+@Composable
+internal fun rememberOnResume(read: (Context) -> Boolean): Boolean {
     val context = LocalContext.current
-    var exempt by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
-    val lifecycleOwner = LocalLifecycleOwner.current
-    DisposableEffect(lifecycleOwner) {
-        val observer = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_RESUME) {
-                exempt = isIgnoringBatteryOptimizations(context)
-            }
-        }
-        lifecycleOwner.lifecycle.addObserver(observer)
-        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
+    var value by remember { mutableStateOf(read(context)) }
+    LifecycleResumeEffect(context) {
+        value = read(context)
+        onPauseOrDispose {}
     }
-    return exempt
+    return value
 }
 
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean {

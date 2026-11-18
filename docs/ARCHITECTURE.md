@@ -411,6 +411,32 @@ for snoozes. The settings screen re-reads `ReminderChannels.status` on every
 resume and marks a calendar "Blocked in system settings" when the app, its
 channel or its account group is switched off there.
 
+**Full-screen alerts (#171).** Settings → Notifications gives each calendar an
+alert style (`SettingsPrefs.reminderAlertStyles`): a plain notification, a
+full-screen alert that sounds once, or one that rings until handled. Only
+`ReminderNotifier.post` reads it, and `ReminderChannels.channelFor(id, style)`
+picks the channel. "Sound once" stays on the calendar's own channel, so its
+sound is still the one chosen in system settings, and adds a full-screen intent
+to `ReminderAlertActivity`. "Ring" starts `ReminderRingService`, which goes
+foreground on the shared silent `reminders_ring` channel and loops the alarm
+sound with vibration through floret-kit's `ring` module — the same player
+Clockula's alarms use. One reminder rings at a time; a newer one takes over and
+hands the older back to the shade quietly, as does a ring left unanswered for
+ten minutes, and switching the calendar away from ringing. Dismiss and Snooze,
+from the screen, the notification or a swipe, all go through
+`ReminderActionReceiver`, so the ring stops and the screen closes
+(`FullScreenAlerts`) however the reminder was handled. Starts and stops reach
+the service as commands, so a dismiss sent while a newer ring is on its way
+applies in order rather than killing it, and the service re-reads the settings
+once a ring arrives, so a style change or mute that raced a scan still wins. A
+blocked calendar, account group or ring channel never rings (Settings flags a
+blocked ring channel next to each ringing calendar, beside #145's blocked status), the tone pauses
+for a phone call, and a ring restarted after a process death only rings out
+what was left of its ten minutes. When Android 14+
+withholds `USE_FULL_SCREEN_INTENT`, the intent is left off and the alert is a
+heads-up; Settings shows a row leading to the system switch. When Android
+refuses the ring service, the reminder falls back to sounding once.
+
 Deliberately absent: a fallback to the provider's `EVENT_REMINDER` broadcast.
 Keeping both would double-post wherever the provider works, and Etar's way out —
 a latch that disables its own scheduling once a real broadcast arrives — cannot

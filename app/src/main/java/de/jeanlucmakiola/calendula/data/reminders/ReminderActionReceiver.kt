@@ -13,8 +13,8 @@ import javax.inject.Inject
 /**
  * Handles the "Snooze" and "Dismiss" actions on a reminder notification, plus
  * the internal re-show when a snooze elapses. All three are app-internal
- * intents (notification action buttons and our own [ReminderSnoozeScheduler]
- * alarm), so the receiver is not exported.
+ * intents (notification action buttons, the full-screen alert's buttons and
+ * our own [ReminderSnoozeScheduler] alarm), so the receiver is not exported.
  *
  * - **Dismiss** just cancels the notification — the scan's watermark has moved
  *   past this reminder, so nothing re-posts it.
@@ -74,6 +74,9 @@ class ReminderActionReceiver : BroadcastReceiver() {
          */
         const val ACTION_OPEN = "de.jeanlucmakiola.calendula.reminders.OPEN"
 
+        /** Not handled here either: the slot of the full-screen alert's own intent (#171). */
+        const val ACTION_ALERT_SCREEN = "de.jeanlucmakiola.calendula.reminders.ALERT_SCREEN"
+
         private const val EXTRA_ALERT_KEY = "alert_key"
         private const val EXTRA_EVENT_ID = "event_id"
         private const val EXTRA_CALENDAR_ID = "calendar_id"
@@ -94,15 +97,20 @@ class ReminderActionReceiver : BroadcastReceiver() {
             Intent(context, ReminderActionReceiver::class.java).apply {
                 this.action = action
                 data = "calendula://reminder/${identity(alert, action)}".toUri()
-                putExtra(EXTRA_ALERT_KEY, alert.key)
-                putExtra(EXTRA_EVENT_ID, alert.eventId)
-                putExtra(EXTRA_CALENDAR_ID, alert.calendarId)
-                putExtra(EXTRA_BEGIN, alert.beginMillis)
-                putExtra(EXTRA_END, alert.endMillis)
-                putExtra(EXTRA_TITLE, alert.title)
-                putExtra(EXTRA_LOCATION, alert.location)
-                putExtra(EXTRA_ALL_DAY, alert.isAllDay)
+                putAlert(alert)
             }
+
+        /** Carries [alert] as extras, for [alertFrom] to read back. */
+        fun Intent.putAlert(alert: ReminderAlert): Intent = apply {
+            putExtra(EXTRA_ALERT_KEY, alert.key)
+            putExtra(EXTRA_EVENT_ID, alert.eventId)
+            putExtra(EXTRA_CALENDAR_ID, alert.calendarId)
+            putExtra(EXTRA_BEGIN, alert.beginMillis)
+            putExtra(EXTRA_END, alert.endMillis)
+            putExtra(EXTRA_TITLE, alert.title)
+            putExtra(EXTRA_LOCATION, alert.location)
+            putExtra(EXTRA_ALL_DAY, alert.isAllDay)
+        }
 
         /**
          * A stable request code per (alert, action), so one notification's
@@ -115,6 +123,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
                 ACTION_DISMISS -> 2
                 ACTION_SHOW -> 3
                 ACTION_OPEN -> 4
+                ACTION_ALERT_SCREEN -> 5
                 else -> 0
             }
             return (identity(alert, action).toInt() shl 3) + actionOffset
@@ -123,7 +132,7 @@ class ReminderActionReceiver : BroadcastReceiver() {
         private fun identity(alert: ReminderAlert, action: String): Long =
             if (action == ACTION_SHOW) alert.occurrenceKey else alert.key
 
-        private fun alertFrom(intent: Intent): ReminderAlert? {
+        fun alertFrom(intent: Intent): ReminderAlert? {
             if (!intent.hasExtra(EXTRA_ALERT_KEY)) return null
             return ReminderAlert(
                 key = intent.getLongExtra(EXTRA_ALERT_KEY, 0L),
