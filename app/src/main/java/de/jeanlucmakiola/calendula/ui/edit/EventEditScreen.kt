@@ -125,6 +125,10 @@ import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventAttendee
 import de.jeanlucmakiola.calendula.domain.EventColorOption
 import de.jeanlucmakiola.calendula.domain.EventForm
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
+import de.jeanlucmakiola.calendula.ui.common.DEFAULT_FIXED_TIME_REMINDER
+import de.jeanlucmakiola.calendula.ui.common.FixedTimeReminderEditor
+import de.jeanlucmakiola.calendula.ui.common.fixedTimeReminderLabel
 import de.jeanlucmakiola.calendula.domain.startInstant
 import de.jeanlucmakiola.calendula.domain.endInstant
 import de.jeanlucmakiola.calendula.domain.resolvedZone
@@ -153,6 +157,7 @@ import de.jeanlucmakiola.calendula.ui.common.LocalSoftenColors
 import de.jeanlucmakiola.calendula.ui.common.eventAccent
 import de.jeanlucmakiola.calendula.ui.common.eventFill
 import de.jeanlucmakiola.floret.components.DialogAmountField
+import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.DialogUnitDropdown
 import de.jeanlucmakiola.calendula.ui.common.eventFormFieldIcon
 import de.jeanlucmakiola.calendula.ui.common.eventFormFieldLabel
@@ -875,7 +880,9 @@ private fun EventEditContent(
             Spacer(Modifier.height(gap))
             RemindersSection(
                 reminders = form.reminders,
+                fixedReminders = if (form.isAllDay) emptyList() else form.fixedReminders,
                 onRemove = viewModel::removeReminder,
+                onRemoveFixed = viewModel::removeFixedReminder,
                 onAdd = { sheet = EditSheet.Reminder },
             )
         }
@@ -1284,9 +1291,25 @@ private fun LocationCard(
  * connected corners, the last row being "Add reminder".
  */
 @Composable
-private fun RemindersSection(reminders: List<Int>, onRemove: (Int) -> Unit, onAdd: () -> Unit) {
-    val rows = reminders.size + 1
-    reminders.forEachIndexed { index, minutes ->
+private fun RemindersSection(
+    reminders: List<Int>,
+    fixedReminders: List<FixedTimeReminder>,
+    onRemove: (Int) -> Unit,
+    onRemoveFixed: (FixedTimeReminder) -> Unit,
+    onAdd: () -> Unit,
+) {
+    val rows = fixedReminders.size + reminders.size + 1
+    fixedReminders.forEachIndexed { index, reminder ->
+        GroupedItemCard(
+            position = positionOf(index, rows),
+            icon = Icons.Default.Notifications,
+            title = fixedTimeReminderLabel(reminder),
+            removeContentDescription = stringResource(R.string.event_edit_remove_reminder),
+            onRemove = { onRemoveFixed(reminder) },
+        )
+    }
+    reminders.forEachIndexed { i, minutes ->
+        val index = fixedReminders.size + i
         GroupedItemCard(
             position = positionOf(index, rows),
             icon = Icons.Default.Notifications,
@@ -1297,7 +1320,7 @@ private fun RemindersSection(reminders: List<Int>, onRemove: (Int) -> Unit, onAd
     }
     AddActionCard(
         label = stringResource(R.string.event_edit_add_reminder),
-        position = positionOf(reminders.size, rows),
+        position = positionOf(rows - 1, rows),
         onClick = onAdd,
     )
 }
@@ -1489,8 +1512,13 @@ private fun EditSheetHost(
         }
         EditSheet.Reminder -> ReminderPickerDialog(
             alreadyChosen = form.reminders,
+            offerFixedTime = !form.isAllDay,
             onSelect = { minutes ->
                 viewModel.addReminder(minutes)
+                onClose()
+            },
+            onSelectFixed = { reminder ->
+                viewModel.addFixedReminder(reminder)
                 onClose()
             },
             onDismiss = onClose,
@@ -1581,10 +1609,14 @@ private fun FieldPickerDialog(
 @Composable
 private fun ReminderPickerDialog(
     alreadyChosen: List<Int>,
+    offerFixedTime: Boolean,
     onSelect: (Int) -> Unit,
+    onSelectFixed: (FixedTimeReminder) -> Unit,
     onDismiss: () -> Unit,
 ) {
     var customMode by rememberSaveable { mutableStateOf(false) }
+    var fixedMode by rememberSaveable { mutableStateOf(false) }
+    var pendingFixed by remember { mutableStateOf<FixedTimeReminder?>(null) }
     var amountText by rememberSaveable { mutableStateOf("") }
     var unit by rememberSaveable { mutableStateOf(ReminderUnit.Minutes) }
     val customMinutes = amountText.toIntOrNull()
@@ -1595,23 +1627,44 @@ private fun ReminderPickerDialog(
         title = stringResource(R.string.event_edit_add_reminder),
         onDismiss = onDismiss,
         actions = {
-            // The quick-pick list adds on tap; only the custom step needs Add.
+            // The quick-pick list adds on tap; only the custom steps need Add.
             if (customMode) {
                 TextButton(
                     enabled = customMinutes != null && customMinutes !in alreadyChosen,
                     onClick = { customMinutes?.let(onSelect) },
                 ) { Text(stringResource(R.string.event_edit_add)) }
+            } else if (fixedMode) {
+                TextButton(
+                    enabled = pendingFixed != null,
+                    onClick = { pendingFixed?.let(onSelectFixed) },
+                ) { Text(stringResource(R.string.event_edit_add)) }
             }
         },
     ) {
-        if (!customMode) {
+        if (fixedMode) {
+            GroupedHint(text = stringResource(R.string.event_edit_reminder_fixed_hint))
+            Spacer(Modifier.height(8.dp))
+            FixedTimeReminderEditor(
+                initial = DEFAULT_FIXED_TIME_REMINDER,
+                onValueChange = { pendingFixed = it },
+                connected = false,
+            )
+        } else if (!customMode) {
             val presets = REMINDER_PRESETS.filterNot { it in alreadyChosen }
-            val rowCount = presets.size + 1
+            val rowCount = presets.size + if (offerFixedTime) 2 else 1
             presets.forEachIndexed { index, minutes ->
                 GroupedRow(
                     title = reminderLeadTimeLabel(minutes),
                     position = positionOf(index, rowCount),
                     onClick = { onSelect(minutes) },
+                )
+            }
+            if (offerFixedTime) {
+                GroupedRow(
+                    title = stringResource(R.string.reminder_fixed_at_set_time),
+                    summary = stringResource(R.string.event_edit_reminder_fixed_summary),
+                    position = positionOf(presets.size, rowCount),
+                    onClick = { fixedMode = true },
                 )
             }
             GroupedRow(

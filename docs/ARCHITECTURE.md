@@ -437,6 +437,51 @@ withholds `USE_FULL_SCREEN_INTENT`, the intent is left off and the alert is a
 heads-up; Settings shows a row leading to the system switch. When Android
 refuses the ring service, the reminder falls back to sounding once.
 
+**Reminders at a set time (#459).** "1 day before at 20:00" on a timed event
+is an ordinary `Reminders` row whose offset is the distance from that wall-clock
+moment (device zone) to the start, so it syncs and fires everywhere — the scan
+plans it like any lead time. Only the editor knows it as a pattern
+(`EventForm.fixedReminders`), and it re-derives the offset from the start it
+saves with, so moving the event, in the form or by drag, keeps the wall clock.
+Reading a row back is a guess, made in one place (`classifyTimedReminder`): an
+offset is fixed-time only when it lands on a known pattern — a current or
+replaced default, or one saved by hand on this device
+(`recentFixedTimeReminders`, capped). Guessing from the offset's shape alone
+would turn ordinary leads ("12 hours before") into fixed ones. Limits: where a
+lead and a known pattern coincide ("1 day before" on an event at the default's
+own time) the pattern wins, and a pattern that falls out of the recents reads as
+a lead again — either way the alarm fires at the same moment until the start's
+time of day changes. A recurring series stores one offset for all occurrences,
+so it counts clock minutes rather than real ones (`wallClock`); the occurrence
+whose lead spans a DST change then fires an hour off, as in every other app
+reading that row. On another device or app the row is simply a lead time.
+New timed events get the default (`SettingsKeys.defaultFixedTimeReminder`, with
+a per-calendar inherit/off/value override) like the lead-time defaults.
+
+**The daily summary (#459)** rides the same scan and watermark: its moment is
+due when it falls in `(lastScan, now]` (`scheduleDigest`), only the latest one
+counts after a long gap, and it is dropped once the day it lists has passed.
+It is independent of the event-reminder switch, posts on its own channel
+(`DailyDigestNotifier`), lists switched-on calendars minus its own exclusions,
+and replaces the previous summary — or withdraws it when the day is empty.
+Each day is listed once: the day is recorded as soon as it is posted
+(`ReminderStatePrefs.lastDigestDay`), so neither a pass failing later nor a later
+time picked the same evening lists it twice, and changing the switch, time or
+day stamps `dailyDigestArmedAt`, so a moment that passed before the change is
+not owed by it. A failing summary is logged and skipped; it never costs the
+event reminders of the same pass, and a failing reminder pass still arms a retry
+and the summary's next moment. Switching between "today's" and "tomorrow's"
+events clears the day last listed, so the first summary of the new mode comes.
+The notification names its date and times out when that day ends.
+Its channel's blocked state is read separately (`DailyDigestNotifier.isChannelOff`,
+with the app-wide block from `ReminderChannels.status`); while it is off the
+scan neither posts nor records the day, so allowing it brings the summary back.
+The channel is created when the summary is switched on, so a phone that starts
+new categories off shows it blocked in settings before the first summary.
+The per-calendar reminder mute does not apply: a calendar too noisy to ping per
+event can still belong in the overview, and the summary has its own
+per-calendar switch next to it.
+
 Deliberately absent: a fallback to the provider's `EVENT_REMINDER` broadcast.
 Keeping both would double-post wherever the provider works, and Etar's way out —
 a latch that disables its own scheduling once a real broadcast arrives — cannot

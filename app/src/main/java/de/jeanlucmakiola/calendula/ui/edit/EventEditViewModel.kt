@@ -13,7 +13,12 @@ import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.data.time.ZoneSource
 import de.jeanlucmakiola.calendula.data.prefs.firstDayOfWeek
 import de.jeanlucmakiola.calendula.data.prefs.resolveDefaultEventDuration
+import de.jeanlucmakiola.calendula.data.prefs.resolveDefaultFixedTimeReminder
 import de.jeanlucmakiola.calendula.data.prefs.resolveDefaultReminder
+import de.jeanlucmakiola.calendula.domain.reminders.FIXED_ORDER
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
+import de.jeanlucmakiola.calendula.domain.fixedReminderOffsets
+import de.jeanlucmakiola.calendula.domain.withFixedTimeRemindersRead
 import de.jeanlucmakiola.calendula.domain.canSaveApartFromSeries
 import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.Availability
@@ -139,6 +144,7 @@ enum class ImportSource(internal val ownsDuration: Boolean) {
 data class ImportReminderPrompt(
     val currentReminderCount: Int,
     val defaultReminders: List<Int>,
+    val defaultFixedReminders: List<FixedTimeReminder> = emptyList(),
 )
 
 /**
@@ -208,6 +214,8 @@ class EventEditViewModel @Inject constructor(
         val zone: TimeZone,
         /** The event as loaded, on the tapped occurrence's times — what Share exports. */
         val detail: EventDetail,
+        /** The fixed-time patterns its reminders were read against, so a re-read splits alike. */
+        val knownFixed: Set<FixedTimeReminder>,
     ) {
         val original: EventForm get() = snapshot.form
     }
@@ -225,7 +233,13 @@ class EventEditViewModel @Inject constructor(
         val allDay: List<Int>,
         val timedOverrides: Map<Long, List<Int>>,
         val allDayOverrides: Map<Long, List<Int>>,
+        val fixed: FixedTimeReminder?,
+        val fixedOverrides: Map<Long, FixedTimeReminder?>,
     ) {
+        /** The fixed-time reminders a new event on [calendarId] gets (#459); none on an all-day one. */
+        fun resolveFixedFor(calendarId: Long?, isAllDay: Boolean): List<FixedTimeReminder> =
+            if (isAllDay) emptyList() else listOfNotNull(resolveDefaultFixedTimeReminder(fixed, fixedOverrides, calendarId))
+
         /** The default reminders for an event on [calendarId] of the given kind. */
         fun resolveFor(calendarId: Long?, isAllDay: Boolean): List<Int> = resolveDefaultReminder(
             timedGlobal = timed,
@@ -435,7 +449,7 @@ class EventEditViewModel @Inject constructor(
         if (source.ownsDuration) _durationTouched.value = true else applyDefaultDuration()
         when (source) {
             ImportSource.Insert, ImportSource.InsertOpenEnded ->
-                if (form.reminders.isNotEmpty()) _remindersTouched.value = true
+                if (form.reminders.isNotEmpty() || form.fixedReminders.isNotEmpty()) _remindersTouched.value = true
                 else applyDefaultReminder()
 
             ImportSource.File -> {
@@ -465,26 +479,34 @@ class EventEditViewModel @Inject constructor(
             val form = _form.value ?: return@launch
             if (_editTarget.value != null || _remindersTouched.value) return@launch
             val reminders = defaults.resolveFor(targetId, form.isAllDay)
+            val fixed = defaults.resolveFixedFor(targetId, form.isAllDay)
             // The duration default resolves in parallel, so both must compose
             // onto the current form, not a pre-suspend copy.
-            applyDefault { it.copy(reminders = reminders) }
+            applyDefault { it.copy(reminders = reminders, fixedReminders = fixed) }
             // Surface the section so an auto-applied default is visible and
             // removable, even when Reminders isn't a default-shown field.
-            if (reminders.isNotEmpty()) {
+            if (reminders.isNotEmpty() || fixed.isNotEmpty()) {
                 _revealed.value = _revealed.value + EventFormField.Reminders
             }
         }
     }
 
-    /** Snapshot the four settings-default reminder flows into one value. */
+    /** Snapshot the settings-default reminder flows into one value. */
     private suspend fun reminderDefaults(): ReminderDefaults = combine(
-        settingsPrefs.defaultReminderMinutes,
-        settingsPrefs.defaultAllDayReminderMinutes,
-        settingsPrefs.perCalendarReminderOverride,
-        settingsPrefs.perCalendarAllDayReminderOverride,
-    ) { timed, allDay, timedOv, allDayOv ->
-        ReminderDefaults(timed, allDay, timedOv, allDayOv)
+        combine(
+            settingsPrefs.defaultReminderMinutes,
+            settingsPrefs.defaultAllDayReminderMinutes,
+            settingsPrefs.perCalendarReminderOverride,
+            settingsPrefs.perCalendarAllDayReminderOverride,
+            ::Quadruple,
+        ),
+        settingsPrefs.defaultFixedTimeReminder,
+        settingsPrefs.perCalendarFixedTimeReminderOverride,
+    ) { (timed, allDay, timedOv, allDayOv), fixed, fixedOv ->
+        ReminderDefaults(timed, allDay, timedOv, allDayOv, fixed, fixedOv)
     }.first()
+
+    private data class Quadruple<A, B, C, D>(val a: A, val b: B, val c: C, val d: D)
 
     /**
      * Stretch a new timed event to the configured default length (#54) — the
@@ -531,15 +553,19 @@ class EventEditViewModel @Inject constructor(
         val opened = session
         viewModelScope.launch {
             val targetId = resolvedCalendarId.first()
-            val default = reminderDefaults().resolveFor(targetId, form.isAllDay)
+            val defaults = reminderDefaults()
+            val default = defaults.resolveFor(targetId, form.isAllDay)
+            val fixed = defaults.resolveFixedFor(targetId, form.isAllDay)
             // Bail if the form closed or became an edit while we resolved.
             if (opened != session) return@launch
             val current = _form.value ?: return@launch
             if (_editTarget.value != null) return@launch
-            if (default.isEmpty() || default == current.reminders) return@launch
+            if (default.isEmpty() && fixed.isEmpty()) return@launch
+            if (default == current.reminders && fixed == current.fixedReminders) return@launch
             _importReminderPrompt.value = ImportReminderPrompt(
-                currentReminderCount = current.reminders.size,
+                currentReminderCount = current.reminders.size + current.fixedReminders.size,
                 defaultReminders = default,
+                defaultFixedReminders = fixed,
             )
         }
     }
@@ -549,7 +575,7 @@ class EventEditViewModel @Inject constructor(
         val prompt = _importReminderPrompt.value ?: return
         _importReminderPrompt.value = null
         // Already frozen as touched by openImported; this just swaps the values.
-        edit { it.copy(reminders = prompt.defaultReminders) }
+        edit { it.copy(reminders = prompt.defaultReminders, fixedReminders = prompt.defaultFixedReminders) }
         _revealed.value = _revealed.value + EventFormField.Reminders
     }
 
@@ -579,14 +605,15 @@ class EventEditViewModel @Inject constructor(
                 if (opened == session) _loadFailed.value = true
                 return@launch
             }
+            val knownFixed = settingsPrefs.knownFixedTimeReminders.first()
             if (opened != session) return@launch
             val zone = zoneSource.current()
             val begin = beginMillis.takeUnless { it == NO_OCCURRENCE_TIME }
                 ?: detail.instance.start.toEpochMilliseconds()
             val end = endMillis.takeUnless { it == NO_OCCURRENCE_TIME }
                 ?: detail.instance.end.toEpochMilliseconds()
-            val snapshot = detail.toEditSnapshot(begin, end, zone)
-            _editTarget.value = EditTarget(eventId, snapshot, begin, end, zone, detail.atOccurrence(begin, end))
+            val snapshot = detail.toEditSnapshot(begin, end, zone).withFixedTimeRemindersRead(knownFixed, zone)
+            _editTarget.value = EditTarget(eventId, snapshot, begin, end, zone, detail.atOccurrence(begin, end), knownFixed)
             // Sections holding data must show even when not in the defaults.
             _revealed.value = snapshot.form.populatedFields()
             open(snapshot.form)
@@ -691,12 +718,36 @@ class EventEditViewModel @Inject constructor(
 
     fun addReminder(minutes: Int) {
         _remindersTouched.value = true
-        edit { it.copy(reminders = (it.reminders + minutes).distinct().sorted()) }
+        edit {
+            // A lead firing with a set-time reminder would be one row once saved.
+            if (minutes in it.fixedReminderOffsets(zoneSource.current())) it
+            else it.copy(reminders = (it.reminders + minutes).distinct().sorted())
+        }
     }
 
     fun removeReminder(minutes: Int) {
         _remindersTouched.value = true
         edit { it.copy(reminders = it.reminders - minutes) }
+    }
+
+    /**
+     * Add an "N days before at HH:MM" reminder (#459); timed events only. A lead
+     * time landing on the same moment is replaced by it — the two would be one
+     * row once saved.
+     */
+    fun addFixedReminder(reminder: FixedTimeReminder) {
+        _remindersTouched.value = true
+        edit { form ->
+            if (form.isAllDay) return@edit form
+            val withFixed = form.copy(fixedReminders = (form.fixedReminders + reminder).distinct().sortedWith(FIXED_ORDER))
+            val offsets = withFixed.fixedReminderOffsets(zoneSource.current()).toSet()
+            withFixed.copy(reminders = form.reminders.filterNot { it in offsets })
+        }
+    }
+
+    fun removeFixedReminder(reminder: FixedTimeReminder) {
+        _remindersTouched.value = true
+        edit { it.copy(fixedReminders = it.fixedReminders - reminder) }
     }
 
     /**
@@ -815,6 +866,7 @@ class EventEditViewModel @Inject constructor(
                 val fresh = try {
                     repository.eventDetail(target.eventId)
                         .toEditSnapshot(target.beginMillis, target.endMillis, target.zone)
+                        .withFixedTimeRemindersRead(target.knownFixed, target.zone)
                 } catch (e: CancellationException) {
                     throw e
                 } catch (e: NoSuchEventException) {
@@ -827,6 +879,17 @@ class EventEditViewModel @Inject constructor(
                 if (fresh != null && fresh != target.snapshot) {
                     settle(SaveUiState.AwaitingConflict(scope))
                     return@launch
+                }
+            }
+            // Remembered before the write, so the rows read back as these
+            // reminders from the first re-read on (#459).
+            if (!form.isAllDay && form.fixedReminders.isNotEmpty()) {
+                try {
+                    settingsPrefs.rememberFixedTimeReminders(form.fixedReminders)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    Log.w(TAG, "Could not remember the set-time reminders", e)
                 }
             }
             val result = try {
@@ -950,3 +1013,7 @@ class EventEditViewModel @Inject constructor(
         _form.value = _form.value?.let(block)
     }
 }
+
+/** [EditSnapshot.form] with its timed reminders read back into lead times and fixed-time ones. */
+private fun EditSnapshot.withFixedTimeRemindersRead(known: Set<FixedTimeReminder>, zone: TimeZone): EditSnapshot =
+    copy(form = form.withFixedTimeRemindersRead(known, zone))

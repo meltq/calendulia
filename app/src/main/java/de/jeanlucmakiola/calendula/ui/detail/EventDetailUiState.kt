@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.ui.detail
 import de.jeanlucmakiola.calendula.domain.EventDetail
 import de.jeanlucmakiola.calendula.domain.FailureReason
 import de.jeanlucmakiola.calendula.domain.RichText
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
 
 /**
  * UI state for the event-detail screen (spec S4).
@@ -26,6 +27,10 @@ sealed interface EventDetailUiState {
         val phoneLinks: EventPhoneLinks = EventPhoneLinks(),
         /** The description as drawn — HTML rendered (#271); null when there is none. */
         val description: RichText? = null,
+        /** Reminder offsets that read as "N days before at HH:MM" (#459), by raw minutes. */
+        val fixedReminders: Map<Int, FixedTimeReminder> = emptyMap(),
+        /** The fixed-time patterns the reminders were read against. */
+        val knownFixed: Set<FixedTimeReminder> = emptySet(),
     ) : EventDetailUiState
 }
 

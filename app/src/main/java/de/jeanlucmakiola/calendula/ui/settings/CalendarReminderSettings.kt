@@ -25,10 +25,14 @@ import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
 import de.jeanlucmakiola.calendula.data.reminders.RING_CHANNEL_ID
+import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
+import de.jeanlucmakiola.calendula.data.prefs.fixedTimeOverrideFor
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
 import de.jeanlucmakiola.calendula.domain.reminders.alertStyleFor
 import de.jeanlucmakiola.calendula.ui.common.CalendarColorChip
+import de.jeanlucmakiola.calendula.ui.common.FixedTimeReminderPicker
+import de.jeanlucmakiola.calendula.ui.common.fixedTimeReminderLabel
 import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
 import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
@@ -72,6 +76,7 @@ internal fun CalendarRemindersScreen(
     var alertStylePicker by remember { mutableStateOf<Long?>(null) }
     var alertSoundPicker by remember { mutableStateOf<Long?>(null) }
     val canFullScreen = rememberCanUseFullScreenIntent()
+    var fixedOverrideFor by remember { mutableStateOf<Long?>(null) }
     val channelStatus by viewModel.channelStatus.collectAsStateWithLifecycle()
     val calendarIds = state.reminderCalendars.map { it.id }
     LifecycleResumeEffect(calendarIds) {
@@ -127,6 +132,8 @@ internal fun CalendarRemindersScreen(
                     onAllowFullScreen = { context.openFullScreenIntentSettings() },
                     onOpenSpecialDates = onOpenSpecialDates,
                     onEditOverride = { overrideDialog = it },
+                    onEditFixedOverride = { fixedOverrideFor = calendar.id },
+                    onSetInDigest = { viewModel.setCalendarInDailyDigest(calendar.id, it) },
                 )
             }
         }
@@ -175,6 +182,16 @@ internal fun CalendarRemindersScreen(
             },
             onSelect = { viewModel.setCalendarAlertStyle(calendarId, it) },
             onDismiss = { alertSoundPicker = null },
+        )
+    }
+    fixedOverrideFor?.let { calendarId ->
+        FixedTimeReminderPicker(
+            title = stringResource(R.string.settings_fixed_reminder),
+            selected = state.perCalendarFixedTimeReminderOverride.fixedTimeOverrideFor(calendarId),
+            onSelect = { viewModel.setCalendarFixedTimeReminderOverride(calendarId, it) },
+            onDismiss = { fixedOverrideFor = null },
+            inheritedLabel = fixedReminderChoiceLabel(state.defaultFixedTimeReminder),
+            inherited = state.defaultFixedTimeReminder,
         )
     }
     overrideDialog?.let { target ->
@@ -235,12 +252,17 @@ private fun CalendarReminderEntry(
     onAllowFullScreen: () -> Unit,
     onOpenSpecialDates: () -> Unit,
     onEditOverride: (OverrideTarget) -> Unit,
+    onEditFixedOverride: () -> Unit,
+    onSetInDigest: (Boolean) -> Unit,
 ) {
     val opensGroup = position == Position.Top || position == Position.Alone
     val closesGroup = position == Position.Bottom || position == Position.Alone
     GroupedRow(
         title = calendar.displayName.orUnnamed(),
         summary = when {
+            // Still in the summary, so only its reminders are off.
+            !notifying && state.dailyDigest.enabled && calendar.id !in state.dailyDigest.excludedCalendarIds ->
+                stringResource(R.string.settings_calendar_reminders_off)
             !notifying -> stringResource(R.string.settings_calendar_notifications_off)
             blocked -> stringResource(R.string.settings_notifications_blocked)
             heldBack.any -> stringResource(R.string.settings_full_screen_held_back)
@@ -263,6 +285,7 @@ private fun CalendarReminderEntry(
         val managed = calendar.id in state.managedCalendarIds
         val takesOverrides = calendar.canModifyContents && !managed
         val alertStyle = state.reminderAlertStyles.alertStyleFor(calendar.id)
+        val digestOn = state.dailyDigest.enabled
         val nested = MaterialTheme.colorScheme.surfaceContainerHighest
         // The options round off their calendar; mid-group they keep the row gap.
         Column(if (closesGroup) Modifier else Modifier.padding(bottom = 2.dp)) {
@@ -287,7 +310,7 @@ private fun CalendarReminderEntry(
                 trailing = { ExternalLinkIcon() },
                 onClick = onOpenSound,
             )
-            val lastAlertRow = !(managed || takesOverrides)
+            val lastAlertRow = !(managed || takesOverrides || digestOn)
             GroupedRow(
                 title = stringResource(R.string.settings_alert_style),
                 summary = alertStyleLabel(alertStyle),
@@ -324,6 +347,16 @@ private fun CalendarReminderEntry(
                     onClick = onAllowFullScreen,
                 )
             }
+            if (digestOn) {
+                GroupedSwitchRow(
+                    title = stringResource(R.string.settings_calendar_in_digest),
+                    checked = calendar.id !in state.dailyDigest.excludedCalendarIds,
+                    onCheckedChange = onSetInDigest,
+                    summary = stringResource(R.string.settings_calendar_in_digest_hint),
+                    position = if (managed || takesOverrides) Position.Middle else Position.Bottom,
+                    container = nested,
+                )
+            }
             if (managed) {
                 GroupedRow(
                     title = stringResource(R.string.settings_default_reminder_allday),
@@ -342,6 +375,20 @@ private fun CalendarReminderEntry(
                     position = Position.Middle,
                     container = nested,
                     onEditOverride = onEditOverride,
+                )
+                GroupedRow(
+                    title = stringResource(R.string.settings_fixed_reminder),
+                    summary = when (val fixed = state.perCalendarFixedTimeReminderOverride.fixedTimeOverrideFor(calendar.id)) {
+                        FixedTimeOverride.Inherit -> stringResource(
+                            R.string.settings_calendar_reminder_inherits,
+                            fixedReminderChoiceLabel(state.defaultFixedTimeReminder),
+                        )
+                        FixedTimeOverride.Off -> stringResource(R.string.reminder_none)
+                        is FixedTimeOverride.At -> fixedTimeReminderLabel(fixed.reminder)
+                    },
+                    position = Position.Middle,
+                    container = nested,
+                    onClick = onEditFixedOverride,
                 )
                 OverrideRow(
                     calendarId = calendar.id,

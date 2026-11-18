@@ -19,6 +19,12 @@ import de.jeanlucmakiola.calendula.data.contacts.resolveTitleTemplate
 import de.jeanlucmakiola.calendula.data.fonts.CustomFontStore
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
+import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
+import de.jeanlucmakiola.calendula.data.prefs.dailyDigest
+import de.jeanlucmakiola.calendula.data.prefs.ReminderStatePrefs
+import de.jeanlucmakiola.calendula.data.reminders.DailyDigestNotifier
+import de.jeanlucmakiola.calendula.domain.reminders.DigestDay
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
 import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.floret.reminders.reminderOverrideFor
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
@@ -79,6 +85,8 @@ class SettingsViewModel @Inject constructor(
     private val reminderScanner: ReminderScanner,
     private val reminderChannels: ReminderChannels,
     private val reminderNotifier: ReminderNotifier,
+    private val digestNotifier: DailyDigestNotifier,
+    private val reminderState: ReminderStatePrefs,
     @IoDispatcher private val io: CoroutineDispatcher,
     @ApplicationContext private val appContext: Context,
 ) : ViewModel() {
@@ -137,6 +145,9 @@ class SettingsViewModel @Inject constructor(
         snoozeMinutes = this[SettingsKeys.snoozeMinutes],
         perCalendarReminderOverride = this[SettingsKeys.perCalendarReminderOverride],
         perCalendarAllDayReminderOverride = this[SettingsKeys.perCalendarAllDayReminderOverride],
+        defaultFixedTimeReminder = this[SettingsKeys.defaultFixedTimeReminder],
+        perCalendarFixedTimeReminderOverride = this[SettingsKeys.perCalendarFixedTimeReminderOverride],
+        dailyDigest = dailyDigest,
         writableCalendars = calendars.filter { it.canModifyContents },
         reminderCalendars = calendars,
         mutedReminderCalendarIds = this[SettingsKeys.mutedReminderCalendarIds],
@@ -414,8 +425,17 @@ class SettingsViewModel @Inject constructor(
         channelStatusJob?.cancel()
         channelStatusJob = viewModelScope.launch {
             onChannels { status(calendarIds) }?.let { _channelStatus.value = it }
+            _digestBlocked.value = withContext(io) { runCatching { digestNotifier.isChannelOff() }.getOrDefault(false) }
         }
     }
+
+    private val _digestBlocked = MutableStateFlow(false)
+
+    /**
+     * Whether the daily summary's own channel is switched off (#459); the app-wide
+     * block is [channelStatus]'s. Refreshed with [refreshChannelStatus].
+     */
+    val digestBlocked: StateFlow<Boolean> = _digestBlocked.asStateFlow()
 
     fun dismissNotificationCategoryHint() = save { dismissNotificationCategoryHint() }
 
@@ -462,12 +482,7 @@ class SettingsViewModel @Inject constructor(
     fun setDefaultAllDayReminderMinutes(minutes: List<Int>) = save { setDefaultAllDayReminderMinutes(minutes) }
 
     /** The armed alarm was planned for the old hour, so re-plan against the new one. */
-    fun setAllDayReminderTimeMinutes(minutesOfDay: Int) {
-        viewModelScope.launch {
-            prefs.setAllDayReminderTimeMinutes(minutesOfDay)
-            reminderScanner.scan()
-        }
-    }
+    fun setAllDayReminderTimeMinutes(minutesOfDay: Int) = saveAndScan { setAllDayReminderTimeMinutes(minutesOfDay) }
 
     fun setSnoozeMinutes(minutes: Int) = save { setSnoozeMinutes(minutes) }
 
@@ -476,6 +491,53 @@ class SettingsViewModel @Inject constructor(
     fun setCalendarAllDayReminderOverride(calendarId: Long, override: ReminderOverride) = save { setCalendarAllDayReminderOverride(calendarId, override) }
 
     fun setAllowColorOnUnsupportedCalendars(enabled: Boolean) = save { setAllowColorOnUnsupportedCalendars(enabled) }
+
+    fun setDefaultFixedTimeReminder(reminder: FixedTimeReminder?) = save { setDefaultFixedTimeReminder(reminder) }
+
+    fun setCalendarFixedTimeReminderOverride(calendarId: Long, override: FixedTimeOverride) =
+        save { setCalendarFixedTimeReminderOverride(calendarId, override) }
+
+    /** Every summary change re-plans, so the next one is armed for its new moment (#459). */
+    fun setDailyDigestEnabled(enabled: Boolean) {
+        viewModelScope.launch {
+            prefs.setDailyDigestEnabled(enabled)
+            // Created now, so a phone that starts new categories switched off
+            // shows it blocked here rather than dropping the first summary.
+            if (enabled) {
+                digestChannel()
+                _digestBlocked.value = withContext(io) { runCatching { digestNotifier.isChannelOff() }.getOrDefault(false) }
+            }
+            // After the scan, so one already under way can't post past the cancel;
+            // a summary left showing would go stale with nothing to replace it.
+            reminderScanner.scan()
+            if (!enabled) digestNotifier.cancel()
+        }
+    }
+
+    fun setDailyDigestTimeMinutes(minutesOfDay: Int) = saveAndScan { setDailyDigestTimeMinutes(minutesOfDay) }
+
+    /** A new mode lists afresh: from "tomorrow" to "today", the day just listed comes again. */
+    fun setDailyDigestDay(day: DigestDay) {
+        viewModelScope.launch {
+            prefs.setDailyDigestDay(day)
+            reminderState.clearLastDigestDay()
+            reminderScanner.scan()
+        }
+    }
+
+    fun setCalendarInDailyDigest(calendarId: Long, included: Boolean) = save { setCalendarInDailyDigest(calendarId, included) }
+
+    /** The summary's channel, created if needed so its system settings can open. */
+    suspend fun digestChannel(): String? = withContext(io) {
+        runCatching { digestNotifier.channelId() }.getOrNull()
+    }
+
+    private fun saveAndScan(write: suspend SettingsPrefs.() -> Unit) {
+        viewModelScope.launch {
+            prefs.write()
+            reminderScanner.scan()
+        }
+    }
 
     private fun save(write: suspend SettingsPrefs.() -> Unit) {
         viewModelScope.launch { prefs.write() }

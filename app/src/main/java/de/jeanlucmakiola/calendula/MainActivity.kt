@@ -67,7 +67,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
 import kotlinx.datetime.LocalDate
+import kotlinx.datetime.LocalDateTime
+import kotlinx.datetime.LocalTime
 import kotlinx.datetime.TimeZone
+import kotlinx.datetime.toInstant
 import kotlinx.datetime.toLocalDateTime
 import kotlin.time.Clock
 import kotlin.time.Instant
@@ -618,6 +621,20 @@ class MainActivity : AppCompatActivity() {
         ): Intent = eventDetailIntent(context, eventId, beginMillis, endMillis).apply {
             data = "calendula://event/$eventId/$beginMillis/${source.name}".toUri()
             putExtra(EXTRA_SOURCE_VIEW, source.name)
+        }
+
+        /**
+         * Open the day view on [date] over the default home view — the daily
+         * summary's tap (#459). Spoken as the system's own "view time" intent,
+         * at the day's local noon, so it lands on the path a clock tap takes.
+         */
+        fun openDayIntent(context: Context, date: LocalDate): Intent {
+            val noon = LocalDateTime(date, LocalTime(12, 0))
+                .toInstant(TimeZone.currentSystemDefault())
+                .toEpochMilliseconds()
+            return Intent(Intent.ACTION_VIEW, "content://$CALENDAR_PROVIDER_HOST/time/$noon".toUri())
+                .setClass(context, MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }
 
         /** Open the create-event form prefilled for [date] (home-screen widgets). */

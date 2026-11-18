@@ -1,5 +1,7 @@
 package de.jeanlucmakiola.calendula.ui.detail
 
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.domain.reminders.classifyTimedReminder
 import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -46,6 +48,7 @@ class EventDetailViewModel @Inject constructor(
     private val icsExporter: IcsExporter,
     @IoDispatcher private val io: CoroutineDispatcher,
     private val zoneSource: ZoneSource,
+    private val settingsPrefs: SettingsPrefs,
 ) : ViewModel() {
 
     private val _target = MutableStateFlow<Target?>(null)
@@ -142,7 +145,7 @@ class EventDetailViewModel @Inject constructor(
      */
     fun duplicateForm(): EventForm? {
         val loaded = state.value as? EventDetailUiState.Success ?: return null
-        return loaded.detail.toDuplicateForm(loaded.canModify, zoneSource.current())
+        return loaded.detail.toDuplicateForm(loaded.canModify, zoneSource.current(), loaded.knownFixed)
     }
 
     private suspend fun loadDetail(target: Target): EventDetailUiState = try {
@@ -157,6 +160,17 @@ class EventDetailViewModel @Inject constructor(
         }
         val calendar = repository.calendars().first()
             .firstOrNull { it.id == corrected.instance.calendarId }
+        val knownFixed = settingsPrefs.knownFixedTimeReminders.first()
+        val fixedReminders = if (corrected.instance.isAllDay) {
+            emptyMap()
+        } else {
+            val zone = zoneSource.current()
+            corrected.reminders.map { it.minutes }.distinct().mapNotNull { minutes ->
+                classifyTimedReminder(
+                    minutes, corrected.instance.start, zone, knownFixed, wallClock = corrected.rrule != null,
+                )?.let { minutes to it }
+            }.toMap()
+        }
         val description = corrected.description
             ?.let(::descriptionRichText)
             ?.takeIf { it.text.isNotBlank() }
@@ -173,6 +187,8 @@ class EventDetailViewModel @Inject constructor(
                 description = description?.text,
             ),
             description = description,
+            fixedReminders = fixedReminders,
+            knownFixed = knownFixed,
         )
     } catch (e: CancellationException) {
         throw e

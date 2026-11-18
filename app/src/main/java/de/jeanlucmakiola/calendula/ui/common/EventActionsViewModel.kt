@@ -15,6 +15,7 @@ import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.RecurringWriteScope
 import de.jeanlucmakiola.calendula.domain.atOccurrence
 import de.jeanlucmakiola.calendula.domain.toDuplicateForm
+import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
@@ -43,6 +44,7 @@ class EventActionsViewModel @Inject constructor(
     private val icsExporter: IcsExporter,
     @IoDispatcher private val io: CoroutineDispatcher,
     private val zoneSource: ZoneSource,
+    private val settingsPrefs: SettingsPrefs,
 ) : ViewModel() {
 
     /** Every calendar by id, for what a selected event's bar may offer. */
@@ -65,7 +67,7 @@ class EventActionsViewModel @Inject constructor(
     suspend fun duplicateForm(event: EventInstance): EventForm? {
         val detail = load(event) ?: return null
         val canModify = calendars.value[event.calendarId]?.canModifyContents == true
-        return detail.toDuplicateForm(canModify, zoneSource.current())
+        return detail.toDuplicateForm(canModify, zoneSource.current(), settingsPrefs.knownFixedTimeReminders.first())
     }
 
     /** A staged `.ics` for [event], or null — reported — when it can't be built. */

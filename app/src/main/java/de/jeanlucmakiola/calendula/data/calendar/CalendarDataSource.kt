@@ -35,6 +35,7 @@ import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.semanticReminderMinutes
 import de.jeanlucmakiola.calendula.domain.ics.parseRfc2445DurationMillis
 import de.jeanlucmakiola.calendula.domain.rruleTruncatedAt
+import de.jeanlucmakiola.calendula.domain.fixedReminderOffsets
 import de.jeanlucmakiola.calendula.domain.toEditForm
 import kotlinx.datetime.TimeZone
 import kotlinx.datetime.toJavaLocalDate
@@ -919,11 +920,15 @@ class AndroidCalendarDataSource @Inject constructor(
         minutes
     }
 
-    /** [form]'s reminders as the distinct raw provider offsets to store. */
+    /**
+     * [form]'s reminders as the distinct raw provider offsets to store, its
+     * fixed-time ones (#459) measured from the start it is saved with.
+     */
     private fun encodedReminders(form: EventForm, allDayReminderTimeMinutes: Int): List<Int> =
-        form.reminders
-            .map { providerReminderMinutes(form, it, allDayReminderTimeMinutes) }
-            .distinct()
+        (
+            form.reminders.map { providerReminderMinutes(form, it, allDayReminderTimeMinutes) } +
+                form.fixedReminderOffsets(TimeZone.currentSystemDefault())
+            ).distinct()
 
     override fun insertEvent(form: EventForm, allDayReminderTimeMinutes: Int): Long {
         // A globally-unique UID so a later .ics backup/restore can identify
@@ -1026,7 +1031,11 @@ class AndroidCalendarDataSource @Inject constructor(
         // Untouched reminder sets are left alone so unrelated edits can't
         // disturb provider rows the form never knew about. The diff is on the
         // form's semantic minutes; reconcile works in encoded provider minutes.
-        if (updated.reminders.toSet() != original.reminders.toSet()) {
+        // A fixed-time reminder also changes when the start's day or time does.
+        val zone = TimeZone.currentSystemDefault()
+        if (updated.reminders.toSet() != original.reminders.toSet() ||
+            updated.fixedReminderOffsets(zone).toSet() != original.fixedReminderOffsets(zone).toSet()
+        ) {
             reconcileReminders(eventId, encodedReminders(updated, allDayReminderTimeMinutes))
         }
         // Same untouched-set guard for guests: only reconcile when the form's
@@ -1227,8 +1236,9 @@ class AndroidCalendarDataSource @Inject constructor(
             )
         }
         // Whether the provider copied the parent's reminder rows is its
-        // business — reconciling against the actual rows handles both ways.
-        reconcileReminders(exceptionId, encodedReminders(form, allDayReminderTimeMinutes))
+        // business — reconciling against the actual rows handles both ways. The
+        // exception is a one-off, so a fixed-time reminder takes real minutes.
+        reconcileReminders(exceptionId, encodedReminders(form.toDetachedOccurrence(), allDayReminderTimeMinutes))
         reconcileAttendees(exceptionId, form.attendees)
         return exceptionId
     }

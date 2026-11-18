@@ -92,12 +92,13 @@ class RescheduleViewModelTest {
         io: CoroutineDispatcher = dispatcher,
     ): RescheduleViewModel {
         fake.occurrencesAt(present)
+        val settings = testSettings(tempDir, CoroutineScope(dispatcher))
         val repo = testRepository(
             fake, tempDir, io,
             prefs = testPrefs(tempDir, CoroutineScope(dispatcher)),
-            settings = testSettings(tempDir, CoroutineScope(dispatcher)),
+            settings = settings,
         )
-        return RescheduleViewModel(repo, io, FakeZoneSource())
+        return RescheduleViewModel(repo, io, FakeZoneSource(), settings)
     }
 
     private fun slowViewModel(tempDir: Path, fake: FakeCalendarDataSource): RescheduleViewModel =

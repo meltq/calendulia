@@ -1,5 +1,9 @@
 package de.jeanlucmakiola.calendula.ui.settings
 
+import de.jeanlucmakiola.floret.identity.collapseExit
+import de.jeanlucmakiola.floret.identity.expandEnter
+import androidx.compose.foundation.layout.Column
+import androidx.compose.animation.AnimatedVisibility
 import android.Manifest
 import android.content.Context
 import android.content.Intent
@@ -36,6 +40,12 @@ import androidx.core.net.toUri
 import androidx.lifecycle.compose.LifecycleResumeEffect
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import de.jeanlucmakiola.calendula.R
+import de.jeanlucmakiola.calendula.domain.reminders.DailyDigestSettings
+import de.jeanlucmakiola.calendula.domain.reminders.DigestDay
+import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
+import de.jeanlucmakiola.calendula.ui.common.FixedTimeReminderPicker
+import de.jeanlucmakiola.calendula.ui.common.fixedTimeReminderLabel
 import de.jeanlucmakiola.calendula.ui.common.DurationPicker
 import de.jeanlucmakiola.calendula.ui.common.REMINDER_PRESETS
 import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
@@ -72,8 +82,9 @@ internal fun NotificationsScreen(
     val launcher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission(),
     ) { /* The pref is already on; a denial just leaves the OS gate shut. */ }
-    val toggleReminders: (Boolean) -> Unit = { enabled ->
-        viewModel.setRemindersEnabled(enabled)
+    // Turning either kind of notification on asks for the permission if missing.
+    fun askingPermission(set: (Boolean) -> Unit): (Boolean) -> Unit = { enabled ->
+        set(enabled)
         val needsPermission = enabled &&
             Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             !context.hasPermission(Manifest.permission.POST_NOTIFICATIONS)
@@ -81,13 +92,19 @@ internal fun NotificationsScreen(
             launcher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
+    val toggleReminders = askingPermission(viewModel::setRemindersEnabled)
+    val toggleDigest = askingPermission(viewModel::setDailyDigestEnabled)
 
     var showDefaultReminder by remember { mutableStateOf(false) }
     var showAllDayReminder by remember { mutableStateOf(false) }
     var showAllDayReminderTime by remember { mutableStateOf(false) }
     var showSnooze by remember { mutableStateOf(false) }
+    var showFixedDefault by remember { mutableStateOf(false) }
+    var showDigestDay by remember { mutableStateOf(false) }
+    var showDigestTime by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val channelStatus by viewModel.channelStatus.collectAsStateWithLifecycle()
+    val digestBlocked by viewModel.digestBlocked.collectAsStateWithLifecycle()
     val calendarIds = state.reminderCalendars.map { it.id }
     LifecycleResumeEffect(calendarIds) {
         viewModel.refreshChannelStatus(calendarIds)
@@ -106,6 +123,8 @@ internal fun NotificationsScreen(
                     viewModel.dismissNotificationCategoryHint()
                     scope.launch {
                         viewModel.syncReminderChannels()
+                        // The summary's category too, so it is on the list to check.
+                        if (state.dailyDigest.enabled) viewModel.digestChannel()
                         context.openNotificationSettings()
                     }
                 },
@@ -143,6 +162,12 @@ internal fun NotificationsScreen(
             onClick = { showDefaultReminder = true },
         )
         GroupedRow(
+            title = stringResource(R.string.settings_fixed_reminder),
+            summary = fixedReminderChoiceLabel(state.defaultFixedTimeReminder),
+            position = Position.Middle,
+            onClick = { showFixedDefault = true },
+        )
+        GroupedRow(
             title = stringResource(R.string.settings_default_reminder_allday),
             summary = reminderChoiceLabel(state.defaultAllDayReminderMinutes),
             position = Position.Middle,
@@ -156,6 +181,21 @@ internal fun NotificationsScreen(
             ),
             position = Position.Bottom,
             onClick = { showAllDayReminderTime = true },
+        )
+
+        Spacer(Modifier.height(24.dp))
+        DailyDigestRows(
+            digest = state.dailyDigest,
+            blocked = channelStatus.appBlocked || digestBlocked,
+            onEnable = toggleDigest,
+            onPickDay = { showDigestDay = true },
+            onPickTime = { showDigestTime = true },
+            onOpenSound = {
+                // The app's own page while the app is blocked: the channel's would be greyed out.
+                scope.launch {
+                    context.openNotificationSettings(viewModel.digestChannel().takeUnless { channelStatus.appBlocked })
+                }
+            },
         )
 
         // Reliability is a soft, optional battery-optimisation exemption via
@@ -203,6 +243,34 @@ internal fun NotificationsScreen(
         }
     }
 
+    if (showFixedDefault) {
+        FixedTimeReminderPicker(
+            title = stringResource(R.string.settings_fixed_reminder),
+            selected = state.defaultFixedTimeReminder?.let { FixedTimeOverride.At(it) } ?: FixedTimeOverride.Off,
+            onSelect = { viewModel.setDefaultFixedTimeReminder((it as? FixedTimeOverride.At)?.reminder) },
+            onDismiss = { showFixedDefault = false },
+        )
+    }
+    if (showDigestDay) {
+        OptionPicker(
+            title = stringResource(R.string.settings_digest_day),
+            options = DigestDay.entries,
+            selected = state.dailyDigest.day,
+            label = { stringResource(digestDayLabel(it)) },
+            onSelect = viewModel::setDailyDigestDay,
+            onDismiss = { showDigestDay = false },
+        )
+    }
+    if (showDigestTime) {
+        TimePickerAlert(
+            initial = LocalTime(state.dailyDigest.timeMinutes / 60, state.dailyDigest.timeMinutes % 60),
+            onConfirm = {
+                viewModel.setDailyDigestTimeMinutes(it.hour * 60 + it.minute)
+                showDigestTime = false
+            },
+            onDismiss = { showDigestTime = false },
+        )
+    }
     if (showSnooze) {
         DurationPicker(
             title = stringResource(R.string.settings_snooze_duration),
@@ -250,6 +318,63 @@ internal fun NotificationsScreen(
     }
 }
 
+/**
+ * The daily summary (#459): its switch, and once on, which day it lists, when,
+ * and its channel's system settings.
+ */
+@Composable
+private fun DailyDigestRows(
+    digest: DailyDigestSettings,
+    blocked: Boolean,
+    onEnable: (Boolean) -> Unit,
+    onPickDay: () -> Unit,
+    onPickTime: () -> Unit,
+    onOpenSound: () -> Unit,
+) {
+    GroupedSwitchRow(
+        title = stringResource(R.string.settings_digest),
+        checked = digest.enabled,
+        onCheckedChange = onEnable,
+        summary = if (digest.enabled) {
+            stringResource(
+                R.string.settings_digest_summary,
+                stringResource(digestDayLabel(digest.day)),
+                settingsTimeOfDay(digest.timeMinutes),
+            )
+        } else {
+            stringResource(R.string.settings_digest_hint)
+        },
+        position = if (digest.enabled) Position.Top else Position.Alone,
+    )
+    AnimatedVisibility(visible = digest.enabled, enter = expandEnter(), exit = collapseExit()) {
+        Column {
+            GroupedRow(
+                title = stringResource(R.string.settings_digest_day),
+                summary = stringResource(digestDayLabel(digest.day)),
+                position = Position.Middle,
+                onClick = onPickDay,
+            )
+            GroupedRow(
+                title = stringResource(R.string.settings_digest_time),
+                summary = settingsTimeOfDay(digest.timeMinutes),
+                position = Position.Middle,
+                onClick = onPickTime,
+            )
+            GroupedRow(
+                title = stringResource(R.string.settings_notification_sound),
+                summary = if (blocked) {
+                    stringResource(R.string.settings_notifications_blocked_hint)
+                } else {
+                    stringResource(R.string.settings_digest_sound_hint)
+                },
+                position = Position.Bottom,
+                trailing = { ExternalLinkIcon() },
+                onClick = onOpenSound,
+            )
+        }
+    }
+}
+
 /** Samsung's One UI can start a new notification category switched off (#145). */
 private val IS_SAMSUNG = Build.MANUFACTURER.equals("samsung", ignoreCase = true)
 
@@ -271,6 +396,16 @@ private fun NotificationCategoryHint(onOpen: () -> Unit, onDismiss: () -> Unit) 
         }
     }
 }
+
+private fun digestDayLabel(day: DigestDay): Int = when (day) {
+    DigestDay.Today -> R.string.settings_digest_day_today
+    DigestDay.Tomorrow -> R.string.settings_digest_day_tomorrow
+}
+
+/** A fixed-time default's label, or "None". */
+@Composable
+internal fun fixedReminderChoiceLabel(reminder: FixedTimeReminder?): String =
+    reminder?.let { fixedTimeReminderLabel(it) } ?: stringResource(R.string.reminder_none)
 
 @Composable
 internal fun ExternalLinkIcon() {

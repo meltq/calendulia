@@ -6,9 +6,13 @@ import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import de.jeanlucmakiola.calendula.data.calendar.CalendarDataSource
 import de.jeanlucmakiola.calendula.data.calendar.withoutProviderDefaults
+import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefs
 import de.jeanlucmakiola.calendula.data.prefs.ReminderStatePrefs
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
+import de.jeanlucmakiola.calendula.domain.reminders.DailyDigestSettings
+import de.jeanlucmakiola.calendula.domain.reminders.digestEntries
 import de.jeanlucmakiola.calendula.domain.reminders.planReminders
+import de.jeanlucmakiola.calendula.domain.reminders.scheduleDigest
 import de.jeanlucmakiola.calendula.domain.reminders.reminderQueryHorizon
 import de.jeanlucmakiola.calendula.domain.reminders.reminderWatermark
 import de.jeanlucmakiola.calendula.domain.reminders.scheduleReminders
@@ -43,10 +47,12 @@ class ReminderScanner @Inject constructor(
     private val source: ReminderInstanceSource,
     private val calendarDataSource: CalendarDataSource,
     private val notifier: ReminderNotifier,
+    private val digestNotifier: DailyDigestNotifier,
     private val channels: ReminderChannels,
     private val snoozes: ReminderSnoozeScheduler,
     private val alarms: ReminderAlarmScheduler,
     private val state: ReminderStatePrefs,
+    private val calendarPrefs: CalendarPrefs,
     private val settingsPrefs: SettingsPrefs,
     @IoDispatcher private val io: kotlinx.coroutines.CoroutineDispatcher,
 ) {
@@ -78,14 +84,29 @@ class ReminderScanner @Inject constructor(
         val now = System.currentTimeMillis()
         if (!hasReadCalendar()) return
 
-        if (!settingsPrefs.remindersEnabled.first()) {
-            // Reminders off: drop the wake-up, but keep the watermark moving
-            // so switching them back on doesn't replay the backlog.
-            alarms.cancelScan()
-            state.setLastScanMillis(now)
-            return
+        val lastFired = reminderWatermark(state.lastScanMillis(), now)
+        val horizon = now + MAX_ALARM_INTERVAL_MILLIS
+        val digestSettings = settingsPrefs.dailyDigest.first()
+        val nextDigest = if (digestSettings.enabled) postDigest(digestSettings, lastFired, now) else null
+        val nextReminder = try {
+            if (settingsPrefs.remindersEnabled.first()) reminders(lastFired, now, horizon) else null
+        } catch (e: Exception) {
+            // The watermark stays, so the next pass owes these reminders again;
+            // keep that pass, and the summary's next moment, armed.
+            alarms.scheduleScan(minOf(nextDigest ?: horizon, now + RETRY_AFTER_FAILURE_MILLIS))
+            throw e
         }
 
+        // Advance even when nothing could be posted, so muting notifications
+        // doesn't build a backlog — and while both are off, so switching one
+        // back on doesn't replay it.
+        state.setLastScanMillis(now)
+        val next = listOfNotNull(nextReminder, nextDigest).minOrNull()
+        if (next == null) alarms.cancelScan() else alarms.scheduleScan(minOf(next, horizon))
+    }
+
+    /** Post the event reminders that are due; returns the next wake-up they need. */
+    private suspend fun reminders(lastFired: Long, now: Long, horizon: Long): Long {
         syncChannels()
         val lookahead = reminderQueryHorizon(LOOKAHEAD_MILLIS, source.longestReminderMinutes())
         // Reach into the past too: an all-day "at time of event" encodes to a
@@ -104,9 +125,9 @@ class ReminderScanner @Inject constructor(
 
         val schedule = scheduleReminders(
             planned = planned,
-            lastFiredMillis = reminderWatermark(state.lastScanMillis(), now),
+            lastFiredMillis = lastFired,
             nowMillis = now,
-            horizonMillis = now + MAX_ALARM_INTERVAL_MILLIS,
+            horizonMillis = horizon,
         )
 
         if (notifier.canPost()) {
@@ -116,10 +137,48 @@ class ReminderScanner @Inject constructor(
                 notifier.post(alert)
             }
         }
-        // Advance even when nothing could be posted, so muting notifications
-        // doesn't build a backlog.
-        state.setLastScanMillis(now)
-        alarms.scheduleScan(schedule.nextAlarmMillis)
+        return schedule.nextAlarmMillis
+    }
+
+    /**
+     * Post the daily summary if it is owed (#459); returns its next moment. It
+     * leaves out calendars excluded from it, not those muted for reminders —
+     * a calendar too noisy to ping per event can still belong in the overview.
+     */
+    private suspend fun postDigest(settings: DailyDigestSettings, lastFired: Long, now: Long): Long {
+        val zone = ZoneId.systemDefault()
+        val listed = try {
+            state.lastDigestDay()
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read the last daily summary", e)
+            null
+        }
+        val schedule = scheduleDigest(
+            timeMinutes = settings.timeMinutes,
+            day = settings.day,
+            zone = zone,
+            // A moment that passed before the summary was last changed is not owed.
+            lastFiredMillis = maxOf(lastFired, settings.armedAtMillis),
+            nowMillis = now,
+            lastListedDay = listed,
+        )
+        val day = schedule.dueDay
+        // A blocked channel would swallow it; the day stays owed until allowed.
+        if (day != null && notifier.canPost() && !digestNotifier.isChannelOff()) {
+            // A failed summary must not cost the event reminders this pass owes.
+            try {
+                // A day either side: all-day occurrences sit at UTC midnight, which
+                // can fall outside the local day they stand for.
+                val from = day.minusDays(1).atStartOfDay(zone).toInstant().toEpochMilli()
+                val to = day.plusDays(2).atStartOfDay(zone).toInstant().toEpochMilli()
+                val left = settings.excludedCalendarIds + calendarPrefs.pendingDisabledCalendarIds.first()
+                digestNotifier.post(day, digestEntries(source.occurrences(from, to), day, zone, left))
+                state.setLastDigestDay(day)
+            } catch (e: Exception) {
+                Log.w(TAG, "Daily summary failed", e)
+            }
+        }
+        return schedule.nextAlarmMillis
     }
 
     /**
@@ -176,5 +235,8 @@ class ReminderScanner @Inject constructor(
         const val MAX_ALARM_INTERVAL_MILLIS = 24L * 60 * 60 * 1000
 
         const val PROVIDER_CHANGE_DEBOUNCE_MILLIS = 2_000L
+
+        /** How soon a pass whose reminders failed is tried again. */
+        const val RETRY_AFTER_FAILURE_MILLIS = 15L * 60 * 1000
     }
 }

@@ -738,6 +738,7 @@
     <string name="settings_calendar_notifications">Notifications</string>
     <string name="settings_calendar_notifications_hint">Notify at this calendar\'s reminder times</string>
     <string name="settings_calendar_notifications_off">Notifications off</string>
+    <string name="settings_calendar_reminders_off">Reminders off</string>
     <string name="settings_notification_sound">Notification sound</string>
     <string name="settings_notification_sound_hint">Sound, vibration and pop-ups for each calendar, in system settings</string>
     <string name="settings_notifications_blocked">Blocked in system settings</string>
@@ -761,6 +762,43 @@
     <string name="settings_full_screen_permission">Allow full-screen alerts</string>
     <string name="settings_full_screen_permission_hint">Android blocks Calendula\'s full-screen alerts, so they only pop up as notifications. Tap to allow them.</string>
     <string name="settings_calendar_reminder_inherits">Default (%1$s)</string>
+    <!-- Reminders at a set time (#459). %1$s is a lead in days ("1 day before"), %2$s a clock time. -->
+    <string name="reminder_fixed_time">%1$s at %2$s</string>
+    <string name="reminder_fixed_at_set_time">At a set time</string>
+    <!-- Read as one sentence with a number field before it and a time after it: "[2] days before, at [20:00]". The full wording shows below it. -->
+    <string name="reminder_fixed_days_before_at">days before, at</string>
+    <string name="reminder_fixed_days_range">Pick 1 to %1$d days</string>
+    <string name="settings_fixed_reminder">Reminder at a set time</string>
+    <string name="event_edit_reminder_fixed_summary">E.g. the evening before</string>
+    <string name="event_edit_reminder_fixed_hint">Fires at this time however early or late the event starts, and moves along when you change the event\'s time.</string>
+    <string name="settings_fixed_reminder_hint">Added to new timed events, e.g. the evening before. It follows the event when you move it to another time.</string>
+    <!-- Daily summary notification (#459) -->
+    <string name="settings_digest">Daily summary</string>
+    <string name="settings_digest_hint">One notification listing a day\'s events</string>
+    <!-- %1$s is settings_digest_day_today/tomorrow, %2$s a clock time. -->
+    <string name="settings_digest_summary">%1$s at %2$s</string>
+    <string name="settings_digest_day">Lists</string>
+    <string name="settings_digest_day_today">Today\'s events</string>
+    <string name="settings_digest_day_tomorrow">Tomorrow\'s events</string>
+    <string name="settings_digest_time">Time</string>
+    <string name="settings_digest_sound_hint">Sound and pop-up for the summary, in system settings</string>
+    <string name="settings_calendar_in_digest">In daily summary</string>
+    <string name="settings_calendar_in_digest_hint">List this calendar\'s events in the daily summary</string>
+    <string name="digest_channel_name">Daily summary</string>
+    <string name="digest_channel_description">One notification listing a day\'s events</string>
+    <!-- %1$s is "Today", "Tomorrow" or a date; %2$d the number of events. -->
+    <plurals name="digest_title">
+        <item quantity="one">%1$s: %2$d event</item>
+        <item quantity="other">%1$s: %2$d events</item>
+    </plurals>
+    <!-- %1$s is "Today" or "Tomorrow", %2$s a short date, e.g. "Fri, 14 Nov". -->
+    <string name="digest_day_relative">%1$s, %2$s</string>
+    <!-- One event in the summary: %1$s its time ("09:00 – 10:00" or "All day"), %2$s its title. -->
+    <string name="digest_line">%1$s · %2$s</string>
+    <plurals name="digest_more">
+        <item quantity="one">+%d more</item>
+        <item quantity="other">+%d more</item>
+    </plurals>
     <string name="settings_reliable_delivery">Reliable delivery</string>
     <string name="settings_reliable_delivery_hint">Android may delay reminders to save battery. Exempt Calendula so they arrive on time.</string>
     <string name="settings_reliable_delivery_exempt">Exempt from battery optimisation — reminders arrive on time.</string>
