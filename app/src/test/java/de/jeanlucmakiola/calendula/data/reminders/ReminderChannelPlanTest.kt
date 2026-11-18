@@ -153,6 +153,55 @@ class ReminderChannelPlanTest {
         assertThat(reminderChannelStatus(listOf(1L), appEnabled = true, emptyMap(), emptySet()).ringBlocked).isFalse()
     }
 
+    @Test
+    fun `channel ids round-trip with versions`() {
+        assertThat(parseReminderChannelId(reminderChannelId(7))).isEqualTo(7L to 0)
+        assertThat(parseReminderChannelId(reminderChannelId(7, 3))).isEqualTo(7L to 3)
+        assertThat(parseReminderChannelId("reminders.calendar.7.v0")).isNull()
+        assertThat(parseReminderChannelId("reminders.calendar.x")).isNull()
+        assertThat(parseReminderChannelId(LEGACY_REMINDER_CHANNEL_ID)).isNull()
+    }
+
+    @Test
+    fun `a version bump retires the old channel unless it is showing`() {
+        val existing = listOf(
+            ExistingReminderChannel(reminderChannelId(1), "Cal 1", DESC, "g"),
+            ExistingReminderChannel(reminderChannelId(2), "Cal 2", DESC, "g"),
+        )
+        val plan = planReminderChannels(
+            calendars = listOf(calendar(1, "a", "com.google"), calendar(2, "a", "com.google")),
+            existing = existing,
+            existingGroupIds = emptyList(),
+            unnamed = "Unnamed",
+            description = DESC,
+            versions = mapOf(1L to 2, 2L to 1),
+            showingChannelIds = setOf(reminderChannelId(2)),
+        )
+        assertThat(plan.channels.map { it.id }).containsExactly(reminderChannelId(1, 2), reminderChannelId(2, 1))
+        assertThat(plan.staleChannelIds).containsExactly(reminderChannelId(1))
+        assertThat(plan.keptChannelIds).containsExactly(reminderChannelId(2))
+    }
+
+    @Test
+    fun `the current version is the highest that exists, else the high-water mark`() {
+        val versions = currentReminderChannelVersions(
+            existingChannelIds = listOf(reminderChannelId(1), reminderChannelId(1, 2), reminderChannelId(3), "backup"),
+            highWater = mapOf(1L to 5, 2L to 4),
+        )
+        // Calendar 1 reserved v5 but never wrote it, so v2 stays current.
+        assertThat(versions).containsExactly(1L, 2, 2L, 4, 3L, 0)
+    }
+
+    @Test
+    fun `status reads the current channel version`() {
+        val channels = mapOf(
+            reminderChannelId(1) to ReminderChannelState(blocked = true, groupId = null),
+            reminderChannelId(1, 2) to ReminderChannelState(blocked = false, groupId = null),
+        )
+        val status = reminderChannelStatus(listOf(1L), true, channels, emptySet(), versions = mapOf(1L to 2))
+        assertThat(status.blockedCalendarIds).isEmpty()
+    }
+
     private companion object {
         const val DESC = "Reminders"
     }

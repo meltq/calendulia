@@ -3,6 +3,7 @@ package de.jeanlucmakiola.calendula.ui.settings
 import android.content.Context
 import android.net.Uri
 import android.os.Build
+import android.provider.Settings
 import android.util.Log
 import androidx.datastore.preferences.core.Preferences
 import androidx.lifecycle.ViewModel
@@ -17,6 +18,7 @@ import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesScheduler
 import de.jeanlucmakiola.calendula.data.contacts.SpecialDatesSyncEngine
 import de.jeanlucmakiola.calendula.data.contacts.resolveTitleTemplate
 import de.jeanlucmakiola.calendula.data.fonts.CustomFontStore
+import de.jeanlucmakiola.floret.android.ringtoneTitle
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
@@ -61,6 +63,9 @@ import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.flow.receiveAsFlow
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -69,6 +74,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -421,11 +427,79 @@ class SettingsViewModel @Inject constructor(
 
     private var channelStatusJob: Job? = null
 
+    private val _channelSounds = MutableStateFlow<Map<Long, ReminderSound>?>(null)
+
+    /** Each calendar's reminder sound (#518), null until first read; a calendar without a channel yet is absent. */
+    val channelSounds: StateFlow<Map<Long, ReminderSound>?> = _channelSounds.asStateFlow()
+
+    private val _soundFailed = Channel<SoundFailure>(Channel.CONFLATED)
+
+    /** Emits when a picked sound couldn't be applied; kept until the screen collects it. */
+    val soundFailed: Flow<SoundFailure> = _soundFailed.receiveAsFlow()
+
+    private val soundTitles = mutableMapOf<Uri, String?>()
+
     fun refreshChannelStatus(calendarIds: Collection<Long>) {
         channelStatusJob?.cancel()
         channelStatusJob = viewModelScope.launch {
             onChannels { status(calendarIds) }?.let { _channelStatus.value = it }
             _digestBlocked.value = withContext(io) { runCatching { digestNotifier.isChannelOff() }.getOrDefault(false) }
+            val sounds = onChannels { sounds(calendarIds) } ?: return@launch
+            _channelSounds.value = withContext(io) {
+                sounds.mapValues { (_, uri) ->
+                    ReminderSound(uri, uri?.let(::soundTitle))
+                }
+            }
+        }
+    }
+
+    /** A sound's title, cached unless it is a "default" alias whose target can change. */
+    private fun soundTitle(uri: Uri): String? {
+        if (uri.authority == Settings.AUTHORITY) return appContext.ringtoneTitle(uri)
+        return synchronized(soundTitles) { soundTitles.getOrPut(uri) { appContext.ringtoneTitle(uri) } }
+    }
+
+    /** Give [calendarId]'s reminders [sound] (null = silent), on a fresh channel (#518). */
+    fun setReminderSound(calendarId: Long, sound: Uri?) = applySound(sound) {
+        setSound(listOf(calendarId), sound, createMissing = true)
+    }
+
+    /**
+     * Give every switched-on calendar's reminders [sound]. Reads the calendars
+     * itself, so a pick returning after process death still finds them; those
+     * that only get a channel when something posts are left alone.
+     */
+    fun setReminderSoundForAll(sound: Uri?) = applySound(sound) {
+        try {
+            sync()
+        } catch (e: Exception) {
+            Log.w("SettingsViewModel", "Channel sync before a sound pick failed", e)
+        }
+        val ids = visibleCalendars.first().map { it.id }
+        ids.isNotEmpty() && setSound(ids, sound, createMissing = false)
+    }
+
+    private fun canRead(uri: Uri): Boolean = uri.authority == Settings.AUTHORITY ||
+        runCatching { appContext.contentResolver.openAssetFileDescriptor(uri, "r")?.close() != null }.getOrDefault(false)
+
+    /** Runs to completion even if the screen closes meanwhile, so a pick is never half-applied. */
+    private fun applySound(sound: Uri?, block: suspend ReminderChannels.() -> Boolean) {
+        viewModelScope.launch {
+            val failure = withContext(io + NonCancellable) {
+                try {
+                    // The system plays the sound but checks that Calendula could read it.
+                    when {
+                        sound != null && !canRead(sound) -> SoundFailure.Unreadable
+                        reminderChannels.block() -> null
+                        else -> SoundFailure.NotApplied
+                    }
+                } catch (e: Exception) {
+                    Log.w("SettingsViewModel", "Could not set the reminder sound", e)
+                    SoundFailure.NotApplied
+                }
+            }
+            failure?.let(_soundFailed::trySend)
+            refreshChannelStatus(visibleCalendars.first().map { it.id })
         }
     }
 
@@ -450,13 +524,17 @@ class SettingsViewModel @Inject constructor(
         channelId.takeUnless { status.appBlocked || calendarId in status.groupBlockedCalendarIds }
     }
 
-    /** Create the per-calendar channels before showing the app's channel list, even with reminders off. */
+    /**
+     * Create the per-calendar channels before showing the app's channel list, even with reminders off,
+     * plus the ring and daily summary ones in use, so they are on the list to check.
+     */
     suspend fun syncReminderChannels() {
         val ringing = state.value.reminderAlertStyles.containsValue(ReminderAlertStyle.FullScreenRing)
         onChannels {
             sync()
             if (ringing) ensureRingChannel()
         }
+        if (state.value.dailyDigest.enabled) digestChannel()
     }
 
     private suspend fun <T> onChannels(block: ReminderChannels.() -> T): T? = withContext(io) {

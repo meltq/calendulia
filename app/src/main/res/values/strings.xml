@@ -740,12 +740,21 @@
     <string name="settings_calendar_notifications_off">Notifications off</string>
     <string name="settings_calendar_reminders_off">Reminders off</string>
     <string name="settings_notification_sound">Notification sound</string>
-    <string name="settings_notification_sound_hint">Sound, vibration and pop-ups for each calendar, in system settings</string>
+    <string name="settings_notification_sound_silent">Silent</string>
+    <string name="settings_notification_sound_default">Default</string>
+    <!-- %1$s is the name of the device's default notification sound. -->
+    <string name="settings_notification_sound_default_named">Default (%1$s)</string>
+    <string name="settings_notification_sound_custom">Custom sound</string>
+    <string name="settings_notification_sound_failed">Couldn\'t change the notification sound</string>
+    <string name="settings_notification_sound_unreadable">Calendula can\'t play this sound. Pick another one.</string>
+    <string name="settings_notification_sound_mixed">Differs per calendar</string>
+    <string name="settings_notification_more">More notification settings</string>
+    <string name="settings_notification_sound_hint">Vibration, pop-ups and more for each calendar, in system settings</string>
     <string name="settings_notifications_blocked">Blocked in system settings</string>
     <string name="settings_notifications_blocked_hint">Blocked in system settings — tap to allow</string>
     <string name="settings_notification_category_hint">On Samsung phones, new notification categories can start switched off. If a calendar\'s reminders don\'t arrive, check that its category is on.</string>
     <string name="settings_notification_category_hint_open">Open settings</string>
-    <string name="settings_calendar_notification_sound_hint">Sound, vibration and pop-ups for this calendar, in system settings</string>
+    <string name="settings_calendar_notification_sound_hint">Vibration, pop-ups and more for this calendar, in system settings</string>
     <string name="settings_alert_style">Alert style</string>
     <string name="settings_alert_style_notification">Notification</string>
     <string name="settings_alert_style_notification_summary">A notification that pops up and waits in the shade</string>
@@ -756,7 +765,6 @@
     <string name="settings_alert_sound_once_summary">This calendar\'s notification sound, once</string>
     <string name="settings_alert_sound_ring">Ring until dismissed</string>
     <string name="settings_alert_sound_ring_summary">Your alarm sound and vibration, like an alarm, also in Do Not Disturb when alarms may sound</string>
-    <string name="settings_calendar_notification_sound_ring_hint">Ringing reminders use your alarm sound. This sets the sound of the ones handed back to the shade.</string>
     <string name="settings_full_screen_held_back">Full-screen alerts held back</string>
     <string name="settings_ring_blocked_hint">Blocked in system settings, so this calendar\'s reminders only sound once — tap to allow</string>
     <string name="settings_full_screen_permission">Allow full-screen alerts</string>

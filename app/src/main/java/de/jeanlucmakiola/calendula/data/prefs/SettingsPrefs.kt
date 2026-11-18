@@ -177,6 +177,7 @@ class SettingsPrefs @Inject constructor(
     val mutedReminderCalendarIds: Flow<Set<Long>> = prefs.flow(SettingsKeys.mutedReminderCalendarIds)
     val reminderAlertStyles: Flow<Map<Long, ReminderAlertStyle>> = prefs.flow(SettingsKeys.reminderAlertStyles)
     val notificationCategoryHintDismissed: Flow<Boolean> = prefs.flow(SettingsKeys.notificationCategoryHintDismissed)
+    val reminderChannelVersions: Flow<Map<Long, Int>> = prefs.flow(SettingsKeys.reminderChannelVersions)
     val allowColorOnUnsupportedCalendars: Flow<Boolean> =
         prefs.flow(SettingsKeys.allowColorOnUnsupportedCalendars)
     val defaultReminderMinutes: Flow<List<Int>> = prefs.flow(SettingsKeys.defaultReminderMinutes)
@@ -297,6 +298,19 @@ class SettingsPrefs @Inject constructor(
     }
 
     suspend fun setRemindersEnabled(enabled: Boolean) = prefs.set(SettingsKeys.remindersEnabled, enabled)
+
+    /**
+     * Reserve a new reminder channel version for each calendar in [floors], above
+     * both its stored high-water mark and its floor, and return them. Versions
+     * only grow: the system would restore a deleted channel's old settings if
+     * its id came back (#518).
+     */
+    suspend fun reserveReminderChannelVersions(floors: Map<Long, Int>): Map<Long, Int> {
+        val stored = prefs.update(SettingsKeys.reminderChannelVersions) { current ->
+            current + floors.mapValues { (id, floor) -> maxOf((current[id] ?: 0) + 1, floor) }
+        }
+        return floors.keys.associateWith { stored.getValue(it) }
+    }
 
     suspend fun dismissNotificationCategoryHint() = prefs.set(SettingsKeys.notificationCategoryHintDismissed, true)
 
@@ -716,6 +730,15 @@ object SettingsKeys {
      * categories switched off has been dismissed (#145).
      */
     val notificationCategoryHintDismissed: Pref<Boolean> = booleanPref("notification_category_hint_dismissed", false)
+
+    /**
+     * The highest reminder channel version handed out per calendar (#518): a
+     * sound picked in the app recreates the channel under a new one. The
+     * channels themselves say which version is current; this only keeps ids
+     * from being reused. Serialised as `id=version;id=version`.
+     */
+    val reminderChannelVersions: Pref<Map<Long, Int>> =
+        nullableStringPref("reminder_channel_versions").map(::parseChannelVersions) { it.toStoredVersions() }
 
     /**
      * Whether to offer a custom event colour on calendars that publish no colour
@@ -1192,6 +1215,18 @@ private fun parseDurationOverrides(stored: String?): Map<Long, Int> =
             ?: return@mapNotNull null
         calendarId to minutes
     }.toMap()
+
+private fun parseChannelVersions(stored: String?): Map<Long, Int> =
+    stored?.split(ENTRY_SEP).orEmpty().mapNotNull { entry ->
+        val parts = entry.split(KEY_VALUE_SEP)
+        if (parts.size != 2) return@mapNotNull null
+        val calendarId = parts[0].trim().toLongOrNull() ?: return@mapNotNull null
+        val version = parts[1].trim().toIntOrNull()?.takeIf { it > 0 } ?: return@mapNotNull null
+        calendarId to version
+    }.toMap()
+
+private fun Map<Long, Int>.toStoredVersions(): String? =
+    if (isEmpty()) null else entries.sortedBy { it.key }.joinToString(ENTRY_SEP) { (id, v) -> "$id$KEY_VALUE_SEP$v" }
 
 private fun Map<Long, Int>.toStoredDurations(): String =
     entries.sortedBy { it.key }.joinToString(ENTRY_SEP) { (id, minutes) ->

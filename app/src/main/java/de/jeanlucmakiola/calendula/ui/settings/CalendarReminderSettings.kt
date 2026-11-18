@@ -13,12 +13,11 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.LifecycleResumeEffect
@@ -38,8 +37,8 @@ import de.jeanlucmakiola.calendula.ui.common.ReminderDefaultPicker
 import de.jeanlucmakiola.calendula.ui.common.accountGroupTitle
 import de.jeanlucmakiola.calendula.ui.common.groupByAccount
 import de.jeanlucmakiola.calendula.ui.common.orUnnamed
-import de.jeanlucmakiola.floret.android.openNotificationSettings
 import de.jeanlucmakiola.floret.components.CollapsingScaffold
+import de.jeanlucmakiola.floret.android.openNotificationSettings
 import de.jeanlucmakiola.floret.components.ExpandIcon
 import de.jeanlucmakiola.floret.components.GroupedHint
 import de.jeanlucmakiola.floret.components.GroupedRow
@@ -54,7 +53,6 @@ import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import de.jeanlucmakiola.floret.reminders.reminderOverrideFor
 import de.jeanlucmakiola.floret.ring.canUseFullScreenIntent
 import de.jeanlucmakiola.floret.ring.openFullScreenIntentSettings
-import kotlinx.coroutines.launch
 
 /**
  * Per-calendar notifications and reminder overrides (#145, #272), reached from
@@ -69,16 +67,16 @@ internal fun CalendarRemindersScreen(
     onOpenSpecialDates: () -> Unit,
     visible: Boolean = true,
 ) {
-    val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     var expandedCalendars by rememberSaveable { mutableStateOf(emptyList<Long>()) }
     var overrideDialog by remember { mutableStateOf<OverrideTarget?>(null) }
     var alertStylePicker by remember { mutableStateOf<Long?>(null) }
     var alertSoundPicker by remember { mutableStateOf<Long?>(null) }
     val canFullScreen = rememberCanUseFullScreenIntent()
+    val context = LocalContext.current
     var fixedOverrideFor by remember { mutableStateOf<Long?>(null) }
     val channelStatus by viewModel.channelStatus.collectAsStateWithLifecycle()
     val calendarIds = state.reminderCalendars.map { it.id }
+    val soundPicker = rememberReminderSoundPicker(viewModel, calendarIds)
     LifecycleResumeEffect(calendarIds) {
         viewModel.refreshChannelStatus(calendarIds)
         onPauseOrDispose { }
@@ -121,11 +119,9 @@ internal fun CalendarRemindersScreen(
                         }
                     },
                     onSetNotifying = { viewModel.setCalendarRemindersEnabled(calendar.id, it) },
-                    onOpenSound = {
-                        scope.launch {
-                            context.openNotificationSettings(viewModel.soundSettingsChannel(calendar.id))
-                        }
-                    },
+                    soundLabel = soundPicker.loadedSounds?.let { soundLabel(it[calendar.id]) },
+                    onPickSound = { soundPicker.pick(calendar.id) },
+                    onOpenSettings = { soundPicker.openCalendarSettings(calendar.id) },
                     onOpenRingSettings = { context.openNotificationSettings(RING_CHANNEL_ID) },
                     onEditAlertStyle = { alertStylePicker = calendar.id },
                     onEditAlertSound = { alertSoundPicker = calendar.id },
@@ -245,7 +241,9 @@ private fun CalendarReminderEntry(
     heldBack: FullScreenHeldBack,
     onToggleExpand: () -> Unit,
     onSetNotifying: (Boolean) -> Unit,
-    onOpenSound: () -> Unit,
+    soundLabel: String?,
+    onPickSound: () -> Unit,
+    onOpenSettings: () -> Unit,
     onOpenRingSettings: () -> Unit,
     onEditAlertStyle: () -> Unit,
     onEditAlertSound: () -> Unit,
@@ -299,16 +297,22 @@ private fun CalendarReminderEntry(
             )
             GroupedRow(
                 title = stringResource(R.string.settings_notification_sound),
-                summary = when {
-                    blocked -> stringResource(R.string.settings_notifications_blocked_hint)
-                    alertStyle == ReminderAlertStyle.FullScreenRing ->
-                        stringResource(R.string.settings_calendar_notification_sound_ring_hint)
-                    else -> stringResource(R.string.settings_calendar_notification_sound_hint)
+                summary = soundLabel,
+                position = Position.Middle,
+                container = nested,
+                onClick = onPickSound,
+            )
+            GroupedRow(
+                title = stringResource(R.string.settings_notification_more),
+                summary = if (blocked) {
+                    stringResource(R.string.settings_notifications_blocked_hint)
+                } else {
+                    stringResource(R.string.settings_calendar_notification_sound_hint)
                 },
                 position = Position.Middle,
                 container = nested,
                 trailing = { ExternalLinkIcon() },
-                onClick = onOpenSound,
+                onClick = onOpenSettings,
             )
             val lastAlertRow = !(managed || takesOverrides || digestOn)
             GroupedRow(

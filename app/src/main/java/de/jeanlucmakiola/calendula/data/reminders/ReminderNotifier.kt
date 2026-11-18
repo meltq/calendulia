@@ -85,32 +85,32 @@ class ReminderNotifier @Inject constructor(
         }
         // Rung already and handed back to the shade: a catch-up post leaves it there.
         if (style == ReminderAlertStyle.FullScreenRing && (isShowing(alert) || alerts.isPending(alert))) return
-        val channelId = channelFor(alert, style)
-            // The ring channel could not be made: still full-screen, sounding once.
-            ?: if (style == ReminderAlertStyle.FullScreenRing) {
-                style = ReminderAlertStyle.FullScreen
-                channelFor(alert, style) ?: return
-            } else {
-                return
-            }
         val title = displayTitle(alert)
         val text = contentText(alert)
         if (style == ReminderAlertStyle.FullScreenRing) {
-            if (ReminderRingService.start(context, alerts, alert, build(alert, channelId, title, text, style, quiet = false))) {
+            val ringChannel = channelFor(alert, style)
+            if (ringChannel != null &&
+                ReminderRingService.start(context, alerts, alert, build(alert, ringChannel, title, text, style, quiet = false))
+            ) {
                 // An earlier reminder for this occurrence gives way to the ring.
                 NotificationManagerCompat.from(context).cancel(alert.occurrenceKey.toString(), NOTIFICATION_ID)
                 cancelLegacy(alert)
                 return
             }
-            // Android refused the ring: still full-screen, sounding once on the calendar's channel.
+            // No ring channel, or Android refused the ring: still full-screen, sounding once on the calendar's channel.
+            if (ringChannel != null) stopRing(RingMatch.Occurrence(alert.occurrenceKey))
+            style = ReminderAlertStyle.FullScreen
+        } else if (ring) {
+            // A fresh reminder replaces a ring for its occurrence from before the style changed.
             stopRing(RingMatch.Occurrence(alert.occurrenceKey))
-            val fallback = channelFor(alert, ReminderAlertStyle.FullScreen) ?: return
-            notify(alert, build(alert, fallback, title, text, ReminderAlertStyle.FullScreen, quiet = false))
-            return
         }
-        // A fresh reminder replaces a ring for its occurrence from before the style changed.
-        if (ring) stopRing(RingMatch.Occurrence(alert.occurrenceKey))
-        notify(alert, build(alert, channelId, title, text, style, quiet))
+        // Under the channel lock, so a sound picked meanwhile (#518) can't move it mid-post.
+        val posted = channels.withChannel(alert.calendarId) { channelId ->
+            notify(alert, build(alert, channelId, title, text, style, quiet))
+        }
+        if (posted == null) {
+            Log.i(TAG, "Dropped the reminder of event ${alert.eventId}: no channel for calendar ${alert.calendarId}")
+        }
     }
 
     /** Whether a ring for [alert] should go on, now that settings may have changed since it started. */
