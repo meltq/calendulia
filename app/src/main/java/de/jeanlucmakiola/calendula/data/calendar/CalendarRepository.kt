@@ -61,11 +61,11 @@ interface CalendarRepository {
     suspend fun setCalendarsVisible(ids: Collection<Long>, visible: Boolean)
 
     /**
-     * Every event of the writable local calendars, ready to serialise into a
-     * whole-calendar `.ics` backup (see [CalendarDataSource.exportableEvents]).
-     * [calendarIds] narrows the export to a chosen subset; `null` exports all.
+     * Every event of [calendarIds], ready to serialise into an `.ics` backup
+     * (see [CalendarDataSource.calendarEvents]). Any calendar can be read,
+     * synced and read-only ones included (#147).
      */
-    suspend fun exportEvents(calendarIds: Set<Long>? = null): List<IcsEvent>
+    suspend fun exportEvents(calendarIds: Set<Long>): List<IcsEvent>
 
     /**
      * Bulk-import parsed `.ics` [events] into [targetCalendarId]. Events whose

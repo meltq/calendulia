@@ -5,6 +5,10 @@ import android.net.Uri
 import androidx.core.content.FileProvider
 import androidx.documentfile.provider.DocumentFile
 import dagger.hilt.android.qualifiers.ApplicationContext
+import de.jeanlucmakiola.floret.android.TreeListing
+import de.jeanlucmakiola.floret.android.deleteTreeFiles
+import de.jeanlucmakiola.floret.android.listTreeFiles
+import de.jeanlucmakiola.floret.android.writeTreeFile
 import java.io.File
 import java.io.IOException
 import javax.inject.Inject
@@ -29,34 +33,27 @@ class IcsExporter @Inject constructor(
         } ?: throw IOException("Could not open output stream for export (scheme=${uri.scheme})")
     }
 
-    /**
-     * Write [content] to [fileName] inside the persisted SAF tree [folder],
-     * overwriting it if it already exists (the automatic-backup destination).
-     * Requires a persisted write grant on [folder]. Throws on failure.
-     */
-    fun writeToFolder(folder: Uri, fileName: String, content: String) {
+    /** The files in the persisted SAF tree [folder], the automatic-backup destination. Throws when unusable. */
+    fun listFolder(folder: Uri): TreeListing {
+        writableFolder(folder)
+        return context.contentResolver.listTreeFiles(folder)
+    }
+
+    /** Write the `.ics` [bytes] as [fileName] into [folder]; returns the name the file ended up with. */
+    fun writeToFolder(folder: Uri, listing: TreeListing, fileName: String, bytes: ByteArray): String =
+        context.contentResolver.writeTreeFile(folder, listing, fileName, MIME_CALENDAR, bytes)
+
+    /** Delete [names] from the listed folder; returns the ones that didn't go. */
+    fun deleteFromFolder(listing: TreeListing, names: Collection<String>): Set<String> =
+        context.contentResolver.deleteTreeFiles(listing, names)
+
+    private fun writableFolder(folder: Uri): DocumentFile {
         val dir = DocumentFile.fromTreeUri(context, folder)
             ?: throw IOException("Backup folder is not accessible")
         if (!dir.exists() || !dir.canWrite()) {
             throw IOException("Backup folder is missing or not writable")
         }
-        // Reuse the canonical file if present and clean up any "name (1).ics"
-        // duplicates SAF may have created if two runs ever raced — so we always
-        // converge on a single overwritten file.
-        val base = fileName.substringBeforeLast('.')
-        val ext = fileName.substringAfterLast('.', "")
-        var target: DocumentFile? = null
-        for (child in dir.listFiles()) {
-            val name = child.name ?: continue
-            when {
-                name == fileName -> target = child
-                name.startsWith("$base (") && name.endsWith(".$ext") -> child.delete()
-            }
-        }
-        val file = target
-            ?: dir.createFile(MIME_CALENDAR, fileName)
-            ?: throw IOException("Could not create backup file in the chosen folder")
-        writeDocument(file.uri, content)
+        return dir
     }
 
     /**

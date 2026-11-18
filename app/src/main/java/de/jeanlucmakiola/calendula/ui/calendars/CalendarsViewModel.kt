@@ -14,10 +14,14 @@ import de.jeanlucmakiola.calendula.data.prefs.BackupStatus
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.FailureReason
+import de.jeanlucmakiola.calendula.domain.backup.BackupSelection
+import de.jeanlucmakiola.calendula.domain.backup.DEFAULT_BACKUP_KEEP
 import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
 import de.jeanlucmakiola.floret.android.stateWhileSubscribed
 import de.jeanlucmakiola.floret.di.IoDispatcher
 import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.joinAll
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -73,12 +77,19 @@ class CalendarsViewModel @Inject constructor(
 
     /** Automatic-backup settings + last-run status, for the Backup section UI. */
     val autoBackup: StateFlow<AutoBackupUiState> = combine(
-        settingsPrefs.autoBackupEnabled,
-        settingsPrefs.autoBackupIntervalMinutes,
-        settingsPrefs.autoBackupFolderUri,
-        settingsPrefs.autoBackupStatus,
-    ) { enabled, interval, folder, status ->
-        AutoBackupUiState(enabled, interval, folder, status)
+        combine(
+            settingsPrefs.autoBackupEnabled,
+            settingsPrefs.autoBackupIntervalMinutes,
+            settingsPrefs.autoBackupFolderUri,
+            settingsPrefs.autoBackupStatus,
+        ) { enabled, interval, folder, status ->
+            AutoBackupUiState(enabled, interval, folder, status)
+        },
+        settingsPrefs.autoBackupSelection,
+        settingsPrefs.autoBackupCombined,
+        settingsPrefs.autoBackupKeep,
+    ) { base, selection, combined, keep ->
+        base.copy(selection = selection, combined = combined, keep = keep)
     }
         .flowOn(io)
         .stateWhileSubscribed(
@@ -115,18 +126,22 @@ class CalendarsViewModel @Inject constructor(
     fun consumeBackupResult() { _backupResult.value = null }
 
     /**
-     * Serialise every event of the writable local calendars into the chosen SAF
-     * document [uri] as one `VCALENDAR`. Result (event count, or failure) lands
+     * Serialise every event of [calendarIds] into the chosen SAF document [uri]
+     * as one `VCALENDAR`. Result (event count, or failure) lands
      * in [backupResult] for a one-shot message.
      */
-    fun exportBackup(uri: Uri, calendarIds: Set<Long>? = null) {
+    fun exportBackup(uri: Uri, calendarIds: Set<Long>) {
         viewModelScope.launch {
             _backupResult.value = try {
                 val count = withContext(io) {
                     val events = repository.exportEvents(calendarIds)
+                    // A one-calendar file is named after it, as the automatic backup's are.
+                    val name = calendarIds.singleOrNull()?.let { id ->
+                        repository.calendars().first().firstOrNull { it.id == id }?.displayName
+                    }
                     icsExporter.writeDocument(
                         uri = uri,
-                        content = IcsWriter().writeCalendar(events, Clock.System.now()),
+                        content = IcsWriter().writeCalendar(events, Clock.System.now(), name),
                     )
                     events.size
                 }
@@ -204,6 +219,49 @@ class CalendarsViewModel @Inject constructor(
         }
     }
 
+    /** Selection writes since the calendar picker opened; the run after it waits for them. */
+    private val selectionWrites = mutableListOf<Job>()
+
+    fun setAutoBackupCalendar(calendar: CalendarSource, included: Boolean) {
+        selectionWrites += viewModelScope.launch { settingsPrefs.setAutoBackupCalendar(calendar, included) }
+    }
+
+    fun setAutoBackupCombined(combined: Boolean) {
+        viewModelScope.launch {
+            if (settingsPrefs.autoBackupCombined.first() == combined) return@launch
+            settingsPrefs.setAutoBackupCombined(combined)
+            runBackupIfActive()
+        }
+    }
+
+    fun setAutoBackupKeep(keep: Int) {
+        viewModelScope.launch {
+            if (settingsPrefs.autoBackupKeep.first() == keep) return@launch
+            settingsPrefs.setAutoBackupKeep(keep)
+            runBackupIfActive()
+        }
+    }
+
+    /**
+     * After the calendar choice is closed, back up what is now selected rather
+     * than at the next interval — only if it changed, since every run rotates
+     * an older backup out.
+     */
+    fun autoBackupCalendarsChosen(before: BackupSelection) {
+        val pending = selectionWrites.toList()
+        selectionWrites.clear()
+        viewModelScope.launch {
+            pending.joinAll()
+            if (settingsPrefs.autoBackupSelection.first() != before) runBackupIfActive()
+        }
+    }
+
+    private suspend fun runBackupIfActive() {
+        if (settingsPrefs.autoBackupEnabled.first() && settingsPrefs.autoBackupFolderUri.first() != null) {
+            BackupScheduler.runNow(context)
+        }
+    }
+
     private suspend fun reschedule() {
         BackupScheduler.apply(
             context = context,
@@ -232,6 +290,9 @@ data class AutoBackupUiState(
     val intervalMinutes: Long = SettingsPrefs.DEFAULT_BACKUP_INTERVAL,
     val folderUri: String? = null,
     val status: BackupStatus = BackupStatus(lastRun = 0L, lastSuccess = true, consecutiveFailures = 0),
+    val selection: BackupSelection = BackupSelection(),
+    val combined: Boolean = false,
+    val keep: Int = DEFAULT_BACKUP_KEEP,
 )
 
 /** Outcome of a whole-calendar backup, surfaced once to the screen. */

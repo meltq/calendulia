@@ -247,8 +247,8 @@ class CalendarRepositoryImpl @Inject constructor(
             }
         }
 
-    override suspend fun exportEvents(calendarIds: Set<Long>?) =
-        withContext(io) { dataSource.exportableEvents(calendarIds, allDayReminderTimeMinutes()) }
+    override suspend fun exportEvents(calendarIds: Set<Long>) =
+        withContext(io) { dataSource.calendarEvents(calendarIds, allDayReminderTimeMinutes()) }
 
     override suspend fun importEvents(
         targetCalendarId: Long,

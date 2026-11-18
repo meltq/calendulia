@@ -15,6 +15,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.Cloud
 import androidx.compose.material.icons.filled.PhoneAndroid
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -55,28 +56,13 @@ fun ColumnScope.CalendarPickerGroups(
     onSelect: (Long) -> Unit,
     onManageCalendars: (() -> Unit)? = null,
 ) {
-    val local = remember(calendars) { calendars.filter { it.isLocal } }
-    val syncedGroups = remember(calendars) {
-        calendars.filterNot { it.isLocal }.groupByAccount()
-    }
-
-    if (local.isNotEmpty()) {
-        CalendarPickerGroup(
-            title = stringResource(R.string.calendars_local_header),
-            leading = { LeadingAvatar(Icons.Default.PhoneAndroid) },
-            calendars = local,
-            selectedId = selectedId,
-            onSelect = onSelect,
-        )
-    }
-    syncedGroups.forEachIndexed { index, group ->
-        if (local.isNotEmpty() || index > 0) Spacer(Modifier.height(16.dp))
-        CalendarPickerGroup(
-            title = accountGroupTitle(group),
-            leading = { SourceLogo(group.accountType) },
-            calendars = group.calendars,
-            selectedId = selectedId,
-            onSelect = onSelect,
+    CalendarAccountSections(calendars) { calendar, position ->
+        GroupedRow(
+            title = calendar.displayName.orUnnamed(),
+            position = position,
+            checked = calendar.id == selectedId,
+            leading = { CalendarColorChip(calendar.color) },
+            onClick = { onSelect(calendar.id) },
         )
     }
     if (onManageCalendars != null) {
@@ -98,14 +84,68 @@ fun ColumnScope.CalendarPickerGroups(
     }
 }
 
-/** One account's category header (avatar + name) atop its selectable calendars. */
+/**
+ * A multi-select take on [CalendarPickerGroups]: the same sections, with a
+ * checkbox per calendar instead of a single check.
+ */
 @Composable
-private fun CalendarPickerGroup(
+fun ColumnScope.CalendarCheckGroups(
+    calendars: List<CalendarSource>,
+    isChecked: (CalendarSource) -> Boolean,
+    onCheckedChange: (CalendarSource, Boolean) -> Unit,
+) {
+    CalendarAccountSections(calendars) { calendar, position ->
+        val checked = isChecked(calendar)
+        GroupedRow(
+            title = calendar.displayName.orUnnamed(),
+            summary = calendar.description,
+            position = position,
+            leading = { CalendarColorChip(calendar.color) },
+            trailing = {
+                Checkbox(checked = checked, onCheckedChange = { onCheckedChange(calendar, it) })
+            },
+            onClick = { onCheckedChange(calendar, !checked) },
+        )
+    }
+}
+
+/** The app's own calendars, then one section per synced account, each under its category header. */
+@Composable
+private fun CalendarAccountSections(
+    calendars: List<CalendarSource>,
+    row: @Composable (CalendarSource, Position) -> Unit,
+) {
+    val local = remember(calendars) { calendars.filter { it.isLocal } }
+    val syncedGroups = remember(calendars) {
+        calendars.filterNot { it.isLocal }.groupByAccount()
+    }
+
+    if (local.isNotEmpty()) {
+        CalendarAccountSection(
+            title = stringResource(R.string.calendars_local_header),
+            leading = { LeadingAvatar(Icons.Default.PhoneAndroid) },
+            calendars = local,
+            row = row,
+        )
+    }
+    syncedGroups.forEachIndexed { index, group ->
+        if (local.isNotEmpty() || index > 0) Spacer(Modifier.height(16.dp))
+        CalendarAccountSection(
+            title = accountGroupTitle(group),
+            leading = { SourceLogo(group.accountType) },
+            calendars = group.calendars,
+            row = row,
+        )
+    }
+}
+
+/** One account's category header (avatar + name) atop its calendars. */
+@Composable
+private fun CalendarAccountSection(
     title: String,
     leading: @Composable () -> Unit,
     calendars: List<CalendarSource>,
-    selectedId: Long?,
-    onSelect: (Long) -> Unit,
+    row: @Composable (CalendarSource, Position) -> Unit,
 ) {
     GroupedRow(
         title = title,
@@ -113,13 +153,7 @@ private fun CalendarPickerGroup(
         leading = leading,
     )
     calendars.forEachIndexed { index, calendar ->
-        GroupedRow(
-            title = calendar.displayName.orUnnamed(),
-            position = if (index == calendars.lastIndex) Position.Bottom else Position.Middle,
-            checked = calendar.id == selectedId,
-            leading = { CalendarColorChip(calendar.color) },
-            onClick = { onSelect(calendar.id) },
-        )
+        row(calendar, if (index == calendars.lastIndex) Position.Bottom else Position.Middle)
     }
 }
 

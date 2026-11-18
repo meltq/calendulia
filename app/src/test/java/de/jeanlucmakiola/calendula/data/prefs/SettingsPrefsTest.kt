@@ -7,6 +7,7 @@ import de.jeanlucmakiola.floret.reminders.ReminderOverride
 import androidx.compose.ui.unit.dp
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.EventFormField
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
@@ -802,5 +803,86 @@ class SettingsPrefsTest {
         prefs.setCalendarInDailyDigest(5L, included = true)
         assertThat(prefs.dailyDigest.first().excludedCalendarIds).isEmpty()
     }
+
+    @Test
+    fun `a fresh install backs up one file per calendar, keeping three`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        prefs.setAutoBackupFolderUri("content://tree/a")
+        assertThat(prefs.autoBackupCombined.first()).isFalse()
+        assertThat(prefs.autoBackupKeep.first()).isEqualTo(3)
+    }
+
+    @Test
+    fun `an install that had a backup folder before 411 keeps its single file`(@TempDir tempDir: Path) = runTest {
+        val store = testDataStore(tempDir, "test_settings")
+        val prefs = SettingsPrefs(store)
+        store.updateData { p ->
+            val m = p.toMutablePreferences()
+            m[stringPreferencesKey("auto_backup_folder_uri")] = "content://tree/old"
+            m
+        }
+        assertThat(prefs.autoBackupCombined.first()).isTrue()
+
+
+        // Picking another folder pins the layout instead of flipping it, and
+        // keeps the old file recognised as this install's own.
+        prefs.setAutoBackupFolderUri("content://tree/new")
+        assertThat(prefs.autoBackupCombined.first()).isTrue()
+        // A new folder starts a new ledger: the old file there isn't known to be ours.
+        assertThat(prefs.autoBackupLedger.first()).isEmpty()
+
+        prefs.setAutoBackupCombined(false)
+        assertThat(prefs.autoBackupCombined.first()).isFalse()
+    }
+
+    @Test
+    fun `backup calendar choices are stored as deviations from the default`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        val local = backupCalendar(1L, local = true)
+        val synced = backupCalendar(2L, local = false)
+
+        prefs.setAutoBackupCalendar(synced, true)
+        prefs.setAutoBackupCalendar(local, false)
+        val selection = prefs.autoBackupSelection.first()
+        assertThat(selection.included).containsExactly(2L)
+        assertThat(selection.excluded).containsExactly(1L)
+
+        prefs.setAutoBackupCalendar(local, true)
+        assertThat(prefs.autoBackupSelection.first().excluded).isEmpty()
+    }
+
+    @Test
+    fun `a stray retention count snaps to an offered one`(@TempDir tempDir: Path) = runTest {
+        val prefs = testSettings(tempDir)
+        prefs.setAutoBackupKeep(4)
+        assertThat(prefs.autoBackupKeep.first()).isIn(listOf(3, 5))
+        prefs.setAutoBackupKeep(99)
+        assertThat(prefs.autoBackupKeep.first()).isEqualTo(10)
+    }
+
+    @Test
+    fun `a pre-411 install adopts its old file when the layout is pinned in place`(@TempDir tempDir: Path) = runTest {
+        val store = testDataStore(tempDir, "test_settings")
+        val prefs = SettingsPrefs(store)
+        store.updateData { p ->
+            val m = p.toMutablePreferences()
+            m[stringPreferencesKey("auto_backup_folder_uri")] = "content://tree/old"
+            m
+        }
+        prefs.setAutoBackupCombined(false)
+        assertThat(prefs.autoBackupLedger.first())
+            .containsExactly("latest-combined", listOf("calendula-backup.ics"))
+    }
+
+    private fun backupCalendar(id: Long, local: Boolean) = CalendarSource(
+        id = id,
+        displayName = "C$id",
+        accountName = "a",
+        accountType = if (local) "LOCAL" else "com.google",
+        color = 0,
+        isVisibleInSystem = true,
+        canModifyContents = true,
+        isLocal = local,
+    )
 }
 
