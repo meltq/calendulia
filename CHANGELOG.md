@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- **Notifications per calendar.** Settings → Notifications → Calendars lists every calendar with its own switch, sound and system channel, grouped by account. Turn one calendar's reminders off without hiding it, give it its own sound, or see that the system blocks it ([#145], [#272], [#340]).
+- **Pick the reminder sound in the app.** Choose a sound for all calendars or for one, including Silent, without going through the system settings ([#518]).
+- **Full-screen reminders.** A calendar can show its reminders full screen, even on the lock screen, either sounding once or ringing like an alarm until you dismiss or snooze them ([#171]).
+- **Reminders at a set time.** Add a reminder like "1 day before at 20:00" to timed events, with a default for new events and per calendar ([#459]).
+- **A daily summary.** One notification a day lists today's or tomorrow's events, at a time you choose, with calendars you can leave out ([#459]).
+- **More reminder presets.** 2, 3, 4 and 5 days and 2 and 3 weeks before are one tap away, in the editor and the default pickers ([#365]).
+- **Open link or map from a reminder.** A reminder whose location holds a meeting link gets an Open link button, one with a place gets Open in maps ([#464]).
+- **Hide calendars in chosen views.** A calendar can stay in the agenda but leave the month view, for example. Set it under Settings → Calendars, or from the drawer for the view you're in ([#270], [#517]).
+- **Show or hide a whole account at once** by tapping its header in the drawer ([#143]).
+- **A default calendar for new events,** under Settings → Event form; Automatic keeps the one you last used ([#429]).
+- **Sync now.** The drawer can ask your sync apps to sync, and shows when they are done. Calendula also nudges them after you change an event in a synced calendar, so edits reach the server sooner ([#240], [#303]).
+- **Copy events between calendars,** for example from a synced calendar into a local or DAVx5 one, with exceptions of repeating events, progress and Cancel ([#325]).
+- **Back up synced calendars too,** each into its own file. The automatic backup keeps one up-to-date copy per calendar next to the dated ones, lets you choose how many dated files to keep, and can run right after a change instead of only on its schedule ([#147], [#411], [#516]).
+- **Back up and restore your settings.** Backup & restore → Settings saves Calendula's settings to a file and reads one back, also on another phone; per-calendar settings find their calendar by account and name ([#481]).
+
+### Changed
+- **All-day reminders show the day they fire on.** A reminder kept from a timed event no longer reads "30 minutes before" on an all-day event ([#514]).
+
+### Fixed
+- **Repeating events with extra dates survive a backup.** `.ics` backups now write and read back RDATE ([#515]).
+
 ## [2.24.2] — 2026-11-13
 
 ### Fixed
@@ -1985,3 +2007,24 @@ automatically, with zero telemetry and no internet permission.
 [#493]: https://codeberg.org/jlmakiola/calendula/issues/493
 [#494]: https://codeberg.org/jlmakiola/calendula/issues/494
 [#501]: https://codeberg.org/jlmakiola/calendula/issues/501
+[#143]: https://codeberg.org/jlmakiola/calendula/issues/143
+[#145]: https://codeberg.org/jlmakiola/calendula/issues/145
+[#147]: https://codeberg.org/jlmakiola/calendula/issues/147
+[#171]: https://codeberg.org/jlmakiola/calendula/issues/171
+[#240]: https://codeberg.org/jlmakiola/calendula/issues/240
+[#270]: https://codeberg.org/jlmakiola/calendula/issues/270
+[#272]: https://codeberg.org/jlmakiola/calendula/issues/272
+[#303]: https://codeberg.org/jlmakiola/calendula/issues/303
+[#325]: https://codeberg.org/jlmakiola/calendula/issues/325
+[#340]: https://codeberg.org/jlmakiola/calendula/issues/340
+[#365]: https://codeberg.org/jlmakiola/calendula/issues/365
+[#411]: https://codeberg.org/jlmakiola/calendula/issues/411
+[#429]: https://codeberg.org/jlmakiola/calendula/issues/429
+[#459]: https://codeberg.org/jlmakiola/calendula/issues/459
+[#464]: https://codeberg.org/jlmakiola/calendula/issues/464
+[#481]: https://codeberg.org/jlmakiola/calendula/issues/481
+[#514]: https://codeberg.org/jlmakiola/calendula/issues/514
+[#515]: https://codeberg.org/jlmakiola/calendula/issues/515
+[#516]: https://codeberg.org/jlmakiola/calendula/issues/516
+[#517]: https://codeberg.org/jlmakiola/calendula/issues/517
+[#518]: https://codeberg.org/jlmakiola/calendula/issues/518
