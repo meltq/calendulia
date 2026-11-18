@@ -13,6 +13,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.FileDownload
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Schedule
@@ -89,8 +90,11 @@ fun BackupScreen(
     onImport: (Uri) -> Unit,
     visible: Boolean = true,
     viewModel: CalendarsViewModel = hiltViewModel(),
+    copyViewModel: CopyEventsViewModel = hiltViewModel(),
 ) {
     val state by viewModel.backupState.collectAsStateWithLifecycle()
+    val copyRun by copyViewModel.run.collectAsStateWithLifecycle()
+    var showCopy by rememberSaveable { mutableStateOf(false) }
     val backupResult by viewModel.backupResult.collectAsStateWithLifecycle()
     val autoBackup by viewModel.autoBackup.collectAsStateWithLifecycle()
 
@@ -158,6 +162,9 @@ fun BackupScreen(
             is BackupUiState.Ready -> BackupContent(
                 exportable = s.exportable,
                 canImport = s.canImport,
+                canCopy = s.canCopy,
+                copyRun = copyRun,
+                onCopy = { showCopy = true },
                 autoBackup = autoBackup,
                 viewModel = viewModel,
                 onRestore = { runCatching { openBackup.launch(RESTORE_MIME_TYPES) } },
@@ -177,6 +184,25 @@ fun BackupScreen(
         }
     }
 
+    // Not gated on Ready: a running copy keeps its progress and Cancel whatever the list does.
+    if (showCopy) {
+        val calendars by copyViewModel.calendars.collectAsStateWithLifecycle()
+        val selection by copyViewModel.selection.collectAsStateWithLifecycle()
+        CopyEventsScreen(
+            calendars = calendars,
+            selection = selection,
+            run = copyRun,
+            onSelectSource = copyViewModel::setSource,
+            onSelectTarget = copyViewModel::setTarget,
+            onStart = copyViewModel::start,
+            onCancel = copyViewModel::cancel,
+            onClearFinished = copyViewModel::clearFinished,
+            onDismiss = {
+                showCopy = false
+                copyViewModel.clearFinished()
+            },
+        )
+    }
     // Gated on Ready rather than resetting the flag when the state leaves it:
     // flipping it here would be a write during composition.
     (state as? BackupUiState.Ready)?.let { ready ->
@@ -249,6 +275,9 @@ private fun defaultBackupName(): String = "calendula-backup-${LocalDate.now()}.i
 private fun BackupContent(
     exportable: List<CalendarSource>,
     canImport: Boolean,
+    canCopy: Boolean,
+    copyRun: CopyRunState,
+    onCopy: () -> Unit,
     autoBackup: AutoBackupUiState,
     viewModel: CalendarsViewModel,
     onRestore: () -> Unit,
@@ -274,10 +303,11 @@ private fun BackupContent(
         GroupedHint(restoreSummary, style = MaterialTheme.typography.bodySmall)
         GroupedRow(
             title = stringResource(R.string.calendars_restore_action),
-            position = Position.Alone,
+            position = if (copyRun != CopyRunState.Idle) Position.Top else Position.Alone,
             leading = { LeadingAvatar(Icons.Default.FileUpload) },
             onClick = onRestoreClick,
         )
+        if (copyRun != CopyRunState.Idle) CopyEventsRow(copyRun, Position.Bottom, onCopy)
         return
     }
 
@@ -296,6 +326,8 @@ private fun BackupContent(
         leading = { LeadingAvatar(Icons.Default.FileUpload) },
         onClick = onRestoreClick,
     )
+    // A running or finished copy keeps its row, the way back to its sheet.
+    if (canCopy || copyRun != CopyRunState.Idle) CopyEventsRow(copyRun, Position.Middle, onCopy)
     GroupedRow(
         title = stringResource(R.string.calendars_auto_backup),
         summary = stringResource(R.string.calendars_auto_backup_hint),
@@ -359,6 +391,23 @@ private fun BackupContent(
             style = MaterialTheme.typography.bodySmall,
         )
     }
+}
+
+@Composable
+private fun CopyEventsRow(copyRun: CopyRunState, position: Position, onClick: () -> Unit) {
+    GroupedRow(
+        title = stringResource(R.string.calendars_copy_action),
+        summary = when (copyRun) {
+            is CopyRunState.Running -> copyProgressText(copyRun)
+            is CopyRunState.Done -> stringResource(copyRun.titleRes)
+            CopyRunState.Cancelled -> stringResource(R.string.calendars_copy_cancelled)
+            CopyRunState.Failed -> stringResource(R.string.calendars_copy_failed)
+            CopyRunState.Idle -> stringResource(R.string.calendars_copy_summary)
+        },
+        position = position,
+        leading = { LeadingAvatar(Icons.Default.ContentCopy) },
+        onClick = onClick,
+    )
 }
 
 /**

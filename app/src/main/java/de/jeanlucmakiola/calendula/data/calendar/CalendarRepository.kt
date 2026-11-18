@@ -62,17 +62,40 @@ interface CalendarRepository {
 
     /**
      * Every event of [calendarIds], ready to serialise into an `.ics` backup
-     * (see [CalendarDataSource.calendarEvents]). Any calendar can be read,
-     * synced and read-only ones included (#147).
+     * (see [CalendarDataSource.calendarRows]). Any calendar can be read,
+     * synced and read-only ones included (#147). Exception rows come out
+     * flattened ([de.jeanlucmakiola.calendula.domain.ics.flattenOverrides]),
+     * so a restore keeps moved and deleted occurrences of a series.
      */
     suspend fun exportEvents(calendarIds: Set<Long>): List<IcsEvent>
 
     /**
      * Bulk-import parsed `.ics` [events] into [targetCalendarId]. Events whose
      * UID already exists in the target are skipped (idempotent restore); the
-     * rest are inserted. See [CalendarDataSource.insertImportedEvent].
+     * rest are inserted, as is a standalone occurrence whose series is already
+     * there ([ParsedIcsEvent.overrideOf]). See [CalendarDataSource.insertImportedEvent].
+     * [onProgress] gets the count of events handled so far before each event
+     * after the first and once more when all were handled; it may throw to stop
+     * the import between events.
      */
-    suspend fun importEvents(targetCalendarId: Long, events: List<ParsedIcsEvent>): IcsImportSummary
+    suspend fun importEvents(
+        targetCalendarId: Long,
+        events: List<ParsedIcsEvent>,
+        onProgress: (done: Int) -> Unit = {},
+    ): IcsImportSummary
+
+    /**
+     * Copy every event of [sourceCalendarId] into [targetCalendarId] (#325),
+     * exceptions included (see
+     * [de.jeanlucmakiola.calendula.domain.ics.planCalendarCopy]). The source is only read. Runs
+     * through [importEvents], so a re-run skips what an earlier one copied.
+     * [onProgress] gets (done, total) once the source is read and after each event.
+     */
+    suspend fun copyEvents(
+        sourceCalendarId: Long,
+        targetCalendarId: Long,
+        onProgress: (done: Int, total: Int) -> Unit = { _, _ -> },
+    ): IcsImportSummary
 
     /** Create a new event from a validated form; returns the new `Events._ID`. */
     suspend fun createEvent(form: EventForm): Long

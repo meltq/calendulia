@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.domain.ics
 
+import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.zoneOrNull
@@ -45,6 +46,17 @@ data class ParsedIcsEvent(
     val exDates: List<String> = emptyList(),
     /** True when this came from a `VTODO` rather than a `VEVENT`. */
     val isTask: Boolean = false,
+    /**
+     * The UID of the series this standalone occurrence replaces one occurrence
+     * of (`X-CALENDULA-OVERRIDE-OF`). An import skips it where that series
+     * already is, since the series there carries its own override.
+     */
+    val overrideOf: String? = null,
+    /** The occurrence of [overrideOf] this event replaces (`X-CALENDULA-OVERRIDE-AT`). */
+    val overrideAt: Instant? = null,
+    /** Extra occurrences (`RDATE`), in the same shape as [exDates]. */
+    val recurrenceDates: List<String> = emptyList(),
+    val accessLevel: AccessLevel = AccessLevel.Default,
 )
 
 /**
@@ -212,7 +224,10 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
         var calendarColor: Int? = null
         val reminders = mutableListOf<Int>()
         val exDateLines = mutableListOf<IcsContentLine>()
+        val rDateLines = mutableListOf<IcsContentLine>()
         var skipAsOverride = false
+        var overrideOf: String? = null
+        var overrideAt: Instant? = null
 
         var i = 0
         while (i < body.size) {
@@ -233,6 +248,7 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
                 "DURATION" -> duration = line.value.trim()
                 "RRULE" -> rrule = line.value.trim().ifEmpty { null }
                 "EXDATE" -> exDateLines.add(line)
+                "RDATE" -> rDateLines.add(line)
                 "LOCATION" -> location = unescapeText(line.value).ifEmpty { null }
                 "DESCRIPTION" -> description = unescapeText(line.value).ifEmpty { null }
                 "STATUS" -> status = mapIcsStatus(line.value)
@@ -241,6 +257,8 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
                     else Availability.Busy
                 "RECURRENCE-ID" -> skipAsOverride = true
                 "ATTENDEE" -> warnings.add(IcsParseWarning.AttendeesIgnored)
+                "X-CALENDULA-OVERRIDE-OF" -> overrideOf = unescapeText(line.value).trim().ifEmpty { null }
+                "X-CALENDULA-OVERRIDE-AT" -> overrideAt = parseBasicDateTime(line.value.trim())?.toInstant(TimeZone.UTC)
                 "X-CALENDULA-CALENDAR" ->
                     calendarName = unescapeText(line.value).trim().ifEmpty { calendarName }
                 // Fossify names the source calendar per event; it never writes
@@ -279,6 +297,7 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
         val recurrence = sanitizeRrule(rrule)
         if (recurrence.repaired) warnings.add(IcsParseWarning.RecurrenceRuleRepaired)
         val end = resolveEnd(start, dtEnd, duration)
+        val recurrenceDates = normalizeExDates(rDateLines, start)
         return ParsedIcsEvent(
             uid = uid,
             summary = summary,
@@ -294,12 +313,15 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
             availability = availability,
             calendarName = calendarName ?: category,
             color = eventColor ?: calendarColor,
-            exDates = if (recurrence.rule == null) {
+            exDates = if (recurrence.rule == null && recurrenceDates.isEmpty()) {
                 emptyList()
             } else {
                 normalizeExDates(exDateLines, start)
             },
+            recurrenceDates = recurrenceDates,
             isTask = isTask,
+            overrideOf = overrideOf,
+            overrideAt = overrideAt,
         )
     }
 
@@ -334,13 +356,16 @@ class IcsParser(private val deviceZone: TimeZone = TimeZone.currentSystemDefault
      * still means the day it spells out; resolving it to an instant first and
      * reading *that* back in UTC would roll a midnight east of UTC onto the day
      * before and exclude an occurrence that doesn't exist.
+     *
+     * `RDATE` shares the value form and is read here too.
      */
     private fun normalizeExDates(lines: List<IcsContentLine>, start: IcsDateTime): List<String> {
         if (lines.isEmpty()) return emptyList()
         val startZone = zoneOrNull(start.zoneId) ?: deviceZone
         val startTime = start.instant.toLocalDateTime(startZone).time
         return lines
-            .flatMap { line -> line.value.split(',').map { line to it.trim() } }
+            // An RDATE PERIOD (`start/end`) counts by its start.
+            .flatMap { line -> line.value.split(',').map { line to it.trim().substringBefore('/') } }
             .mapNotNull { (line, token) ->
                 when {
                     token.isEmpty() -> null

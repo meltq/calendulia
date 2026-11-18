@@ -1,5 +1,6 @@
 package de.jeanlucmakiola.calendula.domain.ics
 
+import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.Availability
 import de.jeanlucmakiola.calendula.domain.EventStatus
 import kotlin.time.Instant
@@ -36,7 +37,24 @@ data class IcsEvent(
     val availability: Availability = Availability.Busy,
     /** Source calendar name, emitted as `X-CALENDULA-CALENDAR` so a combined backup can fan back out. */
     val calendarName: String? = null,
+    /** Extra occurrences (`RDATE`), in the same shape as [exDates]. */
+    val recurrenceDates: List<String> = emptyList(),
+    /** Carried by a calendar copy, not written to a file. */
+    val accessLevel: AccessLevel = AccessLevel.Default,
+    /** The event's own colour, null when it shows its calendar's; carried by a calendar copy, not written to a file. */
+    val color: Int? = null,
+    /**
+     * For a modified occurrence written out on its own ([flattenOverrides]): the
+     * UID of the series it replaces an occurrence of, as `X-CALENDULA-OVERRIDE-OF`.
+     */
+    val overrideOf: String? = null,
+    /** The occurrence of [overrideOf] this event replaces, as `X-CALENDULA-OVERRIDE-AT`. */
+    val overrideAt: Instant? = null,
 )
+
+/** Whether this is a series: by rule, or by listed dates alone. */
+val IcsEvent.recurs: Boolean
+    get() = !recurrenceRule.isNullOrBlank() || recurrenceDates.isNotEmpty()
 
 /**
  * The UID to export for a provider event. A row that already carries a UID

@@ -152,14 +152,13 @@ internal object EventDetailProjection {
 }
 
 /**
- * Master/one-off Events rows for a whole-calendar backup. Unlike
+ * Every Events row of a whole-calendar backup or copy. Unlike
  * [EventDetailProjection] this reads `UID_2445` (to keep a row's identity across
  * backups) and `DURATION` (recurring rows carry it instead of DTEND), plus
- * `EXDATE` so a series exports the occurrences deleted from it. Modified-
- * occurrence and cancelled-exception rows are filtered out by the query
- * (`ORIGINAL_ID IS NULL`), so RECURRENCE-ID overrides aren't exported — a
- * documented v1 limit (import skips them too). EXDATE is unaffected by that
- * filter: it lives on the master row, not on an exception of its own.
+ * `EXDATE` so a series exports the occurrences deleted from it. Exception rows
+ * are read too and told apart by their series-link columns; see
+ * [de.jeanlucmakiola.calendula.domain.ics.flattenOverrides] for how they are
+ * written out.
  */
 internal object EventExportProjection {
     val COLUMNS: Array<String> = arrayOf(
@@ -178,6 +177,15 @@ internal object EventExportProjection {
         CalendarContract.Events.STATUS,
         CalendarContract.Events.AVAILABILITY,
         CalendarContract.Events.CALENDAR_ID,
+        CalendarContract.Events.EVENT_COLOR,
+        CalendarContract.Events._SYNC_ID,
+        CalendarContract.Events.ORIGINAL_ID,
+        CalendarContract.Events.ORIGINAL_SYNC_ID,
+        CalendarContract.Events.ORIGINAL_INSTANCE_TIME,
+        CalendarContract.Events.RDATE,
+        CalendarContract.Events.ACCESS_LEVEL,
+        CalendarContract.Events.EVENT_COLOR_KEY,
+        CalendarContract.Events.SELF_ATTENDEE_STATUS,
     )
 
     const val IDX_ID = 0
@@ -195,6 +203,15 @@ internal object EventExportProjection {
     const val IDX_STATUS = 12
     const val IDX_AVAILABILITY = 13
     const val IDX_CALENDAR_ID = 14
+    const val IDX_EVENT_COLOR = 15
+    const val IDX_SYNC_ID = 16
+    const val IDX_ORIGINAL_ID = 17
+    const val IDX_ORIGINAL_SYNC_ID = 18
+    const val IDX_ORIGINAL_INSTANCE_TIME = 19
+    const val IDX_RDATE = 20
+    const val IDX_ACCESS_LEVEL = 21
+    const val IDX_EVENT_COLOR_KEY = 22
+    const val IDX_SELF_ATTENDEE_STATUS = 23
 }
 
 /**

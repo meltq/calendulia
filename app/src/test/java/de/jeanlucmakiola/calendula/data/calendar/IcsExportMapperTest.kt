@@ -294,4 +294,39 @@ class IcsExportMapperTest {
 
         assertThat(event.exDates).isEmpty()
     }
+
+    @Test
+    fun `a zoned RDATE list is written as UTC stamps, a period by its start`() {
+        assertThat(exportRecurrenceDates("Europe/Berlin;20260110T100000,20260111T100000/PT1H", isAllDay = false))
+            .containsExactly("20260110T090000Z", "20260111T090000Z").inOrder()
+    }
+
+    @Test
+    fun `an all-day RDATE keeps its days, junk is dropped`() {
+        assertThat(exportRecurrenceDates("20260110T000000Z,20260111,garbage", isAllDay = true))
+            .containsExactly("20260110", "20260111").inOrder()
+    }
+
+    @Test
+    fun `an RDATE stored over several lines keeps every line's dates`() {
+        assertThat(exportRecurrenceDates("Europe/Berlin;20260110T100000\nAmerica/New_York;20260112T090000", isAllDay = false))
+            .containsExactly("20260110T090000Z", "20260112T140000Z").inOrder()
+    }
+
+    @Test
+    fun `an EXDATE stored over several lines keeps every line, unreadable stamps go`() {
+        assertThat(exportExDates("Europe/Berlin;20260110T100000\nEurope/Berlin;20260117T100000,junk", isAllDay = false))
+            .containsExactly("20260110T090000Z", "20260117T090000Z").inOrder()
+    }
+
+    @Test
+    fun `a bare day on a timed series is read at the series' time of day`() {
+        val tenBerlin = java.time.ZonedDateTime.of(2026, 1, 5, 10, 0, 0, 0, java.time.ZoneId.of("Europe/Berlin"))
+            .toInstant().toEpochMilli()
+
+        assertThat(exportExDates("20260112", isAllDay = false, "Europe/Berlin", tenBerlin))
+            .containsExactly("20260112T090000Z")
+        assertThat(exportRecurrenceDates("20260712", isAllDay = false, "Europe/Berlin", tenBerlin))
+            .containsExactly("20260712T080000Z")
+    }
 }

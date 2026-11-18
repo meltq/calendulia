@@ -30,6 +30,9 @@ import de.jeanlucmakiola.calendula.domain.Reminder
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import de.jeanlucmakiola.calendula.domain.contacts.MANAGED_UID_PREFIX
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.ics.CalendarRows
+import de.jeanlucmakiola.calendula.domain.ics.OverrideRow
+import de.jeanlucmakiola.calendula.domain.ics.MasterRow
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.semanticReminderMinutes
@@ -91,15 +94,15 @@ interface CalendarDataSource {
     fun publishedEventColors(calendarId: Long): List<EventColorOption>
 
     /**
-     * Every master/one-off event of [calendarIds], whatever kind of calendar
-     * they are (local, synced, read-only), mapped to [IcsEvent]s. A plain read:
-     * which calendars may be read for what is the caller's call. Modified-
-     * occurrence and cancelled-exception rows are excluded (see
-     * [EventExportProjection]). [allDayReminderTimeMinutes]: needed to write
-     * all-day reminders as whole-day lead times rather than raw provider
+     * Every event row of [calendarIds], whatever kind of calendar they are
+     * (local, synced, read-only): the masters/one-offs and the modified and
+     * cancelled exception rows, each with the keys that link it to its series
+     * and tagged with its calendar's name. A plain read: which calendars may be
+     * read for what is the caller's call. [allDayReminderTimeMinutes]: needed to
+     * write all-day reminders as whole-day lead times rather than raw provider
      * offsets (see [toIcsEvent]).
      */
-    fun calendarEvents(calendarIds: Set<Long>, allDayReminderTimeMinutes: Int): List<IcsEvent>
+    fun calendarRows(calendarIds: Set<Long>, allDayReminderTimeMinutes: Int): CalendarRows
 
     /**
      * The non-empty `Events.UID_2445` values present in [calendarId] — used to
@@ -777,24 +780,67 @@ class AndroidCalendarDataSource @Inject constructor(
             ?: emptyList()
     }
 
-    override fun calendarEvents(
-        calendarIds: Set<Long>,
-        allDayReminderTimeMinutes: Int,
-    ): List<IcsEvent> {
-        if (calendarIds.isEmpty()) return emptyList()
-        // Id → display name for the X-CALENDULA-CALENDAR tag a restore uses to
-        // fan back out; an id that no longer exists drops out here.
-        val names = calendars()
-            .filter { it.id in calendarIds }
-            .associate { it.id to it.displayName }
-        if (names.isEmpty()) return emptyList()
+    override fun calendarRows(calendarIds: Set<Long>, allDayReminderTimeMinutes: Int): CalendarRows {
+        if (calendarIds.isEmpty()) return CalendarRows(emptyList(), emptyList())
+        // The name tags each event for a combined backup's restore to fan back
+        // out; an id that no longer exists drops out here.
+        val calendars = calendars().filter { it.id in calendarIds }.associateBy { it.id }
+        if (calendars.isEmpty()) return CalendarRows(emptyList(), emptyList())
 
-        val idList = names.keys.joinToString(",")
-        // Masters + one-offs only: no soft-deleted or exception rows.
-        val selection = "${CalendarContract.Events.CALENDAR_ID} IN ($idList) AND " +
-            "${CalendarContract.Events.DELETED} = 0 AND " +
-            "${CalendarContract.Events.ORIGINAL_ID} IS NULL AND " +
-            "${CalendarContract.Events.ORIGINAL_SYNC_ID} IS NULL"
+        val selection = "${CalendarContract.Events.CALENDAR_ID} IN (${calendars.keys.joinToString(",")}) AND " +
+            "${CalendarContract.Events.DELETED} = 0"
+        val series = mutableListOf<MasterRow>()
+        val overrides = mutableListOf<OverrideRow>()
+        forEachExportRow(selection, allDayReminderTimeMinutes) { event ->
+            val calendarId = getLong(EventExportProjection.IDX_CALENDAR_ID)
+            val calendar = calendars[calendarId]
+            // An adapter may stamp the calendar colour on every row; a palette key means it was chosen.
+            val color = getIntOrNull(EventExportProjection.IDX_EVENT_COLOR)?.takeIf {
+                it != calendar?.color || !getString(EventExportProjection.IDX_EVENT_COLOR_KEY).isNullOrEmpty()
+            }
+            val mapped = event(calendar?.displayName).copy(color = color)
+            val selfStatus = getIntOrNull(EventExportProjection.IDX_SELF_ATTENDEE_STATUS)
+            val declined = selfStatus == CalendarContract.Attendees.ATTENDEE_STATUS_DECLINED
+            val originalId = getLongOrNull(EventExportProjection.IDX_ORIGINAL_ID)
+            val originalSyncId = getString(EventExportProjection.IDX_ORIGINAL_SYNC_ID)?.takeIf { it.isNotEmpty() }
+            // Without a link the provider shows the row as an event of its own.
+            if (originalId == null && originalSyncId == null) {
+                series += MasterRow(
+                    eventId = getLong(EventExportProjection.IDX_ID),
+                    calendarId = calendarId,
+                    syncId = getString(EventExportProjection.IDX_SYNC_ID)?.takeIf { it.isNotEmpty() },
+                    event = mapped,
+                    declined = declined,
+                )
+            } else {
+                // An exception without its occurrence time can't name what it replaces.
+                val originalInstance = getLongOrNull(EventExportProjection.IDX_ORIGINAL_INSTANCE_TIME)
+                    ?: return@forEachExportRow
+                overrides += OverrideRow(
+                    calendarId = calendarId,
+                    originalId = originalId,
+                    originalSyncId = originalSyncId,
+                    originalInstance = originalInstance.toKotlinInstantFromEpochMillis(),
+                    event = mapped,
+                    declined = declined,
+                    accepted = selfStatus == CalendarContract.Attendees.ATTENDEE_STATUS_ACCEPTED ||
+                        selfStatus == CalendarContract.Attendees.ATTENDEE_STATUS_TENTATIVE,
+                )
+            }
+        }
+        return CalendarRows(series, overrides)
+    }
+
+    /**
+     * Hand each Events row matching [selection], oldest first, to [row] with a
+     * mapper to [IcsEvent] that takes the calendar name to tag it with.
+     * Reminders are read in one batched pass ahead of the rows.
+     */
+    private fun forEachExportRow(
+        selection: String,
+        allDayReminderTimeMinutes: Int,
+        row: ColumnReader.(event: (calendarName: String?) -> IcsEvent) -> Unit,
+    ) {
         val eventIds = resolver.query(
             CalendarContract.Events.CONTENT_URI,
             arrayOf(CalendarContract.Events._ID),
@@ -803,23 +849,25 @@ class AndroidCalendarDataSource @Inject constructor(
             null,
         )?.use { c -> c.mapRows { getLong(0) } }.orEmpty()
         val reminders = resolver.reminderMinutesByEvent(eventIds, alertsOnly = false)
-        return resolver.query(
+        resolver.query(
             CalendarContract.Events.CONTENT_URI,
             EventExportProjection.COLUMNS,
             selection,
             null,
             CalendarContract.Events.DTSTART + " ASC",
         )?.use { c ->
-            c.mapRows {
-                val eventId = getLong(EventExportProjection.IDX_ID)
-                val calendarId = getLong(EventExportProjection.IDX_CALENDAR_ID)
-                toIcsEvent(
-                    reminderMinutes = reminders[eventId].orEmpty(),
-                    calendarName = names[calendarId],
-                    allDayReminderTimeMinutes = allDayReminderTimeMinutes,
-                )
+            val reader = CursorColumnReader(c)
+            while (c.moveToNext()) {
+                val eventId = reader.getLong(EventExportProjection.IDX_ID)
+                reader.row { calendarName ->
+                    reader.toIcsEvent(
+                        reminderMinutes = reminders[eventId].orEmpty(),
+                        calendarName = calendarName,
+                        allDayReminderTimeMinutes = allDayReminderTimeMinutes,
+                    )
+                }
             }
-        } ?: emptyList()
+        }
     }
 
     override fun existingUids(calendarId: Long): Set<String> = resolver.query(
@@ -868,18 +916,25 @@ class AndroidCalendarDataSource @Inject constructor(
         } else {
             null
         }
-        event.semanticReminderMinutes().forEach { minutes ->
-            val providerMinutes = if (reminderDate != null) {
-                toProviderAllDayMinutes(
-                    semanticMinutes = minutes,
-                    startDate = reminderDate,
-                    zone = zone,
-                    timeOfDayMinutes = allDayReminderTimeMinutes,
-                )
-            } else {
-                minutes
+        // All or nothing: a row whose reminders failed would count as not added
+        // and still be there.
+        try {
+            event.semanticReminderMinutes().forEach { minutes ->
+                val providerMinutes = if (reminderDate != null) {
+                    toProviderAllDayMinutes(
+                        semanticMinutes = minutes,
+                        startDate = reminderDate,
+                        zone = zone,
+                        timeOfDayMinutes = allDayReminderTimeMinutes,
+                    )
+                } else {
+                    minutes
+                }
+                insertReminderRow(eventId, providerMinutes)
             }
-            insertReminderRow(eventId, providerMinutes)
+        } catch (t: Throwable) {
+            runCatching { resolver.delete(eventUri(eventId), null, null) }
+            throw t
         }
         return eventId
     }

@@ -8,6 +8,13 @@ import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.FormTime
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
+import de.jeanlucmakiola.calendula.domain.EventStatus
+import de.jeanlucmakiola.calendula.domain.ics.CalendarRows
+import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
+import de.jeanlucmakiola.calendula.domain.ics.IcsParser
+import de.jeanlucmakiola.calendula.domain.ics.IcsWriter
+import de.jeanlucmakiola.calendula.domain.ics.OverrideRow
+import de.jeanlucmakiola.calendula.domain.ics.MasterRow
 import de.jeanlucmakiola.calendula.testEvent
 import de.jeanlucmakiola.calendula.testPrefs
 import de.jeanlucmakiola.calendula.testRepository
@@ -946,7 +953,7 @@ class CalendarRepositoryImplTest {
 
         repo.exportEvents(calendarIds = setOf(1L, 4L))
 
-        assertThat(fake.lastCalendarEventsIds).containsExactly(1L, 4L)
+        assertThat(fake.lastCalendarRowsIds).containsExactly(1L, 4L)
     }
 
     @Test
@@ -958,7 +965,141 @@ class CalendarRepositoryImplTest {
 
         repo.exportEvents(calendarIds = setOf(2L))
 
-        assertThat(fake.lastCalendarEventsIds).containsExactly(2L)
+        assertThat(fake.lastCalendarRowsIds).containsExactly(2L)
+    }
+
+    @Test
+    fun `copyEvents reports progress and skips what an earlier run copied`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        fun icsEvent(uid: String) = IcsEvent(
+            uid = uid,
+            summary = uid,
+            start = Instant.fromEpochMilliseconds(1_000_000_000L),
+            end = Instant.fromEpochMilliseconds(1_000_003_600L),
+            isAllDay = false,
+            zoneId = "UTC",
+        )
+        val fake = FakeCalendarDataSource().apply {
+            existingUidsResult = setOf("a")
+            calendarRowsResult = CalendarRows(
+                series = listOf(MasterRow(1, 1, null, icsEvent("a")), MasterRow(2, 1, null, icsEvent("b"))),
+                overrides = emptyList(),
+            )
+        }
+        val repo = testRepository(fake, tempDir, Dispatchers.Unconfined)
+        val progress = mutableListOf<Pair<Int, Int>>()
+
+        val summary = repo.copyEvents(sourceCalendarId = 1L, targetCalendarId = 3L) { done, total ->
+            progress += done to total
+        }
+
+        assertThat(summary.imported).isEqualTo(1)
+        assertThat(summary.skippedDuplicate).isEqualTo(1)
+        assertThat(fake.importedEvents.map { it.first.uid to it.second }).containsExactly("b" to 3L)
+        assertThat(progress.first()).isEqualTo(0 to 2)
+        assertThat(progress.last()).isEqualTo(2 to 2)
+    }
+
+    @Test
+    fun `a backup restores a series' moved and deleted occurrences, and skips them where the series is`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val start = Instant.parse("2026-01-05T09:00:00Z")
+        fun at(week: Int) = Instant.fromEpochMilliseconds(start.toEpochMilliseconds() + week * 7 * 86_400_000L)
+        fun event(at: Instant, status: EventStatus = EventStatus.Confirmed, rrule: String? = null) = IcsEvent(
+            uid = "s@x",
+            summary = "Standup",
+            start = at,
+            end = Instant.fromEpochMilliseconds(at.toEpochMilliseconds() + 3_600_000L),
+            isAllDay = false,
+            zoneId = "Europe/Berlin",
+            recurrenceRule = rrule,
+            status = status,
+        )
+        val moved = Instant.fromEpochMilliseconds(at(1).toEpochMilliseconds() + 3_600_000L)
+        val source = FakeCalendarDataSource().apply {
+            calendarRowsResult = CalendarRows(
+                series = listOf(MasterRow(1, 1, "sync-1", event(start, rrule = "FREQ=WEEKLY"))),
+                overrides = listOf(
+                    OverrideRow(1, null, "sync-1", at(1), event(moved)),
+                    OverrideRow(1, null, "sync-1", at(2), event(at(2), EventStatus.Cancelled)),
+                ),
+            )
+        }
+        val file = IcsWriter().writeCalendar(
+            testRepository(source, tempDir.resolve("a"), Dispatchers.Unconfined).exportEvents(setOf(1L)),
+            start,
+        )
+        val parsed = IcsParser().parse(file).events
+
+        val empty = FakeCalendarDataSource()
+        testRepository(empty, tempDir.resolve("b"), Dispatchers.Unconfined).importEvents(3L, parsed)
+        val (detached, series) = empty.importedEvents.map { it.first }
+        assertThat(detached.start).isEqualTo(moved)
+        assertThat(detached.recurrenceRule).isNull()
+        assertThat(series.exDates).containsExactly("20260112T090000Z", "20260119T090000Z")
+
+        val original = FakeCalendarDataSource().apply { existingUidsResult = setOf("s@x") }
+        val summary = testRepository(original, tempDir.resolve("c"), Dispatchers.Unconfined).importEvents(3L, parsed)
+        assertThat(original.importedEvents).isEmpty()
+        assertThat(summary.skippedDuplicate).isEqualTo(2)
+    }
+
+    @Test
+    fun `a series keeps an occurrence whose standalone copy didn't land`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val fake = FakeCalendarDataSource().apply { failingImportSummaries += "moved" }
+        val repo = testRepository(fake, tempDir, Dispatchers.Unconfined)
+        val at = Instant.parse("2026-01-12T09:00:00Z")
+
+        val summary = repo.importEvents(
+            3L,
+            listOf(
+                parsedEvent("1-s", summary = "moved").copy(overrideOf = "s", overrideAt = at),
+                parsedEvent("s").copy(recurrenceRule = "FREQ=WEEKLY", exDates = listOf("20260112T090000Z", "20260119T090000Z")),
+            ),
+        )
+
+        assertThat(summary.failed).isEqualTo(1)
+        assertThat(fake.importedEvents.single().first.exDates).containsExactly("20260119T090000Z")
+    }
+
+    @Test
+    fun `a standalone occurrence listed after its series still goes first`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val fake = FakeCalendarDataSource()
+        val repo = testRepository(fake, tempDir, Dispatchers.Unconfined)
+
+        repo.importEvents(3L, listOf(parsedEvent("s"), parsedEvent("1-s").copy(overrideOf = "s")))
+
+        assertThat(fake.importedEvents.map { it.first.uid }).containsExactly("1-s", "s").inOrder()
+    }
+
+    @Test
+    fun `a backup keeps an RDATE-only series and its exceptions`(
+        @TempDir tempDir: Path,
+    ) = runTest {
+        val start = Instant.parse("2026-01-05T09:00:00Z")
+        val other = Instant.parse("2026-01-12T09:00:00Z")
+        val event = IcsEvent(
+            "s", "S", start, Instant.parse("2026-01-05T10:00:00Z"), false, "UTC",
+            recurrenceDates = listOf("20260112T090000Z", "20260119T090000Z"),
+        )
+        val fake = FakeCalendarDataSource().apply {
+            calendarRowsResult = CalendarRows(
+                listOf(MasterRow(1, 1, null, event)),
+                listOf(OverrideRow(1, 1, null, other, event.copy(recurrenceDates = emptyList(), status = EventStatus.Cancelled))),
+            )
+        }
+
+        val exported = testRepository(fake, tempDir, Dispatchers.Unconfined).exportEvents(setOf(1L))
+        val restored = IcsParser().parse(IcsWriter().writeCalendar(exported, start)).events.single()
+
+        assertThat(restored.recurrenceDates).containsExactly("20260112T090000Z", "20260119T090000Z")
+        assertThat(restored.exDates).containsExactly("20260112T090000Z")
     }
 
     private fun parsedEvent(uid: String?, summary: String = "E") =

@@ -1,9 +1,13 @@
 package de.jeanlucmakiola.calendula.data.calendar
 
 import de.jeanlucmakiola.floret.time.toKotlinInstantFromEpochMillis
+import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.deriveIcsUid
+import java.time.Instant
+import java.time.LocalDate
 import java.time.ZoneId
+import java.time.format.DateTimeFormatter
 
 /**
  * Map one Events row (read through [EventExportProjection]) into an [IcsEvent]
@@ -28,6 +32,8 @@ internal fun ColumnReader.toIcsEvent(
     val dtStart = getLong(EventExportProjection.IDX_DTSTART)
     val rrule = getString(EventExportProjection.IDX_RRULE)?.takeIf { it.isNotBlank() }
     val isAllDay = getInt(EventExportProjection.IDX_ALL_DAY) != 0
+    val timezone = getString(EventExportProjection.IDX_EVENT_TIMEZONE)
+    val rdates = exportRecurrenceDates(getString(EventExportProjection.IDX_RDATE), isAllDay, timezone, dtStart)
 
     // Unclamped: the writer renders DTEND as stored.
     val end = endMillis(dtStart, EventExportProjection.IDX_DTEND, EventExportProjection.IDX_DURATION)
@@ -38,17 +44,12 @@ internal fun ColumnReader.toIcsEvent(
         start = dtStart.toKotlinInstantFromEpochMillis(),
         end = end.toKotlinInstantFromEpochMillis(),
         isAllDay = isAllDay,
-        zoneId = getString(EventExportProjection.IDX_EVENT_TIMEZONE)?.takeIf { it.isNotBlank() }
-            ?: "UTC",
+        zoneId = timezone?.takeIf { it.isNotBlank() } ?: "UTC",
         recurrenceRule = rrule,
-        exDates = if (rrule == null) {
+        exDates = if (rrule == null && rdates.isEmpty()) {
             emptyList()
         } else {
-            exportExDates(
-                getString(EventExportProjection.IDX_EXDATE),
-                isAllDay,
-                getString(EventExportProjection.IDX_EVENT_TIMEZONE),
-            )
+            exportExDates(getString(EventExportProjection.IDX_EXDATE), isAllDay, timezone, dtStart)
         },
         location = getString(EventExportProjection.IDX_LOCATION),
         description = getString(EventExportProjection.IDX_DESCRIPTION),
@@ -63,6 +64,8 @@ internal fun ColumnReader.toIcsEvent(
         status = eventStatus(EventExportProjection.IDX_STATUS),
         availability = mapAvailability(getInt(EventExportProjection.IDX_AVAILABILITY)),
         calendarName = calendarName,
+        recurrenceDates = rdates,
+        accessLevel = getIntOrNull(EventExportProjection.IDX_ACCESS_LEVEL)?.let(::mapAccessLevel) ?: AccessLevel.Default,
     )
 }
 
@@ -94,16 +97,53 @@ internal fun exportExDates(
     exdate: String?,
     isAllDay: Boolean,
     eventTimezone: String? = null,
+    seriesStartMillis: Long? = null,
 ): List<String> {
     if (exdate.isNullOrBlank()) return emptyList()
-    val zone = exdateListZone(exdate, eventTimezone)
-    return exdateStamps(exdate)
-        .map { stamp ->
-            if (isAllDay) {
-                stamp.substringBefore('T')
-            } else {
-                canonicalExdateStamp(stamp, isAllDay = false, listZone = zone) ?: stamp
+    // Several properties are stored one per line, each with its own zone prefix.
+    return exdate.lines().filter { it.isNotBlank() }.flatMap { line ->
+        val zone = exdateListZone(line, eventTimezone)
+        exdateStamps(line).mapNotNull { stamp ->
+            when {
+                isAllDay -> stamp.substringBefore('T')
+                // A bare day on a timed series means the occurrence at the series' time of day.
+                seriesStartMillis != null && BARE_DAY.matches(stamp) -> atSeriesTime(stamp, seriesStartMillis, zone)
+                else -> canonicalExdateStamp(stamp, isAllDay = false, listZone = zone) ?: stamp
             }
         }
+    }
+        .filter { (if (isAllDay) BARE_DAY else UTC_STAMP).matches(it) }
         .distinct()
 }
+
+/**
+ * The row's `RDATE` in the same shape [exportExDates] gives `EXDATE` — the list
+ * shares its `<zone>;<stamps>` form. A `PERIOD` entry (`start/end`) keeps only its
+ * start: the occurrence then runs the series' own length. Anything that still
+ * isn't a date or a UTC stamp is dropped, since a file can't name it.
+ */
+internal fun exportRecurrenceDates(
+    rdate: String?,
+    isAllDay: Boolean,
+    eventTimezone: String? = null,
+    seriesStartMillis: Long? = null,
+): List<String> {
+    if (rdate.isNullOrBlank()) return emptyList()
+    // The zone prefix may hold a '/' of its own (Europe/Berlin), so only the stamps lose their period end.
+    val starts = rdate.lines().joinToString("\n") { line ->
+        val stamps = line.withoutExdateParameters()
+        line.dropLast(stamps.length) + stamps.split(',').joinToString(",") { it.substringBefore('/') }
+    }
+    return exportExDates(starts, isAllDay, eventTimezone, seriesStartMillis)
+}
+
+/** [day] (`yyyyMMdd`) at the wall-clock time the series starts at in [zone], as a UTC stamp. */
+private fun atSeriesTime(day: String, seriesStartMillis: Long, zone: ZoneId): String? {
+    val date = runCatching { LocalDate.parse(day, DateTimeFormatter.BASIC_ISO_DATE) }.getOrNull() ?: return null
+    val time = Instant.ofEpochMilli(seriesStartMillis).atZone(zone).toLocalTime()
+    return formatExdateStamp(date.atTime(time).atZone(zone).toInstant().toEpochMilli(), isAllDay = false)
+}
+
+private val BARE_DAY = Regex("""\d{8}""")
+private val UTC_STAMP = Regex("""\d{8}T\d{6}Z""")
+

@@ -684,7 +684,7 @@ private const val TZID_PREFIX = "TZID="
  * are UTC: the provider stores an all-day DTSTART at UTC midnight, so its date
  * reads off the UTC calendar day.
  */
-private fun formatExdateStamp(occurrenceMillis: Long, isAllDay: Boolean): String =
+internal fun formatExdateStamp(occurrenceMillis: Long, isAllDay: Boolean): String =
     formatExdateStamp(
         local = Instant.ofEpochMilli(occurrenceMillis).atZone(ZoneOffset.UTC).toLocalDateTime(),
         isAllDay = isAllDay,
@@ -851,10 +851,12 @@ internal fun buildImportedEventValues(
     put(CalendarContract.Events.TITLE, event.summary.trim())
     put(CalendarContract.Events.ALL_DAY, if (event.isAllDay) 1 else 0)
     put(CalendarContract.Events.DTSTART, startMillis)
-    if (event.recurrenceRule == null) {
+    if (event.recurrenceRule == null && event.recurrenceDates.isEmpty()) {
         put(CalendarContract.Events.DTEND, endMillis)
     } else {
-        put(CalendarContract.Events.RRULE, event.recurrenceRule)
+        event.recurrenceRule?.let { put(CalendarContract.Events.RRULE, it) }
+        event.recurrenceDates.takeIf { it.isNotEmpty() }
+            ?.let { put(CalendarContract.Events.RDATE, it.joinToString(",")) }
         put(
             CalendarContract.Events.DURATION,
             importDuration(startMillis, endMillis, event.isAllDay),
@@ -866,6 +868,9 @@ internal fun buildImportedEventValues(
     // timed rows keep the event's own zone.
     put(CalendarContract.Events.EVENT_TIMEZONE, if (event.isAllDay) "UTC" else event.zoneId)
     put(CalendarContract.Events.AVAILABILITY, event.availability.toProviderValue())
+    if (event.accessLevel != AccessLevel.Default) {
+        put(CalendarContract.Events.ACCESS_LEVEL, event.accessLevel.toProviderValue())
+    }
     put(CalendarContract.Events.STATUS, event.status.forNewEvent().toProviderStatus())
     event.location?.trim()?.takeIf { it.isNotEmpty() }
         ?.let { put(CalendarContract.Events.EVENT_LOCATION, it) }

@@ -2,6 +2,7 @@ package de.jeanlucmakiola.calendula.data.calendar
 
 import android.provider.CalendarContract
 import com.google.common.truth.Truth.assertThat
+import de.jeanlucmakiola.calendula.domain.AccessLevel
 import de.jeanlucmakiola.calendula.domain.EventColorOption
 import de.jeanlucmakiola.calendula.domain.EventStatus
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
@@ -122,5 +123,22 @@ class ImportedEventValuesTest {
         assertThat(v[CalendarContract.Events.EVENT_TIMEZONE]).isEqualTo("Europe/Berlin")
         assertThat(v[CalendarContract.Events.DURATION]).isEqualTo("P900S")
         assertThat(v[CalendarContract.Events.ALL_DAY]).isEqualTo(0)
+    }
+
+    @Test
+    fun `a copied RDATE-only series recurs by its dates`() {
+        val v = values(allDay().copy(recurrenceDates = listOf("20260820"), exDates = listOf("20260820")))
+        assertThat(v).doesNotContainKey(CalendarContract.Events.DTEND)
+        assertThat(v).doesNotContainKey(CalendarContract.Events.RRULE)
+        assertThat(v[CalendarContract.Events.RDATE]).isEqualTo("20260820")
+        assertThat(v[CalendarContract.Events.EXDATE]).isEqualTo("20260820")
+        assertThat(v[CalendarContract.Events.DURATION]).isEqualTo("P1D")
+    }
+
+    @Test
+    fun `a private event stays private, a default one leaves the calendar's say`() {
+        assertThat(values(allDay().copy(accessLevel = AccessLevel.Private))[CalendarContract.Events.ACCESS_LEVEL])
+            .isEqualTo(CalendarContract.Events.ACCESS_PRIVATE)
+        assertThat(values(allDay())).doesNotContainKey(CalendarContract.Events.ACCESS_LEVEL)
     }
 }

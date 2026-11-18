@@ -14,6 +14,8 @@ import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import de.jeanlucmakiola.calendula.domain.ics.IcsImportSummary
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
+import de.jeanlucmakiola.calendula.domain.ics.flattenOverrides
+import de.jeanlucmakiola.calendula.domain.ics.planCalendarCopy
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.Flow
@@ -30,6 +32,8 @@ import kotlinx.coroutines.flow.onStart
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.time.Instant
@@ -247,12 +251,33 @@ class CalendarRepositoryImpl @Inject constructor(
             }
         }
 
-    override suspend fun exportEvents(calendarIds: Set<Long>) =
-        withContext(io) { dataSource.calendarEvents(calendarIds, allDayReminderTimeMinutes()) }
+    override suspend fun exportEvents(calendarIds: Set<Long>) = withContext(io) {
+        flattenOverrides(dataSource.calendarRows(calendarIds, allDayReminderTimeMinutes()), ::formatExdateStamp)
+    }
+
+    override suspend fun copyEvents(
+        sourceCalendarId: Long,
+        targetCalendarId: Long,
+        onProgress: (done: Int, total: Int) -> Unit,
+    ): IcsImportSummary {
+        val events = withContext(io) {
+            planCalendarCopy(
+                dataSource.calendarRows(setOf(sourceCalendarId), allDayReminderTimeMinutes()),
+                ::formatExdateStamp,
+            )
+        }
+        onProgress(0, events.size)
+        val context = currentCoroutineContext()
+        return importEvents(targetCalendarId, events) { done ->
+            if (done < events.size) context.ensureActive()
+            onProgress(done, events.size)
+        }
+    }
 
     override suspend fun importEvents(
         targetCalendarId: Long,
         events: List<ParsedIcsEvent>,
+        onProgress: (done: Int) -> Unit,
     ): IcsImportSummary = write {
         val existing = dataSource.existingUids(targetCalendarId)
         // Both are per-calendar, not per-event: looking them up once keeps a
@@ -265,15 +290,21 @@ class CalendarRepositoryImpl @Inject constructor(
         var skipped = 0
         var failed = 0
         var notAttempted = 0
-        for ((index, event) in events.withIndex()) {
+        // Occurrences whose standalone copy didn't land, by series UID: the series
+        // keeps them instead of excluding them for good.
+        val unexcluded = mutableMapOf<String, MutableList<Instant>>()
+        // Standalone occurrences ahead of the series they were cut from, however the file is ordered.
+        val ordered = events.sortedBy { it.overrideOf == null }
+        for ((index, event) in ordered.withIndex()) {
+            if (index > 0) onProgress(index)
             // A known UID means the event is already in this calendar — skip,
             // keeping a restore idempotent (no overwrite this pass).
-            if (event.uid != null && event.uid in existing) {
+            if (event.isAlreadyIn(existing)) {
                 skipped++
                 continue
             }
             try {
-                dataSource.insertImportedEvent(event, targetCalendarId, allDayMinutes, palette)
+                dataSource.insertImportedEvent(event.keeping(unexcluded), targetCalendarId, allDayMinutes, palette)
                 imported++
             } catch (e: CancellationException) {
                 throw e
@@ -283,8 +314,8 @@ class CalendarRepositoryImpl @Inject constructor(
                 Log.w(TAG, "Import stopped: the calendar is no longer writable", e)
                 // A known UID would have been skipped whatever happened, so it is
                 // no part of what a retry still has to import.
-                val remaining = events.drop(index)
-                val duplicates = remaining.count { it.uid?.let { uid -> uid in existing } == true }
+                val remaining = ordered.drop(index)
+                val duplicates = remaining.count { it.isAlreadyIn(existing) }
                 skipped += duplicates
                 notAttempted = remaining.size - duplicates
                 break
@@ -293,9 +324,13 @@ class CalendarRepositoryImpl @Inject constructor(
                 // rest of the file — foreign exports do carry rows it rejects
                 // outright (a malformed RRULE throws straight out of insert).
                 failed++
+                if (event.overrideOf != null && event.overrideAt != null) {
+                    unexcluded.getOrPut(event.overrideOf) { mutableListOf() } += event.overrideAt
+                }
                 Log.w(TAG, "Skipped an unimportable event", e)
             }
         }
+        if (notAttempted == 0) onProgress(events.size)
         IcsImportSummary(
             imported = imported,
             skippedDuplicate = skipped,
@@ -375,4 +410,19 @@ class CalendarRepositoryImpl @Inject constructor(
 
 private fun <T> Flow<Unit>.reQuery(block: suspend () -> T): Flow<T> = flow {
     collect { emit(block()) }
+}
+
+/**
+ * Whether [existing] UIDs already hold this event: its own UID, or — for a
+ * standalone occurrence of a backed-up or copied series — the series, which
+ * there carries the override itself.
+ */
+private fun ParsedIcsEvent.isAlreadyIn(existing: Set<String>): Boolean =
+    (uid != null && uid in existing) || (overrideOf != null && overrideOf in existing)
+
+/** This series without the exclusions of [unexcluded] occurrences whose standalone copy failed. */
+private fun ParsedIcsEvent.keeping(unexcluded: Map<String, List<Instant>>): ParsedIcsEvent {
+    val kept = uid?.let(unexcluded::get) ?: return this
+    val stamps = kept.map { formatExdateStamp(it.toEpochMilliseconds(), isAllDay) }.toSet()
+    return copy(exDates = exDates.filterNot { it in stamps })
 }

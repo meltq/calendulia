@@ -8,6 +8,7 @@ import de.jeanlucmakiola.calendula.domain.EventForm
 import de.jeanlucmakiola.calendula.domain.EventInstance
 import de.jeanlucmakiola.calendula.domain.SearchCandidate
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.ics.CalendarRows
 import de.jeanlucmakiola.calendula.domain.ics.IcsEvent
 import de.jeanlucmakiola.calendula.domain.ics.ParsedIcsEvent
 import java.time.ZoneId
@@ -23,9 +24,9 @@ internal class FakeCalendarDataSource : CalendarDataSource {
     var searchResult: (String) -> List<SearchCandidate> = { _ -> emptyList() }
     var eventDetailResult: (Long) -> EventDetail? = { null }
     var publishedEventColorsResult: (Long) -> List<EventColorOption> = { emptyList() }
-    var calendarEventsResult: List<IcsEvent> = emptyList()
-    /** The [calendarIds] the last [calendarEvents] call received. */
-    var lastCalendarEventsIds: Set<Long>? = null
+    var calendarRowsResult: CalendarRows = CalendarRows(emptyList(), emptyList())
+    /** The [calendarIds] the last [calendarRows] call received. */
+    var lastCalendarRowsIds: Set<Long>? = null
     /** UIDs the target calendar already holds, for import dedup. */
     var existingUidsResult: Set<String> = emptySet()
     /** Set to make the next write call throw. */
@@ -81,12 +82,9 @@ internal class FakeCalendarDataSource : CalendarDataSource {
         eventDetailResult(eventId)
     override fun publishedEventColors(calendarId: Long): List<EventColorOption> =
         publishedEventColorsResult(calendarId)
-    override fun calendarEvents(
-        calendarIds: Set<Long>,
-        allDayReminderTimeMinutes: Int,
-    ): List<IcsEvent> {
-        lastCalendarEventsIds = calendarIds
-        return calendarEventsResult
+    override fun calendarRows(calendarIds: Set<Long>, allDayReminderTimeMinutes: Int): CalendarRows {
+        lastCalendarRowsIds = calendarIds
+        return calendarRowsResult
     }
 
     override fun existingUids(calendarId: Long): Set<String> = existingUidsResult
