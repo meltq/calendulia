@@ -4,9 +4,14 @@ import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.calendula.data.appname.LauncherName
 import de.jeanlucmakiola.calendula.data.calendar.ManagedCalendarRow
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefKeys
+import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
 import de.jeanlucmakiola.calendula.data.prefs.SettingsKeys
+import de.jeanlucmakiola.calendula.data.prefs.fixedTimeOverrideFor
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
+import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.floret.backup.BackupDocument
 import de.jeanlucmakiola.floret.backup.BackupResult
 import de.jeanlucmakiola.floret.backup.PrefsSection
@@ -17,6 +22,7 @@ import de.jeanlucmakiola.floret.backup.optObject
 import de.jeanlucmakiola.floret.backup.optObjectList
 import de.jeanlucmakiola.floret.backup.optInt
 import de.jeanlucmakiola.floret.backup.optString
+import de.jeanlucmakiola.floret.backup.optStringList
 import de.jeanlucmakiola.floret.backup.readBackup
 import de.jeanlucmakiola.floret.backup.requireString
 import de.jeanlucmakiola.floret.prefs.Pref
@@ -48,6 +54,18 @@ data class CalendarSettings(
     /** Timed reminder override; an empty list is "no reminder". */
     val reminders: List<Int>? = null,
     val allDayReminders: List<Int>? = null,
+    /** The views it is hidden in only (#270). */
+    val hiddenInViews: Set<CalendarView> = emptySet(),
+    /** False when Calendula posts none of its reminders (#272). */
+    val notifications: Boolean = true,
+    /** Its alert style (#171); null is a plain notification. */
+    val alertStyle: ReminderAlertStyle? = null,
+    /** Its set-time reminder override (#459). */
+    val fixedTimeReminder: FixedTimeOverride = FixedTimeOverride.Inherit,
+    /** False when the daily summary leaves it out (#459). */
+    val inDailyDigest: Boolean = true,
+    /** The automatic backup's choice for it (#147); null follows the default for its kind. */
+    val autoBackup: Boolean? = null,
 )
 
 /** The app language a file carries; [tag] null follows the system. */
@@ -80,7 +98,15 @@ fun buildSettingsBackup(
     val durations = snapshot[SettingsKeys.perCalendarEventDuration]
     val reminders = snapshot[SettingsKeys.perCalendarReminderOverride]
     val allDay = snapshot[SettingsKeys.perCalendarAllDayReminderOverride]
-    val ids = hidden + listOfNotNull(lastUsed) + durations.keys + reminders.keys + allDay.keys
+    val hiddenViews = snapshot[SettingsKeys.perCalendarHiddenViews]
+    val muted = snapshot[SettingsKeys.mutedReminderCalendarIds]
+    val alertStyles = snapshot[SettingsKeys.reminderAlertStyles]
+    val fixedTime = snapshot[SettingsKeys.perCalendarFixedTimeReminderOverride]
+    val notInDigest = snapshot[SettingsKeys.digestExcludedCalendarIds]
+    val backupIncluded = snapshot[SettingsKeys.autoBackupIncluded]
+    val backupExcluded = snapshot[SettingsKeys.autoBackupExcluded]
+    val ids = hidden + listOfNotNull(lastUsed) + durations.keys + reminders.keys + allDay.keys +
+        hiddenViews.keys + muted + alertStyles.keys + fixedTime.keys + notInDigest + backupIncluded + backupExcluded
     val byId = calendars.associateBy { it.id }
     val managedType = managed.associate { it.id to it.type }
     val entries = ids.sorted().mapNotNull { id ->
@@ -97,6 +123,16 @@ fun buildSettingsBackup(
             eventDurationMinutes = durations[id],
             reminders = reminders[id],
             allDayReminders = allDay[id],
+            hiddenInViews = hiddenViews[id].orEmpty(),
+            notifications = id !in muted,
+            alertStyle = alertStyles[id]?.takeUnless { it == ReminderAlertStyle.Notification },
+            fixedTimeReminder = fixedTime.fixedTimeOverrideFor(id),
+            inDailyDigest = id !in notInDigest,
+            autoBackup = when (id) {
+                in backupIncluded -> true
+                in backupExcluded -> false
+                else -> null
+            },
         )
     }
     return SettingsBackup(
@@ -157,6 +193,18 @@ private fun CalendarSettings.toJson(): JsonObject = buildJsonObject {
     eventDurationMinutes?.let { put(KEY_EVENT_DURATION, JsonPrimitive(it)) }
     reminders?.let { put(KEY_REMINDERS, JsonArray(it.map(::JsonPrimitive))) }
     allDayReminders?.let { put(KEY_ALL_DAY_REMINDERS, JsonArray(it.map(::JsonPrimitive))) }
+    if (hiddenInViews.isNotEmpty()) {
+        put(KEY_HIDDEN_IN_VIEWS, JsonArray(hiddenInViews.sortedBy { it.ordinal }.map { JsonPrimitive(it.name) }))
+    }
+    if (!notifications) put(KEY_NOTIFICATIONS, JsonPrimitive(false))
+    alertStyle?.let { put(KEY_ALERT_STYLE, JsonPrimitive(it.storageValue)) }
+    when (val fixed = fixedTimeReminder) {
+        FixedTimeOverride.Inherit -> Unit
+        FixedTimeOverride.Off -> put(KEY_FIXED_TIME_REMINDER, JsonPrimitive(FIXED_TIME_OFF))
+        is FixedTimeOverride.At -> put(KEY_FIXED_TIME_REMINDER, JsonPrimitive(fixed.reminder.toToken()))
+    }
+    if (!inDailyDigest) put(KEY_IN_DAILY_DIGEST, JsonPrimitive(false))
+    autoBackup?.let { put(KEY_AUTO_BACKUP, JsonPrimitive(it)) }
 }
 
 /**
@@ -176,6 +224,18 @@ private fun JsonObject.toCalendarSettings(): CalendarSettings {
         eventDurationMinutes = optInt(KEY_EVENT_DURATION),
         reminders = optIntList(KEY_REMINDERS)?.cleanReminders(),
         allDayReminders = optIntList(KEY_ALL_DAY_REMINDERS)?.cleanReminders(),
+        hiddenInViews = optStringList(KEY_HIDDEN_IN_VIEWS).orEmpty()
+            .mapNotNullTo(mutableSetOf()) { name -> CalendarView.entries.firstOrNull { it.name == name } },
+        notifications = optBoolean(KEY_NOTIFICATIONS) ?: true,
+        alertStyle = optString(KEY_ALERT_STYLE)?.let(ReminderAlertStyle::fromStorage)
+            ?.takeUnless { it == ReminderAlertStyle.Notification },
+        fixedTimeReminder = when (val token = optString(KEY_FIXED_TIME_REMINDER)) {
+            null -> FixedTimeOverride.Inherit
+            FIXED_TIME_OFF -> FixedTimeOverride.Off
+            else -> FixedTimeReminder.parse(token)?.let(FixedTimeOverride::At) ?: FixedTimeOverride.Inherit
+        },
+        inDailyDigest = optBoolean(KEY_IN_DAILY_DIGEST) ?: true,
+        autoBackup = optBoolean(KEY_AUTO_BACKUP),
     )
 }
 
@@ -196,3 +256,10 @@ private const val KEY_LAST_USED = "last_used"
 private const val KEY_EVENT_DURATION = "event_duration_minutes"
 private const val KEY_REMINDERS = "reminders"
 private const val KEY_ALL_DAY_REMINDERS = "all_day_reminders"
+private const val KEY_HIDDEN_IN_VIEWS = "hidden_in_views"
+private const val KEY_NOTIFICATIONS = "notifications"
+private const val KEY_ALERT_STYLE = "alert_style"
+private const val KEY_FIXED_TIME_REMINDER = "fixed_time_reminder"
+private const val FIXED_TIME_OFF = "off"
+private const val KEY_IN_DAILY_DIGEST = "in_daily_digest"
+private const val KEY_AUTO_BACKUP = "auto_backup"

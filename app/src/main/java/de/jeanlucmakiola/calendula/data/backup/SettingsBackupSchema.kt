@@ -46,6 +46,8 @@ internal object SettingsBackupSchema {
         SettingsKeys.drawerViewOrder,
         SettingsKeys.defaultFormFields,
         SettingsKeys.autofocusEventTitle,
+        // Names its calendar by account and display name, so it finds it again on another device.
+        SettingsKeys.defaultNewEventCalendar,
         SettingsKeys.defaultEventDurationMinutes,
         SettingsKeys.remindersEnabled,
         SettingsKeys.allowColorOnUnsupportedCalendars,
@@ -53,8 +55,15 @@ internal object SettingsBackupSchema {
         SettingsKeys.defaultAllDayReminderMinutes,
         SettingsKeys.allDayReminderTimeMinutes,
         SettingsKeys.snoozeMinutes,
+        SettingsKeys.defaultFixedTimeReminder,
+        SettingsKeys.dailyDigestEnabled,
+        SettingsKeys.dailyDigestTimeMinutes,
+        SettingsKeys.dailyDigestDay,
         SettingsKeys.autoBackupEnabled,
         SettingsKeys.autoBackupIntervalMinutes,
+        SettingsKeys.autoBackupCombinedStored,
+        SettingsKeys.autoBackupKeep,
+        SettingsKeys.autoBackupOnChange,
         SettingsKeys.specialDatesEnabled,
         SettingsKeys.specialDatesShowYear,
     ) + SettingsKeys.specialDateTypeEnabled.values + SettingsKeys.specialDatesTitleTemplate.values
@@ -69,6 +78,13 @@ internal object SettingsBackupSchema {
         SettingsKeys.perCalendarEventDuration,
         SettingsKeys.perCalendarReminderOverride,
         SettingsKeys.perCalendarAllDayReminderOverride,
+        SettingsKeys.perCalendarHiddenViews,
+        SettingsKeys.mutedReminderCalendarIds,
+        SettingsKeys.reminderAlertStyles,
+        SettingsKeys.perCalendarFixedTimeReminderOverride,
+        SettingsKeys.digestExcludedCalendarIds,
+        SettingsKeys.autoBackupIncluded,
+        SettingsKeys.autoBackupExcluded,
     )
 
     /** Never exported: this install's own state, bookkeeping, or meaningless on another device. */
@@ -82,6 +98,13 @@ internal object SettingsBackupSchema {
             SettingsKeys.widgetSize,
             // Usage history, not a setting.
             SettingsKeys.recentTimeZones,
+            SettingsKeys.recentFixedTimeReminders,
+            // A dismissed hint of this install.
+            SettingsKeys.notificationCategoryHintDismissed,
+            // This device's notification channels.
+            SettingsKeys.reminderChannelVersions,
+            // Sync-request grants of this device's accounts.
+            CalendarPrefKeys.syncAccessDismissed,
             // First-run wizard progress of this install.
             SettingsKeys.onboardingWizardArmed,
             CalendarPrefKeys.visibilityNoticePending,
@@ -94,6 +117,11 @@ internal object SettingsBackupSchema {
             SettingsKeys.specialDatesLastRun,
             SettingsKeys.specialDatesStalled,
             SettingsKeys.specialDatesLastForegroundSync,
+            SettingsKeys.dailyDigestArmedAt,
+            ReminderStateKeys.lastDigestDay,
+            // What the automatic backup wrote to this install's folder.
+            SettingsKeys.autoBackupLedger,
+            SettingsKeys.autoBackupFingerprints,
             // Switch-offs still owed to the provider on this device.
             CalendarPrefKeys.pendingDisabledCalendarIds,
             // The reminder delivery watermark.

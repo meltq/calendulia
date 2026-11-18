@@ -57,8 +57,9 @@ The settings stored under their own on-disk key names, in their stored form,
 e.g. `"theme_mode": "DARK"`, `"multi_day_count": 4`,
 `"default_reminder_minutes": "10,60"`. Only keys that have been set are
 written. `SettingsBackupSchema.plain` lists them: appearance, fonts,
-views, the agenda screen, the event form, reminders, automatic backup
-(switch and interval) and contact special dates (switch, types, title
+views, the agenda screen, the event form and its default calendar, reminders
+and the daily summary, automatic backup (switch, interval, layout, retention,
+backup on change) and contact special dates (switch, types, title
 templates, year).
 
 Three are taken only where this device can honour them, otherwise the current
@@ -86,6 +87,12 @@ identity instead:
 | `event_duration_minutes` | Int? | Per-calendar default length, clamped to 1–1440 like the setting. |
 | `reminders` | Int[]? | Timed reminder override; `[]` is "no reminder". |
 | `all_day_reminders` | Int[]? | All-day reminder override. |
+| `hidden_in_views` | String[]? | Views it is hidden in only (`Month`, `Week`, …); unknown names are dropped. |
+| `notifications` | Boolean? | `false`: Calendula posts none of its reminders. |
+| `alert_style` | String? | `full_screen` or `full_screen_ring`; absent or unknown is a plain notification. |
+| `fixed_time_reminder` | String? | Set-time reminder override: `off`, or `days@minuteOfDay` (e.g. `1@1200`). Absent or unreadable inherits the default. |
+| `in_daily_digest` | Boolean? | `false`: left out of the daily summary. |
+| `auto_backup` | Boolean? | The automatic backup's choice for it; absent follows the default for its kind. |
 
 On import an entry matches the one calendar here with the same account name,
 account type and display name. No match, or more than one, skips it and the
@@ -118,7 +125,13 @@ bookkeeping, or meaningless on another device.
 - Font stamps (`*_font_stamp`): cache keys for the local font file.
 - `agenda_widget_range`, `widget_size`: legacy defaults for unconfigured
   widgets. Widget configuration is not part of the backup at all.
-- `recent_time_zones`: usage history.
+- `recent_time_zones`, `recent_fixed_time_reminders`: usage history.
+- `notification_category_hint_dismissed`, `reminder_channel_versions`:
+  this install's notification hint and channels.
+- `sync_access_dismissed`: sync-request grants of this device's accounts.
+- `daily_digest_armed_at`, `reminder_last_digest_day`: daily summary bookkeeping.
+- `auto_backup_files`, `auto_backup_fingerprints`: what the automatic backup
+  wrote to this install's folder.
 - Onboarding progress and `visibility_notice_pending`.
 - `auto_backup_folder_uri`: a SAF grant does not survive a reinstall or
   another device.

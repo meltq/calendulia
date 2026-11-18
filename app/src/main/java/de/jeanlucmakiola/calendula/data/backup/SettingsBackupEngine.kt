@@ -128,14 +128,7 @@ class SettingsBackupEngine @Inject constructor(
             }
         }
         step("reminders") { reminderScanner.scan() }
-        step("auto backup") {
-            BackupScheduler.apply(
-                context = context,
-                enabled = after[SettingsKeys.autoBackupEnabled],
-                intervalMinutes = after[SettingsKeys.autoBackupIntervalMinutes],
-                hasFolder = after[SettingsKeys.autoBackupFolderUri] != null,
-            )
-        }
+        step("auto backup") { BackupScheduler.reconcile(context, settingsPrefs) }
         plan.launcherName?.let { name ->
             step("launcher name") { if (launcherNames.current() != name) launcherNames.set(name) }
         }

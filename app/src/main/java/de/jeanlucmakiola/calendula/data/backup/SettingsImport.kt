@@ -5,6 +5,7 @@ import androidx.datastore.preferences.core.Preferences
 import de.jeanlucmakiola.calendula.data.appname.LauncherName
 import de.jeanlucmakiola.calendula.data.calendar.ManagedCalendarRow
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefKeys
+import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
 import de.jeanlucmakiola.calendula.data.prefs.SettingsKeys
 import de.jeanlucmakiola.calendula.data.prefs.SettingsPrefs
 import de.jeanlucmakiola.calendula.domain.CalendarSource
@@ -188,6 +189,25 @@ fun MutablePreferences.addCalendarSettings(id: Long, entry: CalendarSettings) {
     entry.allDayReminders?.let {
         this[SettingsKeys.perCalendarAllDayReminderOverride] =
             this[SettingsKeys.perCalendarAllDayReminderOverride] + (id to it)
+    }
+    if (entry.hiddenInViews.isNotEmpty()) {
+        this[SettingsKeys.perCalendarHiddenViews] = this[SettingsKeys.perCalendarHiddenViews] + (id to entry.hiddenInViews)
+    }
+    if (!entry.notifications) this[SettingsKeys.mutedReminderCalendarIds] = this[SettingsKeys.mutedReminderCalendarIds] + id
+    entry.alertStyle?.let { this[SettingsKeys.reminderAlertStyles] = this[SettingsKeys.reminderAlertStyles] + (id to it) }
+    val fixed = when (val override = entry.fixedTimeReminder) {
+        FixedTimeOverride.Inherit -> null
+        FixedTimeOverride.Off -> id to null
+        is FixedTimeOverride.At -> id to override.reminder
+    }
+    fixed?.let {
+        this[SettingsKeys.perCalendarFixedTimeReminderOverride] = this[SettingsKeys.perCalendarFixedTimeReminderOverride] + it
+    }
+    if (!entry.inDailyDigest) this[SettingsKeys.digestExcludedCalendarIds] = this[SettingsKeys.digestExcludedCalendarIds] + id
+    when (entry.autoBackup) {
+        true -> this[SettingsKeys.autoBackupIncluded] = this[SettingsKeys.autoBackupIncluded] + id
+        false -> this[SettingsKeys.autoBackupExcluded] = this[SettingsKeys.autoBackupExcluded] + id
+        null -> Unit
     }
 }
 

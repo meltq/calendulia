@@ -6,10 +6,14 @@ import com.google.common.truth.Truth.assertThat
 import de.jeanlucmakiola.calendula.data.appname.LauncherName
 import de.jeanlucmakiola.calendula.data.calendar.ManagedCalendarRow
 import de.jeanlucmakiola.calendula.data.prefs.CalendarPrefKeys
+import de.jeanlucmakiola.calendula.data.prefs.FixedTimeOverride
 import de.jeanlucmakiola.calendula.data.prefs.SettingsKeys
+import de.jeanlucmakiola.calendula.data.prefs.fixedTimeOverrideFor
 import de.jeanlucmakiola.calendula.domain.CalendarSource
 import de.jeanlucmakiola.calendula.domain.FontRole
 import de.jeanlucmakiola.calendula.domain.contacts.SpecialDateType
+import de.jeanlucmakiola.calendula.domain.reminders.FixedTimeReminder
+import de.jeanlucmakiola.calendula.domain.reminders.ReminderAlertStyle
 import de.jeanlucmakiola.calendula.ui.common.CalendarView
 import de.jeanlucmakiola.calendula.ui.theme.FONT_CUSTOM_TOKEN
 import de.jeanlucmakiola.floret.backup.BackupProblem
@@ -155,15 +159,44 @@ class SettingsBackupTest {
         source[SettingsKeys.perCalendarEventDuration] = mapOf(1L to 30)
         source[SettingsKeys.perCalendarReminderOverride] = mapOf(1L to listOf(5))
         source[SettingsKeys.perCalendarAllDayReminderOverride] = mapOf(1L to listOf(0))
+        source[SettingsKeys.perCalendarHiddenViews] = mapOf(1L to setOf(CalendarView.Month, CalendarView.Week))
+        source[SettingsKeys.mutedReminderCalendarIds] = setOf(1L)
+        source[SettingsKeys.reminderAlertStyles] = mapOf(1L to ReminderAlertStyle.FullScreenRing)
+        source[SettingsKeys.perCalendarFixedTimeReminderOverride] = mapOf(1L to FixedTimeReminder(2, 1_200))
+        source[SettingsKeys.digestExcludedCalendarIds] = setOf(1L)
+        source[SettingsKeys.autoBackupIncluded] = setOf(1L)
+        source[SettingsKeys.autoBackupExcluded] = setOf(1L)
 
         val target = mutablePreferencesOf()
         import(roundTrip(source), target, environment(calendars = listOf(calendar(9, "Work")), managed = emptyList()))
 
         // One assertion per key in the schema: a new per-calendar key fails here until it is carried.
-        SettingsBackupSchema.perCalendar.forEach { pref ->
+        // Both auto-backup keys are set at the source so each is checked; one calendar sits in only one.
+        SettingsBackupSchema.perCalendar.filter { it != SettingsKeys.autoBackupExcluded }.forEach { pref ->
             assertThat(target.asMap().keys.map { it.name }).contains(pref.name)
         }
         assertThat(target[SettingsKeys.perCalendarAllDayReminderOverride]).containsExactly(9L, listOf(0))
+        assertThat(target[SettingsKeys.perCalendarHiddenViews]).containsExactly(9L, setOf(CalendarView.Month, CalendarView.Week))
+        assertThat(target[SettingsKeys.mutedReminderCalendarIds]).containsExactly(9L)
+        assertThat(target[SettingsKeys.reminderAlertStyles]).containsExactly(9L, ReminderAlertStyle.FullScreenRing)
+        assertThat(target[SettingsKeys.perCalendarFixedTimeReminderOverride]).containsExactly(9L, FixedTimeReminder(2, 1_200))
+        assertThat(target[SettingsKeys.digestExcludedCalendarIds]).containsExactly(9L)
+        assertThat(target[SettingsKeys.autoBackupIncluded]).containsExactly(9L)
+    }
+
+    @Test
+    fun `an off set-time override and an excluded backup calendar survive the round trip`() {
+        val source = mutablePreferencesOf()
+        source[SettingsKeys.perCalendarFixedTimeReminderOverride] = mapOf(1L to null)
+        source[SettingsKeys.autoBackupExcluded] = setOf(1L)
+
+        val target = mutablePreferencesOf()
+        import(roundTrip(source), target, environment(calendars = listOf(calendar(9, "Work")), managed = emptyList()))
+
+        assertThat(target[SettingsKeys.perCalendarFixedTimeReminderOverride].fixedTimeOverrideFor(9L))
+            .isEqualTo(FixedTimeOverride.Off)
+        assertThat(target[SettingsKeys.autoBackupExcluded]).containsExactly(9L)
+        assertThat(target[SettingsKeys.autoBackupIncluded]).isEmpty()
     }
 
     @Test

@@ -80,8 +80,6 @@ private val RESTORE_MIME_TYPES = arrayOf(
 
 /**
  * Backup & restore (#69): `.ics` export and restore, with
- * optional automatic backup. Shares [CalendarsViewModel] with the manager.
- * Backup & restore (#69): `.ics` export and restore for local calendars, with
  * optional automatic backup, and the app's settings as JSON (#481). Shares
  * [CalendarsViewModel] with the manager; the settings block works whatever
  * state the calendar list is in.
@@ -95,6 +93,7 @@ fun BackupScreen(
     onImport: (Uri) -> Unit,
     visible: Boolean = true,
     viewModel: CalendarsViewModel = hiltViewModel(),
+    copyViewModel: CopyEventsViewModel = hiltViewModel(),
     settingsBackup: SettingsBackupViewModel = hiltViewModel(),
 ) {
     val state by viewModel.backupState.collectAsStateWithLifecycle()
