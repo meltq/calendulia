@@ -741,4 +741,7 @@
     <string name="settings_visible_hours_start_hint">Гадзіна зьверху экрана ў рэжыме прагляду тыдня, некалькіх сутак або сутак. Каб пабачыць ранейшыя гадзіны, трэба прагортка.</string>
     <string name="settings_visible_hours_end_hint">Апошняя гадзіна ўнізе экрану ў рэжыме прагляду. Каб пабачыць пазьнейшыя гадзіны трэба прагортка. Таксама зьвядзеньнем пальцаў па экране можна зьмяніць маштаб да наступнага адкрыцьця рэжыму.</string>
     <string name="settings_events_header">Падзеі</string>
+    <string name="event_move_queue_full">Зашмат адначасовых рухаў, і таму той ня быў захаваны</string>
+    <string name="event_move_skipped">Рухі, зробленыя, калі пытаньне было адкрытым, не былі захаваныя</string>
+    <string name="event_move_blocked_cancelled_series">Скасаваную сэрыю можна перасунуць толькі цалкам; пры гэтым зьменяцца дні, на якія яна прыпадае</string>
 </resources>

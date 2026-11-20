@@ -118,7 +118,7 @@
     <string name="event_edit_recurrence_end_until">An einem Datum</string>
     <string name="event_edit_recurrence_end_count">Nach einer Anzahl</string>
     <string name="event_edit_recurrence_times">Mal</string>
-    <string name="event_edit_error_recurrence_ends_before_start">Wiederholung endet vor dem Beginn</string>
+    <string name="event_edit_error_recurrence_ends_before_start">Wiederholung endet vor dem Beginn des Termins</string>
     <string name="event_availability_busy">Beschäftigt</string>
     <string name="event_access_default">Standard</string>
     <string name="event_access_public">Öffentlich</string>
@@ -159,7 +159,7 @@
     <string name="event_attendee_optional">Optional</string>
     <string name="event_attendee_resource">Ressource</string>
     <string name="event_detail_self_response">Deine Antwort: %1$s</string>
-    <string name="reminder_at_time">Zur Startzeit</string>
+    <string name="reminder_at_time">Zur Zeit des Termins</string>
     <string name="reminder_default">Standarderinnerung</string>
     <plurals name="reminder_minutes">
         <item quantity="one">%d Minute vorher</item>
@@ -225,8 +225,8 @@
     <string name="search_empty">Keine Termine passen zu „%1$s“.</string>
     <!-- Startbildschirm-Widgets -->
     <string name="widget_agenda_title">Anstehend</string>
-    <string name="widget_agenda_label">Calendula Agenda</string>
-    <string name="widget_month_label">Calendula Monat</string>
+    <string name="widget_agenda_label">Agenda</string>
+    <string name="widget_month_label">Monat</string>
     <string name="widget_refresh">Aktualisieren</string>
     <string name="widget_new_event">Neuer Termin</string>
     <string name="widget_needs_permission">Öffne Calendula, um Kalenderzugriff zu erlauben</string>
@@ -264,7 +264,7 @@
     <string name="settings_agenda_range">Agenda-Zeitraum</string>
     <string name="settings_agenda_range_hint">Wie weit im Voraus die Agenda-Ansicht Termine anzeigt.</string>
     <string name="settings_agenda_widget_range">Agenda-Widget-Zeitraum</string>
-    <string name="settings_agenda_widget_range_hint">Wie weit im Voraus das Agenda-Widget auf dem Startbildschirm Termine anzeigt.</string>
+    <string name="settings_agenda_widget_range_hint">Wie weit im Voraus das Agenda-Widget Termine anzeigt.</string>
     <string name="settings_agenda_range_bar">Zeitraum-Leiste</string>
     <string name="settings_agenda_range_bar_hint">Eine Leiste oben in der Agenda anzeigen, die den dargestellten Zeitraum benennt, mit einer Schaltfläche zum Wechseln des Zeitraums für die Sitzung</string>
     <string name="agenda_range_day">Heute</string>
@@ -400,7 +400,7 @@
     <string name="font_jetbrains_mono">JetBrains Mono</string>
     <string name="settings_font_choose_file">Datei auswählen…</string>
     <string name="settings_font_import_failed">Die Datei konnte nicht als Schriftart gelesen werden</string>
-    <string name="settings_dim_completed">Vergangene Ereignisse abdunkeln</string>
+    <string name="settings_dim_completed">Vergangene Termine abdunkeln</string>
     <string name="settings_dim_completed_summary">Vergangene Termine in der Monats- und Wochenansicht abdunkeln</string>
     <string name="settings_past_events">Vergangene Termine</string>
     <string name="settings_past_events_show">Zeigen</string>
@@ -428,7 +428,7 @@
     <string name="settings_special_dates_enable_hint">Spiegle die Geburtstage und andere Termine deiner Kontakte in lokale Kalender. Liest nur Kontakte auf diesem Gerät – es wird nichts hochgeladen und Ihre Kontakte werden nie geändert.</string>
     <string name="settings_special_dates_type_birthday">Geburtstage</string>
     <string name="settings_special_dates_type_anniversary">Jahrestage</string>
-    <string name="settings_special_dates_type_custom">Andere Ereignisse</string>
+    <string name="settings_special_dates_type_custom">Andere Daten</string>
     <string name="settings_special_dates_template">Titelformat</string>
     <string name="settings_special_dates_template_hint">Verwende {Name} für den Kontakt und {Jahr} für das Jahr (das Geburtsjahr oder das Anfangsjahr eines Jahrestages; versteckt, wenn unbekannt).</string>
     <string name="settings_special_dates_show_year">Jahr anzeigen</string>
@@ -441,9 +441,9 @@
     <string name="settings_calendar_reminders_managed_hint">In den besonderen Terminen der Kontakte setzen</string>
     <string name="settings_special_dates_paused_hint">Calendula kann deine Kontakte nicht mehr lesen, daher werden diese Kalender nicht aktualisiert.</string>
     <string name="settings_special_dates_disable_title">Kontakttermine deaktivieren?</string>
-    <string name="settings_special_dates_disable_all_message">Dadurch werden die Kontaktterminkalender und ihre Ereignisse gelöscht. Alle von dir hinzugefügten Erinnerungen oder Notizen gehen verloren.</string>
+    <string name="settings_special_dates_disable_all_message">Dadurch werden die Kontaktterminkalender und ihre Termine gelöscht. Alle von dir hinzugefügten Erinnerungen oder Notizen gehen verloren.</string>
     <string name="settings_special_dates_grant">Zugriff gewähren</string>
-    <string name="settings_special_dates_disable_type_message">Dadurch werden der Kalender „%1$s“ und seine Ereignisse gelöscht. Alle von dir hinzugefügten Erinnerungen oder Notizen gehen verloren.</string>
+    <string name="settings_special_dates_disable_type_message">Dadurch werden der Kalender „%1$s“ und seine Termine gelöscht. Alle von dir hinzugefügten Erinnerungen oder Notizen gehen verloren.</string>
     <string name="settings_special_dates_disable_confirm">Deaktivieren</string>
     <string name="dialog_save">Speichern</string>
     <string name="calendars_account_menu_a11y">Weitere Optionen für %1$s</string>
@@ -477,18 +477,18 @@
     <string name="calendars_restore_header">Wiederherstellen</string>
     <string name="calendars_restore_action">Aus .ics-Datei wiederherstellen</string>
     <string name="calendars_restore_hint">Einträge von einem Backup oder einer anderen Kalender App importieren.</string>
-    <string name="import_done_dedup_note">Bereits im Kalender vorhandene Ereignisse wurden übersprungen.</string>
+    <string name="import_done_dedup_note">Bereits im Kalender vorhandene Termine wurden übersprungen.</string>
     <string name="import_done_added_label">Hinzugefügt</string>
     <string name="import_done_skipped_label">Dopplungen</string>
     <string name="import_button">Importieren</string>
     <plurals name="import_title_count">
-        <item quantity="one">%d Ereignis wird importiert</item>
-        <item quantity="other">%d Ereignisse werden importiert</item>
+        <item quantity="one">%d Termin wird importiert</item>
+        <item quantity="other">%d Termine werden importiert</item>
     </plurals>
     <string name="event_detail_duplicate">Duplikate</string>
     <string name="reminder_day_tomorrow">Morgen</string>
     <string name="event_edit_timezone_device">Zeitzone des Gerätes</string>
-    <string name="event_edit_timezone_device_summary">Passt sich an wo Sie sind</string>
+    <string name="event_edit_timezone_device_summary">Passt sich an wo du bist</string>
     <string name="event_edit_timezone_search">Zeitzonen durchsuchen</string>
     <string name="event_edit_timezone_recent">Kürzliche</string>
     <string name="event_edit_timezone_all">Alle Zeitzonen</string>
@@ -502,7 +502,7 @@
     <string name="settings_widget_size">Agenda-Widget-Größe</string>
     <string name="import_reminder_prompt_body_none">Dieser Termin wurde ohne eine Erinnerung importiert.</string>
     <string name="import_reminder_prompt_apply">Standart anwenden</string>
-    <string name="settings_widgets_subtitle">Agenda-Widget, Schnelleinstellungen-Kachel</string>
+    <string name="settings_widgets_subtitle">Deine Widgets, Schnelleinstellungen-Kachel</string>
     <string name="import_reminder_prompt_keep">unverändert lassen</string>
     <string name="event_access_public_summary">Jeder mit Zugriff sieht jedes Detail</string>
     <string name="event_access_private_summary">Andere sehen nur das du beschäftigt bist</string>
@@ -514,7 +514,7 @@
     <string name="event_move_gone">Dieser Termin existiert nicht mehr</string>
     <string name="duration_custom_max">Maximal %1$s</string>
     <string name="reminder_day_yesterday">Gestern</string>
-    <string name="agenda_no_more_today">Keine Events mehr heute</string>
+    <string name="agenda_no_more_today">Keine Termine mehr heute</string>
     <string name="agenda_span_starts">Beginnt %1$s</string>
     <string name="agenda_span_ends">Endet %1$s</string>
     <string name="today_jump_action">Zu Heute springen</string>
@@ -581,14 +581,14 @@
     <string name="settings_past_events_sample_morning">Team-Besprechung</string>
     <string name="settings_past_events_sample_midday">Mittagessen mit Robin</string>
     <string name="settings_past_events_sample_evening">Chorprobe</string>
-    <string name="settings_widget_size_hint">Wie groß das Agenda-Widget auf dem Startbildschirm seinen Text zeichnet. Für das Monats-Widget gibt es keine Einstellung – sein Raster passt sich immer dem Platz an, den du ihm gibst.</string>
+    <string name="settings_widget_size_hint">Wie groß das Agenda-Widget seinen Text zeichnet.</string>
     <string name="settings_widget_size_small">Klein</string>
     <string name="settings_widget_size_medium">Mittel</string>
     <string name="settings_widget_size_large">Groß</string>
     <string name="settings_widget_size_extra_large">Sehr groß</string>
     <string name="settings_widget_size_summary">Termintext %1$d%%</string>
     <string name="settings_agenda_show_today">Heute immer zeigen</string>
-    <string name="settings_agenda_show_today_hint">Behält Heute oben in der Agenda und ihrem Widget, auch wenn für heute nichts mehr ansteht.</string>
+    <string name="settings_agenda_show_today_hint">Behält Heute oben in der Agenda, auch wenn für heute nichts mehr ansteht. Jedes Widget hat seine eigenen Einstellungen.</string>
     <string name="settings_month_header">Monatsansicht</string>
     <string name="settings_month_view_style">Stil der Monatsansicht</string>
     <string name="month_style_paged">Seiten</string>
@@ -613,7 +613,7 @@
     <string name="settings_group_app">App</string>
     <string name="settings_backup_subtitle">Export, Import, automatische Sicherung</string>
     <string name="settings_section_widgets">Widgets &amp; Kacheln</string>
-    <string name="settings_widgets_hint">Einstellungen für die Widgets auf dem Startbildschirm und die Schnelleinstellungen-Kachel. Füge ein Widget hinzu, indem du lange auf den Startbildschirm drückst.</string>
+    <string name="settings_widgets_hint">Jedes Widget hat ein eigenes Design und eigene Optionen. Tippe unten auf ein Widget oder drücke lange auf deinen Startbildschirm lange und wähle „Bearbeiten“. Füge ein Widget hinzu, indem du den Startbildschirm lange drückst.</string>
     <string name="settings_section_backup">Sicherung &amp; Wiederherstellung</string>
     <string name="settings_views_all_header">Alle Ansichten</string>
     <string name="settings_week_day_header">Woche &amp; Tag</string>
@@ -646,8 +646,8 @@
         <item quantity="other">%d Termine gelöscht</item>
     </plurals>
     <string name="state_failure_permission_body">Calendula liest deine Termine direkt vom Systemkalender, daher braucht es Kalenderzugriff um etwas anzuzeigen.</string>
-    <string name="state_failure_no_calendars_body">Füge einen Kalenderaccount zu diesem Gerät hinzu, dann werden ihre Kalender hier angezeigt.</string>
-    <string name="state_failure_all_hidden">All Ihre Kalender sind ausgeschaltet.</string>
+    <string name="state_failure_no_calendars_body">Füge einen Kalenderaccount zu diesem Gerät hinzu, dann werden dessen Kalender hier angezeigt.</string>
+    <string name="state_failure_all_hidden">All deine Kalender sind ausgeschaltet.</string>
     <string name="state_failure_all_hidden_body">Schalte mindestens einen Kalender wieder an um dessen Termine zu sehen.</string>
     <string name="state_failure_all_hidden_action">Kalender verwalten</string>
     <string name="state_failure_no_import_target">Kein Kalender akzeptiert neue Termine.</string>
@@ -693,7 +693,7 @@
     <string name="color_name_red">Rot</string>
     <string name="color_name_orange">Orange</string>
     <string name="color_name_amber">Bernstein</string>
-    <string name="color_name_olive">Olive</string>
+    <string name="color_name_olive">Oliv</string>
     <string name="color_name_green">Grün</string>
     <string name="color_name_teal">Türkis</string>
     <string name="color_name_cyan">Cyan</string>
@@ -759,8 +759,116 @@
     <string name="settings_support_kofi">Ko-fi</string>
     <string name="settings_support_liberapay">Liberapay</string>
     <string name="event_resize_recurring_title">Wiederkehrenden Termin verschieben</string>
-    <string name="event_draft_create">Neuen Termin erstellen</string>
+    <string name="event_draft_create">Termin erstellen</string>
     <string name="event_edit_more_actions">Weitere Aktionen</string>
     <string name="event_edit_unsaved_keep">Weiter bearbeiten</string>
     <string name="settings_theme_black">Zurück</string>
+    <string name="event_edit_status">Status</string>
+    <string name="event_status_confirmed">Bestätigt</string>
+    <string name="event_move_stale">Dieser Termin wurde verschoben, bevor dein Drop gespeichert werden konnte</string>
+    <string name="event_move_queue_full">Zu viele Verschiebungen auf einmal, deshalb wurde diese nicht gespeichert</string>
+    <string name="event_move_skipped">Die während der Bearbeitung der Frage vorgenommenen Verschiebungen wurden nicht gespeichert</string>
+    <string name="event_move_blocked_cancelled_series">Eine abgesagte Serie kann nur als Ganzes verschoben werden, wodurch sich die Tage ändern würden, an denen sie stattfindet</string>
+    <string name="widget_agenda_description">Deine nächsten Termine, nach Tagen geordnet</string>
+    <string name="widget_month_description">Der Monat im Überblick, mit deinen Terminen</string>
+    <string name="widget_quick_add_label">Schnell hinzufügen</string>
+    <string name="widget_quick_add_description">Mit einem Klick einen neuen Termin erstellen</string>
+    <string name="widget_date_label">Datum</string>
+    <string name="widget_date_description">Das heutige Datum</string>
+    <string name="widget_week_strip_label">Wochenstreifen</string>
+    <string name="widget_week_strip_description">Diese Woche, an den Tagen, an denen Termine stattfinden</string>
+    <plurals name="widget_day_with_events">
+        <item quantity="one">%1$s, %2$d Termin</item>
+        <item quantity="other">%1$s, %2$d Termine</item>
+    </plurals>
+    <string name="widget_upcoming_label">Anstehend</string>
+    <string name="widget_upcoming_description">Das heutige Datum und deine nächsten Termine</string>
+    <string name="widget_upcoming_empty">Keine anstehenden Termine</string>
+    <string name="widget_today_label">Heute</string>
+    <string name="widget_today_description">Heutige Termine, dann die morgigen</string>
+    <string name="widget_nothing_left_today">Heute keine Fälligkeiten</string>
+    <string name="widget_countdown_label">Countdown</string>
+    <string name="widget_countdown_now">Jetzt</string>
+    <string name="widget_countdown_ending_now">Endet jetzt</string>
+    <string name="widget_countdown_tomorrow">Morgen</string>
+    <plurals name="widget_countdown_in_minutes">
+        <item quantity="one">in %d Minute</item>
+        <item quantity="other">in %d Minuten</item>
+    </plurals>
+    <plurals name="widget_countdown_in_hours">
+        <item quantity="one">in %d Stunde</item>
+        <item quantity="other">in %d Stunden</item>
+    </plurals>
+    <plurals name="widget_countdown_in_days">
+        <item quantity="one">in %d Tag</item>
+        <item quantity="other">in %d Tagen</item>
+    </plurals>
+    <string name="widget_config_countdown_search">Termine suchen</string>
+    <string name="widget_config_style">Stil</string>
+    <string name="widget_config_style_cards">Karten</string>
+    <string name="widget_config_countdown">Countdown bis</string>
+    <string name="widget_config_countdown_next">Nächster Termin</string>
+    <string name="widget_config_countdown_event">Termin</string>
+    <string name="widget_numbered">%1$s %2$d</string>
+    <string name="widget_appearance_summary">%1$s · %2$s</string>
+    <string name="widget_config_calendars_all">Alle Kalender</string>
+    <string name="widget_countdown_description">Zeit bis zu einem Termin oder dem nächsten</string>
+    <string name="widget_config_countdown_pinned">Ausgewählter Termin</string>
+    <string name="widget_config_countdown_next_hint">Der nächste Termin in den Kalendern dieses Widgets oder ein aktuell laufender Termin. Ganztägige und abgelehnte Termine werden übersprungen.</string>
+    <string name="widget_config_countdown_event_none">Noch keiner ausgewählt</string>
+    <string name="widget_config_countdown_empty">Keine passenden Termine im kommenden Jahr.</string>
+    <string name="widget_config_countdown_load_failed">Deine Termine konnten nicht geladen werden.</string>
+    <string name="widget_month_day_description">Der Monat und die Termine des gewählten Tages</string>
+    <string name="widget_day_empty">Keine Termine</string>
+    <string name="settings_month_start_times_summary">Die Startzeit vor dem Titel eines Termins anzeigen, sofern genügend Platz vorhanden ist</string>
+    <string name="month_split_no_events_month">Nichts geplant diesen Monat</string>
+    <string name="month_split_no_more_events">Sonst nichts geplant diesen Monat</string>
+    <string name="widget_countdown_ends_tomorrow">Endet morgen</string>
+    <string name="widget_countdown_until">Bis %1$s</string>
+    <plurals name="widget_countdown_ends_minutes">
+        <item quantity="one">endet in %d Minute</item>
+        <item quantity="other">endet in %d Minuten</item>
+    </plurals>
+    <plurals name="widget_countdown_ends_hours">
+        <item quantity="one">endet in %d Stunde</item>
+        <item quantity="other">endet in %d Stunden</item>
+    </plurals>
+    <plurals name="widget_countdown_ends_days">
+        <item quantity="one">endet in %d Tag</item>
+        <item quantity="other">endet in %d Tagen</item>
+    </plurals>
+    <string name="widget_countdown_over">%1$s ist vorbei</string>
+    <string name="widget_config_countdown_repeats">%1$s · wird wiederholt</string>
+    <string name="widget_month_day_label">Monat und Tag</string>
+    <string name="widget_config_background">Hintergrund</string>
+    <string name="widget_config_background_tinted">Getönt</string>
+    <string name="widget_config_background_transparent">Transparent</string>
+    <string name="widget_config_background_solid">Einfarbig</string>
+    <string name="widget_config_theme_follow_app">App folgen</string>
+    <string name="widget_config_opacity">Deckkraft</string>
+    <string name="widget_config_invert_text">Textfarbe invertieren</string>
+    <string name="widget_config_invert_text_summary">Heller Text auf einem dunklen Hintergrund wird dunkel, und umgekehrt</string>
+    <string name="widget_config_readability_info">Lesbarkeit</string>
+    <string name="widget_config_readability_hint">Bei geringer Deckkraft scheint der Hintergrund durch, sodass manche Textstellen möglicherweise schwer lesbar sind. Erhöhe in diesem Fall die Deckkraft.</string>
+    <string name="widget_config_readability_hint_classic">Bei geringer Deckkraft scheint der Hintergrund durch, sodass manche Textstellen möglicherweise schwer lesbar sind. Sollte dies der Fall sein, erhöhe die Deckkraft oder invertiere die Textfarbe.</string>
+    <string name="widget_config_content">Inhalt</string>
+    <string name="widget_config_range">Zeitraum</string>
+    <string name="widget_config_text_size">Textgröße</string>
+    <string name="widget_config_load_failed">Konnte die Einstellungen dieses Widgets nicht lesen.</string>
+    <string name="widget_config_preview_failed">Vorschau nicht verfügbar</string>
+    <string name="widget_config_save_failed">Das Widget konnte nicht gespeichert werden. Versuche es erneut.</string>
+    <string name="widget_config_calendars_hint">Die Kalender, die dieses Widget anzeigt. Kalender, die du in der App ausgeblendet hast, bleiben auch hier ausgeblendet.</string>
+    <plurals name="widget_config_calendars_some">
+        <item quantity="one">%1$d von %2$d Kalender</item>
+        <item quantity="other">%1$d von %2$d Kalendern</item>
+    </plurals>
+    <string name="settings_month_start_times">Startzeiten</string>
+    <string name="widget_preview_sample_trip">Wochenendausflug</string>
+    <string name="widget_preview_sample_dentist">Zahnarzt</string>
+    <string name="settings_widgets_hint_legacy">Jedes Widget hat sein eigenes Aussehen und Optionen. Tippe unten auf eines, um es zu ändern. Füge ein Widget hinzu, indem du lange auf deinen Startbildschirm drückst.</string>
+    <string name="settings_widgets_placed">Auf deinem Startbildschirm</string>
+    <string name="settings_widgets_none">Noch keine Calendula-Widgets auf deinem Startbildschirm.</string>
+    <string name="widget_countdown_choose">Tippe auf einen Termin, um den Countdown dafür zu starten</string>
+    <string name="widget_config_style_classic">Klassisch</string>
+    <string name="widget_config_calendars">Kalender</string>
 </resources>

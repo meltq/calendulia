@@ -303,4 +303,32 @@
     </plurals>
     <string name="agenda_range_this_week">Tento týždeň</string>
     <string name="agenda_range_custom">Vlastné…</string>
+    <string name="app_name_calendar_alias">Kalendár</string>
+    <string name="state_failure_permission_body">Calendula číta vaše udalosti priamo zo systémového kalendára. Aby ich mohla zobraziť, potrebuje prístup ku kalendáru.</string>
+    <string name="state_failure_no_calendars_body">Pridajte do tohto zariadenia kalendárny účet a jeho kalendáre sa tu zobrazia.</string>
+    <string name="state_failure_all_hidden_body">Zapnite aspoň jeden kalendár aby ste mohli pozerať udalosti.</string>
+    <string name="state_failure_no_import_target">Žiadny kalendár neumožňuje pridávať nové udalosti.</string>
+    <string name="state_failure_no_import_target_body">Zapnuté kalendáre sú iba na čítanie, spravuje ich iná aplikácia alebo nie sú synchronizované s týmto zariadením. Zapnite kalendár do ktorého sa dajú pridávať udalosti alebo pridajte lokálny kalendár.</string>
+    <string name="state_failure_event_not_found">Táto udalosť sa tu už nenachádza.</string>
+    <string name="state_failure_event_not_found_body">Bola možno zmazaná alebo presunutá do kalendára, ktorý je vypnutý.</string>
+    <string name="state_failure_provider_body">Systémový kalendár neodpovedal. Skúste to znovu za chvíľu.</string>
+    <string name="month_open_week">Otvoriť týždeň %1$d</string>
+    <string name="month_split_clear_filter">Zobraziť agendu pre celý mesiac</string>
+    <string name="timeline_earlier_events">Skoršie udalosti</string>
+    <string name="timeline_later_events">Neskoršie udalosti</string>
+    <string name="event_resize_done">Zmenené na %1$s</string>
+    <string name="event_resize_recurring_title">Zmeniť opakujúcu sa udalosť</string>
+    <string name="event_selection_actions">Akcie udalostí</string>
+    <string name="event_selection_hide">Schovať akcie udalostí</string>
+    <string name="event_selection_close">Zrušiť výber udalosti</string>
+    <string name="event_draft_create">Vytvoriť udalosť</string>
+    <string name="event_draft_discard">Zahodiť novú udalosť</string>
+    <string name="event_action_load_failed">Udalosť sa nepodarilo otvoriť</string>
+    <string name="event_move_stale">Tá udalosť sa presunula skôr, ako sa stihlo uložiť vaše vloženie</string>
+    <string name="event_move_queue_full">Priveľa presunov naraz, tento sa neuložil</string>
+    <string name="event_move_skipped">Presuny vykonané keď bola otázka otvorená sa neuložii</string>
+    <string name="event_move_blocked_cancelled_series">Zrušená séria sa môže presunúť iba ako celok a to by zmenilo dni na ktoré spadá</string>
+    <string name="event_edit_more_actions">Ďalšie akcie</string>
+    <string name="event_edit_unsaved_title">Neuložené zmeny</string>
+    <string name="event_edit_unsaved_save">Uložiť zmeny</string>
 </resources>

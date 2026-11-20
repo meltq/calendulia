@@ -9,6 +9,7 @@ cs       cs-CZ
 de       de-DE
 es       es-ES
 fr       fr-FR
+gl       gl-ES
 hu       hu-HU
 it       it-IT
 ja       ja-JP

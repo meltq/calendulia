@@ -318,13 +318,16 @@ jobs:
   # not provide node inside custom job containers, so JavaScript actions
   # (checkout, download-artifact) can't run there. The Renovate job gets away
   # with a container because its only step is a shell command. Ruby is installed
-  # the same way sshpass, jq and fdroidserver are in the job above.
+  # the same way sshpass, jq and fdroidserver are in the job above, from trixie:
+  # fastlane >= 2.241 needs Ruby 3.2+, and bookworm's apt only has 3.1.
   play:
     needs: [detect, release]
     # workflow_dispatch is the F-Droid re-sign recovery path — it must never
     # touch Play, so gate on a real release only.
     if: needs.detect.outputs.is_release == 'true'
     runs-on: docker
+    container:
+      image: node:22-trixie
     env:
       VERSION: ${{ needs.detect.outputs.version }}
       VERSION_CODE: ${{ needs.detect.outputs.version_code }}

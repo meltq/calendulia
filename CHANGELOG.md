@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.24.3] — 2026-11-20
+
+### Added
+- **Galician**, a new community translation through [Calendula's Weblate](https://weblate.dev.jeanlucmakiola.de/projects/calendula/), complete from the start. Pick it under Settings → Language. Thanks to Jani Buni.
+
+### Changed
+- Arabic, Italian and Spanish are now fully translated, with further updates to Belarusian, German and Slovak. Thanks to everyone translating on Weblate.
+
 ## [2.24.2] — 2026-11-13
 
 ### Fixed

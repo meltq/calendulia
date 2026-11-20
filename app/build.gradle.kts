@@ -32,8 +32,8 @@ android {
         // (up to 2.22.3: 2.22.3 -> 22203; from 2.22.4: 2.23.0-beta.1 -> 2230001,
         // 2.22.4 -> 2220499), and CI fails if the committed one doesn't match.
         // See docs/RELEASING.md.
-        versionCode = 2240299
-        versionName = "2.24.2"
+        versionCode = 2240399
+        versionName = "2.24.3"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
